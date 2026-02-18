@@ -13,20 +13,18 @@ if ($LASTEXITCODE -ne 0) {
     exit
 }
 
-Write-Host "编译成功，开始同步文件..." -ForegroundColor Green
+Write-Host "编译成功，清理并同步文件..." -ForegroundColor Green
 
-# 2. 定义需要同步的项目列表（文件夹或文件）
+# 清理目标目录中可能存在的旧文件
+if (Test-Path $modPath) {
+    Get-ChildItem -Path $modPath -Exclude ".git" | Remove-Item -Recurse -Force
+}
+
+# 2. 定义需要同步的项目列表
 $items = @(
     "1.6\Assemblies",
-    "1.6\Defs",
-    "1.6\Patches",
     "Languages",
     "About",
-    "Textures",
-    "MuzzleFlash",
-    "CE_Patches",
-    "Show_Me_Your_Hand",
-    "WeaponTweakData",
     "LoadFolders.xml"
 )
 
