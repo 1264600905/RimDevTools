@@ -31,7 +31,7 @@
     "run_shell_command(git show)",
     "run_shell_command(git diff)",
     "run_shell_command(git diff --stat)",
-
+    "run_shell_command(git add)",
     
     "run_shell_command(dotnet build)", 
     "run_shell_command(dotnet list package)",
@@ -41,6 +41,7 @@
     "run_shell_command(.\\deploy.ps1)",
     "run_shell_command(./deploy.ps1)",
     "run_shell_command(powershell)",
+    "run_shell_command(python run_test.py)",
     "run_shell_command(pwsh)"
   ]
 } 
