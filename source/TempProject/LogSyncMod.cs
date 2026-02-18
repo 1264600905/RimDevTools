@@ -7,16 +7,36 @@ using HarmonyLib;
 
 namespace LogSyncMod
 {
+    [StaticConstructorOnStartup]
     public class LogSyncMod : Mod
     {
         public static LogSyncSettings settings;
 
+        static LogSyncMod()
+        {
+            // 在所有加载完成（进入主菜单）时执行
+            LongEventHandler.ExecuteWhenFinished(() =>
+            {
+                // 创建一个 10 秒的定时器
+                var timer = new System.Timers.Timer(10000);
+                timer.Elapsed += (s, e) =>
+                {
+                    Log.Message("[LogSyncMod] RUNTIME_READY_TO_CLOSE");
+                    timer.Stop();
+                    timer.Dispose();
+                };
+                timer.Start();
+            });
+        }
+
         public LogSyncMod(ModContentPack content) : base(content)
         {
             settings = GetSettings<LogSyncSettings>();
+            Log.Message("[LogSyncMod] STARTING INITIALIZATION...");
             var harmony = new Harmony("trigger.logsyncmod");
             harmony.PatchAll();
             LogPatches.InitializeFile();
+            Log.Message("[LogSyncMod] INITIALIZATION COMPLETED.");
         }
 
         public override string SettingsCategory()
