@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <!--
+    这里是放置服装定义的地方。
+    示例：
+  -->
+  <!--
+  <ThingDef ParentName="ApparelBase">
+    <defName>ExampleApparel</defName>
+    <label>示例服装</label>
+    <description>这是一个示例服装。</description>
+    <graphicData>
+      <texPath>Things/Item/Apparel/ExampleApparel</texPath>
+      <graphicClass>Graphic_Single</graphicClass>
+    </graphicData>
+    <statBases>
+      <MarketValue>100</MarketValue>
+      <Mass>0.5</Mass>
+    </statBases>
+    <apparel>
+      <bodyPartGroups>
+        <li>Torso</li>
+      </bodyPartGroups>
+      <layers>
+        <li>OnSkin</li>
+      </layers>
+    </apparel>
+  </ThingDef>
+  -->
+</Defs>

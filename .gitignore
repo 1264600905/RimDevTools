@@ -1,0 +1,76 @@
+# 开发工具生成的文件
+.vs/
+*.suo
+*.user
+*.userprefs
+*.sln.docstates
+*.VC.db
+*.VC.opendb
+.vshistory/
+# 编译输出
+/bin/Release/
+/obj/
+
+# 日志和临时文件
+精选日志.log
+修改方案.txt
+*.log
+*.tmp
+*.cache
+*.vscode/
+.claude/
+# 配置文件
+*.config
+appSettings.json
+connectionStrings.config
+
+# 测试相关
+TestResults/
+xunit.runner.json
+
+# Unity特定忽略
+[Tt]emp/
+[Oo]bj/
+[Bb]uild/
+[Bb]uilds/
+[Pp]ackages/
+[Rr]elease/
+[Dd]ebug/
+[Ee]xportedObj/
+*.pidb
+*.suo
+*.user
+*.userprefs
+*.unityproj
+*.booproj
+*.svd
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+*.AndroidStudio*
+
+# 忽略所有 DLL 文件
+*.dll
+
+# 保留特定目录结构
+bin/Debug/
+
+# 参考文档不允许提交
+参考文档/
+Reference_Documentation/
+# 代码混淆工具
+ConfuserEx-CLI/
+obfuscar-2.2.50/
+
+# 忽略 CodeObfuscation 下的所有内容...
+CodeObfuscation/*
+
+# ...但保留 ObfuscarTarget 目录...
+!CodeObfuscation/ObfuscarTarget/
+
+# ...忽略 ObfuscarTarget 下的所有内容...
+CodeObfuscation/ObfuscarTarget/*
+
+# ...但最终保留 config.xml
+!CodeObfuscation/ObfuscarTarget/config.xml

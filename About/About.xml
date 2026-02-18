@@ -1,0 +1,44 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<ModMetaData>
+    <name>项目模板！</name>
+    <author>trigger</author>
+    <url></url>
+    <supportedVersions><li>1.6</li><li>1.5</li></supportedVersions>
+    <packageId>trigger.tempproject</packageId>
+  <loadBefore />   
+  <loadAfter>	
+  <li>ceteam.combatextended</li>
+  </loadAfter>
+  <modDependencies>
+		<li>
+			<packageId>aoba.deadmanswitch.core</packageId>
+			<displayName>The Dead Man's Switch</displayName>
+			<steamWorkshopUrl>https://steamcommunity.com/sharedfiles/filedetails/?id=3121742525</steamWorkshopUrl>
+			<downloadUrl></downloadUrl>
+		</li>
+			<li>
+			<packageId>ceteam.combatextended</packageId>
+			<displayName>Combat Extended</displayName>
+			<steamWorkshopUrl>https://steamcommunity.com/sharedfiles/filedetails/?id=3495749827</steamWorkshopUrl>
+			<downloadUrl></downloadUrl>
+		</li>
+	</modDependencies>
+<modIconPath IgnoreIfNoMatchingField="True">Things/Item/Weapon/Weapon_2A72</modIconPath>
+<description>
+	[h1]模组模板[/h1]
+
+[b]这是一个 RimWorld 模组模板。[/b]
+您可以在此基础上开发您的模组功能。
+
+[h2]功能特性[/h2]
+- 包含基础的 Mod 设置菜单
+- 包含 Harmony 补丁示例 (如需要)
+- 包含 Defs 定义示例
+- 自动编译脚本
+
+[h2]如何使用[/h2]
+1. 修改 source 目录下的 C# 代码
+2. 修改 Defs 目录下的 XML 定义
+3. 运行 deploy.ps1 进行编译和部署
+	</description>
+</ModMetaData>
