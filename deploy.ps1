@@ -1,7 +1,7 @@
 # 边缘赤潮 自动化编译部署脚本
 
 $devPath = "$PSScriptRoot"
-$modPath = "H:\SteamLibrary\steamapps\common\RimWorld\Mods\TempProject"
+$modPath = "H:\SteamLibrary\steamapps\common\RimWorld\Mods\LogSyncMod"
 
 Write-Host "======= 开始构建项目 =======" -ForegroundColor Cyan
 

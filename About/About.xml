@@ -1,10 +1,10 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <ModMetaData>
-    <name>项目模板！</name>
+    <name>环世界日志同步模组</name>
     <author>trigger</author>
     <url></url>
-    <supportedVersions><li>1.6</li><li>1.5</li></supportedVersions>
-    <packageId>trigger.tempproject</packageId>
+    <supportedVersions><li>1.5</li><li>1.6</li></supportedVersions>
+    <packageId>trigger.logsyncmod</packageId>
   <loadBefore />   
   <loadAfter>	
   <li>ceteam.combatextended</li>
