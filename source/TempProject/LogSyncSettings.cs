@@ -41,7 +41,7 @@ namespace LogSyncMod
             targetModIds.Clear();
             foreach (var s in targetModIdsInput.Split(','))
             {
-                string trimmed = s.Trim();
+                string trimmed = s.Trim().ToLower();
                 if (!string.IsNullOrEmpty(trimmed)) targetModIds.Add(trimmed);
             }
 

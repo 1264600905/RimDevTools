@@ -9,6 +9,7 @@ using Verse;
 
 namespace LogSyncMod
 {
+    // 拦截 Log 的所有主要方法
     [HarmonyPatch(typeof(Log))]
     public static class LogPatches
     {
@@ -17,60 +18,96 @@ namespace LogSyncMod
         private static readonly object fileLock = new object();
         private const int MaxLogLines = 500;
 
+        // 拦截所有 Message 的重载
         [HarmonyPatch(nameof(Log.Message), new Type[] { typeof(string) })]
         [HarmonyPrefix]
-        public static void MessagePrefix(string text)
-        {
-            if (LogSyncMod.settings.syncMessage)
-                ProcessLog(text, "Message");
-        }
+        public static void MessagePrefix(string text) => ProcessLog(text, "Message");
 
+        // 拦截所有 Warning 的重载
         [HarmonyPatch(nameof(Log.Warning), new Type[] { typeof(string) })]
         [HarmonyPrefix]
-        public static void WarningPrefix(string text)
-        {
-            if (LogSyncMod.settings.syncWarning)
-                ProcessLog(text, "Warning");
-        }
+        public static void WarningPrefix(string text) => ProcessLog(text, "Warning");
 
+        // 拦截所有 Error 的重载
         [HarmonyPatch(nameof(Log.Error), new Type[] { typeof(string) })]
         [HarmonyPrefix]
-        public static void ErrorPrefix(string text)
-        {
-            if (LogSyncMod.settings.syncError)
-                ProcessLog(text, "Error");
-        }
+        public static void ErrorPrefix(string text) => ProcessLog(text, "Error");
 
         private static void ProcessLog(string text, string type)
         {
             if (string.IsNullOrEmpty(text)) return;
 
-            // 1. 检查关键词（强制记录）
+            // 检查设置开关
+            if (type == "Message" && !LogSyncMod.settings.syncMessage) return;
+            if (type == "Warning" && !LogSyncMod.settings.syncWarning) return;
+            if (type == "Error" && !LogSyncMod.settings.syncError) return;
+
+            // 1. 检查关键词
             bool keywordMatched = false;
-            foreach (var keyword in LogSyncMod.settings.keywords)
+            if (LogSyncMod.settings.keywords != null && LogSyncMod.settings.keywords.Count > 0)
             {
-                if (text.Contains(keyword))
+                foreach (var keyword in LogSyncMod.settings.keywords)
                 {
-                    keywordMatched = true;
-                    break;
+                    if (!string.IsNullOrEmpty(keyword) && text.Contains(keyword))
+                    {
+                        keywordMatched = true;
+                        break;
+                    }
                 }
             }
 
-            // 2. 堆栈分析识别模组
+            // 2. 识别模组来源
             string sourceMod = GetSourceModPackageId();
-            bool modMatched = !string.IsNullOrEmpty(sourceMod) && LogSyncMod.settings.targetModIds.Contains(sourceMod);
+            string sourceModLower = sourceMod?.ToLower();
+            
+            // 3. 过滤逻辑：
+            // 如果没设关键词，也没设目标ID，则记录所有符合级别的
+            // 如果设了目标ID，则必须匹配
+            // 如果设了关键词，匹配关键词也记录
+            bool modMatched = false;
+            if (LogSyncMod.settings.targetModIds == null || LogSyncMod.settings.targetModIds.Count == 0)
+            {
+                modMatched = true; // 记录所有
+            }
+            else
+            {
+                modMatched = !string.IsNullOrEmpty(sourceModLower) && LogSyncMod.settings.targetModIds.Contains(sourceModLower);
+            }
 
-            // 3. 过滤逻辑
             if (keywordMatched || modMatched)
             {
                 WriteToFile(text, type, sourceMod);
             }
         }
 
+        public static void InitializeFile()
+        {
+            lock (fileLock)
+            {
+                try
+                {
+                    string path = LogSyncMod.settings.logPath;
+                    if (string.IsNullOrEmpty(path)) return;
+
+                    string directory = Path.GetDirectoryName(path);
+                    if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
+                    {
+                        Directory.CreateDirectory(directory);
+                    }
+
+                    File.WriteAllText(path, $"--- Log Sync Initialized at {DateTime.Now} ---" + Environment.NewLine);
+                }
+                catch (Exception ex)
+                {
+                    UnityEngine.Debug.Log("[LogSyncMod] Failed to init file: " + ex.Message);
+                }
+            }
+        }
+
         private static string GetSourceModPackageId()
         {
             StackTrace stackTrace = new StackTrace();
-            for (int i = 2; i < stackTrace.FrameCount; i++) // 跳过补丁自身的几层
+            for (int i = 2; i < stackTrace.FrameCount; i++)
             {
                 MethodBase method = stackTrace.GetFrame(i).GetMethod();
                 if (method == null) continue;
@@ -78,13 +115,11 @@ namespace LogSyncMod
                 Assembly assembly = method.DeclaringType?.Assembly;
                 if (assembly == null) continue;
 
-                // 排除原版、Harmony、此模组自身
                 if (assembly == typeof(Log).Assembly || 
                     assembly == typeof(Harmony).Assembly || 
                     assembly == typeof(LogSyncMod).Assembly) 
                     continue;
 
-                // 查找该程序集所属的 Mod
                 foreach (var mod in LoadedModManager.RunningMods)
                 {
                     if (mod.assemblies.loadedAssemblies.Contains(assembly))
@@ -98,11 +133,10 @@ namespace LogSyncMod
 
         private static void WriteToFile(string text, string type, string sourceMod)
         {
-            string logEntry = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] [{type}] [{sourceMod ?? "Unknown"}] {text}";
+            string idTag = string.IsNullOrEmpty(sourceMod) ? "Unknown" : sourceMod;
+            // 增加毫秒级时间，确保即时连续产生的日志不会因为去重而被干掉
+            string logEntry = $"[{idTag}] [{type}] [{DateTime.Now:HH:mm:ss.fff}] {text}";
             
-            // 会话内去重检查（防止单次调用产生重复行）
-            if (processedLogs.Contains(logEntry)) return;
-
             lock (fileLock)
             {
                 try
@@ -110,29 +144,19 @@ namespace LogSyncMod
                     string path = LogSyncMod.settings.logPath;
                     if (string.IsNullOrEmpty(path)) return;
 
-                    // 维护队列
                     recentLogs.Enqueue(logEntry);
-                    processedLogs.Add(logEntry);
                     
                     while (recentLogs.Count > MaxLogLines)
                     {
-                        string removed = recentLogs.Dequeue();
-                        processedLogs.Remove(removed);
+                        recentLogs.Dequeue();
                     }
 
-                    // 确保目录存在
-                    string directory = Path.GetDirectoryName(path);
-                    if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
-                    {
-                        Directory.CreateDirectory(directory);
-                    }
-
-                    // 覆盖写入最新的 N 行
+                    // 每次有新日志都直接全量覆盖写入
                     File.WriteAllLines(path, recentLogs.ToArray());
                 }
                 catch (Exception ex)
                 {
-                    UnityEngine.Debug.Log("[LogSyncMod] Error writing to log file: " + ex.Message);
+                    UnityEngine.Debug.Log("[LogSyncMod] Write Error: " + ex.Message);
                 }
             }
         }
