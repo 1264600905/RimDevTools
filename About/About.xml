@@ -10,20 +10,7 @@
   <li>ceteam.combatextended</li>
   </loadAfter>
   <modDependencies>
-		<li>
-			<packageId>aoba.deadmanswitch.core</packageId>
-			<displayName>The Dead Man's Switch</displayName>
-			<steamWorkshopUrl>https://steamcommunity.com/sharedfiles/filedetails/?id=3121742525</steamWorkshopUrl>
-			<downloadUrl></downloadUrl>
-		</li>
-			<li>
-			<packageId>ceteam.combatextended</packageId>
-			<displayName>Combat Extended</displayName>
-			<steamWorkshopUrl>https://steamcommunity.com/sharedfiles/filedetails/?id=3495749827</steamWorkshopUrl>
-			<downloadUrl></downloadUrl>
-		</li>
 	</modDependencies>
-<modIconPath IgnoreIfNoMatchingField="True">Things/Item/Weapon/Weapon_2A72</modIconPath>
 <description>
 	[h1]模组模板[/h1]
 
