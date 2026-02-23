@@ -134,8 +134,13 @@ namespace LogSyncMod
         private static void WriteToFile(string text, string type, string sourceMod)
         {
             string idTag = string.IsNullOrEmpty(sourceMod) ? "Unknown" : sourceMod;
-            // 增加毫秒级时间，确保即时连续产生的日志不会因为去重而被干掉
             string logEntry = $"[{idTag}] [{type}] [{DateTime.Now:HH:mm:ss.fff}] {text}";
+
+            // 任务 2.1: 去重检查
+            if (processedLogs.Contains(logEntry))
+            {
+                return;
+            }
             
             lock (fileLock)
             {
@@ -144,14 +149,17 @@ namespace LogSyncMod
                     string path = LogSyncMod.settings.logPath;
                     if (string.IsNullOrEmpty(path)) return;
 
+                    // 任务 2.2: 添加到队列和哈希表
                     recentLogs.Enqueue(logEntry);
+                    processedLogs.Add(logEntry);
                     
+                    // 任务 2.3: 维护大小
                     while (recentLogs.Count > MaxLogLines)
                     {
-                        recentLogs.Dequeue();
+                        string removed = recentLogs.Dequeue();
+                        processedLogs.Remove(removed);
                     }
 
-                    // 每次有新日志都直接全量覆盖写入
                     File.WriteAllLines(path, recentLogs.ToArray());
                 }
                 catch (Exception ex)
