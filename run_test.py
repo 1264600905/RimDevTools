@@ -274,12 +274,22 @@ def validate_smoke_log():
         return False
 
     content = sync_log_path.read_text(encoding="utf-8", errors="ignore")
+    real_source_markers = [
+        line for line in content.splitlines()
+        if ("SourceFile:" in line or "SourceDll:" in line) and "LogSyncSmoke" not in line
+    ]
+    real_source_mod_markers = [
+        line for line in content.splitlines()
+        if "SourceMod:" in line and "LogSyncSmoke" not in line
+    ]
     checks = [
         ("普通 Message 日志未被同步", content.count(SMOKE_DUPLICATE_MESSAGE) == 0),
         ("关键词重复 Message 去重成功", content.count(SMOKE_DUPLICATE_KEYWORD_MESSAGE) == 1),
         ("警告日志存在", content.count(SMOKE_WARNING_MESSAGE) >= 1),
         ("错误日志存在", content.count(SMOKE_ERROR_MESSAGE) >= 1),
         ("关键词日志存在", content.count(SMOKE_KEYWORD_MESSAGE) >= 1),
+        ("真实来源文件标记存在", len(real_source_markers) >= 1),
+        ("真实来源模组标记存在", len(real_source_mod_markers) >= 1),
         ("普通开始标记未被同步", content.count(SMOKE_START_MARKER) == 0),
         ("普通结束标记未被同步", content.count(SMOKE_END_MARKER) == 0),
     ]

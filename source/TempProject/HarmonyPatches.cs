@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Diagnostics;
+using System.Text.RegularExpressions;
 using HarmonyLib;
 using Verse;
 
@@ -25,10 +26,40 @@ namespace LogSyncMod
             public string OutputLine { get; }
         }
 
+        private sealed class PendingSourceReference
+        {
+            public PendingSourceReference(string idTag, string logType, string dedupeKey, string text, string timestampText)
+            {
+                IdTag = idTag;
+                LogType = logType;
+                DedupeKey = dedupeKey;
+                Text = text;
+                TimestampText = timestampText;
+            }
+
+            public string IdTag { get; }
+            public string LogType { get; }
+            public string DedupeKey { get; }
+            public string Text { get; }
+            public string TimestampText { get; }
+        }
+
         private static readonly Queue<QueuedLogEntry> recentLogs = new Queue<QueuedLogEntry>();
         private static readonly HashSet<string> processedLogs = new HashSet<string>();
         private static readonly object fileLock = new object();
+        private static readonly object xmlIndexLock = new object();
+        private static readonly Dictionary<string, string> defNameToXmlPath = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        private static readonly HashSet<string> ambiguousDefNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private static PendingSourceReference pendingSourceReference;
+        private static bool xmlIndexBuilt;
         private const int MaxLogLines = 500;
+
+        private static readonly Regex ExceptionLoadingDefRegex = new Regex(@"Exception loading def from file\s+(?<path>[^:\r\n]+?\.xml)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        private static readonly Regex DllLoadRegex = new Regex(@"could not load library\s+(?<path>\S+?\.dll)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        private static readonly Regex FilePrefixRegex = new Regex(@"^\s*file:\s*(?<path>.+?\.(xml|dll))\s*$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        private static readonly Regex StandalonePathRegex = new Regex(@"^\s*(?<path>.+?\.(xml|dll))\s*$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        private static readonly Regex XmlDefNameRegex = new Regex(@"<defName>\s*(?<name>[^<]+)\s*</defName>", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        private static readonly Regex ConfigErrorRegex = new Regex(@"Config error in\s+(?<name>[^:\r\n]+)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
         // 拦截所有 Message 的重载
         [HarmonyPatch(nameof(Log.Message), new Type[] { typeof(string) })]
@@ -48,6 +79,7 @@ namespace LogSyncMod
         private static void ProcessLog(string text, string type)
         {
             if (string.IsNullOrEmpty(text)) return;
+            bool pendingSourceCandidate = pendingSourceReference != null && IsPotentialSourceReferenceLine(text);
 
             // 1. 检查关键词
             bool keywordMatched = false;
@@ -64,7 +96,7 @@ namespace LogSyncMod
             }
 
             // 检查设置开关。普通 Message 默认可禁用，但关键词命中的 Message 仍允许进入同步流程。
-            if (type == "Message" && !LogSyncMod.settings.syncMessage && !keywordMatched) return;
+            if (type == "Message" && !LogSyncMod.settings.syncMessage && !keywordMatched && !pendingSourceCandidate) return;
             if (type == "Warning" && !LogSyncMod.settings.syncWarning) return;
             if (type == "Error" && !LogSyncMod.settings.syncError) return;
 
@@ -86,7 +118,7 @@ namespace LogSyncMod
                 modMatched = !string.IsNullOrEmpty(sourceModLower) && LogSyncMod.settings.targetModIds.Contains(sourceModLower);
             }
 
-            if (keywordMatched || modMatched)
+            if (pendingSourceCandidate || keywordMatched || modMatched)
             {
                 WriteToFile(text, type, sourceMod);
             }
@@ -100,6 +132,10 @@ namespace LogSyncMod
                 {
                     recentLogs.Clear();
                     processedLogs.Clear();
+                    pendingSourceReference = null;
+                    xmlIndexBuilt = false;
+                    defNameToXmlPath.Clear();
+                    ambiguousDefNames.Clear();
 
                     string path = LogSyncMod.settings.logPath;
                     if (string.IsNullOrEmpty(path)) return;
@@ -150,7 +186,7 @@ namespace LogSyncMod
         {
             string idTag = string.IsNullOrEmpty(sourceMod) ? "Unknown" : sourceMod;
             string dedupeKey = $"[{idTag}] [{type}] {text}";
-            string outputLine = $"[{idTag}] [{type}] [{DateTime.Now:HH:mm:ss.fff}] {text}";
+            string timestampText = DateTime.Now.ToString("HH:mm:ss.fff");
 
             EmitDebug($"Checking log: {dedupeKey}");
 
@@ -161,6 +197,36 @@ namespace LogSyncMod
                     string path = LogSyncMod.settings.logPath;
                     if (string.IsNullOrEmpty(path)) return;
 
+                    if (TryConsumePendingSourceReference(text, out string pendingSourceMarker))
+                    {
+                        EmitDebug("-> Consumed pending source reference.");
+                        EnqueueResolvedLog(
+                            pendingSourceReference.IdTag,
+                            pendingSourceReference.LogType,
+                            pendingSourceReference.DedupeKey,
+                            pendingSourceReference.Text,
+                            pendingSourceReference.TimestampText,
+                            pendingSourceMarker
+                        );
+                        pendingSourceReference = null;
+                        PersistLogFile(path);
+                        return;
+                    }
+
+                    if (pendingSourceReference != null)
+                    {
+                        EmitDebug("-> Pending source reference not resolved. Flushing original line.");
+                        EnqueueResolvedLog(
+                            pendingSourceReference.IdTag,
+                            pendingSourceReference.LogType,
+                            pendingSourceReference.DedupeKey,
+                            pendingSourceReference.Text,
+                            pendingSourceReference.TimestampText,
+                            null
+                        );
+                        pendingSourceReference = null;
+                    }
+
                     if (processedLogs.Contains(dedupeKey))
                     {
                         EmitDebug("-> Result: DUPLICATE. Skipping.");
@@ -169,16 +235,22 @@ namespace LogSyncMod
 
                     EmitDebug("-> Result: UNIQUE. Writing to file.");
 
-                    recentLogs.Enqueue(new QueuedLogEntry(dedupeKey, outputLine));
-                    processedLogs.Add(dedupeKey);
-
-                    while (recentLogs.Count > MaxLogLines)
+                    if (TryExtractSourceReference(text, out string sourceMarker))
                     {
-                        QueuedLogEntry removed = recentLogs.Dequeue();
-                        processedLogs.Remove(removed.DedupeKey);
+                        EmitDebug("-> Source reference found.");
+                        EnqueueResolvedLog(idTag, type, dedupeKey, text, timestampText, sourceMarker);
+                    }
+                    else if (ShouldAwaitSourceReference(type, text))
+                    {
+                        EmitDebug("-> Awaiting follow-up source reference.");
+                        pendingSourceReference = new PendingSourceReference(idTag, type, dedupeKey, text, timestampText);
+                    }
+                    else
+                    {
+                        EnqueueResolvedLog(idTag, type, dedupeKey, text, timestampText, null);
                     }
 
-                    File.WriteAllLines(path, recentLogs.Select(entry => entry.OutputLine).ToArray());
+                    PersistLogFile(path);
                     EmitDebug($"-> Write successful. Queue size: {recentLogs.Count}, HashSet size: {processedLogs.Count}");
                 }
                 catch (Exception ex)
@@ -186,6 +258,242 @@ namespace LogSyncMod
                     UnityEngine.Debug.Log("[LogSyncMod] Write Error: " + ex.Message);
                 }
             }
+        }
+
+        private static bool ShouldAwaitSourceReference(string type, string text)
+        {
+            if (type != "Warning" && type != "Error") return false;
+
+            return text.IndexOf("[Def Error]", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   text.IndexOf("Patch operation", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   text.IndexOf("Exception loading def", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   text.IndexOf("XML error:", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static bool TryExtractSourceReference(string text, out string sourceMarker)
+        {
+            if (TryBuildSourceMarker(ExceptionLoadingDefRegex.Match(text), out sourceMarker)) return true;
+            if (TryBuildSourceMarker(DllLoadRegex.Match(text), out sourceMarker)) return true;
+            if (TryBuildSourceMarker(FilePrefixRegex.Match(text), out sourceMarker)) return true;
+            if (TryResolveXmlPathFromText(text, out string xmlPath))
+            {
+                sourceMarker = "[SourceFile] " + xmlPath;
+                return true;
+            }
+
+            sourceMarker = null;
+            return false;
+        }
+
+        private static bool TryConsumePendingSourceReference(string text, out string sourceMarker)
+        {
+            if (pendingSourceReference == null)
+            {
+                sourceMarker = null;
+                return false;
+            }
+
+            if (TryBuildSourceMarker(FilePrefixRegex.Match(text), out sourceMarker)) return true;
+            if (TryBuildSourceMarker(StandalonePathRegex.Match(text), out sourceMarker)) return true;
+
+            sourceMarker = null;
+            return false;
+        }
+
+        private static bool IsPotentialSourceReferenceLine(string text)
+        {
+            return FilePrefixRegex.IsMatch(text) || StandalonePathRegex.IsMatch(text);
+        }
+
+        private static bool TryResolveXmlPathFromText(string text, out string path)
+        {
+            string defName = TryExtractDefNameFromText(text);
+            if (string.IsNullOrEmpty(defName))
+            {
+                path = null;
+                return false;
+            }
+
+            EnsureXmlIndexBuilt();
+            return defNameToXmlPath.TryGetValue(defName, out path);
+        }
+
+        private static string TryExtractDefNameFromText(string text)
+        {
+            Match xmlMatch = XmlDefNameRegex.Match(text);
+            if (xmlMatch.Success)
+            {
+                return xmlMatch.Groups["name"].Value.Trim();
+            }
+
+            Match configMatch = ConfigErrorRegex.Match(text);
+            if (configMatch.Success)
+            {
+                return configMatch.Groups["name"].Value.Trim();
+            }
+
+            return null;
+        }
+
+        private static void EnsureXmlIndexBuilt()
+        {
+            if (xmlIndexBuilt) return;
+
+            lock (xmlIndexLock)
+            {
+                if (xmlIndexBuilt) return;
+
+                foreach (ModContentPack mod in LoadedModManager.RunningMods)
+                {
+                    try
+                    {
+                        string rootDir = GetModRootDirectory(mod);
+                        if (string.IsNullOrEmpty(rootDir) || !Directory.Exists(rootDir)) continue;
+
+                        foreach (string xmlFile in Directory.GetFiles(rootDir, "*.xml", SearchOption.AllDirectories))
+                        {
+                            IndexXmlFile(xmlFile);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        EmitDebug("-> Failed to index XML files: " + ex.Message);
+                    }
+                }
+
+                xmlIndexBuilt = true;
+            }
+        }
+
+        private static string GetModRootDirectory(ModContentPack mod)
+        {
+            PropertyInfo rootDirProperty = mod.GetType().GetProperty("RootDir");
+            if (rootDirProperty != null)
+            {
+                return rootDirProperty.GetValue(mod, null) as string;
+            }
+
+            return null;
+        }
+
+        private static void IndexXmlFile(string xmlFile)
+        {
+            string text;
+            try
+            {
+                text = File.ReadAllText(xmlFile);
+            }
+            catch
+            {
+                return;
+            }
+
+            foreach (Match match in XmlDefNameRegex.Matches(text))
+            {
+                string defName = match.Groups["name"].Value.Trim();
+                if (string.IsNullOrEmpty(defName) || ambiguousDefNames.Contains(defName)) continue;
+
+                if (defNameToXmlPath.TryGetValue(defName, out string existingPath))
+                {
+                    if (!string.Equals(existingPath, xmlFile, StringComparison.OrdinalIgnoreCase))
+                    {
+                        defNameToXmlPath.Remove(defName);
+                        ambiguousDefNames.Add(defName);
+                    }
+                }
+                else
+                {
+                    defNameToXmlPath[defName] = xmlFile;
+                }
+            }
+        }
+
+        private static bool TryBuildSourceMarker(Match match, out string sourceMarker)
+        {
+            if (match.Success)
+            {
+                string path = match.Groups["path"].Value.Trim().Trim('"');
+                string label = path.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) ? "[SourceDll]" : "[SourceFile]";
+                sourceMarker = $"{label} {path}";
+                return true;
+            }
+
+            sourceMarker = null;
+            return false;
+        }
+
+        private static void EnqueueResolvedLog(string idTag, string type, string dedupeKey, string text, string timestampText, string sourceMarker)
+        {
+            if (processedLogs.Contains(dedupeKey)) return;
+            EnqueueLine(dedupeKey, BuildOutputLine(idTag, type, text, timestampText, sourceMarker));
+        }
+
+        private static bool TryResolveModLabelFromPath(string path, out string modLabel)
+        {
+            string normalizedPath = NormalizePath(path);
+            if (string.IsNullOrEmpty(normalizedPath))
+            {
+                modLabel = null;
+                return false;
+            }
+
+            foreach (ModContentPack mod in LoadedModManager.RunningMods)
+            {
+                string rootDir = NormalizePath(GetModRootDirectory(mod));
+                if (string.IsNullOrEmpty(rootDir)) continue;
+
+                if (normalizedPath.StartsWith(rootDir, StringComparison.OrdinalIgnoreCase))
+                {
+                    modLabel = $"{mod.Name} ({mod.PackageIdPlayerFacing})";
+                    return true;
+                }
+            }
+
+            modLabel = null;
+            return false;
+        }
+
+        private static string NormalizePath(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path)) return null;
+            return path.Trim().Trim('"').Replace('/', '\\');
+        }
+
+        private static string BuildOutputLine(string idTag, string type, string text, string timestampText, string sourceMarker)
+        {
+            string outputLine = $"[{idTag}] [{type}] [{timestampText}] {text}";
+            if (string.IsNullOrEmpty(sourceMarker)) return outputLine;
+
+            int separatorIndex = sourceMarker.IndexOf(' ');
+            if (separatorIndex < 0 || separatorIndex >= sourceMarker.Length - 1) return outputLine;
+
+            string markerLabel = sourceMarker.Substring(1, separatorIndex - 2);
+            string path = sourceMarker.Substring(separatorIndex + 1).Trim();
+            outputLine += $" | {markerLabel}: {path}";
+
+            if (TryResolveModLabelFromPath(path, out string modLabel))
+            {
+                outputLine += $" | SourceMod: {modLabel}";
+            }
+
+            return outputLine;
+        }
+
+        private static void EnqueueLine(string dedupeKey, string outputLine)
+        {
+            recentLogs.Enqueue(new QueuedLogEntry(dedupeKey, outputLine));
+            processedLogs.Add(dedupeKey);
+
+            while (recentLogs.Count > MaxLogLines)
+            {
+                QueuedLogEntry removed = recentLogs.Dequeue();
+                processedLogs.Remove(removed.DedupeKey);
+            }
+        }
+
+        private static void PersistLogFile(string path)
+        {
+            File.WriteAllLines(path, recentLogs.Select(entry => entry.OutputLine).ToArray());
         }
 
         private static void EmitDebug(string message)
