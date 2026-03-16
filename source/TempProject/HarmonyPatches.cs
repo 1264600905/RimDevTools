@@ -136,12 +136,19 @@ namespace LogSyncMod
             string idTag = string.IsNullOrEmpty(sourceMod) ? "Unknown" : sourceMod;
             string logEntry = $"[{idTag}] [{type}] [{DateTime.Now:HH:mm:ss.fff}] {text}";
 
-            // 任务 2.1: 去重检查
+            if (LogSyncMod.settings.enableVerboseDebug)
+                Log.Message($"[LogSyncDebug] Checking log: {logEntry}");
+
             if (processedLogs.Contains(logEntry))
             {
+                if (LogSyncMod.settings.enableVerboseDebug)
+                    Log.Message($"[LogSyncDebug] -> Result: DUPLICATE. Skipping.");
                 return;
             }
             
+            if (LogSyncMod.settings.enableVerboseDebug)
+                Log.Message($"[LogSyncDebug] -> Result: UNIQUE. Writing to file.");
+
             lock (fileLock)
             {
                 try
@@ -149,11 +156,9 @@ namespace LogSyncMod
                     string path = LogSyncMod.settings.logPath;
                     if (string.IsNullOrEmpty(path)) return;
 
-                    // 任务 2.2: 添加到队列和哈希表
                     recentLogs.Enqueue(logEntry);
                     processedLogs.Add(logEntry);
                     
-                    // 任务 2.3: 维护大小
                     while (recentLogs.Count > MaxLogLines)
                     {
                         string removed = recentLogs.Dequeue();
@@ -161,6 +166,9 @@ namespace LogSyncMod
                     }
 
                     File.WriteAllLines(path, recentLogs.ToArray());
+
+                    if (LogSyncMod.settings.enableVerboseDebug)
+                        Log.Message($"[LogSyncDebug] -> Write successful. Queue size: {recentLogs.Count}, HashSet size: {processedLogs.Count}");
                 }
                 catch (Exception ex)
                 {

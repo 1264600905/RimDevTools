@@ -96,6 +96,9 @@ namespace LogSyncMod
             listingStandard.CheckboxLabeled("同步普通日志 (Message)", ref settings.syncMessage);
             listingStandard.CheckboxLabeled("同步警告日志 (Warning)", ref settings.syncWarning);
             listingStandard.CheckboxLabeled("同步错误日志 (Error)", ref settings.syncError);
+            listingStandard.Gap();
+            listingStandard.CheckboxLabeled("启用详细调试日志 (用于排查重复问题)", ref settings.enableVerboseDebug);
+            listingStandard.Gap();
 
             listingStandard.Gap();
             if (listingStandard.ButtonText("应用并保存设置"))
