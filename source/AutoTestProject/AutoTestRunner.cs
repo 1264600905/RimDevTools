@@ -32,6 +32,7 @@ namespace LogSyncMod.AutoTest
         public string Status;
         public string Stage;
         public string ErrorMessage;
+        public string ScreenshotPath;
         public string Notes;
     }
 
@@ -54,6 +55,7 @@ namespace LogSyncMod.AutoTest
             public Def InfoCardDef;
             public IAutoTestUiHandle UiHandle;
             public bool CloseIssued;
+            public bool ScreenshotCaptured;
             public int OpenStableRepaintFrames;
             public int RemainingUiFrames;
             public SessionPhase Phase;
@@ -80,6 +82,7 @@ namespace LogSyncMod.AutoTest
         private int nextTerrainZ = 10;
         private bool completed;
         private ActiveSession activeSession;
+        private AutoTestRunArtifacts runArtifacts;
 
         public AutoTestRunner(LogSyncSettings settings, Map map)
         {
@@ -93,6 +96,7 @@ namespace LogSyncMod.AutoTest
         {
             targetPackageId = (settings.autoTestTargetPackageId ?? string.Empty).Trim().ToLowerInvariant();
             outputDirectory = ResolveOutputDirectory(settings);
+            runArtifacts = AutoTestReportWriter.CreateRunArtifacts(outputDirectory, targetPackageId);
             targetMod = LoadedModManager.RunningMods.FirstOrDefault(mod =>
                 string.Equals(mod.PackageIdPlayerFacing, targetPackageId, StringComparison.OrdinalIgnoreCase));
 
@@ -333,6 +337,7 @@ namespace LogSyncMod.AutoTest
                 {
                     InfoCardCloseTrace.AddReason("OpenConfirmed.RepaintFrames=" + activeSession.OpenStableRepaintFrames);
                     Log.Message("[LogSyncAutoTest] InfoCard open confirmed for " + activeSession.Result.DefName);
+                    TryCaptureInfoCardScreenshot();
                     activeSession.Phase = SessionPhase.WaitingBeforeClose;
                     activeSession.RemainingUiFrames = WaitBeforeCloseRepaintFrames;
                 }
@@ -662,6 +667,7 @@ namespace LogSyncMod.AutoTest
                 Status = "pending",
                 Stage = "collect",
                 ErrorMessage = string.Empty,
+                ScreenshotPath = string.Empty,
                 Notes = string.Empty
             };
         }
@@ -672,7 +678,7 @@ namespace LogSyncMod.AutoTest
             completed = true;
             CleanupSelectionAndWindows();
 
-            AutoTestReportWriter.Write(outputDirectory, targetPackageId ?? "unknown", results, targetMod?.Name ?? "Unknown");
+            AutoTestReportWriter.Write(runArtifacts, targetPackageId ?? "unknown", results, targetMod?.Name ?? "Unknown");
             Log.Message(string.Format(
                 "[LogSyncAutoTest] COMPLETED packageId={0} total={1} passed={2} failed={3}",
                 targetPackageId ?? "unknown",
@@ -733,6 +739,52 @@ namespace LogSyncMod.AutoTest
             Log.Message(string.Format(
                 "[LogSyncAutoTest] Batch limit applied. Keeping first {0} items.",
                 pendingItems.Count));
+        }
+
+        private void TryCaptureInfoCardScreenshot()
+        {
+            if (activeSession == null || activeSession.ScreenshotCaptured || !settings.autoTestCaptureScreenshots)
+            {
+                return;
+            }
+
+            if (runArtifacts == null)
+            {
+                return;
+            }
+
+            try
+            {
+                Directory.CreateDirectory(runArtifacts.ScreenshotDirectory);
+                string fileName = string.Format(
+                    "{0:D4}_{1}.png",
+                    results.Count,
+                    SanitizeFileName(activeSession.Result.DefName));
+                string screenshotPath = Path.Combine(runArtifacts.ScreenshotDirectory, fileName);
+
+                ScreenCapture.CaptureScreenshot(screenshotPath);
+                activeSession.Result.ScreenshotPath = screenshotPath;
+                activeSession.Result.Notes = AppendNote(activeSession.Result.Notes, "ScreenshotCaptured=True");
+                activeSession.ScreenshotCaptured = true;
+
+                Log.Message("[LogSyncAutoTest] Screenshot requested for " + activeSession.Result.DefName + " -> " + screenshotPath);
+            }
+            catch (Exception ex)
+            {
+                activeSession.Result.Notes = AppendNote(activeSession.Result.Notes, "ScreenshotError=" + TrimForNote(ex.Message));
+                Log.Warning("[LogSyncAutoTest] Screenshot capture failed for " + activeSession.Result.DefName + ": " + ex.Message);
+            }
+        }
+
+        private static string SanitizeFileName(string text)
+        {
+            string value = string.IsNullOrWhiteSpace(text) ? "autotest" : text;
+            foreach (char invalidChar in Path.GetInvalidFileNameChars())
+            {
+                value = value.Replace(invalidChar, '_');
+            }
+
+            return value;
         }
     }
 }

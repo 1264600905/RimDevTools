@@ -23,6 +23,7 @@ namespace LogSyncMod
         public bool autoTestBuildings = true;
         public bool autoTestItems = true;
         public bool autoTestTerrains = true;
+        public bool autoTestCaptureScreenshots = false;
         public int autoTestBatchSize = 40;
         public bool autoTestRunRequested;
 
@@ -43,6 +44,7 @@ namespace LogSyncMod
             Scribe_Values.Look(ref autoTestBuildings, "autoTestBuildings", true);
             Scribe_Values.Look(ref autoTestItems, "autoTestItems", true);
             Scribe_Values.Look(ref autoTestTerrains, "autoTestTerrains", true);
+            Scribe_Values.Look(ref autoTestCaptureScreenshots, "autoTestCaptureScreenshots", false);
             Scribe_Values.Look(ref autoTestBatchSize, "autoTestBatchSize", 40);
 
             if (targetModIds == null) targetModIds = new List<string>();

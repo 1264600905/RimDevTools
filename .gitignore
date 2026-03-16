@@ -27,6 +27,7 @@ connectionStrings.config
 # 测试相关
 TestResults/
 xunit.runner.json
+AutoTestOutput/
 
 # Unity特定忽略
 [Tt]emp/

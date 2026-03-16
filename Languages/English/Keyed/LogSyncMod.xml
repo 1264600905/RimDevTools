@@ -18,6 +18,7 @@
   <LogSyncMod.AutoTestBuildings>Test buildings</LogSyncMod.AutoTestBuildings>
   <LogSyncMod.AutoTestItems>Test items</LogSyncMod.AutoTestItems>
   <LogSyncMod.AutoTestTerrains>Test terrains</LogSyncMod.AutoTestTerrains>
+  <LogSyncMod.AutoTestCaptureScreenshots>Capture screenshots for opened InfoCards</LogSyncMod.AutoTestCaptureScreenshots>
   <LogSyncMod.AutoTestBatchSize>Batch size per step: {0}</LogSyncMod.AutoTestBatchSize>
   <LogSyncMod.AutoTestRunNow>Run auto test now</LogSyncMod.AutoTestRunNow>
   <LogSyncMod.AutoTestRunRequested>Auto test run requested</LogSyncMod.AutoTestRunRequested>

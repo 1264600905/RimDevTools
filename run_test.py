@@ -172,6 +172,7 @@ def update_mod_settings(
     auto_test_enabled: bool | None = None,
     auto_test_target_package_id: str | None = None,
     auto_test_output_path: str | None = None,
+    auto_test_capture_screenshots: bool | None = None,
     auto_test_batch_size: int | None = None,
 ):
     """
@@ -234,6 +235,12 @@ def update_mod_settings(
             normalized_output_path = (auto_test_output_path or "").strip()
             if (mod_settings.findtext("autoTestOutputPath") or "").strip() != normalized_output_path:
                 ensure_text_node(mod_settings, "autoTestOutputPath", normalized_output_path)
+                changed = True
+
+        if auto_test_capture_screenshots is not None:
+            desired_value = "True" if auto_test_capture_screenshots else "False"
+            if (mod_settings.findtext("autoTestCaptureScreenshots") or "").strip() != desired_value:
+                ensure_text_node(mod_settings, "autoTestCaptureScreenshots", desired_value)
                 changed = True
 
         if auto_test_batch_size is not None:
@@ -337,7 +344,7 @@ def summarize_sync_log():
             print(f"  {line}")
     return True
 
-def ensure_mod_enabled(mods: list[str], package_id: str | None):
+def ensure_mod_enabled(mods: list[str], package_id: str | None, label: str = "包名"):
     if not package_id:
         return mods
 
@@ -349,17 +356,16 @@ def ensure_mod_enabled(mods: list[str], package_id: str | None):
     if normalized.lower() in lowered:
         return mods
 
-    # 尽量把当前模组插入在 LogSyncMod 前面（如果存在），避免 logsync 作为最后收尾模组时被打乱。
     insert_at = len(mods)
     for i, m in enumerate(mods):
         if m.lower() == "trigger.logsyncmod":
             insert_at = i
             break
     mods.insert(insert_at, normalized)
-    print(f"[信息] 模组预设未包含当前项目包名，已自动加入: {normalized}")
+    print(f"[信息] 模组预设未包含{label}，已自动加入: {normalized}")
     return mods
 
-def set_minimal_mod_list(mod_list_file: Path | None = None, include_package_id: str | None = None):
+def set_minimal_mod_list(mod_list_file: Path | None = None, include_package_ids: list[tuple[str | None, str]] | None = None):
     if not MODS_CONFIG_FILE.exists(): return None
     original_text = MODS_CONFIG_FILE.read_text(encoding="utf-8", errors="ignore")
     try:
@@ -374,7 +380,9 @@ def set_minimal_mod_list(mod_list_file: Path | None = None, include_package_id: 
         else:
             print(f"[信息] 已加载模组预设: {mod_list_file.name} (共 {len(desired_mods)} 个)")
 
-        desired_mods = ensure_mod_enabled(list(desired_mods), include_package_id)
+        desired_mods = list(desired_mods)
+        for package_id, label in include_package_ids or []:
+            desired_mods = ensure_mod_enabled(desired_mods, package_id, label=label)
 
         tree = ET.parse(MODS_CONFIG_FILE)
         root = tree.getroot()
@@ -453,6 +461,7 @@ def monitor(
     clear_log_keywords: bool = False,
     auto_test_package_id: str | None = None,
     auto_test_output_dir: str | None = None,
+    auto_test_capture_screenshots: bool | None = None,
     auto_test_batch_size: int | None = None,
 ):
     check_sandbox_access()
@@ -476,6 +485,7 @@ def monitor(
         auto_test_enabled=True if auto_test_package_id else None,
         auto_test_target_package_id=auto_test_package_id,
         auto_test_output_path=auto_test_output_dir if auto_test_package_id else None,
+        auto_test_capture_screenshots=auto_test_capture_screenshots if auto_test_package_id else None,
         auto_test_batch_size=auto_test_batch_size if auto_test_package_id else None,
     )
     current_package_id = read_current_mod_package_id()
@@ -484,7 +494,13 @@ def monitor(
     else:
         print(f"[警告] 未能从 About.xml 读取 packageId: {ABOUT_XML_PATH}")
 
-    original_mods_config = set_minimal_mod_list(mod_list_file=mod_list_file, include_package_id=current_package_id)
+    original_mods_config = set_minimal_mod_list(
+        mod_list_file=mod_list_file,
+        include_package_ids=[
+            (current_package_id, "当前项目包名"),
+            (auto_test_package_id, "被测模组包名"),
+        ],
+    )
     kill_rimworld()
 
     # 日志归档
@@ -551,6 +567,7 @@ def monitor(
             update_mod_settings(
                 auto_test_enabled=False,
                 auto_test_target_package_id="",
+                auto_test_capture_screenshots=False if auto_test_capture_screenshots is not None else None,
             )
         restore_mod_list(original_mods_config)
         print("\n======= 测试结束 =======")
@@ -570,6 +587,7 @@ if __name__ == "__main__":
     parser.add_argument("--clear-log-keywords", action="store_true", help="清空 LogSyncMod 配置中的 <keywords> 列表")
     parser.add_argument("--auto-test-package-id", default=None, help="启用定向自动测试，并指定目标模组 packageId")
     parser.add_argument("--auto-test-output-dir", default=None, help="自动测试报告输出目录")
+    parser.add_argument("--auto-test-capture-screenshots", action="store_true", help="自动测试时对打开的 InfoCard 截图")
     parser.add_argument("--auto-test-batch-size", type=int, default=None, help="自动测试每批处理数量")
     parser.add_argument("--settings-only", action="store_true", help="只更新 LogSyncMod 配置（logPath/keywords），不启动游戏")
     args = parser.parse_args()
@@ -588,6 +606,7 @@ if __name__ == "__main__":
             auto_test_enabled=True if args.auto_test_package_id else None,
             auto_test_target_package_id=args.auto_test_package_id,
             auto_test_output_path=args.auto_test_output_dir if args.auto_test_package_id else None,
+            auto_test_capture_screenshots=True if args.auto_test_capture_screenshots and args.auto_test_package_id else None,
             auto_test_batch_size=args.auto_test_batch_size if args.auto_test_package_id else None,
         )
         kws = get_logsync_keywords()
@@ -605,5 +624,6 @@ if __name__ == "__main__":
         clear_log_keywords=args.clear_log_keywords,
         auto_test_package_id=args.auto_test_package_id,
         auto_test_output_dir=args.auto_test_output_dir,
+        auto_test_capture_screenshots=True if args.auto_test_capture_screenshots and args.auto_test_package_id else None,
         auto_test_batch_size=args.auto_test_batch_size,
     )

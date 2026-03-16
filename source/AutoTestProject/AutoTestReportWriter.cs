@@ -2,23 +2,59 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Text;
 
 namespace LogSyncMod.AutoTest
 {
+    internal sealed class AutoTestRunArtifacts
+    {
+        public string OutputDirectory;
+        public string SafePackageId;
+        public string Stamp;
+        public string BasePath;
+        public string ReportPath;
+        public string ResultPath;
+        public string ScreenshotDirectory;
+    }
+
     internal static class AutoTestReportWriter
     {
-        public static void Write(string outputDirectory, string packageId, List<AutoTestResult> results, string modName)
+        private const int MaxArchivedRuns = 2;
+
+        public static AutoTestRunArtifacts CreateRunArtifacts(string outputDirectory, string packageId)
+        {
+            Directory.CreateDirectory(outputDirectory);
+
+            string safePackageId = Sanitize(packageId);
+            string stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+            string basePath = Path.Combine(outputDirectory, safePackageId + "_" + stamp);
+
+            return new AutoTestRunArtifacts
+            {
+                OutputDirectory = outputDirectory,
+                SafePackageId = safePackageId,
+                Stamp = stamp,
+                BasePath = basePath,
+                ReportPath = basePath + "_Report.md",
+                ResultPath = basePath + "_Result.json",
+                ScreenshotDirectory = basePath + "_Screenshots"
+            };
+        }
+
+        public static void Write(AutoTestRunArtifacts artifacts, string packageId, List<AutoTestResult> results, string modName)
         {
             try
             {
-                Directory.CreateDirectory(outputDirectory);
-                string safePackageId = Sanitize(packageId);
-                string stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-                string basePath = Path.Combine(outputDirectory, safePackageId + "_" + stamp);
+                if (artifacts == null)
+                {
+                    throw new ArgumentNullException("artifacts");
+                }
 
-                File.WriteAllText(basePath + "_Report.md", BuildMarkdown(packageId, modName, results), Encoding.UTF8);
-                File.WriteAllText(basePath + "_Result.json", BuildJson(packageId, modName, results), Encoding.UTF8);
+                Directory.CreateDirectory(artifacts.OutputDirectory);
+                File.WriteAllText(artifacts.ReportPath, BuildMarkdown(packageId, modName, results), Encoding.UTF8);
+                File.WriteAllText(artifacts.ResultPath, BuildJson(packageId, modName, results), Encoding.UTF8);
+                PruneArchives(artifacts.OutputDirectory, artifacts.SafePackageId);
             }
             catch (Exception ex)
             {
@@ -45,17 +81,18 @@ namespace LogSyncMod.AutoTest
             builder.AppendLine();
             builder.AppendLine("## Results");
             builder.AppendLine();
-            builder.AppendLine("| Category | DefName | Status | Stage | Notes |");
-            builder.AppendLine("| --- | --- | --- | --- | --- |");
+            builder.AppendLine("| Category | DefName | Status | Stage | Screenshot | Notes |");
+            builder.AppendLine("| --- | --- | --- | --- | --- | --- |");
 
             foreach (AutoTestResult result in results)
             {
                 builder.AppendLine(string.Format(
-                    "| {0} | `{1}` | {2} | {3} | {4} |",
+                    "| {0} | `{1}` | {2} | {3} | {4} | {5} |",
                     EscapePipe(result.Category),
                     EscapePipe(result.DefName),
                     EscapePipe(result.Status),
                     EscapePipe(result.Stage),
+                    EscapePipe(result.ScreenshotPath),
                     EscapePipe(string.IsNullOrWhiteSpace(result.ErrorMessage) ? result.Notes : Trim(result.ErrorMessage, 160))));
             }
 
@@ -82,6 +119,7 @@ namespace LogSyncMod.AutoTest
                 builder.AppendLine("      \"status\": \"" + EscapeJson(result.Status) + "\",");
                 builder.AppendLine("      \"stage\": \"" + EscapeJson(result.Stage) + "\",");
                 builder.AppendLine("      \"errorMessage\": \"" + EscapeJson(result.ErrorMessage) + "\",");
+                builder.AppendLine("      \"screenshotPath\": \"" + EscapeJson(result.ScreenshotPath) + "\",");
                 builder.AppendLine("      \"notes\": \"" + EscapeJson(result.Notes) + "\"");
                 builder.Append("    }");
                 if (i < results.Count - 1) builder.Append(",");
@@ -95,6 +133,7 @@ namespace LogSyncMod.AutoTest
 
         private static string Sanitize(string text)
         {
+            text = text ?? string.Empty;
             foreach (char invalidChar in Path.GetInvalidFileNameChars())
             {
                 text = text.Replace(invalidChar, '_');
@@ -122,6 +161,74 @@ namespace LogSyncMod.AutoTest
         {
             if (string.IsNullOrWhiteSpace(text) || text.Length <= maxLength) return text ?? string.Empty;
             return text.Substring(0, maxLength) + "...";
+        }
+
+        private static void PruneArchives(string outputDirectory, string safePackageId)
+        {
+            if (string.IsNullOrWhiteSpace(outputDirectory) || string.IsNullOrWhiteSpace(safePackageId) || !Directory.Exists(outputDirectory))
+            {
+                return;
+            }
+
+            Regex runPattern = new Regex(
+                "^" + Regex.Escape(safePackageId) + "_(?<stamp>\\d{8}_\\d{6})(?:_(?:Report\\.md|Result\\.json|Screenshots))$",
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+            Dictionary<string, List<string>> groupedPaths = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (string filePath in Directory.GetFiles(outputDirectory))
+            {
+                Match match = runPattern.Match(Path.GetFileName(filePath));
+                if (!match.Success) continue;
+
+                string stamp = match.Groups["stamp"].Value;
+                if (!groupedPaths.TryGetValue(stamp, out List<string> paths))
+                {
+                    paths = new List<string>();
+                    groupedPaths[stamp] = paths;
+                }
+
+                paths.Add(filePath);
+            }
+
+            foreach (string directoryPath in Directory.GetDirectories(outputDirectory))
+            {
+                Match match = runPattern.Match(Path.GetFileName(directoryPath));
+                if (!match.Success) continue;
+
+                string stamp = match.Groups["stamp"].Value;
+                if (!groupedPaths.TryGetValue(stamp, out List<string> paths))
+                {
+                    paths = new List<string>();
+                    groupedPaths[stamp] = paths;
+                }
+
+                paths.Add(directoryPath);
+            }
+
+            foreach (KeyValuePair<string, List<string>> entry in groupedPaths
+                .OrderByDescending(pair => pair.Key, StringComparer.OrdinalIgnoreCase)
+                .Skip(MaxArchivedRuns))
+            {
+                foreach (string path in entry.Value)
+                {
+                    try
+                    {
+                        if (Directory.Exists(path))
+                        {
+                            Directory.Delete(path, true);
+                        }
+                        else if (File.Exists(path))
+                        {
+                            File.Delete(path);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Verse.Log.Warning("[LogSyncAutoTest] Failed to prune archive path: " + path + " Error=" + ex.Message);
+                    }
+                }
+            }
         }
     }
 }

@@ -18,6 +18,7 @@
   <LogSyncMod.AutoTestBuildings>测试建筑</LogSyncMod.AutoTestBuildings>
   <LogSyncMod.AutoTestItems>测试物品</LogSyncMod.AutoTestItems>
   <LogSyncMod.AutoTestTerrains>测试地形</LogSyncMod.AutoTestTerrains>
+  <LogSyncMod.AutoTestCaptureScreenshots>为已打开的 InfoCard 自动截图</LogSyncMod.AutoTestCaptureScreenshots>
   <LogSyncMod.AutoTestBatchSize>每批测试数量：{0}</LogSyncMod.AutoTestBatchSize>
   <LogSyncMod.AutoTestRunNow>立即启动自动测试</LogSyncMod.AutoTestRunNow>
   <LogSyncMod.AutoTestRunRequested>已请求启动自动测试</LogSyncMod.AutoTestRunRequested>

@@ -111,6 +111,7 @@ namespace LogSyncMod
             listingStandard.CheckboxLabeled("LogSyncMod.AutoTestBuildings".Translate(), ref settings.autoTestBuildings);
             listingStandard.CheckboxLabeled("LogSyncMod.AutoTestItems".Translate(), ref settings.autoTestItems);
             listingStandard.CheckboxLabeled("LogSyncMod.AutoTestTerrains".Translate(), ref settings.autoTestTerrains);
+            listingStandard.CheckboxLabeled("LogSyncMod.AutoTestCaptureScreenshots".Translate(), ref settings.autoTestCaptureScreenshots);
             listingStandard.Label("LogSyncMod.AutoTestBatchSize".Translate(settings.autoTestBatchSize));
             string batchSizeInput = listingStandard.TextEntry(settings.autoTestBatchSize.ToString());
             if (int.TryParse(batchSizeInput, out int parsedBatchSize))
