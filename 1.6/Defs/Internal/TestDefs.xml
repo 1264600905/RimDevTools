@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Defs>
+
+  <!-- 测试专用：空口袋地图生成器 -->
+  <MapGeneratorDef>
+    <defName>LogSync_AutoTestPocketMap</defName>
+    <genSteps>
+      <!-- 基础步骤，用于初始化地图数据结构 -->
+      <li>ElevationFertility</li>
+      <!-- 确保有地形网格 -->
+      <li>Terrain</li>
+      <!-- 用石头填充地图，防止全空虚空 -->
+      <li>RocksFromGrid</li>
+      <!-- 清理可能残留的雾气 -->
+      <li>Fog</li>
+    </genSteps>
+  </MapGeneratorDef>
+
+  <!-- 测试专用：大功率发电机 -->
+  <ThingDef>
+    <defName>LogSync_AutoTestPowerGenerator</defName>
+    <label>Auto-Test Power Generator</label>
+    <thingClass>Building</thingClass>
+    <category>Building</category>
+    <graphicData>
+      <texPath>UI/Buttons/Dev/Add</texPath>
+      <graphicClass>Graphic_Single</graphicClass>
+      <drawSize>(4,4)</drawSize>
+    </graphicData>
+    <altitudeLayer>Building</altitudeLayer>
+    <passability>Impassable</passability>
+    <pathCost>9999</pathCost>
+    <blockWind>true</blockWind>
+    <fillPercent>1.0</fillPercent>
+    <statBases>
+      <MaxHitPoints>1000</MaxHitPoints>
+      <WorkToBuild>0</WorkToBuild>
+      <Flammability>0</Flammability>
+    </statBases>
+    <size>(1,1)</size>
+    <comps>
+      <li Class="CompProperties_Power">
+        <compClass>CompPowerPlant</compClass>
+        <basePowerConsumption>-200000</basePowerConsumption>
+        <transmitsPower>true</transmitsPower>
+      </li>
+    </comps>
+    <building>
+      <ai_chillDestination>false</ai_chillDestination>
+    </building>
+  </ThingDef>
+
+</Defs>

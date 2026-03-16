@@ -28,7 +28,7 @@ READY_SIGNAL = "[LogSyncMod] RUNTIME_READY_TO_CLOSE"
 AUTO_TEST_READY_SIGNAL = "[LogSyncAutoTest] COMPLETED"
 
 # 默认不改动当前配置中的 keywords。
-DEFAULT_LOG_KEYWORDS = None
+DEFAULT_LOG_KEYWORDS = "LogSyncAutoTest"
 
 # Steam 启动检测超时时间 (秒)：
 # 通过 steam:// 协议拉起游戏后，最多等待这么久让 RimWorld 进程出现；否则视为 Steam 启动失败，改为直接执行 exe。
@@ -245,6 +245,7 @@ def update_mod_settings(
                 "content": "Content",
                 "recipes": "Recipes",
                 "hediffs": "Hediffs",
+                "turrets": "Turrets",
             }
             desired_scope = scope_map.get(normalized_scope, "All")
             if (mod_settings.findtext("autoTestScope") or "").strip() != desired_scope:
@@ -605,7 +606,7 @@ if __name__ == "__main__":
     parser.add_argument("--clear-log-keywords", action="store_true", help="清空 LogSyncMod 配置中的 <keywords> 列表")
     parser.add_argument("--auto-test-package-id", default=None, help="启用定向自动测试，并指定目标模组 packageId")
     parser.add_argument("--auto-test-output-dir", default=None, help="自动测试报告输出目录")
-    parser.add_argument("--auto-test-scope", choices=["all", "content", "recipes", "hediffs"], default="all", help="自动测试范围：all/content/recipes/hediffs")
+    parser.add_argument("--auto-test-scope", choices=["all", "content", "recipes", "hediffs", "turrets"], default="all", help="自动测试范围：all/content/recipes/hediffs/turrets")
     parser.add_argument("--auto-test-capture-screenshots", action="store_true", help="自动测试时对打开的 InfoCard 截图")
     parser.add_argument("--auto-test-batch-size", type=int, default=None, help="自动测试每批处理数量")
     parser.add_argument("--timeout-seconds", type=int, default=TIMEOUT, help="等待测试完成的最长秒数")

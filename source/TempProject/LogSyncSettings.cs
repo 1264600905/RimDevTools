@@ -8,7 +8,8 @@ namespace LogSyncMod
         All = 0,
         Content = 1,
         Recipes = 2,
-        Hediffs = 3
+        Hediffs = 3,
+        Turrets = 4
     }
 
     public class LogSyncSettings : ModSettings
@@ -104,6 +105,11 @@ namespace LogSyncMod
         public bool ShouldTestHediffs()
         {
             return autoTestScope == AutoTestScope.All || autoTestScope == AutoTestScope.Hediffs;
+        }
+
+        public bool ShouldTestTurrets()
+        {
+            return autoTestScope == AutoTestScope.All || autoTestScope == AutoTestScope.Turrets;
         }
 
         public void RequestAutoTestRun()

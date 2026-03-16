@@ -14,7 +14,19 @@ namespace LogSyncMod.AutoTest
         Item,
         Terrain,
         Recipe,
-        Hediff
+        Hediff,
+        TurretPocketMap // 新增炮塔测试类型
+    }
+
+    // 新增：炮塔测试阶段枚举
+    internal enum TurretTestPhase
+    {
+        Initializing,
+        SpawningPower,
+        SpawningTurret,
+        // 后续阶段占位
+        CleaningUp,
+        Done
     }
 
     internal sealed class AutoTestWorkItem
@@ -43,6 +55,7 @@ namespace LogSyncMod.AutoTest
 
     internal sealed class AutoTestRunner
     {
+        // --- 原有内部类 ---
         private enum SessionPhase
         {
             WaitingForPreOpenSettle,
@@ -68,6 +81,96 @@ namespace LogSyncMod.AutoTest
             public SessionPhase Phase;
         }
 
+        // --- 新增：炮塔测试会话类 ---
+        private sealed class TurretTestSession
+        {
+            public Map TestMap;
+            public ThingDef TurretDef;
+            public Thing SpawnedTurret;
+            public Thing PowerGenerator;
+            public TurretTestPhase Phase;
+            public AutoTestResult Result;
+            public int TimeoutTicks;
+            public RimWorld.Planet.MapParent Parent; // 持有父对象
+
+            public TurretTestSession(ThingDef turretDef, AutoTestResult result)
+            {
+                TurretDef = turretDef;
+                Result = result;
+                Phase = TurretTestPhase.Initializing;
+                TimeoutTicks = 60 * 20; // 20秒超时
+            }
+
+            public void Update()
+            {
+                if (TimeoutTicks > 0)
+                {
+                    TimeoutTicks--;
+                    if (TimeoutTicks == 0)
+                    {
+                        Fail("timeout");
+                        return;
+                    }
+                }
+                
+                try
+                {
+                    switch (Phase)
+                    {
+                        case TurretTestPhase.Initializing:
+                            Phase = TurretTestPhase.SpawningPower;
+                            break;
+
+                        case TurretTestPhase.SpawningPower:
+                            IntVec3 powerPos = new IntVec3(3, 0, 3);
+                            PowerGenerator = GenSpawn.Spawn(ThingDef.Named("LogSync_AutoTestPowerGenerator"), powerPos, TestMap);
+                            Result.Notes = AppendNote(Result.Notes, "MapSize=" + TestMap.Size.x + "x" + TestMap.Size.z);
+                            Result.Stage = "power";
+                            Phase = TurretTestPhase.SpawningTurret;
+                            break;
+
+                        case TurretTestPhase.SpawningTurret:
+                            SpawnedTurret = GenSpawn.Spawn(TurretDef, TestMap.Center, TestMap);
+                            Result.Label = SpawnedTurret.LabelCap;
+                            Result.Stage = "spawn";
+                            
+                            Phase = TurretTestPhase.CleaningUp;
+                            Result.Status = "passed";
+                            Log.Message($"[LogSyncAutoTest] Turret '{TurretDef.defName}' spawned successfully in map {TestMap.uniqueID}.");
+                            break;
+
+                        case TurretTestPhase.CleaningUp:
+                            if (TestMap != null && Find.Maps.Contains(TestMap))
+                            {
+                                Current.Game.DeinitAndRemoveMap(TestMap, false);
+                            }
+                            if (Parent != null && !Parent.Destroyed)
+                            {
+                                Parent.Destroy();
+                            }
+                            Phase = TurretTestPhase.Done;
+                            break;
+                            
+                        case TurretTestPhase.Done:
+                            break;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Fail("exception", ex.ToString());
+                }
+            }
+
+            private void Fail(string status, string message = "")
+            {
+                Result.Status = status;
+                Result.ErrorMessage = message;
+                Phase = TurretTestPhase.CleaningUp;
+            }
+        }
+        
+        // --- 常量和字段 ---
+        private const int MaxConcurrentTurretTests = 5;
         private const int PreOpenSettleRepaintFrames = 10;
         private const int OpenStableFrameRequirement = 3;
         private const int OpenTimeoutRepaintFrames = 180;
@@ -75,11 +178,15 @@ namespace LogSyncMod.AutoTest
         private const int CloseTimeoutRepaintFrames = 180;
 
         private readonly LogSyncSettings settings;
-        private readonly Map map;
+        private readonly Map map; // 主地图，用于UI测试等
         private readonly Queue<AutoTestWorkItem> pendingItems = new Queue<AutoTestWorkItem>();
         private readonly List<AutoTestResult> results = new List<AutoTestResult>();
         private readonly Dictionary<ThingDef, Thing> placedRecipeWorktables = new Dictionary<ThingDef, Thing>();
 
+        // 新增炮塔测试相关字段
+        private readonly List<TurretTestSession> activeTurretSessions = new List<TurretTestSession>();
+        private readonly Queue<ThingDef> pendingTurretDefs = new Queue<ThingDef>();
+        
         private ModContentPack targetMod;
         private Pawn sharedHediffPawn;
         private string targetPackageId;
@@ -117,34 +224,43 @@ namespace LogSyncMod.AutoTest
             }
 
             nextTerrainX = Math.Max(map.Size.x / 2, 10);
-
-            if (settings.ShouldTestContent())
+            
+            // 根据 scope 填充队列
+            if (settings.ShouldTestTurrets())
             {
-                EnqueueThingDefs();
-                EnqueueTerrainDefs();
+                BeginTurretTestSession();
             }
-
-            if (settings.ShouldTestRecipes())
+            else
             {
-                UnlockAllResearch();
-                EnqueueRecipeDefs();
-            }
+                if (settings.ShouldTestContent())
+                {
+                    EnqueueThingDefs();
+                    EnqueueTerrainDefs();
+                }
 
-            if (settings.autoTestScope == AutoTestScope.All || settings.autoTestScope == AutoTestScope.Hediffs)
-            {
-                EnqueueHediffDefs();
+                if (settings.ShouldTestRecipes())
+                {
+                    UnlockAllResearch();
+                    EnqueueRecipeDefs();
+                }
+
+                if (settings.ShouldTestHediffs())
+                {
+                    EnqueueHediffDefs();
+                }
             }
 
             ApplyBatchLimit();
 
+            int totalPending = pendingItems.Count + pendingTurretDefs.Count;
             Log.Message(string.Format(
                 "[LogSyncAutoTest] START packageId={0} map={1} scope={2} pending={3}",
                 targetPackageId,
                 map.info?.parent?.LabelCap ?? map.ToString(),
                 settings.autoTestScope,
-                pendingItems.Count));
+                totalPending));
 
-            if (pendingItems.Count == 0)
+            if (totalPending == 0)
             {
                 Log.Warning("[LogSyncAutoTest] No matching auto-test targets were found for " + targetPackageId);
                 Finish();
@@ -154,24 +270,61 @@ namespace LogSyncMod.AutoTest
         public void Tick()
         {
             if (completed) return;
-
-            if (activeSession != null)
+            
+            // 处理炮塔测试
+            if (settings.ShouldTestTurrets())
             {
-                return;
-            }
+                // 填充并发池
+                while (activeTurretSessions.Count < MaxConcurrentTurretTests && pendingTurretDefs.Count > 0)
+                {
+                    ThingDef turretDef = pendingTurretDefs.Dequeue();
+                    StartNewTurretSession(turretDef);
+                }
 
-            if (pendingItems.Count == 0)
+                // 更新活动的炮塔会话
+                foreach (var session in activeTurretSessions)
+                {
+                    session.Update();
+                }
+
+                // 清理已完成的炮塔会话
+                activeTurretSessions.RemoveAll(session => {
+                    if (session.Phase == TurretTestPhase.Done) {
+                        results.Add(session.Result);
+                        return true;
+                    }
+                    return false;
+                });
+                
+                // 结束条件
+                if (pendingTurretDefs.Count == 0 && activeTurretSessions.Count == 0)
+                {
+                    Finish();
+                }
+            }
+            // 处理原有测试
+            else
             {
-                Finish();
-                return;
-            }
+                if (activeSession != null)
+                {
+                    return;
+                }
 
-            StartNextSession();
+                if (pendingItems.Count == 0)
+                {
+                    Finish();
+                    return;
+                }
+
+                StartNextSession();
+            }
         }
 
         public void ProcessUi()
         {
-            if (completed || activeSession == null) return;
+            if (completed || settings.ShouldTestTurrets()) return; // UI测试与炮塔测试不并发
+            
+            if (activeSession == null) return;
             if (Event.current == null || Event.current.type != EventType.Repaint) return;
 
             try
@@ -206,6 +359,82 @@ namespace LogSyncMod.AutoTest
                 activeSession = null;
             }
         }
+        
+        // --- 炮塔测试新方法 ---
+        
+        private void BeginTurretTestSession()
+        {
+            var turretDefs = DefDatabase<ThingDef>.AllDefsListForReading
+                .Where(IsTargetTurretDef)
+                .OrderBy(d => d.defName);
+            
+            foreach (var def in turretDefs)
+            {
+                pendingTurretDefs.Enqueue(def);
+            }
+        }
+
+        private void StartNewTurretSession(ThingDef turretDef)
+        {
+            var result = CreateResult("Turret", "ThingDef", turretDef.defName, turretDef.label);
+            var session = new TurretTestSession(turretDef, result);
+            
+            try
+            {
+                var mapGenerator = DefDatabase<MapGeneratorDef>.GetNamed("LogSync_AutoTestPocketMap");
+                var mapSize = new IntVec3(100, 1, 100);
+                
+                int tile = RimWorld.Planet.TileFinder.RandomStartingTile();
+                if (tile < 0)
+                {
+                    result.Status = "failed_map_creation";
+                    result.ErrorMessage = "Could not find a valid tile to create a map parent.";
+                    results.Add(result);
+                    return;
+                }
+
+                session.Parent = (RimWorld.Planet.MapParent)RimWorld.Planet.WorldObjectMaker.MakeWorldObject(RimWorld.WorldObjectDefOf.Ambush);
+                session.Parent.Tile = tile;
+                Find.WorldObjects.Add(session.Parent);
+
+                session.TestMap = MapGenerator.GenerateMap(mapSize, session.Parent, mapGenerator);
+                
+                activeTurretSessions.Add(session);
+                Log.Message($"[LogSyncAutoTest] Starting new turret session for '{turretDef.defName}' in map {session.TestMap.uniqueID}.");
+            }
+            catch (Exception ex)
+            {
+                result.Status = "failed_map_creation";
+                result.ErrorMessage = ex.ToString();
+                results.Add(result);
+                // 如果父对象已创建但地图生成失败，也清理掉
+                if (session.Parent != null && !session.Parent.Destroyed)
+                {
+                    session.Parent.Destroy();
+                }
+            }
+        }
+
+        private bool IsTargetTurretDef(ThingDef def)
+        {
+            if (def == null || def.modContentPack != targetMod || def.category != ThingCategory.Building || def.thingClass == null)
+                return false;
+
+            if (def.building?.turretGunDef != null)
+                return true;
+
+            Type type = def.thingClass;
+            while(type != null && type != typeof(object))
+            {
+                if (type.Name == "Building_Turret" || type.Name == "Building_TurretGunCE")
+                    return true;
+                type = type.BaseType;
+            }
+
+            return false;
+        }
+
+        // --- 原有方法 (部分有微调) ---
 
         private void StartNextSession()
         {
@@ -1473,18 +1702,34 @@ namespace LogSyncMod.AutoTest
         private void ApplyBatchLimit()
         {
             int limit = Math.Max(1, settings.autoTestBatchSize);
-            if (pendingItems.Count <= limit) return;
-
-            AutoTestWorkItem[] selectedItems = pendingItems.Take(limit).ToArray();
-            pendingItems.Clear();
-            foreach (AutoTestWorkItem item in selectedItems)
+            Queue<object> genericQueue = new Queue<object>();
+            if (settings.ShouldTestTurrets())
             {
-                pendingItems.Enqueue(item);
+                foreach(var item in pendingTurretDefs) genericQueue.Enqueue(item);
+            }
+            else
+            {
+                foreach(var item in pendingItems) genericQueue.Enqueue(item);
+            }
+
+            if (genericQueue.Count <= limit) return;
+
+            var selectedItems = genericQueue.Take(limit).ToArray();
+            
+            if (settings.ShouldTestTurrets())
+            {
+                pendingTurretDefs.Clear();
+                foreach (var item in selectedItems.Cast<ThingDef>()) pendingTurretDefs.Enqueue(item);
+            }
+            else
+            {
+                pendingItems.Clear();
+                foreach (var item in selectedItems.Cast<AutoTestWorkItem>()) pendingItems.Enqueue(item);
             }
 
             Log.Message(string.Format(
                 "[LogSyncAutoTest] Batch limit applied. Keeping first {0} items.",
-                pendingItems.Count));
+                settings.ShouldTestTurrets() ? pendingTurretDefs.Count : pendingItems.Count));
         }
 
         private void TryCaptureInfoCardScreenshot(bool force)

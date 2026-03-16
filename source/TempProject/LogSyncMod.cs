@@ -117,7 +117,8 @@ namespace LogSyncMod
                     new FloatMenuOption("LogSyncMod.AutoTestScopeAll".Translate(), () => settings.autoTestScope = AutoTestScope.All),
                     new FloatMenuOption("LogSyncMod.AutoTestScopeContent".Translate(), () => settings.autoTestScope = AutoTestScope.Content),
                     new FloatMenuOption("LogSyncMod.AutoTestScopeRecipes".Translate(), () => settings.autoTestScope = AutoTestScope.Recipes),
-                    new FloatMenuOption("LogSyncMod.AutoTestScopeHediffs".Translate(), () => settings.autoTestScope = AutoTestScope.Hediffs)
+                    new FloatMenuOption("LogSyncMod.AutoTestScopeHediffs".Translate(), () => settings.autoTestScope = AutoTestScope.Hediffs),
+                    new FloatMenuOption("LogSyncMod.AutoTestScopeTurrets".Translate(), () => settings.autoTestScope = AutoTestScope.Turrets)
                 };
                 Find.WindowStack.Add(new FloatMenu(options));
             }
@@ -210,6 +211,8 @@ namespace LogSyncMod
                     return "LogSyncMod.AutoTestScopeRecipes".Translate();
                 case AutoTestScope.Hediffs:
                     return "LogSyncMod.AutoTestScopeHediffs".Translate();
+                case AutoTestScope.Turrets:
+                    return "LogSyncMod.AutoTestScopeTurrets".Translate();
                 default:
                     return "LogSyncMod.AutoTestScopeAll".Translate();
             }
