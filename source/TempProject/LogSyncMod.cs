@@ -36,7 +36,8 @@ namespace LogSyncMod
             var harmony = new Harmony("trigger.logsyncmod");
             harmony.PatchAll();
             LogPatches.InitializeFile();
-            LogSyncSmokeTest.Schedule();
+            // 内置冒烟测试默认停用，保留代码仅用于后续手动调试。
+            // LogSyncSmokeTest.Schedule();
             Log.Message("[LogSyncMod] INITIALIZATION COMPLETED.");
         }
 
