@@ -37,6 +37,7 @@ SMOKE_DUPLICATE_MESSAGE = "[LogSyncSmoke] DUPLICATE_MESSAGE"
 SMOKE_DUPLICATE_KEYWORD_MESSAGE = "[LogSyncSmoke] DUPLICATE_KEYWORD_MESSAGE 冒烟测试"
 SMOKE_WARNING_MESSAGE = "[LogSyncSmoke] WARNING_MESSAGE"
 SMOKE_ERROR_MESSAGE = "[LogSyncSmoke] ERROR_MESSAGE"
+SMOKE_DLL_EXCEPTION = "[LogSyncSmoke] DLL_EXCEPTION"
 SMOKE_KEYWORD_MESSAGE = "[LogSyncSmoke] KEYWORD_MESSAGE 冒烟测试"
 SMOKE_END_MARKER = "[LogSyncSmoke] END"
 
@@ -46,6 +47,9 @@ STEAM_LAUNCH_DETECT_TIMEOUT = 120
 
 # 最大等待超时时间 (秒)
 TIMEOUT = 600 
+
+# 测试日志总保留数（包含当前日志文件本身）
+MAX_MANAGED_LOG_FILES = 3
 
 # 默认的测试激活模组列表 (当没有预设文件时使用)
 MIN_ACTIVE_MODS = [
@@ -267,6 +271,52 @@ def get_logsync_keywords():
     except Exception:
         return None
 
+def iter_managed_log_files(target_log: Path):
+    """返回当前日志文件和归档日志文件。"""
+    if not target_log.parent.exists():
+        return []
+
+    archive_pattern = f"{target_log.stem}_*{target_log.suffix}"
+    files = []
+    if target_log.exists():
+        files.append(target_log)
+    files.extend(path for path in target_log.parent.glob(archive_pattern) if path.is_file())
+    return files
+
+def build_archive_log_path(target_log: Path):
+    """生成不冲突的归档日志文件名。"""
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    archive_path = target_log.with_name(f"{target_log.stem}_{stamp}{target_log.suffix}")
+    index = 1
+    while archive_path.exists():
+        archive_path = target_log.with_name(f"{target_log.stem}_{stamp}_{index}{target_log.suffix}")
+        index += 1
+    return archive_path
+
+def prune_managed_log_files(target_log: Path, keep_count: int = MAX_MANAGED_LOG_FILES):
+    """按最近修改时间保留日志文件，超出的自动删除。"""
+    managed_files = sorted(
+        iter_managed_log_files(target_log),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    for obsolete_path in managed_files[keep_count:]:
+        try:
+            obsolete_path.unlink()
+            print(f"[信息] 已删除旧日志归档: {obsolete_path.name}")
+        except Exception as e:
+            print(f"[警告] 删除旧日志归档失败: {obsolete_path} ({e})")
+
+def rotate_target_log(target_log: Path):
+    """归档当前日志并裁剪到保留上限。"""
+    if target_log.exists() and target_log.stat().st_size > 0:
+        archive_path = build_archive_log_path(target_log)
+        target_log.replace(archive_path)
+        print(f"[信息] 已归档日志: {archive_path.name}")
+
+    target_log.write_text("", encoding="utf-8")
+    prune_managed_log_files(target_log)
+
 def validate_smoke_log():
     sync_log_path = Path(TARGET_SYNC_LOG)
     if not sync_log_path.exists():
@@ -287,6 +337,9 @@ def validate_smoke_log():
         ("关键词重复 Message 去重成功", content.count(SMOKE_DUPLICATE_KEYWORD_MESSAGE) == 1),
         ("警告日志存在", content.count(SMOKE_WARNING_MESSAGE) >= 1),
         ("错误日志存在", content.count(SMOKE_ERROR_MESSAGE) >= 1),
+        ("DLL 异常日志存在", content.count(SMOKE_DLL_EXCEPTION) >= 1),
+        ("DLL 异常包含 SourceDll", any(SMOKE_DLL_EXCEPTION in line and "SourceDll:" in line for line in content.splitlines())),
+        ("DLL 异常包含 SourceMod", any(SMOKE_DLL_EXCEPTION in line and "SourceMod:" in line for line in content.splitlines())),
         ("关键词日志存在", content.count(SMOKE_KEYWORD_MESSAGE) >= 1),
         ("真实来源文件标记存在", len(real_source_markers) >= 1),
         ("真实来源模组标记存在", len(real_source_mod_markers) >= 1),
@@ -421,10 +474,7 @@ def monitor(mod_list_file: Path | None = None, log_keywords: list[str] | None = 
 
     # 日志归档
     target_log = Path(TARGET_SYNC_LOG)
-    if target_log.exists() and target_log.stat().st_size > 0:
-        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        target_log.replace(target_log.with_name(f"{target_log.stem}_{stamp}{target_log.suffix}"))
-    target_log.write_text("", encoding="utf-8")
+    rotate_target_log(target_log)
 
     # 启动
     try:

@@ -1,3 +1,4 @@
+using System;
 using Verse;
 
 namespace LogSyncMod
@@ -11,6 +12,7 @@ namespace LogSyncMod
         public const string ErrorMessage = "[LogSyncSmoke] ERROR_MESSAGE";
         public const string Keyword = "冒烟测试";
         public const string KeywordMessage = "[LogSyncSmoke] KEYWORD_MESSAGE 冒烟测试";
+        public const string DllExceptionMarker = "[LogSyncSmoke] DLL_EXCEPTION";
         public const string EndMarker = "[LogSyncSmoke] END";
 
         private static bool hasScheduled;
@@ -48,8 +50,26 @@ namespace LogSyncMod
             Log.Message(DuplicateKeywordMessage);
             Log.Warning(WarningMessage);
             Log.Error(ErrorMessage);
+            TriggerDllExceptionSmoke();
             Log.Message(KeywordMessage);
             Log.Message(EndMarker);
+        }
+
+        private static void TriggerDllExceptionSmoke()
+        {
+            try
+            {
+                ThrowDllException();
+            }
+            catch (Exception ex)
+            {
+                Log.Error(DllExceptionMarker + Environment.NewLine + ex);
+            }
+        }
+
+        private static void ThrowDllException()
+        {
+            throw new InvalidOperationException("Smoke test dll exception");
         }
     }
 }

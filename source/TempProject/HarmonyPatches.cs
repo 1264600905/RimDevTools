@@ -48,8 +48,12 @@ namespace LogSyncMod
         private static readonly HashSet<string> processedLogs = new HashSet<string>();
         private static readonly object fileLock = new object();
         private static readonly object xmlIndexLock = new object();
+        private static readonly object assemblyLookupLock = new object();
         private static readonly Dictionary<string, string> defNameToXmlPath = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         private static readonly HashSet<string> ambiguousDefNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private static readonly Dictionary<string, Assembly> stackCallAssemblyCache = new Dictionary<string, Assembly>(StringComparer.Ordinal);
+        private static readonly Dictionary<string, Assembly> typeAssemblyCache = new Dictionary<string, Assembly>(StringComparer.Ordinal);
+        private static readonly Dictionary<string, Type> resolvedTypeCache = new Dictionary<string, Type>(StringComparer.Ordinal);
         private static PendingSourceReference pendingSourceReference;
         private static bool xmlIndexBuilt;
         private const int MaxLogLines = 500;
@@ -60,6 +64,7 @@ namespace LogSyncMod
         private static readonly Regex StandalonePathRegex = new Regex(@"^\s*(?<path>.+?\.(xml|dll))\s*$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private static readonly Regex XmlDefNameRegex = new Regex(@"<defName>\s*(?<name>[^<]+)\s*</defName>", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private static readonly Regex ConfigErrorRegex = new Regex(@"Config error in\s+(?<name>[^:\r\n]+)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        private static readonly Regex StackTraceLineRegex = new Regex(@"^\s*at\s+(?<call>.+?)\s*\(", RegexOptions.Compiled);
 
         // 拦截所有 Message 的重载
         [HarmonyPatch(nameof(Log.Message), new Type[] { typeof(string) })]
@@ -136,6 +141,9 @@ namespace LogSyncMod
                     xmlIndexBuilt = false;
                     defNameToXmlPath.Clear();
                     ambiguousDefNames.Clear();
+                    stackCallAssemblyCache.Clear();
+                    typeAssemblyCache.Clear();
+                    resolvedTypeCache.Clear();
 
                     string path = LogSyncMod.settings.logPath;
                     if (string.IsNullOrEmpty(path)) return;
@@ -280,6 +288,11 @@ namespace LogSyncMod
                 sourceMarker = "[SourceFile] " + xmlPath;
                 return true;
             }
+            if (TryResolveAssemblyPathFromText(text, out string dllPath))
+            {
+                sourceMarker = "[SourceDll] " + dllPath;
+                return true;
+            }
 
             sourceMarker = null;
             return false;
@@ -333,6 +346,287 @@ namespace LogSyncMod
             }
 
             return null;
+        }
+
+        private static bool TryResolveAssemblyPathFromText(string text, out string assemblyPath)
+        {
+            foreach (string line in text.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                if (!TryExtractStackCall(line, out string stackCall)) continue;
+
+                if (TryResolveAssemblyForStackCall(stackCall, out Assembly assembly))
+                {
+                    string location = NormalizePath(assembly.Location);
+                    if (!string.IsNullOrEmpty(location))
+                    {
+                        assemblyPath = location;
+                        return true;
+                    }
+                }
+            }
+
+            assemblyPath = null;
+            return false;
+        }
+
+        private static bool TryExtractStackCall(string line, out string stackCall)
+        {
+            Match match = StackTraceLineRegex.Match(line);
+            if (!match.Success)
+            {
+                stackCall = null;
+                return false;
+            }
+
+            stackCall = match.Groups["call"].Value.Trim();
+            if (string.IsNullOrEmpty(stackCall) ||
+                stackCall.StartsWith("wrapper ", StringComparison.OrdinalIgnoreCase) ||
+                stackCall.StartsWith("(wrapper ", StringComparison.OrdinalIgnoreCase))
+            {
+                stackCall = null;
+                return false;
+            }
+
+            int lastDot = stackCall.LastIndexOf('.');
+            if (lastDot <= 0)
+            {
+                stackCall = null;
+                return false;
+            }
+
+            string typeName = stackCall.Substring(0, lastDot);
+            if (typeName.StartsWith("System.", StringComparison.Ordinal) ||
+                typeName.StartsWith("Verse.", StringComparison.Ordinal) ||
+                typeName.StartsWith("RimWorld.", StringComparison.Ordinal) ||
+                typeName.StartsWith("UnityEngine.", StringComparison.Ordinal) ||
+                typeName.StartsWith("HarmonyLib.", StringComparison.Ordinal) ||
+                typeName.StartsWith("Mono.", StringComparison.Ordinal))
+            {
+                stackCall = null;
+                return false;
+            }
+
+            return true;
+        }
+
+        // 参考 VisualExceptions 的思路，先恢复具体栈帧方法，再回到程序集和模组。
+        private static bool TryResolveAssemblyForStackCall(string stackCall, out Assembly assembly)
+        {
+            lock (assemblyLookupLock)
+            {
+                if (stackCallAssemblyCache.TryGetValue(stackCall, out assembly))
+                {
+                    return assembly != null;
+                }
+            }
+
+            int lastDot = stackCall.LastIndexOf('.');
+            if (lastDot <= 0)
+            {
+                CacheStackCallAssembly(stackCall, null);
+                assembly = null;
+                return false;
+            }
+
+            string typeName = stackCall.Substring(0, lastDot);
+            string methodName = stackCall.Substring(lastDot + 1);
+
+            foreach (string candidateTypeName in GetCandidateTypeNames(typeName))
+            {
+                if (!TryResolveType(candidateTypeName, out Type resolvedType)) continue;
+
+                MethodBase method = TryResolveMethodOnType(resolvedType, methodName);
+                assembly = method?.DeclaringType?.Assembly ?? resolvedType.Assembly;
+                CacheStackCallAssembly(stackCall, assembly);
+                return assembly != null;
+            }
+
+            if (TryResolveAssemblyForType(typeName, out assembly))
+            {
+                CacheStackCallAssembly(stackCall, assembly);
+                return true;
+            }
+
+            CacheStackCallAssembly(stackCall, null);
+            assembly = null;
+            return false;
+        }
+
+        private static void CacheStackCallAssembly(string stackCall, Assembly assembly)
+        {
+            lock (assemblyLookupLock)
+            {
+                stackCallAssemblyCache[stackCall] = assembly;
+            }
+        }
+
+        private static bool TryResolveAssemblyForType(string typeName, out Assembly assembly)
+        {
+            lock (assemblyLookupLock)
+            {
+                if (typeAssemblyCache.TryGetValue(typeName, out assembly))
+                {
+                    return assembly != null;
+                }
+            }
+
+            foreach (ModContentPack mod in LoadedModManager.RunningMods)
+            {
+                if (mod.assemblies == null || mod.assemblies.loadedAssemblies == null) continue;
+
+                foreach (Assembly loadedAssembly in mod.assemblies.loadedAssemblies)
+                {
+                    if (loadedAssembly == null) continue;
+
+                    try
+                    {
+                        Type resolvedType = loadedAssembly.GetType(typeName, false, false);
+                        if (resolvedType != null)
+                        {
+                            assembly = loadedAssembly;
+                            lock (assemblyLookupLock)
+                            {
+                                typeAssemblyCache[typeName] = assembly;
+                            }
+                            return true;
+                        }
+                    }
+                    catch
+                    {
+                    }
+                }
+            }
+
+            lock (assemblyLookupLock)
+            {
+                typeAssemblyCache[typeName] = null;
+            }
+            assembly = null;
+            return false;
+        }
+
+        private static bool TryResolveType(string typeName, out Type resolvedType)
+        {
+            lock (assemblyLookupLock)
+            {
+                if (resolvedTypeCache.TryGetValue(typeName, out resolvedType))
+                {
+                    return resolvedType != null;
+                }
+            }
+
+            foreach (ModContentPack mod in LoadedModManager.RunningMods)
+            {
+                if (mod.assemblies == null || mod.assemblies.loadedAssemblies == null) continue;
+
+                foreach (Assembly loadedAssembly in mod.assemblies.loadedAssemblies)
+                {
+                    if (loadedAssembly == null) continue;
+
+                    try
+                    {
+                        resolvedType = loadedAssembly.GetType(typeName, false, false);
+                        if (resolvedType == null)
+                        {
+                            resolvedType = FindCompatibleType(loadedAssembly, typeName);
+                        }
+
+                        if (resolvedType != null)
+                        {
+                            lock (assemblyLookupLock)
+                            {
+                                resolvedTypeCache[typeName] = resolvedType;
+                                typeAssemblyCache[typeName] = loadedAssembly;
+                            }
+                            return true;
+                        }
+                    }
+                    catch
+                    {
+                    }
+                }
+            }
+
+            lock (assemblyLookupLock)
+            {
+                resolvedTypeCache[typeName] = null;
+            }
+            resolvedType = null;
+            return false;
+        }
+
+        private static IEnumerable<string> GetCandidateTypeNames(string typeName)
+        {
+            if (string.IsNullOrWhiteSpace(typeName)) yield break;
+
+            yield return typeName;
+
+            string stripped = StripGenericArguments(typeName);
+            if (!string.Equals(stripped, typeName, StringComparison.Ordinal))
+            {
+                yield return stripped;
+            }
+        }
+
+        private static string StripGenericArguments(string typeName)
+        {
+            int genericIndex = typeName.IndexOf('[');
+            return genericIndex > 0 ? typeName.Substring(0, genericIndex) : typeName;
+        }
+
+        private static Type FindCompatibleType(Assembly assembly, string typeName)
+        {
+            string strippedName = StripGenericArguments(typeName);
+
+            try
+            {
+                foreach (Type candidate in assembly.GetTypes())
+                {
+                    if (candidate == null || string.IsNullOrEmpty(candidate.FullName)) continue;
+
+                    if (string.Equals(candidate.FullName, typeName, StringComparison.Ordinal) ||
+                        string.Equals(candidate.FullName, strippedName, StringComparison.Ordinal) ||
+                        string.Equals(StripGenericArguments(candidate.FullName), strippedName, StringComparison.Ordinal))
+                    {
+                        return candidate;
+                    }
+                }
+            }
+            catch (ReflectionTypeLoadException ex)
+            {
+                foreach (Type candidate in ex.Types)
+                {
+                    if (candidate == null || string.IsNullOrEmpty(candidate.FullName)) continue;
+
+                    if (string.Equals(candidate.FullName, typeName, StringComparison.Ordinal) ||
+                        string.Equals(candidate.FullName, strippedName, StringComparison.Ordinal) ||
+                        string.Equals(StripGenericArguments(candidate.FullName), strippedName, StringComparison.Ordinal))
+                    {
+                        return candidate;
+                    }
+                }
+            }
+            catch
+            {
+            }
+
+            return null;
+        }
+
+        private static MethodBase TryResolveMethodOnType(Type type, string methodName)
+        {
+            if (type == null || string.IsNullOrWhiteSpace(methodName)) return null;
+
+            BindingFlags bindingFlags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static;
+            if (methodName == ".ctor") return type.GetConstructors(bindingFlags).FirstOrDefault();
+            if (methodName == ".cctor") return type.TypeInitializer;
+
+            IEnumerable<MethodBase> candidates = type.GetMethods(bindingFlags).Cast<MethodBase>();
+            MethodBase exact = candidates.FirstOrDefault(method => string.Equals(method.Name, methodName, StringComparison.Ordinal));
+            if (exact != null) return exact;
+
+            string strippedMethodName = StripGenericArguments(methodName);
+            return candidates.FirstOrDefault(method => string.Equals(method.Name, strippedMethodName, StringComparison.Ordinal));
         }
 
         private static void EnsureXmlIndexBuilt()
@@ -461,11 +755,32 @@ namespace LogSyncMod
 
         private static string BuildOutputLine(string idTag, string type, string text, string timestampText, string sourceMarker)
         {
-            string outputLine = $"[{idTag}] [{type}] [{timestampText}] {text}";
-            if (string.IsNullOrEmpty(sourceMarker)) return outputLine;
+            string prefix = $"[{idTag}] [{type}] [{timestampText}] ";
+            string firstLine = text;
+            string remainingText = "";
+
+            int newlineIndex = text.IndexOfAny(new[] { '\r', '\n' });
+            if (newlineIndex >= 0)
+            {
+                firstLine = text.Substring(0, newlineIndex);
+                remainingText = text.Substring(newlineIndex).TrimStart('\r', '\n');
+            }
+
+            string outputLine = prefix + firstLine;
+            if (string.IsNullOrEmpty(sourceMarker))
+            {
+                if (!string.IsNullOrEmpty(remainingText))
+                    outputLine += Environment.NewLine + remainingText;
+                return outputLine;
+            }
 
             int separatorIndex = sourceMarker.IndexOf(' ');
-            if (separatorIndex < 0 || separatorIndex >= sourceMarker.Length - 1) return outputLine;
+            if (separatorIndex < 0 || separatorIndex >= sourceMarker.Length - 1)
+            {
+                if (!string.IsNullOrEmpty(remainingText))
+                    outputLine += Environment.NewLine + remainingText;
+                return outputLine;
+            }
 
             string markerLabel = sourceMarker.Substring(1, separatorIndex - 2);
             string path = sourceMarker.Substring(separatorIndex + 1).Trim();
@@ -474,6 +789,11 @@ namespace LogSyncMod
             if (TryResolveModLabelFromPath(path, out string modLabel))
             {
                 outputLine += $" | SourceMod: {modLabel}";
+            }
+
+            if (!string.IsNullOrEmpty(remainingText))
+            {
+                outputLine += Environment.NewLine + remainingText;
             }
 
             return outputLine;
