@@ -10,8 +10,11 @@ $ModName = "LogSyncMod"
 # 你的 RimWorld Mods 目录路径
 $RimWorldModDir = "H:\SteamLibrary\steamapps\common\RimWorld\Mods"
 
-# C# 项目文件路径
-$CsprojPath = "$PSScriptRoot\source\TempProject\TempProject.csproj"
+# C# 项目文件路径（按顺序编译，AutoTest 依赖主 DLL）
+$CsprojPaths = @(
+    "$PSScriptRoot\source\TempProject\TempProject.csproj",
+    "$PSScriptRoot\source\AutoTestProject\AutoTestProject.csproj"
+)
 
 # 需要同步到游戏目录的项目 (文件夹或文件)
 # 注意：这些路径是相对于项目根目录的，不在列表中的文件（如 .gemini, .cursor, 参考文档等）将不会被部署
@@ -42,16 +45,20 @@ Write-Host "======= 开始构建项目: $ModName =======" -ForegroundColor Cyan
 
 # 1. 执行编译
 Write-Host ">>> 步骤 1: 编译 C# 项目..." -ForegroundColor Gray
-if (Test-Path $CsprojPath) {
-    dotnet build "$CsprojPath"
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "编译失败，请检查代码错误！" -ForegroundColor Red
+foreach ($csprojPath in $CsprojPaths) {
+    if (Test-Path $csprojPath) {
+        Write-Host "  -> 编译: $csprojPath" -ForegroundColor DarkGray
+        dotnet build "$csprojPath"
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "编译失败，请检查代码错误！" -ForegroundColor Red
+            exit
+        }
+    } else {
+        Write-Host "未发现 .csproj 文件: $csprojPath" -ForegroundColor Red
         exit
     }
-    Write-Host "编译成功！" -ForegroundColor Green
-} else {
-    Write-Host "未发现 .csproj 文件，跳过编译步骤。" -ForegroundColor Yellow
 }
+Write-Host "编译成功！" -ForegroundColor Green
 
 # 2. 清理目标目录
 Write-Host "`n>>> 步骤 2: 清理目标目录 (排除保护文件)..." -ForegroundColor Gray

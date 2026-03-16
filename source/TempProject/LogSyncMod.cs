@@ -102,6 +102,30 @@ namespace LogSyncMod
             listingStandard.CheckboxLabeled("LogSyncMod.EnableVerboseDebug".Translate(), ref settings.enableVerboseDebug);
             listingStandard.Gap();
 
+            listingStandard.Label("LogSyncMod.AutoTestSection".Translate());
+            listingStandard.CheckboxLabeled("LogSyncMod.AutoTestEnabled".Translate(), ref settings.autoTestEnabled);
+            listingStandard.Label("LogSyncMod.AutoTestTargetPackageId".Translate());
+            settings.autoTestTargetPackageId = listingStandard.TextEntry(settings.autoTestTargetPackageId);
+            listingStandard.Label("LogSyncMod.AutoTestOutputPath".Translate());
+            settings.autoTestOutputPath = listingStandard.TextEntry(settings.autoTestOutputPath);
+            listingStandard.CheckboxLabeled("LogSyncMod.AutoTestBuildings".Translate(), ref settings.autoTestBuildings);
+            listingStandard.CheckboxLabeled("LogSyncMod.AutoTestItems".Translate(), ref settings.autoTestItems);
+            listingStandard.CheckboxLabeled("LogSyncMod.AutoTestTerrains".Translate(), ref settings.autoTestTerrains);
+            listingStandard.Label("LogSyncMod.AutoTestBatchSize".Translate(settings.autoTestBatchSize));
+            string batchSizeInput = listingStandard.TextEntry(settings.autoTestBatchSize.ToString());
+            if (int.TryParse(batchSizeInput, out int parsedBatchSize))
+            {
+                settings.autoTestBatchSize = parsedBatchSize;
+            }
+            if (listingStandard.ButtonText("LogSyncMod.AutoTestRunNow".Translate()))
+            {
+                settings.ApplyInputs();
+                settings.RequestAutoTestRun();
+                settings.Write();
+                Messages.Message("LogSyncMod.AutoTestRunRequested".Translate(), MessageTypeDefOf.PositiveEvent, false);
+            }
+            listingStandard.Gap();
+
             listingStandard.Gap();
             if (listingStandard.ButtonText("LogSyncMod.ApplyAndSave".Translate()))
             {

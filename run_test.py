@@ -25,6 +25,7 @@ STEAM_URL = "steam://rungameid/294100"
 
 # 模组发出的就绪信号字符串 (检测到此字符串后脚本将自动关闭游戏)
 READY_SIGNAL = "[LogSyncMod] RUNTIME_READY_TO_CLOSE"
+AUTO_TEST_READY_SIGNAL = "[LogSyncAutoTest] COMPLETED"
 
 # 默认不改动当前配置中的 keywords。
 DEFAULT_LOG_KEYWORDS = None
@@ -35,6 +36,12 @@ STEAM_LAUNCH_DETECT_TIMEOUT = 120
 
 # 最大等待超时时间 (秒)
 TIMEOUT = 600 
+
+# 如果检测到已有 RimWorld 正在运行，最多等待其自行退出的时间（秒）
+WAIT_FOR_EXISTING_GAME_EXIT_TIMEOUT = 600
+
+# 检测到已有 RimWorld 已退出后，额外等待一段时间再开始测试（秒）
+POST_EXISTING_GAME_EXIT_DELAY = 10
 
 # 测试日志总保留数（包含当前日志文件本身）
 MAX_MANAGED_LOG_FILES = 3
@@ -162,6 +169,10 @@ def ensure_text_node(parent, tag: str, value: str):
 def update_mod_settings(
     log_keywords: list[str] | None = None,
     clear_log_keywords: bool = False,
+    auto_test_enabled: bool | None = None,
+    auto_test_target_package_id: str | None = None,
+    auto_test_output_path: str | None = None,
+    auto_test_batch_size: int | None = None,
 ):
     """
     在启动游戏前修改 LogSyncMod 的设置文件：
@@ -206,6 +217,30 @@ def update_mod_settings(
                     li = ET.SubElement(keywords_node, "li")
                     li.text = kw
             changed = True
+
+        if auto_test_enabled is not None:
+            desired_value = "True" if auto_test_enabled else "False"
+            if (mod_settings.findtext("autoTestEnabled") or "").strip() != desired_value:
+                ensure_text_node(mod_settings, "autoTestEnabled", desired_value)
+                changed = True
+
+        if auto_test_target_package_id is not None:
+            normalized_package_id = (auto_test_target_package_id or "").strip().lower()
+            if (mod_settings.findtext("autoTestTargetPackageId") or "").strip() != normalized_package_id:
+                ensure_text_node(mod_settings, "autoTestTargetPackageId", normalized_package_id)
+                changed = True
+
+        if auto_test_output_path is not None:
+            normalized_output_path = (auto_test_output_path or "").strip()
+            if (mod_settings.findtext("autoTestOutputPath") or "").strip() != normalized_output_path:
+                ensure_text_node(mod_settings, "autoTestOutputPath", normalized_output_path)
+                changed = True
+
+        if auto_test_batch_size is not None:
+            normalized_batch_size = str(max(1, int(auto_test_batch_size)))
+            if (mod_settings.findtext("autoTestBatchSize") or "").strip() != normalized_batch_size:
+                ensure_text_node(mod_settings, "autoTestBatchSize", normalized_batch_size)
+                changed = True
 
         if changed:
             try:
@@ -391,10 +426,42 @@ def is_rimworld_running():
     )
     return "RimWorld.exe" in (result.stdout or "")
 
-def monitor(mod_list_file: Path | None = None, log_keywords: list[str] | None = None, clear_log_keywords: bool = False):
+def wait_for_existing_rimworld_to_exit(timeout_seconds: int = WAIT_FOR_EXISTING_GAME_EXIT_TIMEOUT):
+    """若检测到已有 RimWorld 进程正在运行，则等待其退出。等待期间不改模组配置。"""
+    if not is_rimworld_running():
+        return True
+
+    print(f"[信息] 检测到 RimWorld 已在运行，最多等待 {timeout_seconds}s 让其自行关闭。")
+    start_time = time.time()
+    while time.time() - start_time < timeout_seconds:
+        elapsed = int(time.time() - start_time)
+        print(f"\r等待现有游戏退出: {elapsed}s/{timeout_seconds}s", end="", flush=True)
+        time.sleep(2)
+        if not is_rimworld_running():
+            print("")
+            print(f"[信息] 检测到现有 RimWorld 已关闭，额外等待 {POST_EXISTING_GAME_EXIT_DELAY}s 后开始测试。")
+            time.sleep(POST_EXISTING_GAME_EXIT_DELAY)
+            return True
+
+    print("")
+    print(f"[错误] 超过 {timeout_seconds}s，现有 RimWorld 仍未关闭，已取消本次测试。")
+    return False
+
+def monitor(
+    mod_list_file: Path | None = None,
+    log_keywords: list[str] | None = None,
+    clear_log_keywords: bool = False,
+    auto_test_package_id: str | None = None,
+    auto_test_output_dir: str | None = None,
+    auto_test_batch_size: int | None = None,
+):
     check_sandbox_access()
     print("======= 环世界自动化监控测试启动 =======")
-    
+    game_process = None
+
+    if not wait_for_existing_rimworld_to_exit():
+        return
+
     # 恢复上次意外中断
     if MODS_CONFIG_BACKUP_FILE.exists():
         try:
@@ -406,6 +473,10 @@ def monitor(mod_list_file: Path | None = None, log_keywords: list[str] | None = 
     update_mod_settings(
         log_keywords=log_keywords,
         clear_log_keywords=clear_log_keywords,
+        auto_test_enabled=True if auto_test_package_id else None,
+        auto_test_target_package_id=auto_test_package_id,
+        auto_test_output_path=auto_test_output_dir if auto_test_package_id else None,
+        auto_test_batch_size=auto_test_batch_size if auto_test_package_id else None,
     )
     current_package_id = read_current_mod_package_id()
     if current_package_id:
@@ -421,24 +492,32 @@ def monitor(mod_list_file: Path | None = None, log_keywords: list[str] | None = 
     rotate_target_log(target_log)
 
     # 启动
-    try:
-        subprocess.Popen(["start", STEAM_URL], shell=True)
-    except:
-        pass
-
-    steam_start = time.time()
-    while time.time() - steam_start < STEAM_LAUNCH_DETECT_TIMEOUT:
-        if is_rimworld_running():
-            break
-        time.sleep(2)
-
-    if not is_rimworld_running():
+    if auto_test_package_id:
         if not os.path.exists(GAME_PATH):
-            print(f"[警告] Steam 启动失败且找不到游戏 exe 路径: {GAME_PATH}")
+            print(f"[警告] 自动测试模式下找不到游戏 exe 路径: {GAME_PATH}")
         else:
-            subprocess.Popen([GAME_PATH], shell=False)
+            print("[信息] 自动测试模式：直接以 quicktest 参数启动游戏。")
+            game_process = subprocess.Popen([GAME_PATH, "quicktest"], shell=False)
+    else:
+        try:
+            subprocess.Popen(["start", STEAM_URL], shell=True)
+        except:
+            pass
 
-    print(f"等待信号: {READY_SIGNAL}...")
+        steam_start = time.time()
+        while time.time() - steam_start < STEAM_LAUNCH_DETECT_TIMEOUT:
+            if is_rimworld_running():
+                break
+            time.sleep(2)
+
+        if not is_rimworld_running():
+            if not os.path.exists(GAME_PATH):
+                print(f"[警告] Steam 启动失败且找不到游戏 exe 路径: {GAME_PATH}")
+            else:
+                subprocess.Popen([GAME_PATH], shell=False)
+
+    ready_signal = AUTO_TEST_READY_SIGNAL if auto_test_package_id else READY_SIGNAL
+    print(f"等待信号: {ready_signal}...")
     start_time = time.time()
     last_pos = 0
     if SYSTEM_LOG_PATH.exists(): last_pos = SYSTEM_LOG_PATH.stat().st_size
@@ -446,13 +525,19 @@ def monitor(mod_list_file: Path | None = None, log_keywords: list[str] | None = 
     found = False
     try:
         while time.time() - start_time < TIMEOUT:
+            if auto_test_package_id and game_process is not None:
+                exit_code = game_process.poll()
+                if exit_code is not None:
+                    print(f"\n[错误] RimWorld 进程已提前退出，退出码: {exit_code}")
+                    break
+
             if SYSTEM_LOG_PATH.exists():
                 current_size = SYSTEM_LOG_PATH.stat().st_size
                 if current_size < last_pos: last_pos = 0
                 if current_size > last_pos:
                     with open(SYSTEM_LOG_PATH, "r", encoding="utf-8", errors="ignore") as f:
                         f.seek(last_pos)
-                        if READY_SIGNAL in f.read():
+                        if ready_signal in f.read():
                             print("\n[✔] 检测到就绪信号！")
                             found = True
                             time.sleep(3)
@@ -462,6 +547,11 @@ def monitor(mod_list_file: Path | None = None, log_keywords: list[str] | None = 
     except KeyboardInterrupt: print("\n[!] 中断。")
     finally:
         kill_rimworld()
+        if auto_test_package_id:
+            update_mod_settings(
+                auto_test_enabled=False,
+                auto_test_target_package_id="",
+            )
         restore_mod_list(original_mods_config)
         print("\n======= 测试结束 =======")
 
@@ -478,6 +568,9 @@ if __name__ == "__main__":
     parser.add_argument("--mods-file", default=None, help="自定义模组预设路径")
     parser.add_argument("--log-keyword", action="append", default=None, help="写入 LogSyncMod 配置 <keywords> 的条目，可重复传入")
     parser.add_argument("--clear-log-keywords", action="store_true", help="清空 LogSyncMod 配置中的 <keywords> 列表")
+    parser.add_argument("--auto-test-package-id", default=None, help="启用定向自动测试，并指定目标模组 packageId")
+    parser.add_argument("--auto-test-output-dir", default=None, help="自动测试报告输出目录")
+    parser.add_argument("--auto-test-batch-size", type=int, default=None, help="自动测试每批处理数量")
     parser.add_argument("--settings-only", action="store_true", help="只更新 LogSyncMod 配置（logPath/keywords），不启动游戏")
     args = parser.parse_args()
 
@@ -492,6 +585,10 @@ if __name__ == "__main__":
         update_mod_settings(
             log_keywords=keywords_to_write,
             clear_log_keywords=args.clear_log_keywords,
+            auto_test_enabled=True if args.auto_test_package_id else None,
+            auto_test_target_package_id=args.auto_test_package_id,
+            auto_test_output_path=args.auto_test_output_dir if args.auto_test_package_id else None,
+            auto_test_batch_size=args.auto_test_batch_size if args.auto_test_package_id else None,
         )
         kws = get_logsync_keywords()
         if kws is None:
@@ -506,4 +603,7 @@ if __name__ == "__main__":
         mod_list_file=Path(args.mods_file) if args.mods_file else None,
         log_keywords=keywords_to_write,
         clear_log_keywords=args.clear_log_keywords,
+        auto_test_package_id=args.auto_test_package_id,
+        auto_test_output_dir=args.auto_test_output_dir,
+        auto_test_batch_size=args.auto_test_batch_size,
     )

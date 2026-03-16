@@ -17,6 +17,14 @@ namespace LogSyncMod
         public bool syncError = true;
         public bool enableVerboseDebug = false;
         public bool enableSmokeTest = false;
+        public bool autoTestEnabled = false;
+        public string autoTestTargetPackageId = "";
+        public string autoTestOutputPath = "D:/RimWorldAutoTest";
+        public bool autoTestBuildings = true;
+        public bool autoTestItems = true;
+        public bool autoTestTerrains = true;
+        public int autoTestBatchSize = 40;
+        public bool autoTestRunRequested;
 
         public override void ExposeData()
         {
@@ -29,9 +37,18 @@ namespace LogSyncMod
             Scribe_Values.Look(ref syncError, "syncError", true);
             Scribe_Values.Look(ref enableVerboseDebug, "enableVerboseDebug", false);
             Scribe_Values.Look(ref enableSmokeTest, "enableSmokeTest", false);
+            Scribe_Values.Look(ref autoTestEnabled, "autoTestEnabled", false);
+            Scribe_Values.Look(ref autoTestTargetPackageId, "autoTestTargetPackageId", "");
+            Scribe_Values.Look(ref autoTestOutputPath, "autoTestOutputPath", "D:/RimWorldAutoTest");
+            Scribe_Values.Look(ref autoTestBuildings, "autoTestBuildings", true);
+            Scribe_Values.Look(ref autoTestItems, "autoTestItems", true);
+            Scribe_Values.Look(ref autoTestTerrains, "autoTestTerrains", true);
+            Scribe_Values.Look(ref autoTestBatchSize, "autoTestBatchSize", 40);
 
             if (targetModIds == null) targetModIds = new List<string>();
             if (keywords == null) keywords = new List<string>();
+            if (autoTestTargetPackageId == null) autoTestTargetPackageId = "";
+            if (autoTestOutputPath == null) autoTestOutputPath = "D:/RimWorldAutoTest";
             
             if (Scribe.mode == LoadSaveMode.PostLoadInit)
             {
@@ -55,6 +72,22 @@ namespace LogSyncMod
                 string trimmed = s.Trim();
                 if (!string.IsNullOrEmpty(trimmed)) keywords.Add(trimmed);
             }
+
+            autoTestTargetPackageId = (autoTestTargetPackageId ?? "").Trim().ToLowerInvariant();
+            autoTestOutputPath = (autoTestOutputPath ?? "").Trim();
+            if (autoTestBatchSize < 1) autoTestBatchSize = 1;
+        }
+
+        public void RequestAutoTestRun()
+        {
+            autoTestRunRequested = true;
+        }
+
+        public bool ConsumeAutoTestRunRequest()
+        {
+            if (!autoTestRunRequested) return false;
+            autoTestRunRequested = false;
+            return true;
         }
     }
 }

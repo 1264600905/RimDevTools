@@ -11,6 +11,16 @@
   <LogSyncMod.SyncWarning>同步警告日志（Warning）</LogSyncMod.SyncWarning>
   <LogSyncMod.SyncError>同步错误日志（Error）</LogSyncMod.SyncError>
   <LogSyncMod.EnableVerboseDebug>启用详细调试日志（用于排查重复问题）</LogSyncMod.EnableVerboseDebug>
+  <LogSyncMod.AutoTestSection>定向自动测试</LogSyncMod.AutoTestSection>
+  <LogSyncMod.AutoTestEnabled>启用定向自动测试</LogSyncMod.AutoTestEnabled>
+  <LogSyncMod.AutoTestTargetPackageId>目标模组 PackageId：</LogSyncMod.AutoTestTargetPackageId>
+  <LogSyncMod.AutoTestOutputPath>自动测试报告输出目录：</LogSyncMod.AutoTestOutputPath>
+  <LogSyncMod.AutoTestBuildings>测试建筑</LogSyncMod.AutoTestBuildings>
+  <LogSyncMod.AutoTestItems>测试物品</LogSyncMod.AutoTestItems>
+  <LogSyncMod.AutoTestTerrains>测试地形</LogSyncMod.AutoTestTerrains>
+  <LogSyncMod.AutoTestBatchSize>每批测试数量：{0}</LogSyncMod.AutoTestBatchSize>
+  <LogSyncMod.AutoTestRunNow>立即启动自动测试</LogSyncMod.AutoTestRunNow>
+  <LogSyncMod.AutoTestRunRequested>已请求启动自动测试</LogSyncMod.AutoTestRunRequested>
   <LogSyncMod.ApplyAndSave>应用并保存设置</LogSyncMod.ApplyAndSave>
   <LogSyncMod.OpenLogFolder>打开日志所在文件夹</LogSyncMod.OpenLogFolder>
   <LogSyncMod.SettingsApplied>设置已应用</LogSyncMod.SettingsApplied>

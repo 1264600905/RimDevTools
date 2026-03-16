@@ -11,6 +11,16 @@
   <LogSyncMod.SyncWarning>Sync warning logs (Warning)</LogSyncMod.SyncWarning>
   <LogSyncMod.SyncError>Sync error logs (Error)</LogSyncMod.SyncError>
   <LogSyncMod.EnableVerboseDebug>Enable verbose debug logs (for duplicate checks)</LogSyncMod.EnableVerboseDebug>
+  <LogSyncMod.AutoTestSection>Targeted Auto Test</LogSyncMod.AutoTestSection>
+  <LogSyncMod.AutoTestEnabled>Enable targeted auto test</LogSyncMod.AutoTestEnabled>
+  <LogSyncMod.AutoTestTargetPackageId>Target mod PackageId:</LogSyncMod.AutoTestTargetPackageId>
+  <LogSyncMod.AutoTestOutputPath>Auto test report output directory:</LogSyncMod.AutoTestOutputPath>
+  <LogSyncMod.AutoTestBuildings>Test buildings</LogSyncMod.AutoTestBuildings>
+  <LogSyncMod.AutoTestItems>Test items</LogSyncMod.AutoTestItems>
+  <LogSyncMod.AutoTestTerrains>Test terrains</LogSyncMod.AutoTestTerrains>
+  <LogSyncMod.AutoTestBatchSize>Batch size per step: {0}</LogSyncMod.AutoTestBatchSize>
+  <LogSyncMod.AutoTestRunNow>Run auto test now</LogSyncMod.AutoTestRunNow>
+  <LogSyncMod.AutoTestRunRequested>Auto test run requested</LogSyncMod.AutoTestRunRequested>
   <LogSyncMod.ApplyAndSave>Apply And Save</LogSyncMod.ApplyAndSave>
   <LogSyncMod.OpenLogFolder>Open Log Folder</LogSyncMod.OpenLogFolder>
   <LogSyncMod.SettingsApplied>Settings applied</LogSyncMod.SettingsApplied>
