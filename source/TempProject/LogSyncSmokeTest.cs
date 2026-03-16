@@ -6,10 +6,11 @@ namespace LogSyncMod
     {
         public const string StartMarker = "[LogSyncSmoke] START";
         public const string DuplicateMessage = "[LogSyncSmoke] DUPLICATE_MESSAGE";
+        public const string DuplicateKeywordMessage = "[LogSyncSmoke] DUPLICATE_KEYWORD_MESSAGE 冒烟测试";
         public const string WarningMessage = "[LogSyncSmoke] WARNING_MESSAGE";
         public const string ErrorMessage = "[LogSyncSmoke] ERROR_MESSAGE";
-        public const string Keyword = "LOGSYNC_SMOKE_KEYWORD";
-        public const string KeywordMessage = "[LogSyncSmoke] KEYWORD_MESSAGE LOGSYNC_SMOKE_KEYWORD";
+        public const string Keyword = "冒烟测试";
+        public const string KeywordMessage = "[LogSyncSmoke] KEYWORD_MESSAGE 冒烟测试";
         public const string EndMarker = "[LogSyncSmoke] END";
 
         private static bool hasScheduled;
@@ -43,6 +44,8 @@ namespace LogSyncMod
             Log.Message(StartMarker);
             Log.Message(DuplicateMessage);
             Log.Message(DuplicateMessage);
+            Log.Message(DuplicateKeywordMessage);
+            Log.Message(DuplicateKeywordMessage);
             Log.Warning(WarningMessage);
             Log.Error(ErrorMessage);
             Log.Message(KeywordMessage);

@@ -31,6 +31,15 @@ READY_SIGNAL = "[LogSyncMod] RUNTIME_READY_TO_CLOSE"
 # - 可通过多次 --log-keyword 覆盖默认值
 DEFAULT_LOG_KEYWORDS = ["冒烟测试"]
 
+# 冒烟测试日志断言标记
+SMOKE_START_MARKER = "[LogSyncSmoke] START"
+SMOKE_DUPLICATE_MESSAGE = "[LogSyncSmoke] DUPLICATE_MESSAGE"
+SMOKE_DUPLICATE_KEYWORD_MESSAGE = "[LogSyncSmoke] DUPLICATE_KEYWORD_MESSAGE 冒烟测试"
+SMOKE_WARNING_MESSAGE = "[LogSyncSmoke] WARNING_MESSAGE"
+SMOKE_ERROR_MESSAGE = "[LogSyncSmoke] ERROR_MESSAGE"
+SMOKE_KEYWORD_MESSAGE = "[LogSyncSmoke] KEYWORD_MESSAGE 冒烟测试"
+SMOKE_END_MARKER = "[LogSyncSmoke] END"
+
 # Steam 启动检测超时时间 (秒)：
 # 通过 steam:// 协议拉起游戏后，最多等待这么久让 RimWorld 进程出现；否则视为 Steam 启动失败，改为直接执行 exe。
 STEAM_LAUNCH_DETECT_TIMEOUT = 120
@@ -152,7 +161,17 @@ def pick_default_mods_file():
         if p.exists(): return p
     return None
 
-def update_mod_settings(log_keywords: list[str] | None = None, clear_log_keywords: bool = False):
+def ensure_text_node(parent, tag: str, value: str):
+    node = parent.find(tag)
+    if node is None:
+        node = ET.SubElement(parent, tag)
+    node.text = value
+
+def update_mod_settings(
+    log_keywords: list[str] | None = None,
+    clear_log_keywords: bool = False,
+    enable_smoke_test: bool | None = None,
+):
     """
     在启动游戏前修改 LogSyncMod 的设置文件：
     - 强制 logPath 指向本项目的 精选日志.log
@@ -167,16 +186,19 @@ def update_mod_settings(log_keywords: list[str] | None = None, clear_log_keyword
 
         changed = False
 
-        path_node = root.find(".//logPath")
-        if path_node is not None and path_node.text != TARGET_SYNC_LOG:
+        mod_settings = root.find(".//ModSettings") or root.find("ModSettings")
+        if mod_settings is None:
+            raise RuntimeError("未在 LogSyncMod 配置文件中找到 <ModSettings> 节点")
+
+        path_node = mod_settings.find("logPath") or root.find(".//logPath")
+        if path_node is None:
+            ensure_text_node(mod_settings, "logPath", TARGET_SYNC_LOG)
+            changed = True
+        elif path_node.text != TARGET_SYNC_LOG:
             path_node.text = TARGET_SYNC_LOG
             changed = True
 
         if clear_log_keywords or log_keywords is not None:
-            mod_settings = root.find(".//ModSettings") or root.find("ModSettings")
-            if mod_settings is None:
-                raise RuntimeError("未在 LogSyncMod 配置文件中找到 <ModSettings> 节点")
-
             keywords_node = mod_settings.find("keywords")
             if keywords_node is None:
                 keywords_node = ET.SubElement(mod_settings, "keywords")
@@ -192,6 +214,28 @@ def update_mod_settings(log_keywords: list[str] | None = None, clear_log_keyword
                         continue
                     li = ET.SubElement(keywords_node, "li")
                     li.text = kw
+            changed = True
+
+        if enable_smoke_test is not None:
+            desired_value = "True" if enable_smoke_test else "False"
+            current_value = (mod_settings.findtext("enableSmokeTest") or "").strip()
+            if current_value != desired_value:
+                ensure_text_node(mod_settings, "enableSmokeTest", desired_value)
+                changed = True
+
+        desired_sync_message = "False"
+        if (mod_settings.findtext("syncMessage") or "").strip() != desired_sync_message:
+            ensure_text_node(mod_settings, "syncMessage", desired_sync_message)
+            changed = True
+
+        desired_sync_warning = "True"
+        if (mod_settings.findtext("syncWarning") or "").strip() != desired_sync_warning:
+            ensure_text_node(mod_settings, "syncWarning", desired_sync_warning)
+            changed = True
+
+        desired_sync_error = "True"
+        if (mod_settings.findtext("syncError") or "").strip() != desired_sync_error:
+            ensure_text_node(mod_settings, "syncError", desired_sync_error)
             changed = True
 
         if changed:
@@ -222,6 +266,33 @@ def get_logsync_keywords():
         return out
     except Exception:
         return None
+
+def validate_smoke_log():
+    sync_log_path = Path(TARGET_SYNC_LOG)
+    if not sync_log_path.exists():
+        print(f"[错误] 未找到同步日志文件: {sync_log_path}")
+        return False
+
+    content = sync_log_path.read_text(encoding="utf-8", errors="ignore")
+    checks = [
+        ("普通 Message 日志未被同步", content.count(SMOKE_DUPLICATE_MESSAGE) == 0),
+        ("关键词重复 Message 去重成功", content.count(SMOKE_DUPLICATE_KEYWORD_MESSAGE) == 1),
+        ("警告日志存在", content.count(SMOKE_WARNING_MESSAGE) >= 1),
+        ("错误日志存在", content.count(SMOKE_ERROR_MESSAGE) >= 1),
+        ("关键词日志存在", content.count(SMOKE_KEYWORD_MESSAGE) >= 1),
+        ("普通开始标记未被同步", content.count(SMOKE_START_MARKER) == 0),
+        ("普通结束标记未被同步", content.count(SMOKE_END_MARKER) == 0),
+    ]
+
+    failed_checks = [name for name, passed in checks if not passed]
+    if failed_checks:
+        print("[错误] 冒烟测试断言失败：")
+        for name in failed_checks:
+            print(f"  - {name}")
+        return False
+
+    print("[验证] 冒烟测试断言全部通过。")
+    return True
 
 def ensure_mod_enabled(mods: list[str], package_id: str | None):
     if not package_id:
@@ -324,7 +395,11 @@ def monitor(mod_list_file: Path | None = None, log_keywords: list[str] | None = 
             MODS_CONFIG_BACKUP_FILE.unlink()
         except: pass
 
-    update_mod_settings(log_keywords=log_keywords, clear_log_keywords=clear_log_keywords)
+    update_mod_settings(
+        log_keywords=log_keywords,
+        clear_log_keywords=clear_log_keywords,
+        enable_smoke_test=True,
+    )
     current_package_id = read_current_mod_package_id()
     if current_package_id:
         print(f"[信息] 当前项目 packageId: {current_package_id}")
@@ -383,8 +458,17 @@ def monitor(mod_list_file: Path | None = None, log_keywords: list[str] | None = 
     except KeyboardInterrupt: print("\n[!] 中断。")
     finally:
         kill_rimworld()
+        update_mod_settings(enable_smoke_test=False)
         restore_mod_list(original_mods_config)
         print("\n======= 测试结束 =======")
+
+    if found:
+        if validate_smoke_log():
+            print("[结果] 冒烟测试通过。")
+        else:
+            print("[结果] 检测到就绪信号，但冒烟日志断言未通过。")
+    else:
+        print("[结果] 未检测到就绪信号，冒烟测试失败。")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -402,7 +486,11 @@ if __name__ == "__main__":
 
     if args.settings_only:
         check_sandbox_access()
-        update_mod_settings(log_keywords=keywords_to_write, clear_log_keywords=args.clear_log_keywords)
+        update_mod_settings(
+            log_keywords=keywords_to_write,
+            clear_log_keywords=args.clear_log_keywords,
+            enable_smoke_test=False,
+        )
         kws = get_logsync_keywords()
         if kws is None:
             print(f"[警告] 读取 LogSyncMod keywords 失败: {SETTINGS_FILE}")

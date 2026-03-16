@@ -49,11 +49,6 @@ namespace LogSyncMod
         {
             if (string.IsNullOrEmpty(text)) return;
 
-            // 检查设置开关
-            if (type == "Message" && !LogSyncMod.settings.syncMessage) return;
-            if (type == "Warning" && !LogSyncMod.settings.syncWarning) return;
-            if (type == "Error" && !LogSyncMod.settings.syncError) return;
-
             // 1. 检查关键词
             bool keywordMatched = false;
             if (LogSyncMod.settings.keywords != null && LogSyncMod.settings.keywords.Count > 0)
@@ -67,6 +62,11 @@ namespace LogSyncMod
                     }
                 }
             }
+
+            // 检查设置开关。普通 Message 默认可禁用，但关键词命中的 Message 仍允许进入同步流程。
+            if (type == "Message" && !LogSyncMod.settings.syncMessage && !keywordMatched) return;
+            if (type == "Warning" && !LogSyncMod.settings.syncWarning) return;
+            if (type == "Error" && !LogSyncMod.settings.syncError) return;
 
             // 2. 识别模组来源
             string sourceMod = GetSourceModPackageId();
