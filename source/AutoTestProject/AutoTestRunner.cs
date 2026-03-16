@@ -13,7 +13,8 @@ namespace LogSyncMod.AutoTest
         Building,
         Item,
         Terrain,
-        Recipe
+        Recipe,
+        Hediff
     }
 
     internal sealed class AutoTestWorkItem
@@ -23,6 +24,7 @@ namespace LogSyncMod.AutoTest
         public TerrainDef TerrainDef;
         public RecipeDef RecipeDef;
         public ThingDef WorktableDef;
+        public HediffDef HediffDef;
     }
 
     internal sealed class AutoTestResult
@@ -56,6 +58,8 @@ namespace LogSyncMod.AutoTest
             public Thing SpawnedThing;
             public TerrainDef TerrainDef;
             public Def InfoCardDef;
+            public Pawn TestPawn;
+            public Hediff AttachedHediff;
             public IAutoTestUiHandle UiHandle;
             public bool CloseIssued;
             public bool ScreenshotCaptured;
@@ -77,6 +81,7 @@ namespace LogSyncMod.AutoTest
         private readonly Dictionary<ThingDef, Thing> placedRecipeWorktables = new Dictionary<ThingDef, Thing>();
 
         private ModContentPack targetMod;
+        private Pawn sharedHediffPawn;
         private string targetPackageId;
         private string outputDirectory;
         private int nextThingX = 10;
@@ -123,6 +128,11 @@ namespace LogSyncMod.AutoTest
             {
                 UnlockAllResearch();
                 EnqueueRecipeDefs();
+            }
+
+            if (settings.autoTestScope == AutoTestScope.All || settings.autoTestScope == AutoTestScope.Hediffs)
+            {
+                EnqueueHediffDefs();
             }
 
             ApplyBatchLimit();
@@ -211,6 +221,9 @@ namespace LogSyncMod.AutoTest
                     break;
                 case AutoTestKind.Recipe:
                     StartRecipeSession(item);
+                    break;
+                case AutoTestKind.Hediff:
+                    StartHediffSession(item);
                     break;
             }
         }
@@ -362,6 +375,68 @@ namespace LogSyncMod.AutoTest
             result.Stage = "info_open";
         }
 
+        private void StartHediffSession(AutoTestWorkItem item)
+        {
+            AutoTestResult result = CreateResult("Hediff", "HediffDef", item.HediffDef.defName, item.HediffDef.label);
+            results.Add(result);
+
+            try
+            {
+                Pawn pawn = EnsureSharedHediffPawn();
+                if (pawn == null)
+                {
+                    result.Status = "skipped";
+                    result.Stage = "pawn";
+                    result.ErrorMessage = "No test pawn could be generated for Hediff validation.";
+                    return;
+                }
+
+                CleanupTargetModHediffs(pawn);
+
+                BodyPartRecord targetPart = ResolveHediffPart(item.HediffDef, pawn);
+                Hediff hediff = HediffMaker.MakeHediff(item.HediffDef, pawn, targetPart);
+                if (hediff == null)
+                {
+                    result.Status = "skipped";
+                    result.Stage = "hediff";
+                    result.ErrorMessage = "HediffMaker.MakeHediff returned null.";
+                    return;
+                }
+
+                if (item.HediffDef.initialSeverity > 0f)
+                {
+                    hediff.Severity = item.HediffDef.initialSeverity;
+                }
+
+                pawn.health.AddHediff(hediff, targetPart, null, null);
+                Find.Selector.ClearSelection();
+                Find.Selector.Select(pawn, false, false);
+
+                result.Label = hediff.LabelCap;
+                result.Notes = AppendNote(result.Notes, "Pawn=" + pawn.LabelShortCap);
+                result.Notes = AppendNote(result.Notes, "Part=" + (targetPart?.def?.defName ?? "WholeBody"));
+
+                activeSession = new ActiveSession
+                {
+                    Item = item,
+                    Result = result,
+                    InfoCardDef = item.HediffDef,
+                    TestPawn = pawn,
+                    AttachedHediff = hediff,
+                    RemainingUiFrames = PreOpenSettleRepaintFrames,
+                    Phase = SessionPhase.WaitingForPreOpenSettle
+                };
+                result.Stage = "info_open";
+            }
+            catch (Exception ex)
+            {
+                result.Status = "failed_hediff_apply";
+                result.Stage = "hediff";
+                result.ErrorMessage = ex.ToString();
+                CleanupSelectionAndWindows();
+            }
+        }
+
         private void ProcessWaitingForPreOpenSettle()
         {
             if (activeSession == null) return;
@@ -507,7 +582,25 @@ namespace LogSyncMod.AutoTest
             {
             }
 
+            CleanupActiveSessionArtifacts();
+
             Find.Selector.ClearSelection();
+        }
+
+        private void CleanupActiveSessionArtifacts()
+        {
+            if (activeSession?.AttachedHediff == null || activeSession.TestPawn?.health == null)
+            {
+                return;
+            }
+
+            try
+            {
+                activeSession.TestPawn.health.RemoveHediff(activeSession.AttachedHediff);
+            }
+            catch
+            {
+            }
         }
 
         private void FailActiveSession(string status, string stage, string errorMessage)
@@ -551,6 +644,10 @@ namespace LogSyncMod.AutoTest
             {
                 activeSession.Result.Notes = AppendNote(activeSession.Result.Notes, "InfoCardOpened=True");
             }
+            else if (activeSession.AttachedHediff != null)
+            {
+                activeSession.Result.Notes = AppendNote(activeSession.Result.Notes, "InfoCardOpened=True");
+            }
 
             activeSession.Result.Status = "passed";
             activeSession.Result.Stage = activeSession.Item.Kind == AutoTestKind.Recipe ? "produce" : "info_close";
@@ -585,6 +682,16 @@ namespace LogSyncMod.AutoTest
                 .OrderBy(def => def.defName))
             {
                 pendingItems.Enqueue(new AutoTestWorkItem { Kind = AutoTestKind.Terrain, TerrainDef = def });
+            }
+        }
+
+        private void EnqueueHediffDefs()
+        {
+            foreach (HediffDef def in DefDatabase<HediffDef>.AllDefsListForReading
+                .Where(IsTargetHediffDef)
+                .OrderBy(def => def.defName))
+            {
+                pendingItems.Enqueue(new AutoTestWorkItem { Kind = AutoTestKind.Hediff, HediffDef = def });
             }
         }
 
@@ -678,6 +785,87 @@ namespace LogSyncMod.AutoTest
         private bool IsTargetTerrainDef(TerrainDef def)
         {
             return def != null && def.modContentPack == targetMod;
+        }
+
+        private bool IsTargetHediffDef(HediffDef def)
+        {
+            return def != null &&
+                   def.modContentPack == targetMod &&
+                   def.hediffClass != null;
+        }
+
+        private Pawn EnsureSharedHediffPawn()
+        {
+            if (sharedHediffPawn != null &&
+                !sharedHediffPawn.Destroyed &&
+                !sharedHediffPawn.Dead &&
+                sharedHediffPawn.Map == map)
+            {
+                return sharedHediffPawn;
+            }
+
+            Faction faction = Faction.OfPlayer ?? Find.FactionManager?.OfPlayer;
+            Pawn pawn = PawnGenerator.GeneratePawn(PawnKindDefOf.Colonist, faction, null);
+            if (pawn == null)
+            {
+                return null;
+            }
+
+            if (!TryAllocateThingRoot(1, 1, out IntVec3 rootCell))
+            {
+                return null;
+            }
+
+            ClearArea(rootCell, 1, 1);
+            GenSpawn.Spawn(pawn, rootCell, map, WipeMode.Vanish);
+            sharedHediffPawn = pawn;
+            return sharedHediffPawn;
+        }
+
+        private void CleanupTargetModHediffs(Pawn pawn)
+        {
+            if (pawn?.health?.hediffSet?.hediffs == null)
+            {
+                return;
+            }
+
+            foreach (Hediff hediff in pawn.health.hediffSet.hediffs
+                .Where(hediff => hediff?.def?.modContentPack == targetMod)
+                .ToList())
+            {
+                try
+                {
+                    pawn.health.RemoveHediff(hediff);
+                }
+                catch
+                {
+                }
+            }
+        }
+
+        private BodyPartRecord ResolveHediffPart(HediffDef def, Pawn pawn)
+        {
+            if (def == null || pawn?.health?.hediffSet == null)
+            {
+                return null;
+            }
+
+            IEnumerable<BodyPartRecord> parts = pawn.health.hediffSet.GetNotMissingParts(default(BodyPartHeight), default(BodyPartDepth), null, null) ?? Enumerable.Empty<BodyPartRecord>();
+            if (def.defaultInstallPart != null)
+            {
+                BodyPartRecord preferredPart = parts.FirstOrDefault(part => part.def == def.defaultInstallPart);
+                if (preferredPart != null)
+                {
+                    return preferredPart;
+                }
+            }
+
+            if (def.addedPartProps != null || def.injuryProps != null || def.defaultInstallPart != null)
+            {
+                return parts.FirstOrDefault();
+            }
+
+            return null;
         }
 
         private bool IsTargetRecipeDef(RecipeDef recipe)
@@ -1160,9 +1348,16 @@ namespace LogSyncMod.AutoTest
         {
             if (activeSession == null || activeSession.InfoCardDef == null || activeSession.UiHandle != null) return;
 
-            activeSession.UiHandle = activeSession.SpawnedThing != null
-                ? AutoTestInfoCardUiAdapter.Open(activeSession.SpawnedThing)
-                : AutoTestInfoCardUiAdapter.Open(activeSession.InfoCardDef);
+            if (activeSession.AttachedHediff != null)
+            {
+                activeSession.UiHandle = AutoTestInfoCardUiAdapter.Open(activeSession.AttachedHediff);
+            }
+            else
+            {
+                activeSession.UiHandle = activeSession.SpawnedThing != null
+                    ? AutoTestInfoCardUiAdapter.Open(activeSession.SpawnedThing)
+                    : AutoTestInfoCardUiAdapter.Open(activeSession.InfoCardDef);
+            }
             InfoCardCloseTrace.Begin(activeSession.Result.DefName);
             InfoCardCloseTrace.Attach(Find.WindowStack.WindowOfType<Dialog_InfoCard>());
             InfoCardCloseTrace.AddReason("OpenRequested");
@@ -1205,6 +1400,7 @@ namespace LogSyncMod.AutoTest
             if (completed) return;
             completed = true;
             CleanupSelectionAndWindows();
+            CleanupSharedHediffPawn();
 
             AutoTestReportWriter.Write(runArtifacts, targetPackageId ?? "unknown", results, targetMod?.Name ?? "Unknown");
             Log.Message(string.Format(
@@ -1213,6 +1409,28 @@ namespace LogSyncMod.AutoTest
                 results.Count,
                 results.Count(result => result.Status == "passed"),
                 results.Count(result => result.Status != "passed" && result.Status != "skipped")));
+        }
+
+        private void CleanupSharedHediffPawn()
+        {
+            if (sharedHediffPawn == null)
+            {
+                return;
+            }
+
+            try
+            {
+                CleanupTargetModHediffs(sharedHediffPawn);
+                if (!sharedHediffPawn.Destroyed)
+                {
+                    sharedHediffPawn.Destroy(DestroyMode.Vanish);
+                }
+            }
+            catch
+            {
+            }
+
+            sharedHediffPawn = null;
         }
 
         private static string ResolveOutputDirectory(LogSyncSettings settings)

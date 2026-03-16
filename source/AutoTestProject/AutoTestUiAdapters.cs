@@ -194,5 +194,17 @@ namespace LogSyncMod.AutoTest
             Find.WindowStack.Add(infoCard);
             return new AutoTestInfoCardHandle(infoCard, targetDef);
         }
+
+        public static AutoTestInfoCardHandle Open(Hediff hediff)
+        {
+            Find.WindowStack.TryRemoveAssignableFromType(typeof(Dialog_InfoCard), false);
+
+            Dialog_InfoCard infoCard = new Dialog_InfoCard(hediff);
+            infoCard.closeOnClickedOutside = true;
+            infoCard.closeOnAccept = false;
+            infoCard.closeOnCancel = false;
+            Find.WindowStack.Add(infoCard);
+            return new AutoTestInfoCardHandle(infoCard, hediff?.def);
+        }
     }
 }

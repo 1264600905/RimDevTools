@@ -244,6 +244,7 @@ def update_mod_settings(
                 "all": "All",
                 "content": "Content",
                 "recipes": "Recipes",
+                "hediffs": "Hediffs",
             }
             desired_scope = scope_map.get(normalized_scope, "All")
             if (mod_settings.findtext("autoTestScope") or "").strip() != desired_scope:
@@ -604,7 +605,7 @@ if __name__ == "__main__":
     parser.add_argument("--clear-log-keywords", action="store_true", help="清空 LogSyncMod 配置中的 <keywords> 列表")
     parser.add_argument("--auto-test-package-id", default=None, help="启用定向自动测试，并指定目标模组 packageId")
     parser.add_argument("--auto-test-output-dir", default=None, help="自动测试报告输出目录")
-    parser.add_argument("--auto-test-scope", choices=["all", "content", "recipes"], default="all", help="自动测试范围：all/content/recipes")
+    parser.add_argument("--auto-test-scope", choices=["all", "content", "recipes", "hediffs"], default="all", help="自动测试范围：all/content/recipes/hediffs")
     parser.add_argument("--auto-test-capture-screenshots", action="store_true", help="自动测试时对打开的 InfoCard 截图")
     parser.add_argument("--auto-test-batch-size", type=int, default=None, help="自动测试每批处理数量")
     parser.add_argument("--timeout-seconds", type=int, default=TIMEOUT, help="等待测试完成的最长秒数")

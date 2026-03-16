@@ -20,6 +20,7 @@
   <LogSyncMod.AutoTestScopeAll>全量</LogSyncMod.AutoTestScopeAll>
   <LogSyncMod.AutoTestScopeContent>建筑物品</LogSyncMod.AutoTestScopeContent>
   <LogSyncMod.AutoTestScopeRecipes>工作台配方</LogSyncMod.AutoTestScopeRecipes>
+  <LogSyncMod.AutoTestScopeHediffs>小人 Hediff</LogSyncMod.AutoTestScopeHediffs>
   <LogSyncMod.AutoTestCaptureScreenshots>为已打开的 InfoCard 自动截图</LogSyncMod.AutoTestCaptureScreenshots>
   <LogSyncMod.AutoTestBatchSize>每批测试数量：{0}</LogSyncMod.AutoTestBatchSize>
   <LogSyncMod.AutoTestRunNow>立即启动自动测试</LogSyncMod.AutoTestRunNow>
