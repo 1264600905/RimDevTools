@@ -3,7 +3,7 @@
     <name>环世界日志同步模组</name>
     <author>trigger</author>
     <url></url>
-    <supportedVersions><li>1.5</li><li>1.6</li></supportedVersions>
+    <supportedVersions><li>1.6</li></supportedVersions>
     <packageId>trigger.logsyncmod</packageId>
   <loadBefore />   
   <loadAfter>	
@@ -12,20 +12,22 @@
   <modDependencies>
 	</modDependencies>
 <description>
-	[h1]模组模板[/h1]
+	[h1]环世界日志同步模组[/h1]
 
-[b]这是一个 RimWorld 模组模板。[/b]
-您可以在此基础上开发您的模组功能。
+[b]用于将指定模组的日志同步到外部文件，便于排错、分析和交给 AI 处理。[/b]
 
 [h2]功能特性[/h2]
-- 包含基础的 Mod 设置菜单
-- 包含 Harmony 补丁示例 (如需要)
-- 包含 Defs 定义示例
-- 自动编译脚本
+- 支持同步普通日志、警告日志和错误日志
+- 支持按 Mod PackageId 过滤日志来源
+- 支持按关键词强制记录日志
+- 支持自定义输出路径到 .log 或 .txt 文件
+- 支持从当前 Mod 列表中选择目标包名
+- 适合开发调试、问题复现和日志归档
 
-[h2]如何使用[/h2]
-1. 修改 source 目录下的 C# 代码
-2. 修改 Defs 目录下的 XML 定义
-3. 运行 deploy.ps1 进行编译和部署
+[h2]使用说明[/h2]
+1. 在模组设置中填写日志输出路径
+2. 指定要监控的 Mod PackageId，或直接从列表中选择
+3. 根据需要设置关键词和日志级别开关
+4. 运行游戏后，在外部日志文件中查看筛选后的输出
 	</description>
 </ModMetaData>

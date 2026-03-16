@@ -13,7 +13,19 @@ namespace LogSyncMod
     [HarmonyPatch(typeof(Log))]
     public static class LogPatches
     {
-        private static readonly Queue<string> recentLogs = new Queue<string>();
+        private sealed class QueuedLogEntry
+        {
+            public QueuedLogEntry(string dedupeKey, string outputLine)
+            {
+                DedupeKey = dedupeKey;
+                OutputLine = outputLine;
+            }
+
+            public string DedupeKey { get; }
+            public string OutputLine { get; }
+        }
+
+        private static readonly Queue<QueuedLogEntry> recentLogs = new Queue<QueuedLogEntry>();
         private static readonly HashSet<string> processedLogs = new HashSet<string>();
         private static readonly object fileLock = new object();
         private const int MaxLogLines = 500;
@@ -86,6 +98,9 @@ namespace LogSyncMod
             {
                 try
                 {
+                    recentLogs.Clear();
+                    processedLogs.Clear();
+
                     string path = LogSyncMod.settings.logPath;
                     if (string.IsNullOrEmpty(path)) return;
 
@@ -134,20 +149,10 @@ namespace LogSyncMod
         private static void WriteToFile(string text, string type, string sourceMod)
         {
             string idTag = string.IsNullOrEmpty(sourceMod) ? "Unknown" : sourceMod;
-            string logEntry = $"[{idTag}] [{type}] [{DateTime.Now:HH:mm:ss.fff}] {text}";
+            string dedupeKey = $"[{idTag}] [{type}] {text}";
+            string outputLine = $"[{idTag}] [{type}] [{DateTime.Now:HH:mm:ss.fff}] {text}";
 
-            if (LogSyncMod.settings.enableVerboseDebug)
-                Log.Message($"[LogSyncDebug] Checking log: {logEntry}");
-
-            if (processedLogs.Contains(logEntry))
-            {
-                if (LogSyncMod.settings.enableVerboseDebug)
-                    Log.Message($"[LogSyncDebug] -> Result: DUPLICATE. Skipping.");
-                return;
-            }
-            
-            if (LogSyncMod.settings.enableVerboseDebug)
-                Log.Message($"[LogSyncDebug] -> Result: UNIQUE. Writing to file.");
+            EmitDebug($"Checking log: {dedupeKey}");
 
             lock (fileLock)
             {
@@ -156,25 +161,37 @@ namespace LogSyncMod
                     string path = LogSyncMod.settings.logPath;
                     if (string.IsNullOrEmpty(path)) return;
 
-                    recentLogs.Enqueue(logEntry);
-                    processedLogs.Add(logEntry);
-                    
-                    while (recentLogs.Count > MaxLogLines)
+                    if (processedLogs.Contains(dedupeKey))
                     {
-                        string removed = recentLogs.Dequeue();
-                        processedLogs.Remove(removed);
+                        EmitDebug("-> Result: DUPLICATE. Skipping.");
+                        return;
                     }
 
-                    File.WriteAllLines(path, recentLogs.ToArray());
+                    EmitDebug("-> Result: UNIQUE. Writing to file.");
 
-                    if (LogSyncMod.settings.enableVerboseDebug)
-                        Log.Message($"[LogSyncDebug] -> Write successful. Queue size: {recentLogs.Count}, HashSet size: {processedLogs.Count}");
+                    recentLogs.Enqueue(new QueuedLogEntry(dedupeKey, outputLine));
+                    processedLogs.Add(dedupeKey);
+
+                    while (recentLogs.Count > MaxLogLines)
+                    {
+                        QueuedLogEntry removed = recentLogs.Dequeue();
+                        processedLogs.Remove(removed.DedupeKey);
+                    }
+
+                    File.WriteAllLines(path, recentLogs.Select(entry => entry.OutputLine).ToArray());
+                    EmitDebug($"-> Write successful. Queue size: {recentLogs.Count}, HashSet size: {processedLogs.Count}");
                 }
                 catch (Exception ex)
                 {
                     UnityEngine.Debug.Log("[LogSyncMod] Write Error: " + ex.Message);
                 }
             }
+        }
+
+        private static void EmitDebug(string message)
+        {
+            if (LogSyncMod.settings == null || !LogSyncMod.settings.enableVerboseDebug) return;
+            UnityEngine.Debug.Log("[LogSyncDebug] " + message);
         }
     }
 }

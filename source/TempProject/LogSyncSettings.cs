@@ -16,6 +16,7 @@ namespace LogSyncMod
         public bool syncWarning = true;
         public bool syncError = true;
         public bool enableVerboseDebug = false;
+        public bool enableSmokeTest = false;
 
         public override void ExposeData()
         {
@@ -27,6 +28,7 @@ namespace LogSyncMod
             Scribe_Values.Look(ref syncWarning, "syncWarning", true);
             Scribe_Values.Look(ref syncError, "syncError", true);
             Scribe_Values.Look(ref enableVerboseDebug, "enableVerboseDebug", false);
+            Scribe_Values.Look(ref enableSmokeTest, "enableSmokeTest", false);
 
             if (targetModIds == null) targetModIds = new List<string>();
             if (keywords == null) keywords = new List<string>();

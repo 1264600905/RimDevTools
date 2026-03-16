@@ -36,12 +36,13 @@ namespace LogSyncMod
             var harmony = new Harmony("trigger.logsyncmod");
             harmony.PatchAll();
             LogPatches.InitializeFile();
+            LogSyncSmokeTest.Schedule();
             Log.Message("[LogSyncMod] INITIALIZATION COMPLETED.");
         }
 
         public override string SettingsCategory()
         {
-            return "Log Sync Mod";
+            return "LogSyncMod.SettingsCategory".Translate();
         }
 
         public override void DoSettingsWindowContents(Rect inRect)
@@ -49,19 +50,19 @@ namespace LogSyncMod
             Listing_Standard listingStandard = new Listing_Standard();
             listingStandard.Begin(inRect);
 
-            listingStandard.Label("日志输出路径 (支持 .log 或 .txt 绝对路径):");
+            listingStandard.Label("LogSyncMod.LogPathLabel".Translate());
             settings.logPath = listingStandard.TextEntry(settings.logPath);
             
-            if (listingStandard.ButtonText("验证路径合法性"))
+            if (listingStandard.ButtonText("LogSyncMod.ValidatePathButton".Translate()))
             {
                 ValidateLogPath();
             }
             listingStandard.Gap();
 
-            listingStandard.Label("监控的 Mod PackageID (逗号分隔):");
+            listingStandard.Label("LogSyncMod.TargetModIdsLabel".Translate());
             settings.targetModIdsInput = listingStandard.TextEntry(settings.targetModIdsInput);
             
-            if (listingStandard.ButtonText("从列表中选择 Mod..."))
+            if (listingStandard.ButtonText("LogSyncMod.SelectModButton".Translate()))
             {
                 List<FloatMenuOption> options = new List<FloatMenuOption>();
                 foreach (var mod in LoadedModManager.RunningMods)
@@ -81,7 +82,7 @@ namespace LogSyncMod
                 Find.WindowStack.Add(new FloatMenu(options));
             }
             
-            if (listingStandard.ButtonText("清空已选 Mod 列表"))
+            if (listingStandard.ButtonText("LogSyncMod.ClearModListButton".Translate()))
             {
                 settings.targetModIds.Clear();
                 settings.targetModIdsInput = "";
@@ -89,26 +90,26 @@ namespace LogSyncMod
             }
             listingStandard.Gap();
 
-            listingStandard.Label("强制记录的关键词 (逗号分隔):");
+            listingStandard.Label("LogSyncMod.KeywordsLabel".Translate());
             settings.keywordsInput = listingStandard.TextEntry(settings.keywordsInput);
             listingStandard.Gap();
 
-            listingStandard.CheckboxLabeled("同步普通日志 (Message)", ref settings.syncMessage);
-            listingStandard.CheckboxLabeled("同步警告日志 (Warning)", ref settings.syncWarning);
-            listingStandard.CheckboxLabeled("同步错误日志 (Error)", ref settings.syncError);
+            listingStandard.CheckboxLabeled("LogSyncMod.SyncMessage".Translate(), ref settings.syncMessage);
+            listingStandard.CheckboxLabeled("LogSyncMod.SyncWarning".Translate(), ref settings.syncWarning);
+            listingStandard.CheckboxLabeled("LogSyncMod.SyncError".Translate(), ref settings.syncError);
             listingStandard.Gap();
-            listingStandard.CheckboxLabeled("启用详细调试日志 (用于排查重复问题)", ref settings.enableVerboseDebug);
+            listingStandard.CheckboxLabeled("LogSyncMod.EnableVerboseDebug".Translate(), ref settings.enableVerboseDebug);
             listingStandard.Gap();
 
             listingStandard.Gap();
-            if (listingStandard.ButtonText("应用并保存设置"))
+            if (listingStandard.ButtonText("LogSyncMod.ApplyAndSave".Translate()))
             {
                 settings.ApplyInputs();
                 settings.Write();
-                Messages.Message("设置已应用", MessageTypeDefOf.PositiveEvent, false);
+                Messages.Message("LogSyncMod.SettingsApplied".Translate(), MessageTypeDefOf.PositiveEvent, false);
             }
 
-            if (listingStandard.ButtonText("打开日志所在文件夹"))
+            if (listingStandard.ButtonText("LogSyncMod.OpenLogFolder".Translate()))
             {
                 if (!string.IsNullOrEmpty(settings.logPath))
                 {
@@ -119,7 +120,7 @@ namespace LogSyncMod
                     }
                     else
                     {
-                        Messages.Message("目录不存在", MessageTypeDefOf.RejectInput, false);
+                        Messages.Message("LogSyncMod.DirectoryNotFound".Translate(), MessageTypeDefOf.RejectInput, false);
                     }
                 }
             }
@@ -134,20 +135,20 @@ namespace LogSyncMod
                 string path = settings.logPath;
                 if (string.IsNullOrEmpty(path))
                 {
-                    Messages.Message("路径不能为空", MessageTypeDefOf.RejectInput, false);
+                    Messages.Message("LogSyncMod.PathEmpty".Translate(), MessageTypeDefOf.RejectInput, false);
                     return;
                 }
 
                 string dir = System.IO.Path.GetDirectoryName(path);
                 if (string.IsNullOrEmpty(dir))
                 {
-                    Messages.Message("无效的绝对路径", MessageTypeDefOf.RejectInput, false);
+                    Messages.Message("LogSyncMod.InvalidAbsolutePath".Translate(), MessageTypeDefOf.RejectInput, false);
                     return;
                 }
 
                 if (!System.IO.Directory.Exists(dir))
                 {
-                    Messages.Message("父级目录不存在，将尝试在应用时自动创建", MessageTypeDefOf.CautionInput, false);
+                    Messages.Message("LogSyncMod.ParentDirectoryMissing".Translate(), MessageTypeDefOf.CautionInput, false);
                 }
 
                 // 尝试进行模拟写入测试
@@ -155,11 +156,11 @@ namespace LogSyncMod
                 System.IO.File.WriteAllText(testFile, "test");
                 System.IO.File.Delete(testFile);
 
-                Messages.Message("路径验证成功：该位置可写", MessageTypeDefOf.PositiveEvent, false);
+                Messages.Message("LogSyncMod.PathValidationSuccess".Translate(), MessageTypeDefOf.PositiveEvent, false);
             }
             catch (Exception ex)
             {
-                Messages.Message("验证失败: " + ex.Message, MessageTypeDefOf.RejectInput, false);
+                Messages.Message("LogSyncMod.PathValidationFailed".Translate(ex.Message), MessageTypeDefOf.RejectInput, false);
             }
         }
     }

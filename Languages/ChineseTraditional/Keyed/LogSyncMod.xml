@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <LogSyncMod.SettingsCategory>日誌同步模組</LogSyncMod.SettingsCategory>
+  <LogSyncMod.LogPathLabel>日誌輸出路徑（支援 .log 或 .txt 絕對路徑）：</LogSyncMod.LogPathLabel>
+  <LogSyncMod.ValidatePathButton>驗證路徑合法性</LogSyncMod.ValidatePathButton>
+  <LogSyncMod.TargetModIdsLabel>監控的 Mod PackageID（逗號分隔）：</LogSyncMod.TargetModIdsLabel>
+  <LogSyncMod.SelectModButton>從列表中選擇 Mod...</LogSyncMod.SelectModButton>
+  <LogSyncMod.ClearModListButton>清空已選 Mod 列表</LogSyncMod.ClearModListButton>
+  <LogSyncMod.KeywordsLabel>強制記錄的關鍵詞（逗號分隔）：</LogSyncMod.KeywordsLabel>
+  <LogSyncMod.SyncMessage>同步普通日誌（Message）</LogSyncMod.SyncMessage>
+  <LogSyncMod.SyncWarning>同步警告日誌（Warning）</LogSyncMod.SyncWarning>
+  <LogSyncMod.SyncError>同步錯誤日誌（Error）</LogSyncMod.SyncError>
+  <LogSyncMod.EnableVerboseDebug>啟用詳細調試日誌（用於排查重複問題）</LogSyncMod.EnableVerboseDebug>
+  <LogSyncMod.ApplyAndSave>套用並儲存設定</LogSyncMod.ApplyAndSave>
+  <LogSyncMod.OpenLogFolder>打開日誌所在資料夾</LogSyncMod.OpenLogFolder>
+  <LogSyncMod.SettingsApplied>設定已套用</LogSyncMod.SettingsApplied>
+  <LogSyncMod.DirectoryNotFound>目錄不存在</LogSyncMod.DirectoryNotFound>
+  <LogSyncMod.PathEmpty>路徑不能為空</LogSyncMod.PathEmpty>
+  <LogSyncMod.InvalidAbsolutePath>無效的絕對路徑</LogSyncMod.InvalidAbsolutePath>
+  <LogSyncMod.ParentDirectoryMissing>父級目錄不存在，將嘗試在套用時自動建立</LogSyncMod.ParentDirectoryMissing>
+  <LogSyncMod.PathValidationSuccess>路徑驗證成功：該位置可寫</LogSyncMod.PathValidationSuccess>
+  <LogSyncMod.PathValidationFailed>驗證失敗：{0}</LogSyncMod.PathValidationFailed>
+</LanguageData>

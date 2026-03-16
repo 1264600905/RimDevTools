@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<LanguageData>
-  <!-- Settings -->
-  <ModEnabled>Mod Enabled</ModEnabled>
-  <EnableDeveloperTools>Enable Developer Tools</EnableDeveloperTools>
-  <ShowDebugLog>Show Debug Log</ShowDebugLog>
-  <ForcePlaceBlueprint>Force Place Blueprint</ForcePlaceBlueprint>
-  <ResetToDefault>Reset to Default</ResetToDefault>
-</LanguageData>

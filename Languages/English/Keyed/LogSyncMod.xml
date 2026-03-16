@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <LogSyncMod.SettingsCategory>Log Sync Mod</LogSyncMod.SettingsCategory>
+  <LogSyncMod.LogPathLabel>Log output path (absolute .log or .txt path):</LogSyncMod.LogPathLabel>
+  <LogSyncMod.ValidatePathButton>Validate Path</LogSyncMod.ValidatePathButton>
+  <LogSyncMod.TargetModIdsLabel>Monitored Mod PackageIDs (comma-separated):</LogSyncMod.TargetModIdsLabel>
+  <LogSyncMod.SelectModButton>Select From Mod List...</LogSyncMod.SelectModButton>
+  <LogSyncMod.ClearModListButton>Clear Selected Mod List</LogSyncMod.ClearModListButton>
+  <LogSyncMod.KeywordsLabel>Force-record keywords (comma-separated):</LogSyncMod.KeywordsLabel>
+  <LogSyncMod.SyncMessage>Sync normal logs (Message)</LogSyncMod.SyncMessage>
+  <LogSyncMod.SyncWarning>Sync warning logs (Warning)</LogSyncMod.SyncWarning>
+  <LogSyncMod.SyncError>Sync error logs (Error)</LogSyncMod.SyncError>
+  <LogSyncMod.EnableVerboseDebug>Enable verbose debug logs (for duplicate checks)</LogSyncMod.EnableVerboseDebug>
+  <LogSyncMod.ApplyAndSave>Apply And Save</LogSyncMod.ApplyAndSave>
+  <LogSyncMod.OpenLogFolder>Open Log Folder</LogSyncMod.OpenLogFolder>
+  <LogSyncMod.SettingsApplied>Settings applied</LogSyncMod.SettingsApplied>
+  <LogSyncMod.DirectoryNotFound>Directory does not exist</LogSyncMod.DirectoryNotFound>
+  <LogSyncMod.PathEmpty>Path cannot be empty</LogSyncMod.PathEmpty>
+  <LogSyncMod.InvalidAbsolutePath>Invalid absolute path</LogSyncMod.InvalidAbsolutePath>
+  <LogSyncMod.ParentDirectoryMissing>Parent directory does not exist and will be created when applying settings</LogSyncMod.ParentDirectoryMissing>
+  <LogSyncMod.PathValidationSuccess>Path validation succeeded: location is writable</LogSyncMod.PathValidationSuccess>
+  <LogSyncMod.PathValidationFailed>Validation failed: {0}</LogSyncMod.PathValidationFailed>
+</LanguageData>
