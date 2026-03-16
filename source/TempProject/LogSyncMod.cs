@@ -108,9 +108,18 @@ namespace LogSyncMod
             settings.autoTestTargetPackageId = listingStandard.TextEntry(settings.autoTestTargetPackageId);
             listingStandard.Label("LogSyncMod.AutoTestOutputPath".Translate());
             settings.autoTestOutputPath = listingStandard.TextEntry(settings.autoTestOutputPath);
-            listingStandard.CheckboxLabeled("LogSyncMod.AutoTestBuildings".Translate(), ref settings.autoTestBuildings);
-            listingStandard.CheckboxLabeled("LogSyncMod.AutoTestItems".Translate(), ref settings.autoTestItems);
-            listingStandard.CheckboxLabeled("LogSyncMod.AutoTestTerrains".Translate(), ref settings.autoTestTerrains);
+            string scopeLabel = GetAutoTestScopeLabel(settings.autoTestScope);
+            listingStandard.Label("LogSyncMod.AutoTestScope".Translate(scopeLabel));
+            if (listingStandard.ButtonText("LogSyncMod.AutoTestScopeSelect".Translate(scopeLabel)))
+            {
+                List<FloatMenuOption> options = new List<FloatMenuOption>
+                {
+                    new FloatMenuOption("LogSyncMod.AutoTestScopeAll".Translate(), () => settings.autoTestScope = AutoTestScope.All),
+                    new FloatMenuOption("LogSyncMod.AutoTestScopeContent".Translate(), () => settings.autoTestScope = AutoTestScope.Content),
+                    new FloatMenuOption("LogSyncMod.AutoTestScopeRecipes".Translate(), () => settings.autoTestScope = AutoTestScope.Recipes)
+                };
+                Find.WindowStack.Add(new FloatMenu(options));
+            }
             listingStandard.CheckboxLabeled("LogSyncMod.AutoTestCaptureScreenshots".Translate(), ref settings.autoTestCaptureScreenshots);
             listingStandard.Label("LogSyncMod.AutoTestBatchSize".Translate(settings.autoTestBatchSize));
             string batchSizeInput = listingStandard.TextEntry(settings.autoTestBatchSize.ToString());
@@ -187,6 +196,19 @@ namespace LogSyncMod
             catch (Exception ex)
             {
                 Messages.Message("LogSyncMod.PathValidationFailed".Translate(ex.Message), MessageTypeDefOf.RejectInput, false);
+            }
+        }
+
+        private static string GetAutoTestScopeLabel(AutoTestScope scope)
+        {
+            switch (scope)
+            {
+                case AutoTestScope.Content:
+                    return "LogSyncMod.AutoTestScopeContent".Translate();
+                case AutoTestScope.Recipes:
+                    return "LogSyncMod.AutoTestScopeRecipes".Translate();
+                default:
+                    return "LogSyncMod.AutoTestScopeAll".Translate();
             }
         }
     }

@@ -172,6 +172,7 @@ def update_mod_settings(
     auto_test_enabled: bool | None = None,
     auto_test_target_package_id: str | None = None,
     auto_test_output_path: str | None = None,
+    auto_test_scope: str | None = None,
     auto_test_capture_screenshots: bool | None = None,
     auto_test_batch_size: int | None = None,
 ):
@@ -235,6 +236,18 @@ def update_mod_settings(
             normalized_output_path = (auto_test_output_path or "").strip()
             if (mod_settings.findtext("autoTestOutputPath") or "").strip() != normalized_output_path:
                 ensure_text_node(mod_settings, "autoTestOutputPath", normalized_output_path)
+                changed = True
+
+        if auto_test_scope is not None:
+            normalized_scope = (auto_test_scope or "").strip().lower()
+            scope_map = {
+                "all": "All",
+                "content": "Content",
+                "recipes": "Recipes",
+            }
+            desired_scope = scope_map.get(normalized_scope, "All")
+            if (mod_settings.findtext("autoTestScope") or "").strip() != desired_scope:
+                ensure_text_node(mod_settings, "autoTestScope", desired_scope)
                 changed = True
 
         if auto_test_capture_screenshots is not None:
@@ -461,8 +474,10 @@ def monitor(
     clear_log_keywords: bool = False,
     auto_test_package_id: str | None = None,
     auto_test_output_dir: str | None = None,
+    auto_test_scope: str | None = "all",
     auto_test_capture_screenshots: bool | None = None,
     auto_test_batch_size: int | None = None,
+    timeout_seconds: int = TIMEOUT,
 ):
     check_sandbox_access()
     print("======= 环世界自动化监控测试启动 =======")
@@ -485,6 +500,7 @@ def monitor(
         auto_test_enabled=True if auto_test_package_id else None,
         auto_test_target_package_id=auto_test_package_id,
         auto_test_output_path=auto_test_output_dir if auto_test_package_id else None,
+        auto_test_scope=auto_test_scope if auto_test_package_id else None,
         auto_test_capture_screenshots=auto_test_capture_screenshots if auto_test_package_id else None,
         auto_test_batch_size=auto_test_batch_size if auto_test_package_id else None,
     )
@@ -540,7 +556,7 @@ def monitor(
     
     found = False
     try:
-        while time.time() - start_time < TIMEOUT:
+        while time.time() - start_time < timeout_seconds:
             if auto_test_package_id and game_process is not None:
                 exit_code = game_process.poll()
                 if exit_code is not None:
@@ -567,6 +583,7 @@ def monitor(
             update_mod_settings(
                 auto_test_enabled=False,
                 auto_test_target_package_id="",
+                auto_test_scope="all",
                 auto_test_capture_screenshots=False if auto_test_capture_screenshots is not None else None,
             )
         restore_mod_list(original_mods_config)
@@ -587,8 +604,10 @@ if __name__ == "__main__":
     parser.add_argument("--clear-log-keywords", action="store_true", help="清空 LogSyncMod 配置中的 <keywords> 列表")
     parser.add_argument("--auto-test-package-id", default=None, help="启用定向自动测试，并指定目标模组 packageId")
     parser.add_argument("--auto-test-output-dir", default=None, help="自动测试报告输出目录")
+    parser.add_argument("--auto-test-scope", choices=["all", "content", "recipes"], default="all", help="自动测试范围：all/content/recipes")
     parser.add_argument("--auto-test-capture-screenshots", action="store_true", help="自动测试时对打开的 InfoCard 截图")
     parser.add_argument("--auto-test-batch-size", type=int, default=None, help="自动测试每批处理数量")
+    parser.add_argument("--timeout-seconds", type=int, default=TIMEOUT, help="等待测试完成的最长秒数")
     parser.add_argument("--settings-only", action="store_true", help="只更新 LogSyncMod 配置（logPath/keywords），不启动游戏")
     args = parser.parse_args()
 
@@ -606,6 +625,7 @@ if __name__ == "__main__":
             auto_test_enabled=True if args.auto_test_package_id else None,
             auto_test_target_package_id=args.auto_test_package_id,
             auto_test_output_path=args.auto_test_output_dir if args.auto_test_package_id else None,
+            auto_test_scope=args.auto_test_scope if args.auto_test_package_id else None,
             auto_test_capture_screenshots=True if args.auto_test_capture_screenshots and args.auto_test_package_id else None,
             auto_test_batch_size=args.auto_test_batch_size if args.auto_test_package_id else None,
         )
@@ -624,6 +644,8 @@ if __name__ == "__main__":
         clear_log_keywords=args.clear_log_keywords,
         auto_test_package_id=args.auto_test_package_id,
         auto_test_output_dir=args.auto_test_output_dir,
+        auto_test_scope=args.auto_test_scope,
         auto_test_capture_screenshots=True if args.auto_test_capture_screenshots and args.auto_test_package_id else None,
         auto_test_batch_size=args.auto_test_batch_size,
+        timeout_seconds=max(1, int(args.timeout_seconds)),
     )

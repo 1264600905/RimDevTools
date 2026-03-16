@@ -3,6 +3,13 @@ using Verse;
 
 namespace LogSyncMod
 {
+    public enum AutoTestScope
+    {
+        All = 0,
+        Content = 1,
+        Recipes = 2
+    }
+
     public class LogSyncSettings : ModSettings
     {
         public string logPath = "D:/RimWorldLogs.log";
@@ -20,6 +27,7 @@ namespace LogSyncMod
         public bool autoTestEnabled = false;
         public string autoTestTargetPackageId = "";
         public string autoTestOutputPath = "D:/RimWorldAutoTest";
+        public AutoTestScope autoTestScope = AutoTestScope.All;
         public bool autoTestBuildings = true;
         public bool autoTestItems = true;
         public bool autoTestTerrains = true;
@@ -41,6 +49,7 @@ namespace LogSyncMod
             Scribe_Values.Look(ref autoTestEnabled, "autoTestEnabled", false);
             Scribe_Values.Look(ref autoTestTargetPackageId, "autoTestTargetPackageId", "");
             Scribe_Values.Look(ref autoTestOutputPath, "autoTestOutputPath", "D:/RimWorldAutoTest");
+            Scribe_Values.Look(ref autoTestScope, "autoTestScope", AutoTestScope.All);
             Scribe_Values.Look(ref autoTestBuildings, "autoTestBuildings", true);
             Scribe_Values.Look(ref autoTestItems, "autoTestItems", true);
             Scribe_Values.Look(ref autoTestTerrains, "autoTestTerrains", true);
@@ -51,6 +60,7 @@ namespace LogSyncMod
             if (keywords == null) keywords = new List<string>();
             if (autoTestTargetPackageId == null) autoTestTargetPackageId = "";
             if (autoTestOutputPath == null) autoTestOutputPath = "D:/RimWorldAutoTest";
+            if (!System.Enum.IsDefined(typeof(AutoTestScope), autoTestScope)) autoTestScope = AutoTestScope.All;
             
             if (Scribe.mode == LoadSaveMode.PostLoadInit)
             {
@@ -78,6 +88,16 @@ namespace LogSyncMod
             autoTestTargetPackageId = (autoTestTargetPackageId ?? "").Trim().ToLowerInvariant();
             autoTestOutputPath = (autoTestOutputPath ?? "").Trim();
             if (autoTestBatchSize < 1) autoTestBatchSize = 1;
+        }
+
+        public bool ShouldTestContent()
+        {
+            return autoTestScope == AutoTestScope.All || autoTestScope == AutoTestScope.Content;
+        }
+
+        public bool ShouldTestRecipes()
+        {
+            return autoTestScope == AutoTestScope.All || autoTestScope == AutoTestScope.Recipes;
         }
 
         public void RequestAutoTestRun()

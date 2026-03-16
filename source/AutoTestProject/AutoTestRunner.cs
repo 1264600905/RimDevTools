@@ -12,7 +12,8 @@ namespace LogSyncMod.AutoTest
     {
         Building,
         Item,
-        Terrain
+        Terrain,
+        Recipe
     }
 
     internal sealed class AutoTestWorkItem
@@ -20,6 +21,8 @@ namespace LogSyncMod.AutoTest
         public AutoTestKind Kind;
         public ThingDef ThingDef;
         public TerrainDef TerrainDef;
+        public RecipeDef RecipeDef;
+        public ThingDef WorktableDef;
     }
 
     internal sealed class AutoTestResult
@@ -71,6 +74,7 @@ namespace LogSyncMod.AutoTest
         private readonly Map map;
         private readonly Queue<AutoTestWorkItem> pendingItems = new Queue<AutoTestWorkItem>();
         private readonly List<AutoTestResult> results = new List<AutoTestResult>();
+        private readonly Dictionary<ThingDef, Thing> placedRecipeWorktables = new Dictionary<ThingDef, Thing>();
 
         private ModContentPack targetMod;
         private string targetPackageId;
@@ -109,19 +113,30 @@ namespace LogSyncMod.AutoTest
 
             nextTerrainX = Math.Max(map.Size.x / 2, 10);
 
-            EnqueueThingDefs();
-            EnqueueTerrainDefs();
+            if (settings.ShouldTestContent())
+            {
+                EnqueueThingDefs();
+                EnqueueTerrainDefs();
+            }
+
+            if (settings.ShouldTestRecipes())
+            {
+                UnlockAllResearch();
+                EnqueueRecipeDefs();
+            }
+
             ApplyBatchLimit();
 
             Log.Message(string.Format(
-                "[LogSyncAutoTest] START packageId={0} map={1} pending={2}",
+                "[LogSyncAutoTest] START packageId={0} map={1} scope={2} pending={3}",
                 targetPackageId,
                 map.info?.parent?.LabelCap ?? map.ToString(),
+                settings.autoTestScope,
                 pendingItems.Count));
 
             if (pendingItems.Count == 0)
             {
-                Log.Warning("[LogSyncAutoTest] No matching buildings/items/terrains were found for " + targetPackageId);
+                Log.Warning("[LogSyncAutoTest] No matching auto-test targets were found for " + targetPackageId);
                 Finish();
             }
         }
@@ -174,7 +189,10 @@ namespace LogSyncMod.AutoTest
                     : "failed_info_card_open_request";
                 activeSession.Result.Stage = activeSession.Phase == SessionPhase.WaitingForInfoCardClose ? "info_close" : "info_open";
                 activeSession.Result.ErrorMessage = ex.ToString();
+                TryCaptureInfoCardScreenshot(true);
+                activeSession.Result.Notes = AppendNote(activeSession.Result.Notes, "Trace=" + InfoCardCloseTrace.Describe());
                 CleanupSelectionAndWindows();
+                InfoCardCloseTrace.Stop();
                 activeSession = null;
             }
         }
@@ -190,6 +208,9 @@ namespace LogSyncMod.AutoTest
                     break;
                 case AutoTestKind.Terrain:
                     StartTerrainSession(item);
+                    break;
+                case AutoTestKind.Recipe:
+                    StartRecipeSession(item);
                     break;
             }
         }
@@ -237,6 +258,7 @@ namespace LogSyncMod.AutoTest
                 {
                     if (gizmo != null) gizmoCount++;
                 }
+
                 result.Notes = AppendNote(result.Notes, "Gizmos=" + gizmoCount);
 
                 Find.Selector.ClearSelection();
@@ -301,6 +323,45 @@ namespace LogSyncMod.AutoTest
             }
         }
 
+        private void StartRecipeSession(AutoTestWorkItem item)
+        {
+            AutoTestResult result = CreateResult("Recipe", "RecipeDef", item.RecipeDef.defName, item.RecipeDef.label);
+            results.Add(result);
+
+            Thing worktableThing = GetPlacedRecipeWorktable(item.WorktableDef);
+            if (worktableThing == null)
+            {
+                result.Status = "skipped";
+                result.Stage = "setup";
+                result.ErrorMessage = "Required worktable could not be placed or was lost.";
+                result.Notes = AppendNote(result.Notes, "Worktable=" + SafeDefName(item.WorktableDef));
+                return;
+            }
+
+            if (!(worktableThing is IBillGiver))
+            {
+                result.Status = "skipped";
+                result.Stage = "setup";
+                result.ErrorMessage = "Placed worktable does not implement IBillGiver.";
+                result.Notes = AppendNote(result.Notes, "Worktable=" + SafeDefName(item.WorktableDef));
+                return;
+            }
+
+            result.Label = item.ThingDef?.label ?? item.RecipeDef.label ?? string.Empty;
+            result.Notes = AppendNote(result.Notes, "Product=" + SafeDefName(item.ThingDef));
+            result.Notes = AppendNote(result.Notes, "Worktable=" + SafeDefName(item.WorktableDef));
+
+            activeSession = new ActiveSession
+            {
+                Item = item,
+                Result = result,
+                InfoCardDef = item.ThingDef ?? (Def)item.RecipeDef,
+                RemainingUiFrames = PreOpenSettleRepaintFrames,
+                Phase = SessionPhase.WaitingForPreOpenSettle
+            };
+            result.Stage = "info_open";
+        }
+
         private void ProcessWaitingForPreOpenSettle()
         {
             if (activeSession == null) return;
@@ -337,7 +398,7 @@ namespace LogSyncMod.AutoTest
                 {
                     InfoCardCloseTrace.AddReason("OpenConfirmed.RepaintFrames=" + activeSession.OpenStableRepaintFrames);
                     Log.Message("[LogSyncAutoTest] InfoCard open confirmed for " + activeSession.Result.DefName);
-                    TryCaptureInfoCardScreenshot();
+                    TryCaptureInfoCardScreenshot(false);
                     activeSession.Phase = SessionPhase.WaitingBeforeClose;
                     activeSession.RemainingUiFrames = WaitBeforeCloseRepaintFrames;
                 }
@@ -391,7 +452,7 @@ namespace LogSyncMod.AutoTest
 
             if (!IsInfoCardPresent())
             {
-                PassActiveSession();
+                CompleteActiveSession();
                 return;
             }
 
@@ -445,6 +506,7 @@ namespace LogSyncMod.AutoTest
             catch
             {
             }
+
             Find.Selector.ClearSelection();
         }
 
@@ -455,17 +517,32 @@ namespace LogSyncMod.AutoTest
             activeSession.Result.Status = status;
             activeSession.Result.Stage = stage;
             activeSession.Result.ErrorMessage = errorMessage;
+            TryCaptureInfoCardScreenshot(true);
             activeSession.Result.Notes = AppendNote(activeSession.Result.Notes, "Trace=" + InfoCardCloseTrace.Describe());
             CleanupSelectionAndWindows();
             InfoCardCloseTrace.Stop();
             activeSession = null;
         }
 
-        private void PassActiveSession()
+        private void CompleteActiveSession()
         {
             if (activeSession == null) return;
 
-            if (activeSession.SpawnedThing != null && !activeSession.SpawnedThing.Destroyed)
+            if (activeSession.Item.Kind == AutoTestKind.Recipe)
+            {
+                activeSession.Result.Stage = "produce";
+                if (!TryProduceRecipe(activeSession, out string errorMessage))
+                {
+                    activeSession.Result.Status = "failed_recipe_produce";
+                    activeSession.Result.ErrorMessage = errorMessage;
+                    activeSession.Result.Notes = AppendNote(activeSession.Result.Notes, "Trace=" + InfoCardCloseTrace.Describe());
+                    CleanupSelectionAndWindows();
+                    InfoCardCloseTrace.Stop();
+                    activeSession = null;
+                    return;
+                }
+            }
+            else if (activeSession.SpawnedThing != null && !activeSession.SpawnedThing.Destroyed)
             {
                 activeSession.Result.Label = activeSession.SpawnedThing.LabelCap;
                 activeSession.Result.Notes = AppendNote(activeSession.Result.Notes, "InfoCardOpened=True");
@@ -476,7 +553,7 @@ namespace LogSyncMod.AutoTest
             }
 
             activeSession.Result.Status = "passed";
-            activeSession.Result.Stage = "info_close";
+            activeSession.Result.Stage = activeSession.Item.Kind == AutoTestKind.Recipe ? "produce" : "info_close";
             activeSession.Result.Notes = AppendNote(activeSession.Result.Notes, "Trace=" + InfoCardCloseTrace.Describe());
             Log.Message("[LogSyncAutoTest] InfoCard close confirmed for " + activeSession.Result.DefName);
             CleanupSelectionAndWindows();
@@ -486,36 +563,94 @@ namespace LogSyncMod.AutoTest
 
         private void EnqueueThingDefs()
         {
-            if (settings.autoTestBuildings)
+            foreach (ThingDef def in DefDatabase<ThingDef>.AllDefsListForReading
+                .Where(IsTargetBuildingDef)
+                .OrderBy(def => def.defName))
             {
-                foreach (ThingDef def in DefDatabase<ThingDef>.AllDefsListForReading
-                    .Where(IsTargetBuildingDef)
-                    .OrderBy(def => def.defName))
-                {
-                    pendingItems.Enqueue(new AutoTestWorkItem { Kind = AutoTestKind.Building, ThingDef = def });
-                }
+                pendingItems.Enqueue(new AutoTestWorkItem { Kind = AutoTestKind.Building, ThingDef = def });
             }
 
-            if (settings.autoTestItems)
+            foreach (ThingDef def in DefDatabase<ThingDef>.AllDefsListForReading
+                .Where(IsTargetItemDef)
+                .OrderBy(def => def.defName))
             {
-                foreach (ThingDef def in DefDatabase<ThingDef>.AllDefsListForReading
-                    .Where(IsTargetItemDef)
-                    .OrderBy(def => def.defName))
-                {
-                    pendingItems.Enqueue(new AutoTestWorkItem { Kind = AutoTestKind.Item, ThingDef = def });
-                }
+                pendingItems.Enqueue(new AutoTestWorkItem { Kind = AutoTestKind.Item, ThingDef = def });
             }
         }
 
         private void EnqueueTerrainDefs()
         {
-            if (!settings.autoTestTerrains) return;
-
             foreach (TerrainDef def in DefDatabase<TerrainDef>.AllDefsListForReading
                 .Where(IsTargetTerrainDef)
                 .OrderBy(def => def.defName))
             {
                 pendingItems.Enqueue(new AutoTestWorkItem { Kind = AutoTestKind.Terrain, TerrainDef = def });
+            }
+        }
+
+        private void EnqueueRecipeDefs()
+        {
+            List<AutoTestWorkItem> recipeItems = new List<AutoTestWorkItem>();
+            HashSet<ThingDef> requiredWorktables = new HashSet<ThingDef>();
+
+            foreach (RecipeDef recipe in DefDatabase<RecipeDef>.AllDefsListForReading
+                .Where(IsTargetRecipeDef)
+                .OrderBy(recipe => recipe.defName))
+            {
+                ThingDef productDef = ResolvePrimaryRecipeProduct(recipe);
+                if (productDef == null)
+                {
+                    AddImmediateResult(
+                        CreateResult("Recipe", "RecipeDef", recipe.defName, recipe.label),
+                        "skipped",
+                        "collect",
+                        "No supported product ThingDef was found for this recipe.");
+                    continue;
+                }
+
+                ThingDef worktableDef = ResolveRecipeWorktable(recipe);
+                if (worktableDef == null)
+                {
+                    AutoTestResult result = CreateResult("Recipe", "RecipeDef", recipe.defName, recipe.label);
+                    result.Label = productDef.label ?? recipe.label ?? string.Empty;
+                    result.Notes = AppendNote(result.Notes, "Product=" + SafeDefName(productDef));
+                    AddImmediateResult(
+                        result,
+                        "skipped",
+                        "collect",
+                        "No usable worktable recipe user was found.");
+                    continue;
+                }
+
+                requiredWorktables.Add(worktableDef);
+                recipeItems.Add(new AutoTestWorkItem
+                {
+                    Kind = AutoTestKind.Recipe,
+                    RecipeDef = recipe,
+                    ThingDef = productDef,
+                    WorktableDef = worktableDef
+                });
+            }
+
+            PlaceRecipeWorktables(requiredWorktables);
+
+            foreach (AutoTestWorkItem item in recipeItems)
+            {
+                if (GetPlacedRecipeWorktable(item.WorktableDef) != null)
+                {
+                    pendingItems.Enqueue(item);
+                    continue;
+                }
+
+                AutoTestResult result = CreateResult("Recipe", "RecipeDef", item.RecipeDef.defName, item.RecipeDef.label);
+                result.Label = item.ThingDef?.label ?? item.RecipeDef.label ?? string.Empty;
+                result.Notes = AppendNote(result.Notes, "Product=" + SafeDefName(item.ThingDef));
+                result.Notes = AppendNote(result.Notes, "Worktable=" + SafeDefName(item.WorktableDef));
+                AddImmediateResult(
+                    result,
+                    "skipped",
+                    "setup",
+                    "Required worktable could not be placed.");
             }
         }
 
@@ -535,6 +670,7 @@ namespace LogSyncMod.AutoTest
                    def.modContentPack == targetMod &&
                    def.category == ThingCategory.Item &&
                    def.thingClass != null &&
+                   !typeof(Corpse).IsAssignableFrom(def.thingClass) &&
                    !def.IsBlueprint &&
                    !def.IsFrame;
         }
@@ -542,6 +678,370 @@ namespace LogSyncMod.AutoTest
         private bool IsTargetTerrainDef(TerrainDef def)
         {
             return def != null && def.modContentPack == targetMod;
+        }
+
+        private bool IsTargetRecipeDef(RecipeDef recipe)
+        {
+            if (recipe == null) return false;
+            if (recipe.products == null || recipe.products.Count == 0) return false;
+
+            bool recipeOwnedByTargetMod = recipe.modContentPack == targetMod;
+            bool producesTargetModThing = recipe.products.Any(product =>
+                product != null &&
+                product.thingDef != null &&
+                product.thingDef.modContentPack == targetMod &&
+                IsSupportedRecipeProductDef(product.thingDef));
+
+            if (!recipeOwnedByTargetMod && !producesTargetModThing) return false;
+            return ResolvePrimaryRecipeProduct(recipe) != null;
+        }
+
+        private ThingDef ResolvePrimaryRecipeProduct(RecipeDef recipe)
+        {
+            if (recipe?.products == null) return null;
+
+            ThingDef targetProduct = recipe.products
+                .Where(product => product != null && IsSupportedRecipeProductDef(product.thingDef) && product.thingDef.modContentPack == targetMod)
+                .Select(product => product.thingDef)
+                .FirstOrDefault();
+
+            if (targetProduct != null) return targetProduct;
+
+            return recipe.products
+                .Where(product => product != null && IsSupportedRecipeProductDef(product.thingDef))
+                .Select(product => product.thingDef)
+                .FirstOrDefault();
+        }
+
+        private bool IsSupportedRecipeProductDef(ThingDef def)
+        {
+            return def != null &&
+                   def.thingClass != null &&
+                   !typeof(Corpse).IsAssignableFrom(def.thingClass) &&
+                   !def.IsBlueprint &&
+                   !def.IsFrame;
+        }
+
+        private ThingDef ResolveRecipeWorktable(RecipeDef recipe)
+        {
+            IEnumerable<ThingDef> candidates = recipe.AllRecipeUsers ?? Enumerable.Empty<ThingDef>();
+            return candidates
+                .Where(def => def != null &&
+                              def.category == ThingCategory.Building &&
+                              def.thingClass != null &&
+                              !def.IsBlueprint &&
+                              !def.IsFrame)
+                .OrderByDescending(def => def.modContentPack == targetMod ? 1 : 0)
+                .ThenBy(def => def.defName)
+                .FirstOrDefault();
+        }
+
+        private void UnlockAllResearch()
+        {
+            try
+            {
+                if (Find.ResearchManager != null)
+                {
+                    Find.ResearchManager.DebugSetAllProjectsFinished();
+                    Log.Message("[LogSyncAutoTest] FinishAllResearch applied.");
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Warning("[LogSyncAutoTest] Failed to finish all research: " + ex);
+            }
+        }
+
+        private void PlaceRecipeWorktables(IEnumerable<ThingDef> worktableDefs)
+        {
+            foreach (ThingDef worktableDef in worktableDefs
+                .Where(def => def != null && !placedRecipeWorktables.ContainsKey(def))
+                .OrderByDescending(def => def.modContentPack == targetMod ? 1 : 0)
+                .ThenBy(def => def.defName))
+            {
+                try
+                {
+                    ThingDef stuff = ResolveStuff(worktableDef);
+                    Thing worktableThing = ThingMaker.MakeThing(worktableDef, stuff);
+                    if (!(worktableThing is IBillGiver))
+                    {
+                        Log.Warning("[LogSyncAutoTest] Skipping non-billgiver worktable: " + worktableDef.defName);
+                        continue;
+                    }
+
+                    IntVec2 size = worktableDef.Size;
+                    int width = Math.Max(1, size.x);
+                    int height = Math.Max(1, size.z);
+                    if (!TryAllocateThingRoot(width, height, out IntVec3 rootCell))
+                    {
+                        Log.Warning("[LogSyncAutoTest] No layout space remained for worktable: " + worktableDef.defName);
+                        continue;
+                    }
+
+                    ClearArea(rootCell, width, height);
+                    GenSpawn.Spawn(worktableThing, rootCell, map, Rot4.North, WipeMode.Vanish, false, false);
+                    placedRecipeWorktables[worktableDef] = worktableThing;
+
+                    Log.Message(string.Format(
+                        "[LogSyncAutoTest] Placed worktable {0} at {1}",
+                        worktableDef.defName,
+                        rootCell));
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning("[LogSyncAutoTest] Failed to place worktable " + worktableDef.defName + ": " + ex);
+                }
+            }
+        }
+
+        private Thing GetPlacedRecipeWorktable(ThingDef worktableDef)
+        {
+            if (worktableDef == null) return null;
+            if (!placedRecipeWorktables.TryGetValue(worktableDef, out Thing worktableThing)) return null;
+
+            if (worktableThing == null || worktableThing.Destroyed || worktableThing.Map != map)
+            {
+                placedRecipeWorktables.Remove(worktableDef);
+                return null;
+            }
+
+            return worktableThing;
+        }
+
+        private bool TryProduceRecipe(ActiveSession session, out string errorMessage)
+        {
+            errorMessage = null;
+
+            RecipeDef recipe = session.Item.RecipeDef;
+            Thing worktableThing = GetPlacedRecipeWorktable(session.Item.WorktableDef);
+            if (recipe == null)
+            {
+                errorMessage = "RecipeDef was missing from the active session.";
+                return false;
+            }
+
+            if (!(worktableThing is IBillGiver billGiver))
+            {
+                errorMessage = "Placed worktable is unavailable or no longer implements IBillGiver.";
+                return false;
+            }
+
+            Pawn worker = map.mapPawns?.FreeColonistsSpawned?.FirstOrDefault(pawn => pawn != null && !pawn.Dead);
+            if (worker == null)
+            {
+                errorMessage = "No spawned colonist was available to evaluate the recipe.";
+                return false;
+            }
+
+            Bill_Production productionBill = BillUtility.MakeNewBill(recipe, null) as Bill_Production ?? new Bill_Production(recipe, null);
+            if (productionBill == null)
+            {
+                errorMessage = "Failed to create Bill_Production for recipe.";
+                return false;
+            }
+
+            BillStack billStack = billGiver.BillStack;
+            if (billStack == null)
+            {
+                errorMessage = "Worktable BillStack was null.";
+                return false;
+            }
+
+            bool billAdded = false;
+            List<Thing> ingredients = new List<Thing>();
+            List<Thing> spawnedProducts = new List<Thing>();
+
+            try
+            {
+                billStack.AddBill(productionBill);
+                billAdded = true;
+
+                if (!TryCreateRecipeIngredients(recipe, productionBill, worktableThing, out ingredients, out string ingredientSummary, out errorMessage))
+                {
+                    return false;
+                }
+
+                Thing dominantIngredient = ingredients.FirstOrDefault(thing => thing != null && !thing.Destroyed);
+                IEnumerable<Thing> producedThings = GenRecipe.MakeRecipeProducts(
+                    recipe,
+                    worker,
+                    ingredients,
+                    dominantIngredient,
+                    billGiver,
+                    null,
+                    null,
+                    null);
+
+                if (producedThings != null)
+                {
+                    foreach (Thing producedThing in producedThings)
+                    {
+                        if (producedThing == null) continue;
+
+                        if (!TryAllocateThingRoot(1, 1, out IntVec3 spawnCell))
+                        {
+                            spawnCell = ResolveDropCellNear(worktableThing);
+                        }
+
+                        GenSpawn.Spawn(producedThing, spawnCell, map, WipeMode.Vanish);
+                        spawnedProducts.Add(producedThing);
+                    }
+                }
+
+                if (spawnedProducts.Count == 0)
+                {
+                    errorMessage = "Recipe execution returned no products.";
+                    return false;
+                }
+
+                productionBill.Notify_IterationCompleted(worker, ingredients);
+                session.Result.Notes = AppendNote(session.Result.Notes, "InfoCardOpened=True");
+                session.Result.Notes = AppendNote(session.Result.Notes, "Ingredients=" + ingredientSummary);
+                session.Result.Notes = AppendNote(session.Result.Notes, "Products=" + BuildThingSummary(spawnedProducts));
+                session.Result.Notes = AppendNote(session.Result.Notes, "Worker=" + worker.LabelShortCap);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                errorMessage = ex.ToString();
+                return false;
+            }
+            finally
+            {
+                foreach (Thing ingredient in ingredients)
+                {
+                    try
+                    {
+                        if (ingredient != null && !ingredient.Destroyed)
+                        {
+                            ingredient.Destroy(DestroyMode.Vanish);
+                        }
+                    }
+                    catch
+                    {
+                    }
+                }
+
+                if (billAdded)
+                {
+                    try
+                    {
+                        billStack.Delete(productionBill);
+                    }
+                    catch
+                    {
+                    }
+                }
+            }
+        }
+
+        private bool TryCreateRecipeIngredients(
+            RecipeDef recipe,
+            Bill productionBill,
+            Thing worktableThing,
+            out List<Thing> ingredients,
+            out string ingredientSummary,
+            out string errorMessage)
+        {
+            ingredients = new List<Thing>();
+            List<string> summaryParts = new List<string>();
+            errorMessage = null;
+
+            if (recipe.ingredients == null || recipe.ingredients.Count == 0)
+            {
+                ingredientSummary = "None";
+                return true;
+            }
+
+            foreach (IngredientCount ingredientCount in recipe.ingredients)
+            {
+                if (!TryResolveIngredientDef(ingredientCount, out ThingDef ingredientDef))
+                {
+                    ingredientSummary = string.Join(",", summaryParts.ToArray());
+                    errorMessage = "No valid ingredient ThingDef could be resolved for recipe ingredient.";
+                    return false;
+                }
+
+                int requiredCount = ResolveRequiredIngredientCount(ingredientCount, ingredientDef, recipe, productionBill);
+                int remainingCount = requiredCount;
+                int placedCount = 0;
+
+                while (remainingCount > 0)
+                {
+                    Thing ingredientThing = ThingMaker.MakeThing(ingredientDef, ResolveStuff(ingredientDef));
+                    if (ingredientThing == null)
+                    {
+                        ingredientSummary = string.Join(",", summaryParts.ToArray());
+                        errorMessage = "ThingMaker.MakeThing returned null for ingredient " + ingredientDef.defName;
+                        return false;
+                    }
+
+                    int stackLimit = Math.Max(1, ingredientThing.def.stackLimit);
+                    int stackCount = Math.Max(1, Math.Min(remainingCount, stackLimit));
+                    ingredientThing.stackCount = stackCount;
+
+                    GenSpawn.Spawn(ingredientThing, ResolveDropCellNear(worktableThing), map, WipeMode.Vanish);
+                    ingredients.Add(ingredientThing);
+
+                    placedCount += stackCount;
+                    remainingCount -= stackCount;
+                }
+
+                summaryParts.Add(ingredientDef.defName + "x" + placedCount);
+            }
+
+            ingredientSummary = string.Join(", ", summaryParts.ToArray());
+            return true;
+        }
+
+        private bool TryResolveIngredientDef(IngredientCount ingredientCount, out ThingDef ingredientDef)
+        {
+            ingredientDef = null;
+            if (ingredientCount == null) return false;
+
+            if (ingredientCount.filter == null) return false;
+
+            ingredientDef = ingredientCount.filter.AllowedThingDefs
+                .Where(IsUsableIngredientDef)
+                .OrderByDescending(def => def.modContentPack == targetMod ? 1 : 0)
+                .ThenBy(def => def.defName)
+                .FirstOrDefault();
+
+            return ingredientDef != null;
+        }
+
+        private bool IsUsableIngredientDef(ThingDef def)
+        {
+            return def != null &&
+                   def.thingClass != null &&
+                   !typeof(Corpse).IsAssignableFrom(def.thingClass) &&
+                   !def.IsBlueprint &&
+                   !def.IsFrame;
+        }
+
+        private int ResolveRequiredIngredientCount(IngredientCount ingredientCount, ThingDef ingredientDef, RecipeDef recipe, Bill bill)
+        {
+            int requiredCount = 0;
+
+            try
+            {
+                requiredCount = Mathf.CeilToInt(ingredientCount.CountRequiredOfFor(ingredientDef, recipe, bill));
+            }
+            catch
+            {
+            }
+
+            if (requiredCount > 0) return requiredCount;
+
+            try
+            {
+                requiredCount = Mathf.CeilToInt(ingredientCount.GetBaseCount());
+            }
+            catch
+            {
+            }
+
+            return Math.Max(1, requiredCount);
         }
 
         private ThingDef ResolveStuff(ThingDef def)
@@ -631,6 +1131,26 @@ namespace LogSyncMod.AutoTest
             }
         }
 
+        private IntVec3 ResolveDropCellNear(Thing anchorThing)
+        {
+            if (anchorThing != null && !anchorThing.Destroyed)
+            {
+                CellRect occupiedRect = anchorThing.OccupiedRect();
+                for (int x = occupiedRect.minX - 1; x <= occupiedRect.maxX + 1; x++)
+                {
+                    for (int z = occupiedRect.minZ - 1; z <= occupiedRect.maxZ + 1; z++)
+                    {
+                        IntVec3 candidate = new IntVec3(x, 0, z);
+                        if (!candidate.InBounds(map)) continue;
+                        if (!candidate.Walkable(map)) continue;
+                        return candidate;
+                    }
+                }
+            }
+
+            return new IntVec3(10, 0, 10);
+        }
+
         private void CloseExistingInfoCards()
         {
             Find.WindowStack.TryRemoveAssignableFromType(typeof(Dialog_InfoCard), false);
@@ -670,6 +1190,14 @@ namespace LogSyncMod.AutoTest
                 ScreenshotPath = string.Empty,
                 Notes = string.Empty
             };
+        }
+
+        private void AddImmediateResult(AutoTestResult result, string status, string stage, string errorMessage)
+        {
+            result.Status = status;
+            result.Stage = stage;
+            result.ErrorMessage = errorMessage ?? string.Empty;
+            results.Add(result);
         }
 
         private void Finish()
@@ -741,14 +1269,24 @@ namespace LogSyncMod.AutoTest
                 pendingItems.Count));
         }
 
-        private void TryCaptureInfoCardScreenshot()
+        private void TryCaptureInfoCardScreenshot(bool force)
         {
-            if (activeSession == null || activeSession.ScreenshotCaptured || !settings.autoTestCaptureScreenshots)
+            if (activeSession == null || activeSession.ScreenshotCaptured)
+            {
+                return;
+            }
+
+            if (!force && !settings.autoTestCaptureScreenshots)
             {
                 return;
             }
 
             if (runArtifacts == null)
+            {
+                return;
+            }
+
+            if (!IsInfoCardPresent())
             {
                 return;
             }
@@ -764,16 +1302,38 @@ namespace LogSyncMod.AutoTest
 
                 ScreenCapture.CaptureScreenshot(screenshotPath);
                 activeSession.Result.ScreenshotPath = screenshotPath;
-                activeSession.Result.Notes = AppendNote(activeSession.Result.Notes, "ScreenshotCaptured=True");
+                activeSession.Result.Notes = AppendNote(
+                    activeSession.Result.Notes,
+                    force ? "FailureScreenshotCaptured=True" : "ScreenshotCaptured=True");
                 activeSession.ScreenshotCaptured = true;
 
-                Log.Message("[LogSyncAutoTest] Screenshot requested for " + activeSession.Result.DefName + " -> " + screenshotPath);
+                Log.Message(
+                    "[LogSyncAutoTest] Screenshot requested for " +
+                    activeSession.Result.DefName +
+                    " force=" +
+                    force +
+                    " -> " +
+                    screenshotPath);
             }
             catch (Exception ex)
             {
                 activeSession.Result.Notes = AppendNote(activeSession.Result.Notes, "ScreenshotError=" + TrimForNote(ex.Message));
                 Log.Warning("[LogSyncAutoTest] Screenshot capture failed for " + activeSession.Result.DefName + ": " + ex.Message);
             }
+        }
+
+        private string BuildThingSummary(IEnumerable<Thing> things)
+        {
+            return string.Join(
+                ", ",
+                things.Where(thing => thing != null)
+                    .Select(thing => thing.def.defName + "x" + thing.stackCount)
+                    .ToArray());
+        }
+
+        private static string SafeDefName(Def def)
+        {
+            return def?.defName ?? "null";
         }
 
         private static string SanitizeFileName(string text)

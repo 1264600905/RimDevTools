@@ -15,9 +15,11 @@
   <LogSyncMod.AutoTestEnabled>启用定向自动测试</LogSyncMod.AutoTestEnabled>
   <LogSyncMod.AutoTestTargetPackageId>目标模组 PackageId：</LogSyncMod.AutoTestTargetPackageId>
   <LogSyncMod.AutoTestOutputPath>自动测试报告输出目录：</LogSyncMod.AutoTestOutputPath>
-  <LogSyncMod.AutoTestBuildings>测试建筑</LogSyncMod.AutoTestBuildings>
-  <LogSyncMod.AutoTestItems>测试物品</LogSyncMod.AutoTestItems>
-  <LogSyncMod.AutoTestTerrains>测试地形</LogSyncMod.AutoTestTerrains>
+  <LogSyncMod.AutoTestScope>测试范围：{0}</LogSyncMod.AutoTestScope>
+  <LogSyncMod.AutoTestScopeSelect>选择测试范围（当前：{0}）</LogSyncMod.AutoTestScopeSelect>
+  <LogSyncMod.AutoTestScopeAll>全量</LogSyncMod.AutoTestScopeAll>
+  <LogSyncMod.AutoTestScopeContent>建筑物品</LogSyncMod.AutoTestScopeContent>
+  <LogSyncMod.AutoTestScopeRecipes>工作台配方</LogSyncMod.AutoTestScopeRecipes>
   <LogSyncMod.AutoTestCaptureScreenshots>为已打开的 InfoCard 自动截图</LogSyncMod.AutoTestCaptureScreenshots>
   <LogSyncMod.AutoTestBatchSize>每批测试数量：{0}</LogSyncMod.AutoTestBatchSize>
   <LogSyncMod.AutoTestRunNow>立即启动自动测试</LogSyncMod.AutoTestRunNow>
