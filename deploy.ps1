@@ -41,7 +41,59 @@ $ProtectedFilesRegex = "^(PublishedFileId\.txt)$"
 $devPath = "$PSScriptRoot"
 $modPath = Join-Path $RimWorldModDir $ModName
 
+function Get-RimWorldProcesses {
+    Get-Process -ErrorAction SilentlyContinue | Where-Object {
+        $_.ProcessName -like "RimWorld*"
+    }
+}
+
+function Wait-ForRimWorldToClose {
+    param(
+        [int]$TimeoutSeconds = 600,
+        [int]$StableClosedSeconds = 10
+    )
+
+    Write-Host ">>> 步骤 0: 检查 RimWorld 运行状态..." -ForegroundColor Gray
+
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    while ((Get-Date) -lt $deadline) {
+        $remainingSeconds = [Math]::Max(0, [int][Math]::Floor(($deadline - (Get-Date)).TotalSeconds))
+        $processes = @(Get-RimWorldProcesses)
+        if ($processes.Count -gt 0) {
+            $processInfo = ($processes | Select-Object -ExpandProperty Id) -join ", "
+            Write-Host "  检测到 RimWorld 正在运行，PID: $processInfo。等待关闭，剩余超时 ${remainingSeconds}s..." -ForegroundColor Yellow
+            Start-Sleep -Seconds 2
+            continue
+        }
+
+        Write-Host "  未检测到 RimWorld，开始等待 ${StableClosedSeconds}s 稳定窗口..." -ForegroundColor DarkGray
+        $closedStable = $true
+        for ($i = 0; $i -lt $StableClosedSeconds; $i++) {
+            if ((Get-Date) -ge $deadline) {
+                break
+            }
+
+            if ((@(Get-RimWorldProcesses)).Count -gt 0) {
+                $closedStable = $false
+                Write-Host "  RimWorld 在稳定窗口内重新启动，恢复等待关闭流程。" -ForegroundColor Yellow
+                break
+            }
+
+            Start-Sleep -Seconds 1
+        }
+
+        if ($closedStable -and (@(Get-RimWorldProcesses)).Count -eq 0) {
+            Write-Host "  RimWorld 已连续关闭 ${StableClosedSeconds}s，继续部署。" -ForegroundColor Green
+            return
+        }
+    }
+
+    Write-Host "等待 RimWorld 关闭超过 ${TimeoutSeconds}s，部署失败。" -ForegroundColor Red
+    exit 1
+}
+
 Write-Host "======= 开始构建项目: $ModName =======" -ForegroundColor Cyan
+Wait-ForRimWorldToClose
 
 # 1. 执行编译
 Write-Host ">>> 步骤 1: 编译 C# 项目..." -ForegroundColor Gray

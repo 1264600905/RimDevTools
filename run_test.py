@@ -166,6 +166,22 @@ def ensure_text_node(parent, tag: str, value: str):
         node = ET.SubElement(parent, tag)
     node.text = value
 
+def normalize_log_keywords(log_keywords):
+    if log_keywords is None:
+        return None
+    if isinstance(log_keywords, str):
+        return [log_keywords]
+
+    normalized = []
+    for kw in log_keywords:
+        if kw is None:
+            continue
+        if isinstance(kw, str):
+            normalized.append(kw)
+        else:
+            normalized.append(str(kw))
+    return normalized
+
 def update_mod_settings(
     log_keywords: list[str] | None = None,
     clear_log_keywords: bool = False,
@@ -185,6 +201,7 @@ def update_mod_settings(
         return
 
     try:
+        log_keywords = normalize_log_keywords(log_keywords)
         tree = ET.parse(SETTINGS_FILE)
         root = tree.getroot()
 
