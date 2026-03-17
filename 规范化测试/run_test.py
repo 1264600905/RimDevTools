@@ -76,10 +76,12 @@ MIN_ACTIVE_MODS = [
     "hailuan.translate",
     "erdelf.humanoidalienraces",
     "rwzh.chinesepack.humanoidalienraces",
+    "hentailoliteam.axolotl",
     "mlie.logafterdeferror",
     "jaxe.rimhud",
     "shouer.chinesepack.rimhud",
     "arandomkiwi.rimsaves",
+    "memegoddess.searchanddestroy",
     "rwzh.chinesepack.rimsaves",
     "trigger.universalblueprints",
     "trigger.logsyncmod",
@@ -191,6 +193,9 @@ def normalize_scope_value(scope: str | None):
         "rangedweapons": "RangedWeapons",
         "ranged-weapons": "RangedWeapons",
         "ranged_weapons": "RangedWeapons",
+        "meleeweapons": "MeleeWeapons",
+        "melee-weapons": "MeleeWeapons",
+        "melee_weapons": "MeleeWeapons",
     }
     return scope_map.get(normalized_scope, "All")
 
@@ -521,6 +526,9 @@ def update_mod_settings(
                 "rangedweapons": "RangedWeapons",
                 "ranged-weapons": "RangedWeapons",
                 "ranged_weapons": "RangedWeapons",
+                "meleeweapons": "MeleeWeapons",
+                "melee-weapons": "MeleeWeapons",
+                "melee_weapons": "MeleeWeapons",
             }
             desired_scope = scope_map.get(normalized_scope, "All")
             if (mod_settings.findtext("autoTestScope") or "").strip() != desired_scope:
@@ -1042,7 +1050,7 @@ if __name__ == "__main__":
     parser.add_argument("--auto-test-package-id", default=None, help="auto/xml 模式下的目标模组 packageId")
     parser.add_argument("--auto-test-output-dir", default=None, help="自动测试报告输出目录")
     parser.add_argument("--auto-test-mode", choices=["automatic", "xml-driven"], default="automatic", help="兼容旧参数；未传 --mode 时用于自动推断 auto/xml")
-    parser.add_argument("--auto-test-scope", choices=["all", "content", "recipes", "hediffs", "turrets", "rangedweapons"], default="all", help="auto/xml 模式下的测试范围：all/content/recipes/hediffs/turrets/rangedweapons")
+    parser.add_argument("--auto-test-scope", choices=["all", "content", "recipes", "hediffs", "turrets", "rangedweapons", "meleeweapons"], default="all", help="auto/xml 模式下的测试范围：all/content/recipes/hediffs/turrets/rangedweapons/meleeweapons")
     parser.add_argument("--auto-test-capture-screenshots", action="store_true", help="auto/xml 模式下允许截图")
     parser.add_argument("--auto-test-batch-size", type=int, default=None, help="auto 模式下按范围限制测试数量；xml 模式下也可作为上限")
     parser.add_argument("--auto-test-defname", action="append", default=None, help="auto 模式下指定要测试的 defName，可重复传入；脚本会自动生成临时 XML 规则")

@@ -13,7 +13,8 @@ namespace LogSyncMod.AutoTest
         Recipe,
         Hediff,
         TurretPocketMap,
-        RangedWeaponPocketMap
+        RangedWeaponPocketMap,
+        MeleeWeaponPocketMap
     }
 
     internal sealed class AutoTestWorkItem

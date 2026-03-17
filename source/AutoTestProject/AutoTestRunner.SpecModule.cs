@@ -128,6 +128,8 @@ namespace LogSyncMod.AutoTest
                     return AutoTestScope.Turrets;
                 case AutoTestKind.RangedWeaponPocketMap:
                     return AutoTestScope.RangedWeapons;
+                case AutoTestKind.MeleeWeaponPocketMap:
+                    return AutoTestScope.MeleeWeapons;
                 default:
                     return AutoTestScope.Content;
             }
@@ -151,6 +153,8 @@ namespace LogSyncMod.AutoTest
                     return "Turret";
                 case AutoTestKind.RangedWeaponPocketMap:
                     return "RangedWeapon";
+                case AutoTestKind.MeleeWeaponPocketMap:
+                    return "MeleeWeapon";
                 default:
                     return kind.ToString();
             }

@@ -40,6 +40,20 @@ namespace LogSyncMod.AutoTest
         Done
     }
 
+    internal enum MeleeWeaponTestPhase
+    {
+        Initializing,
+        WaitingForMap,
+        SpawningShooter,
+        EquippingWeapon,
+        SpawningEnemies,
+        Fighting,
+        WaitingAfterHit,
+        CapturingScreenshot,
+        CleaningUp,
+        Done
+    }
+
     internal sealed partial class AutoTestRunner
     {
         // --- 常量和字段 ---
@@ -71,6 +85,8 @@ namespace LogSyncMod.AutoTest
         private readonly Queue<ThingDef> pendingTurretDefs = new Queue<ThingDef>();
         private readonly List<RangedWeaponTestSession> activeRangedWeaponSessions = new List<RangedWeaponTestSession>();
         private readonly Queue<ThingDef> pendingRangedWeaponDefs = new Queue<ThingDef>();
+        private readonly List<MeleeWeaponTestSession> activeMeleeWeaponSessions = new List<MeleeWeaponTestSession>();
+        private readonly Queue<ThingDef> pendingMeleeWeaponDefs = new Queue<ThingDef>();
         private ModContentPack targetMod;
         private Pawn sharedHediffPawn;
         private string targetPackageId;
@@ -141,9 +157,14 @@ namespace LogSyncMod.AutoTest
                 BeginRangedWeaponTestSession();
             }
 
+            if (settings.ShouldTestMeleeWeapons())
+            {
+                BeginMeleeWeaponTestSession();
+            }
+
             ApplyBatchLimit();
 
-            int totalPending = pendingItems.Count + pendingTurretDefs.Count + pendingRangedWeaponDefs.Count;
+            int totalPending = pendingItems.Count + pendingTurretDefs.Count + pendingRangedWeaponDefs.Count + pendingMeleeWeaponDefs.Count;
             Log.Message(string.Format(
                 "[LogSyncAutoTest] START packageId={0} map={1} scope={2} pending={3}",
                 targetPackageId,
@@ -185,6 +206,12 @@ namespace LogSyncMod.AutoTest
                 StartNewRangedWeaponSession(weaponDef);
             }
 
+            while (activeMeleeWeaponSessions.Count < MaxConcurrentTurretTests && pendingMeleeWeaponDefs.Count > 0)
+            {
+                ThingDef weaponDef = pendingMeleeWeaponDefs.Dequeue();
+                StartNewMeleeWeaponSession(weaponDef);
+            }
+
             if (Find.TickManager.TicksGame % 500 == 0 && activeTurretSessions.Count > 0)
             {
                 string statusReport = string.Join(", ", activeTurretSessions.Select(s => $"{s.TurretDef.defName}({s.Phase})"));
@@ -197,12 +224,23 @@ namespace LogSyncMod.AutoTest
                 Log.Message($"[LogSyncAutoTest] Ranged heartbeat: {activeRangedWeaponSessions.Count} active sessions. Details: {statusReport}");
             }
 
+            if (Find.TickManager.TicksGame % 500 == 0 && activeMeleeWeaponSessions.Count > 0)
+            {
+                string statusReport = string.Join(", ", activeMeleeWeaponSessions.Select(s => $"{s.WeaponDef.defName}({s.Phase})"));
+                Log.Message($"[LogSyncAutoTest] Melee heartbeat: {activeMeleeWeaponSessions.Count} active sessions. Details: {statusReport}");
+            }
+
             foreach (var session in activeTurretSessions)
             {
                 session.Update();
             }
 
             foreach (var session in activeRangedWeaponSessions)
+            {
+                session.Update();
+            }
+
+            foreach (var session in activeMeleeWeaponSessions)
             {
                 session.Update();
             }
@@ -223,12 +261,22 @@ namespace LogSyncMod.AutoTest
                 return false;
             });
 
+            activeMeleeWeaponSessions.RemoveAll(session => {
+                if (session.Phase == MeleeWeaponTestPhase.Done) {
+                    results.Add(session.Result);
+                    return true;
+                }
+                return false;
+            });
+
             if (pendingItems.Count == 0 &&
                 activeSession == null &&
                 pendingTurretDefs.Count == 0 &&
                 pendingRangedWeaponDefs.Count == 0 &&
+                pendingMeleeWeaponDefs.Count == 0 &&
                 activeTurretSessions.Count == 0 &&
-                activeRangedWeaponSessions.Count == 0)
+                activeRangedWeaponSessions.Count == 0 &&
+                activeMeleeWeaponSessions.Count == 0)
             {
                 Finish();
             }
@@ -337,7 +385,7 @@ namespace LogSyncMod.AutoTest
         private void ApplyBatchLimit()
         {
             int limit = Math.Max(1, settings.autoTestBatchSize);
-            int originalTotal = pendingItems.Count + pendingTurretDefs.Count + pendingRangedWeaponDefs.Count;
+            int originalTotal = pendingItems.Count + pendingTurretDefs.Count + pendingRangedWeaponDefs.Count + pendingMeleeWeaponDefs.Count;
             if (originalTotal <= limit)
             {
                 return;
@@ -393,9 +441,25 @@ namespace LogSyncMod.AutoTest
                 }
             }
 
+            if (pendingMeleeWeaponDefs.Count > 0)
+            {
+                Queue<ThingDef> limitedMeleeWeapons = new Queue<ThingDef>();
+                while (pendingMeleeWeaponDefs.Count > 0 && keptCount < limit)
+                {
+                    limitedMeleeWeapons.Enqueue(pendingMeleeWeaponDefs.Dequeue());
+                    keptCount++;
+                }
+
+                pendingMeleeWeaponDefs.Clear();
+                foreach (ThingDef weaponDef in limitedMeleeWeapons)
+                {
+                    pendingMeleeWeaponDefs.Enqueue(weaponDef);
+                }
+            }
+
             Log.Message(string.Format(
                 "[LogSyncAutoTest] Batch limit applied. Keeping first {0} items.",
-                pendingItems.Count + pendingTurretDefs.Count + pendingRangedWeaponDefs.Count));
+                pendingItems.Count + pendingTurretDefs.Count + pendingRangedWeaponDefs.Count + pendingMeleeWeaponDefs.Count));
         }
 
         private bool TryCaptureTurretScreenshot(TurretTestSession session, bool force)
@@ -647,6 +711,84 @@ namespace LogSyncMod.AutoTest
             if (shootingSkill != null)
             {
                 shootingSkill.Level = 20;
+            }
+
+            SkillRecord meleeSkill = pawn.skills.GetSkill(SkillDefOf.Melee);
+            if (meleeSkill != null)
+            {
+                meleeSkill.Level = 20;
+            }
+        }
+
+        private static bool TryEnableSearchAndDestroy(Pawn pawn, out string status)
+        {
+            status = "Unavailable";
+            if (pawn == null)
+            {
+                status = "PawnMissing";
+                return false;
+            }
+
+            try
+            {
+                Assembly searchAndDestroyAssembly = AppDomain.CurrentDomain.GetAssemblies()
+                    .FirstOrDefault(assembly => string.Equals(assembly.GetName().Name, "SearchAndDestroy", StringComparison.OrdinalIgnoreCase));
+                if (searchAndDestroyAssembly == null)
+                {
+                    status = "AssemblyMissing";
+                    return false;
+                }
+
+                Type baseType = searchAndDestroyAssembly.GetType("SearchAndDestroy.Base");
+                Type storageType = searchAndDestroyAssembly.GetType("SearchAndDestroy.Storage.ExtendedDataStorage");
+                Type pawnDataType = searchAndDestroyAssembly.GetType("SearchAndDestroy.Storage.ExtendedPawnData");
+                if (baseType == null || storageType == null || pawnDataType == null)
+                {
+                    status = "TypeMissing";
+                    return false;
+                }
+
+                PropertyInfo instanceProperty = baseType.GetProperty("Instance", BindingFlags.Public | BindingFlags.Static);
+                PropertyInfo storageProperty = baseType.GetProperty("ExtendedDataStorage", BindingFlags.Public | BindingFlags.Instance);
+                MethodInfo loadStorageMethod = baseType.GetMethod("LoadExtendedDataStorage", BindingFlags.Public | BindingFlags.Static);
+                MethodInfo getExtendedDataMethod = storageType.GetMethod("GetExtendedDataFor", BindingFlags.Public | BindingFlags.Instance);
+                FieldInfo enabledField = pawnDataType.GetField("SD_enabled", BindingFlags.Public | BindingFlags.Instance);
+                if (instanceProperty == null || storageProperty == null || getExtendedDataMethod == null || enabledField == null)
+                {
+                    status = "MemberMissing";
+                    return false;
+                }
+
+                object baseInstance = instanceProperty.GetValue(null, null);
+                object storage = baseInstance == null ? null : storageProperty.GetValue(baseInstance, null);
+                if (storage == null && loadStorageMethod != null)
+                {
+                    loadStorageMethod.Invoke(null, null);
+                    baseInstance = instanceProperty.GetValue(null, null);
+                    storage = baseInstance == null ? null : storageProperty.GetValue(baseInstance, null);
+                }
+
+                if (storage == null)
+                {
+                    status = "StorageMissing";
+                    return false;
+                }
+
+                object pawnData = getExtendedDataMethod.Invoke(storage, new object[] { pawn });
+                if (pawnData == null)
+                {
+                    status = "PawnDataMissing";
+                    return false;
+                }
+
+                enabledField.SetValue(pawnData, true);
+                status = "Enabled";
+                return true;
+            }
+            catch (Exception ex)
+            {
+                status = "Error=" + TrimForNote(ex.Message);
+                return false;
             }
         }
 
