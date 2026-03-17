@@ -29,6 +29,7 @@ namespace LogSyncMod.AutoTest
         SpawningEnemies, // 新增：生成敌人
         Fighting,       // 新增：战斗监控
         WaitingAfterKill, // 新增：杀敌后延迟
+        CapturingScreenshot,
         CleaningUp,
         Done
     }
@@ -91,11 +92,15 @@ namespace LogSyncMod.AutoTest
             private const int MapReadyWaitTicks = 180;
             private const int FightDurationTicks = 60 * 20;
             private const int ObservationTicks = 60 * 10;
+            private const int ScreenshotWaitTicks = 10;
+
+            private readonly AutoTestRunner owner;
 
             public Map TestMap;
             public ThingDef TurretDef;
             public Thing SpawnedTurret;
             public Thing PowerGenerator;
+            public Pawn OperatorPawn;
             public List<Pawn> EnemyPawns = new List<Pawn>();
             public TurretTestPhase Phase;
             public AutoTestResult Result;
@@ -107,9 +112,12 @@ namespace LogSyncMod.AutoTest
             public string CleanupReason = "initialized"; // 新增原因记录
             public int FirstKillTick = -1;
             public string FirstKillPawnLabel = string.Empty;
+            public bool TurretScreenshotRequested;
+            public bool TurretScreenshotForce;
 
-            public TurretTestSession(ThingDef turretDef, AutoTestResult result)
+            public TurretTestSession(AutoTestRunner owner, ThingDef turretDef, AutoTestResult result)
             {
+                this.owner = owner;
                 TurretDef = turretDef;
                 Result = result;
                 Phase = TurretTestPhase.Initializing;
@@ -173,6 +181,7 @@ namespace LogSyncMod.AutoTest
                                 Fail("failed_power_spawn", "Power generator returned null when spawning.");
                                 return;
                             }
+                            PreparePowerGenerator();
                             Result.Notes = AppendNote(Result.Notes, "MapSize=" + TestMap.Size.x + "x" + TestMap.Size.z);
                             Result.Stage = "power";
                             Phase = TurretTestPhase.SpawningTurret;
@@ -188,6 +197,7 @@ namespace LogSyncMod.AutoTest
                                 return;
                             }
                             ConnectPower();
+                            PrepareTurretForCombat();
                             Result.Label = SpawnedTurret.LabelCap;
                             Result.Stage = "spawn";
                             Phase = TurretTestPhase.Reloading;
@@ -204,12 +214,16 @@ namespace LogSyncMod.AutoTest
                             LogMapState("before_spawn_enemies");
                             // 调试阶段缩短到 20 秒，尽快确认地图是否会提前消失
                             SpawnEnemies(5);
+                            EnsureOperatorManning();
+                            LogTurretState("after_spawn_enemies");
                             Result.Stage = "fighting_20s";
                             DelayTicks = FightDurationTicks;
                             Phase = TurretTestPhase.Fighting;
                             break;
 
                         case TurretTestPhase.Fighting:
+                            EnsureOperatorManning();
+
                             if (TryBeginPostKillObservation())
                             {
                                 break;
@@ -229,14 +243,15 @@ namespace LogSyncMod.AutoTest
                             else
                             {
                                 Result.Status = "failed_no_kills";
-                                CleanupReason = "test_failed_no_kills";
                                 Result.Notes = AppendNote(Result.Notes, "No target was downed or killed within 20 seconds.");
                                 Log.Message($"[LogSyncAutoTest] Combat timeout for '{TurretDef.defName}'. No target was downed or killed within 20 seconds.");
-                                Phase = TurretTestPhase.CleaningUp;
+                                LogTurretState("combat_timeout");
+                                TransitionToCleanup("test_failed_no_kills", forceScreenshot: true);
                             }
                             break;
 
                         case TurretTestPhase.WaitingAfterKill:
+                            EnsureOperatorManning();
                             if (DelayTicks > 0)
                             {
                                 DelayTicks--;
@@ -251,13 +266,44 @@ namespace LogSyncMod.AutoTest
                                 int deadCount = EnemyPawns.Count(p => p == null || p.Destroyed || p.Dead || p.Downed);
                                 Result.Notes = AppendNote(Result.Notes, $"Final results: {deadCount}/5 targets eliminated.");
                                 Result.Status = "passed";
-                                CleanupReason = "test_passed_post_kill_delay";
                                 Log.Message($"[LogSyncAutoTest] Observation finished for '{TurretDef.defName}'. Result: {Result.Status}. Closing map.");
+                                LogTurretState("post_kill_observation_finished");
+                                TransitionToCleanup("test_passed_post_kill_delay", forceScreenshot: false);
+                            }
+                            break;
+
+                        case TurretTestPhase.CapturingScreenshot:
+                            if (!TurretScreenshotRequested)
+                            {
+                                TurretScreenshotRequested = true;
+                                Result.Stage = "capturing_screenshot";
+                                if (!owner.TryCaptureTurretScreenshot(this, TurretScreenshotForce))
+                                {
+                                    Phase = TurretTestPhase.CleaningUp;
+                                    break;
+                                }
+
+                                DelayTicks = ScreenshotWaitTicks;
+                                break;
+                            }
+
+                            if (DelayTicks > 0)
+                            {
+                                DelayTicks--;
+                            }
+                            else
+                            {
                                 Phase = TurretTestPhase.CleaningUp;
                             }
                             break;
 
                         case TurretTestPhase.CleaningUp:
+                            if (OperatorPawn != null && !OperatorPawn.Destroyed)
+                            {
+                                OperatorPawn.Destroy();
+                                OperatorPawn = null;
+                            }
+
                             Log.Message($"[LogSyncAutoTest] [MapCleanup] Starting cleanup for '{TurretDef.defName}' in Map {TestMap?.uniqueID ?? -1}. Reason: {CleanupReason}");
                             if (TestMap != null && Find.Maps.Contains(TestMap))
                             {
@@ -269,6 +315,11 @@ namespace LogSyncMod.AutoTest
                             {
                                 Parent.Destroy();
                                 Log.Message($"[LogSyncAutoTest] [MapCleanup] Successfully destroyed MapParent.");
+                            }
+
+                            if (Current.Game != null && owner.map != null && Find.Maps.Contains(owner.map))
+                            {
+                                Current.Game.CurrentMap = owner.map;
                             }
                             Phase = TurretTestPhase.Done;
                             break;
@@ -286,23 +337,165 @@ namespace LogSyncMod.AutoTest
             private void ConnectPower()
             {
                 if (PowerGenerator == null || SpawnedTurret == null) return;
-                IntVec3 start = PowerGenerator.Position;
-                IntVec3 end = SpawnedTurret.Position;
+                EnsureConnectorRing(PowerGenerator);
+                EnsureConnectorRing(SpawnedTurret);
+
+                IntVec3 start = FindBestConnectorCell(PowerGenerator, SpawnedTurret.Position);
+                IntVec3 end = FindBestConnectorCell(SpawnedTurret, PowerGenerator.Position);
+                if (!start.IsValid || !end.IsValid)
+                {
+                    Result.Notes = AppendNote(Result.Notes, "PowerConnectorMissing=True");
+                    Log.Warning($"[LogSyncAutoTest] Failed to find valid power connector cells for '{TurretDef.defName}'.");
+                    return;
+                }
+
                 IntVec3 mid = new IntVec3(start.x, 0, end.z);
+                SpawnConduit(start);
                 SpawnLine(start, mid);
                 SpawnLine(mid, end);
+                SpawnConduit(end);
+                Log.Message($"[LogSyncAutoTest] [PowerLink] turret='{TurretDef.defName}' start={start} end={end} mid={mid}");
             }
 
             private void SpawnLine(IntVec3 a, IntVec3 b)
             {
                 foreach (IntVec3 cell in GenSight.PointsOnLineOfSight(a, b))
                 {
-                    if (cell.InBounds(TestMap) && cell.GetFirstThing(TestMap, ThingDefOf.PowerConduit) == null)
+                    SpawnConduit(cell);
+                }
+            }
+
+            private void EnsureConnectorRing(Thing thing)
+            {
+                if (thing == null)
+                {
+                    return;
+                }
+
+                foreach (IntVec3 cell in EnumerateAdjacentCardinalCells(thing.OccupiedRect()))
+                {
+                    SpawnConduit(cell);
+                }
+            }
+
+            private IntVec3 FindBestConnectorCell(Thing thing, IntVec3 toward)
+            {
+                if (thing == null)
+                {
+                    return IntVec3.Invalid;
+                }
+
+                IntVec3 bestCell = IntVec3.Invalid;
+                float bestDistance = float.MaxValue;
+                foreach (IntVec3 cell in EnumerateAdjacentCardinalCells(thing.OccupiedRect()))
+                {
+                    if (!cell.InBounds(TestMap))
                     {
-                        Thing conduit = GenSpawn.Spawn(ThingDefOf.PowerConduit, cell, TestMap);
-                        conduit.SetFaction(null);
+                        continue;
+                    }
+
+                    float distance = cell.DistanceToSquared(toward);
+                    if (!bestCell.IsValid || distance < bestDistance)
+                    {
+                        bestCell = cell;
+                        bestDistance = distance;
                     }
                 }
+
+                return bestCell;
+            }
+
+            private IEnumerable<IntVec3> EnumerateAdjacentCardinalCells(CellRect rect)
+            {
+                HashSet<IntVec3> yielded = new HashSet<IntVec3>();
+
+                for (int x = rect.minX; x <= rect.maxX; x++)
+                {
+                    IntVec3 north = new IntVec3(x, 0, rect.maxZ + 1);
+                    IntVec3 south = new IntVec3(x, 0, rect.minZ - 1);
+                    if (yielded.Add(north)) yield return north;
+                    if (yielded.Add(south)) yield return south;
+                }
+
+                for (int z = rect.minZ; z <= rect.maxZ; z++)
+                {
+                    IntVec3 east = new IntVec3(rect.maxX + 1, 0, z);
+                    IntVec3 west = new IntVec3(rect.minX - 1, 0, z);
+                    if (yielded.Add(east)) yield return east;
+                    if (yielded.Add(west)) yield return west;
+                }
+            }
+
+            private void SpawnConduit(IntVec3 cell)
+            {
+                if (!cell.InBounds(TestMap) || cell.GetFirstThing(TestMap, ThingDefOf.PowerConduit) != null)
+                {
+                    return;
+                }
+
+                Thing conduit = GenSpawn.Spawn(ThingDefOf.PowerConduit, cell, TestMap);
+                conduit.SetFaction(Faction.OfPlayer);
+            }
+
+            private void PrepareTurretForCombat()
+            {
+                Faction playerFaction = Faction.OfPlayer;
+                if (playerFaction == null)
+                {
+                    Result.Notes = AppendNote(Result.Notes, "PlayerFactionMissing=True");
+                    return;
+                }
+
+                if (PowerGenerator != null && PowerGenerator.def.CanHaveFaction && PowerGenerator.Faction != playerFaction)
+                {
+                    PowerGenerator.SetFaction(playerFaction);
+                }
+
+                if (SpawnedTurret != null && SpawnedTurret.def.CanHaveFaction && SpawnedTurret.Faction != playerFaction)
+                {
+                    SpawnedTurret.SetFaction(playerFaction);
+                }
+
+                var dormantComp = SpawnedTurret?.TryGetComp<CompCanBeDormant>();
+                dormantComp?.WakeUp();
+
+                if (SpawnedTurret is Building_TurretGun turretGun && turretGun.gun == null)
+                {
+                    turretGun.MakeGun();
+                }
+
+                EnsureOperatorManning();
+                LogTurretState("prepared_for_combat");
+            }
+
+            private void PreparePowerGenerator()
+            {
+                if (PowerGenerator == null)
+                {
+                    return;
+                }
+
+                Faction playerFaction = Faction.OfPlayer;
+                if (playerFaction != null && PowerGenerator.def.CanHaveFaction && PowerGenerator.Faction != playerFaction)
+                {
+                    PowerGenerator.SetFaction(playerFaction);
+                }
+
+                var powerPlantComp = PowerGenerator.TryGetComp<CompPowerPlant>();
+                if (powerPlantComp != null)
+                {
+                    powerPlantComp.PowerOn = true;
+                    powerPlantComp.UpdateDesiredPowerOutput();
+                }
+
+                var powerTraderComp = PowerGenerator.TryGetComp<CompPowerTrader>();
+                string message =
+                    "[LogSyncAutoTest] [PowerState] generator='" + PowerGenerator.def.defName +
+                    "' faction=" + (PowerGenerator.Faction?.Name ?? "null") +
+                    " powerOn=" + (powerTraderComp?.PowerOn.ToString() ?? "n/a") +
+                    " powerOutput=" + (powerTraderComp?.PowerOutput.ToString() ?? "n/a");
+                Log.Message(message);
+                Result.Notes = AppendNote(Result.Notes, "GeneratorPowerOn=" + (powerTraderComp?.PowerOn.ToString() ?? "n/a"));
             }
 
             private void ReloadTurret()
@@ -420,6 +613,121 @@ namespace LogSyncMod.AutoTest
                 Log.Message($"[LogSyncAutoTest] Spawn process for '{TurretDef.defName}' finished. Total enemy count: {EnemyPawns.Count}.");
             }
 
+            private void EnsureOperatorManning()
+            {
+                if (SpawnedTurret == null || TestMap == null)
+                {
+                    return;
+                }
+
+                var mannableComp = SpawnedTurret.TryGetComp<CompMannable>();
+                if (mannableComp == null)
+                {
+                    return;
+                }
+
+                if (OperatorPawn == null || OperatorPawn.Destroyed || OperatorPawn.Map != TestMap)
+                {
+                    SpawnOperatorPawn();
+                }
+
+                if (OperatorPawn == null || OperatorPawn.Destroyed || !OperatorPawn.Spawned)
+                {
+                    Result.Notes = AppendNote(Result.Notes, "OperatorMissing=True");
+                    return;
+                }
+
+                IntVec3 interactionCell = SpawnedTurret.InteractionCell;
+                if (interactionCell.IsValid && interactionCell.InBounds(TestMap) && OperatorPawn.Position != interactionCell)
+                {
+                    OperatorPawn.Position = interactionCell;
+                }
+
+                mannableComp.ManForATick(OperatorPawn);
+            }
+
+            private void SpawnOperatorPawn()
+            {
+                Faction playerFaction = Faction.OfPlayer;
+                if (playerFaction == null || TestMap == null || SpawnedTurret == null)
+                {
+                    return;
+                }
+
+                IntVec3 spawnPos = SpawnedTurret.InteractionCell;
+                if (!spawnPos.IsValid || !spawnPos.InBounds(TestMap))
+                {
+                    spawnPos = CellFinder.RandomClosewalkCellNear(SpawnedTurret.Position, TestMap, 2);
+                }
+
+                var request = new PawnGenerationRequest(
+                    PawnKindDefOf.Colonist,
+                    playerFaction,
+                    PawnGenerationContext.NonPlayer,
+                    TestMap.Tile,
+                    forceGenerateNewPawn: true,
+                    canGeneratePawnRelations: false);
+
+                OperatorPawn = PawnGenerator.GeneratePawn(request);
+                if (OperatorPawn == null)
+                {
+                    Result.Notes = AppendNote(Result.Notes, "OperatorSpawnFailed=True");
+                    return;
+                }
+
+                GenSpawn.Spawn(OperatorPawn, spawnPos, TestMap);
+                OperatorPawn.Name = new NameSingle("自动测试炮手");
+                Result.Notes = AppendNote(Result.Notes, "OperatorPawnSpawned=True");
+            }
+
+            private void LogTurretState(string stageTag)
+            {
+                if (SpawnedTurret == null)
+                {
+                    Log.Message($"[LogSyncAutoTest] [TurretState] turret='{TurretDef.defName}' stage={stageTag} spawned=False");
+                    return;
+                }
+
+                var powerComp = SpawnedTurret.TryGetComp<CompPowerTrader>();
+                var dormantComp = SpawnedTurret.TryGetComp<CompCanBeDormant>();
+                var mannableComp = SpawnedTurret.TryGetComp<CompMannable>();
+                var turretGun = SpawnedTurret as Building_TurretGun;
+
+                string message =
+                    "[LogSyncAutoTest] [TurretState] turret='" + TurretDef.defName +
+                    "' stage=" + stageTag +
+                    " faction=" + (SpawnedTurret.Faction?.Name ?? "null") +
+                    " position=" + SpawnedTurret.Position +
+                    " active=" + (turretGun?.Active.ToString() ?? "n/a") +
+                    " hasGun=" + ((turretGun?.gun) != null) +
+                    " powerOn=" + (powerComp?.PowerOn.ToString() ?? "n/a") +
+                    " awake=" + (dormantComp?.Awake.ToString() ?? "n/a") +
+                    " mannable=" + (mannableComp != null) +
+                    " mannedNow=" + (mannableComp?.MannedNow.ToString() ?? "n/a") +
+                    " operator=" + (mannableComp?.ManningPawn?.LabelShortCap ?? OperatorPawn?.LabelShortCap ?? "null") +
+                    " attackVerb=" + (turretGun?.AttackVerb != null) +
+                    " attackVerbAvailable=" + (turretGun?.AttackVerb?.Available().ToString() ?? "n/a");
+
+                Log.Message(message);
+                Result.Notes = AppendNote(Result.Notes, stageTag + "_Active=" + (turretGun?.Active.ToString() ?? "n/a"));
+            }
+
+            private void TransitionToCleanup(string cleanupReason, bool forceScreenshot)
+            {
+                CleanupReason = cleanupReason;
+                TurretScreenshotForce = forceScreenshot;
+                TurretScreenshotRequested = false;
+
+                if ((forceScreenshot || owner.settings.autoTestCaptureScreenshots) && TestMap != null && Find.Maps.Contains(TestMap))
+                {
+                    Phase = TurretTestPhase.CapturingScreenshot;
+                }
+                else
+                {
+                    Phase = TurretTestPhase.CleaningUp;
+                }
+            }
+
             private bool TryBeginPostKillObservation()
             {
                 Pawn firstKilledPawn = null;
@@ -466,7 +774,8 @@ namespace LogSyncMod.AutoTest
 
                 CleanupReason = $"failed_{status}";
                 Log.Warning($"[LogSyncAutoTest] Turret test FAILED for '{TurretDef.defName}': {status} - {message}. Scheduled for cleanup.");
-                Phase = TurretTestPhase.CleaningUp;
+                LogTurretState("failure_" + status);
+                TransitionToCleanup($"failed_{status}", forceScreenshot: true);
             }
 
             private bool EnsureMapAlive(string stageTag)
@@ -735,7 +1044,7 @@ namespace LogSyncMod.AutoTest
         private void StartNewTurretSession(ThingDef turretDef)
         {
             var result = CreateResult("Turret", "ThingDef", turretDef.defName, turretDef.label);
-            var session = new TurretTestSession(turretDef, result);
+            var session = new TurretTestSession(this, turretDef, result);
             
             try
             {
@@ -2142,6 +2451,66 @@ namespace LogSyncMod.AutoTest
             {
                 activeSession.Result.Notes = AppendNote(activeSession.Result.Notes, "ScreenshotError=" + TrimForNote(ex.Message));
                 Log.Warning("[LogSyncAutoTest] Screenshot capture failed for " + activeSession.Result.DefName + ": " + ex.Message);
+            }
+        }
+
+        private bool TryCaptureTurretScreenshot(TurretTestSession session, bool force)
+        {
+            if (session == null)
+            {
+                return false;
+            }
+
+            if (!force && !settings.autoTestCaptureScreenshots)
+            {
+                return false;
+            }
+
+            if (runArtifacts == null || session.TestMap == null || !Find.Maps.Contains(session.TestMap))
+            {
+                return false;
+            }
+
+            try
+            {
+                Directory.CreateDirectory(runArtifacts.ScreenshotDirectory);
+
+                if (Current.Game != null)
+                {
+                    Current.Game.CurrentMap = session.TestMap;
+                }
+
+                IntVec3 focusCell = session.SpawnedTurret?.Position ?? session.TestMap.Center;
+                Find.CameraDriver?.JumpToCurrentMapLoc(focusCell);
+
+                string fileName = string.Format(
+                    "{0:D4}_{1}_{2}.png",
+                    results.Count + activeTurretSessions.IndexOf(session) + 1,
+                    SanitizeFileName(session.Result.DefName),
+                    SanitizeFileName(session.Result.Status ?? session.Phase.ToString()));
+                string screenshotPath = Path.Combine(runArtifacts.ScreenshotDirectory, fileName);
+
+                ScreenCapture.CaptureScreenshot(screenshotPath);
+                session.Result.ScreenshotPath = screenshotPath;
+                session.Result.Notes = AppendNote(
+                    session.Result.Notes,
+                    force ? "TurretFailureScreenshotCaptured=True" : "TurretScreenshotCaptured=True");
+
+                Log.Message(
+                    "[LogSyncAutoTest] Turret screenshot requested for " +
+                    session.Result.DefName +
+                    " force=" +
+                    force +
+                    " -> " +
+                    screenshotPath);
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                session.Result.Notes = AppendNote(session.Result.Notes, "TurretScreenshotError=" + TrimForNote(ex.Message));
+                Log.Warning("[LogSyncAutoTest] Turret screenshot capture failed for " + session.Result.DefName + ": " + ex.Message);
+                return false;
             }
         }
 

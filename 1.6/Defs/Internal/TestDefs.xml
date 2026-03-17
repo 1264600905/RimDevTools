@@ -31,6 +31,7 @@
     <label>Auto-Test Power Generator</label>
     <thingClass>Building</thingClass>
     <category>Building</category>
+    <tickerType>Normal</tickerType>
     <graphicData>
       <texPath>UI/Buttons/Dev/Add</texPath>
       <graphicClass>Graphic_Single</graphicClass>
