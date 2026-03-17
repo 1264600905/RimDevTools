@@ -26,6 +26,7 @@
   <LogSyncMod.AutoTestScopeRecipes>工作台配方</LogSyncMod.AutoTestScopeRecipes>
   <LogSyncMod.AutoTestScopeHediffs>小人 Hediff</LogSyncMod.AutoTestScopeHediffs>
   <LogSyncMod.AutoTestScopeTurrets>炮塔口袋地圖</LogSyncMod.AutoTestScopeTurrets>
+  <LogSyncMod.AutoTestScopeRangedWeapons>遠程武器口袋地圖</LogSyncMod.AutoTestScopeRangedWeapons>
   <LogSyncMod.AutoTestCaptureScreenshots>為已打開的 InfoCard 自動截圖</LogSyncMod.AutoTestCaptureScreenshots>
   <LogSyncMod.AutoTestBatchSize>每批測試數量：{0}</LogSyncMod.AutoTestBatchSize>
   <LogSyncMod.AutoTestRunNow>立即啟動自動測試</LogSyncMod.AutoTestRunNow>

@@ -70,30 +70,46 @@ namespace LogSyncMod.AutoTest
             return spec != null && spec.captureScreenshots;
         }
 
-        private bool ShouldCaptureTurretProjectileScreenshots(LogSyncAutoTestSpecDef spec)
+        private bool ShouldCaptureProjectileScreenshots(LogSyncAutoTestSpecDef spec, AutoTestKind kind)
         {
+            if (!settings.UseXmlDrivenAutoTest())
+            {
+                return kind == AutoTestKind.RangedWeaponPocketMap
+                    ? settings.autoTestCaptureScreenshots
+                    : false;
+            }
+
             if (spec == null)
             {
                 return false;
             }
 
-            return settings.UseXmlDrivenAutoTest() && spec.captureTurretProjectileScreenshots;
+            return spec.captureProjectileScreenshots ||
+                (kind == AutoTestKind.TurretPocketMap && spec.captureTurretProjectileScreenshots);
         }
 
-        private List<int> ResolveTurretProjectileScreenshotTicks(LogSyncAutoTestSpecDef spec)
+        private List<int> ResolveProjectileScreenshotTicks(LogSyncAutoTestSpecDef spec)
         {
-            List<int> ticks = spec?.turretProjectileScreenshotTicks == null
+            List<int> ticks = spec?.projectileScreenshotTicks == null
                 ? new List<int>()
-                : spec.turretProjectileScreenshotTicks
+                : spec.projectileScreenshotTicks
                     .Where(value => value >= 0)
                     .Distinct()
                     .OrderBy(value => value)
                     .ToList();
 
+            if (ticks.Count == 0 && spec?.turretProjectileScreenshotTicks != null)
+            {
+                ticks = spec.turretProjectileScreenshotTicks
+                    .Where(value => value >= 0)
+                    .Distinct()
+                    .OrderBy(value => value)
+                    .ToList();
+            }
+
             if (ticks.Count == 0)
             {
                 ticks.Add(20);
-                ticks.Add(30);
                 ticks.Add(40);
             }
 
@@ -110,6 +126,8 @@ namespace LogSyncMod.AutoTest
                     return AutoTestScope.Hediffs;
                 case AutoTestKind.TurretPocketMap:
                     return AutoTestScope.Turrets;
+                case AutoTestKind.RangedWeaponPocketMap:
+                    return AutoTestScope.RangedWeapons;
                 default:
                     return AutoTestScope.Content;
             }
@@ -131,6 +149,8 @@ namespace LogSyncMod.AutoTest
                     return "Hediff";
                 case AutoTestKind.TurretPocketMap:
                     return "Turret";
+                case AutoTestKind.RangedWeaponPocketMap:
+                    return "RangedWeapon";
                 default:
                     return kind.ToString();
             }

@@ -26,6 +26,7 @@
   <LogSyncMod.AutoTestScopeRecipes>Workbench recipes</LogSyncMod.AutoTestScopeRecipes>
   <LogSyncMod.AutoTestScopeHediffs>Pawn hediffs</LogSyncMod.AutoTestScopeHediffs>
   <LogSyncMod.AutoTestScopeTurrets>Turret pocket maps</LogSyncMod.AutoTestScopeTurrets>
+  <LogSyncMod.AutoTestScopeRangedWeapons>Ranged weapon pocket maps</LogSyncMod.AutoTestScopeRangedWeapons>
   <LogSyncMod.AutoTestCaptureScreenshots>Capture screenshots for opened InfoCards</LogSyncMod.AutoTestCaptureScreenshots>
   <LogSyncMod.AutoTestBatchSize>Batch size per step: {0}</LogSyncMod.AutoTestBatchSize>
   <LogSyncMod.AutoTestRunNow>Run auto test now</LogSyncMod.AutoTestRunNow>

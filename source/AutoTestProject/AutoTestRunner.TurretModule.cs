@@ -1382,8 +1382,8 @@ namespace LogSyncMod.AutoTest
             var session = new TurretTestSession(this, turretDef, result);
             LogSyncAutoTestSpecDef spec = ResolveBestMatchingSpec(AutoTestKind.TurretPocketMap, turretDef);
             session.AllowScreenshots = ShouldCaptureScreenshots(spec);
-            session.CaptureProjectileScreenshots = ShouldCaptureTurretProjectileScreenshots(spec);
-            session.ProjectileScreenshotTicks = ResolveTurretProjectileScreenshotTicks(spec);
+            session.CaptureProjectileScreenshots = ShouldCaptureProjectileScreenshots(spec, AutoTestKind.TurretPocketMap);
+            session.ProjectileScreenshotTicks = ResolveProjectileScreenshotTicks(spec);
             result.Notes = AppendNote(result.Notes, "AutoTestMode=" + (settings.UseXmlDrivenAutoTest() ? "XmlDriven" : "Automatic"));
             if (spec != null)
             {

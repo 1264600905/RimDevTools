@@ -9,7 +9,8 @@ namespace LogSyncMod
         Content = 1,
         Recipes = 2,
         Hediffs = 3,
-        Turrets = 4
+        Turrets = 4,
+        RangedWeapons = 5
     }
 
     public enum AutoTestMode
@@ -124,6 +125,11 @@ namespace LogSyncMod
         public bool ShouldTestTurrets()
         {
             return autoTestScope == AutoTestScope.All || autoTestScope == AutoTestScope.Turrets;
+        }
+
+        public bool ShouldTestRangedWeapons()
+        {
+            return autoTestScope == AutoTestScope.All || autoTestScope == AutoTestScope.RangedWeapons;
         }
 
         public void RequestAutoTestRun()

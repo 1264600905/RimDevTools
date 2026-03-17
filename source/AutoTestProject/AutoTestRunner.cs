@@ -26,6 +26,20 @@ namespace LogSyncMod.AutoTest
         Done
     }
 
+    internal enum RangedWeaponTestPhase
+    {
+        Initializing,
+        WaitingForMap,
+        SpawningShooter,
+        EquippingWeapon,
+        SpawningEnemies,
+        Fighting,
+        WaitingAfterHit,
+        CapturingScreenshot,
+        CleaningUp,
+        Done
+    }
+
     internal sealed partial class AutoTestRunner
     {
         // --- 常量和字段 ---
@@ -55,6 +69,8 @@ namespace LogSyncMod.AutoTest
         // 新增炮塔测试相关字段
         private readonly List<TurretTestSession> activeTurretSessions = new List<TurretTestSession>();
         private readonly Queue<ThingDef> pendingTurretDefs = new Queue<ThingDef>();
+        private readonly List<RangedWeaponTestSession> activeRangedWeaponSessions = new List<RangedWeaponTestSession>();
+        private readonly Queue<ThingDef> pendingRangedWeaponDefs = new Queue<ThingDef>();
         private ModContentPack targetMod;
         private Pawn sharedHediffPawn;
         private string targetPackageId;
@@ -120,9 +136,14 @@ namespace LogSyncMod.AutoTest
                 BeginTurretTestSession();
             }
 
+            if (settings.ShouldTestRangedWeapons())
+            {
+                BeginRangedWeaponTestSession();
+            }
+
             ApplyBatchLimit();
 
-            int totalPending = pendingItems.Count + pendingTurretDefs.Count;
+            int totalPending = pendingItems.Count + pendingTurretDefs.Count + pendingRangedWeaponDefs.Count;
             Log.Message(string.Format(
                 "[LogSyncAutoTest] START packageId={0} map={1} scope={2} pending={3}",
                 targetPackageId,
@@ -158,13 +179,30 @@ namespace LogSyncMod.AutoTest
                 StartNewTurretSession(turretDef);
             }
 
+            while (activeRangedWeaponSessions.Count < MaxConcurrentTurretTests && pendingRangedWeaponDefs.Count > 0)
+            {
+                ThingDef weaponDef = pendingRangedWeaponDefs.Dequeue();
+                StartNewRangedWeaponSession(weaponDef);
+            }
+
             if (Find.TickManager.TicksGame % 500 == 0 && activeTurretSessions.Count > 0)
             {
                 string statusReport = string.Join(", ", activeTurretSessions.Select(s => $"{s.TurretDef.defName}({s.Phase})"));
                 Log.Message($"[LogSyncAutoTest] Heartbeat: {activeTurretSessions.Count} active sessions. Details: {statusReport}");
             }
 
+            if (Find.TickManager.TicksGame % 500 == 0 && activeRangedWeaponSessions.Count > 0)
+            {
+                string statusReport = string.Join(", ", activeRangedWeaponSessions.Select(s => $"{s.WeaponDef.defName}({s.Phase})"));
+                Log.Message($"[LogSyncAutoTest] Ranged heartbeat: {activeRangedWeaponSessions.Count} active sessions. Details: {statusReport}");
+            }
+
             foreach (var session in activeTurretSessions)
+            {
+                session.Update();
+            }
+
+            foreach (var session in activeRangedWeaponSessions)
             {
                 session.Update();
             }
@@ -177,7 +215,20 @@ namespace LogSyncMod.AutoTest
                 return false;
             });
 
-            if (pendingItems.Count == 0 && activeSession == null && pendingTurretDefs.Count == 0 && activeTurretSessions.Count == 0)
+            activeRangedWeaponSessions.RemoveAll(session => {
+                if (session.Phase == RangedWeaponTestPhase.Done) {
+                    results.Add(session.Result);
+                    return true;
+                }
+                return false;
+            });
+
+            if (pendingItems.Count == 0 &&
+                activeSession == null &&
+                pendingTurretDefs.Count == 0 &&
+                pendingRangedWeaponDefs.Count == 0 &&
+                activeTurretSessions.Count == 0 &&
+                activeRangedWeaponSessions.Count == 0)
             {
                 Finish();
             }
@@ -286,7 +337,7 @@ namespace LogSyncMod.AutoTest
         private void ApplyBatchLimit()
         {
             int limit = Math.Max(1, settings.autoTestBatchSize);
-            int originalTotal = pendingItems.Count + pendingTurretDefs.Count;
+            int originalTotal = pendingItems.Count + pendingTurretDefs.Count + pendingRangedWeaponDefs.Count;
             if (originalTotal <= limit)
             {
                 return;
@@ -326,9 +377,25 @@ namespace LogSyncMod.AutoTest
                 }
             }
 
+            if (pendingRangedWeaponDefs.Count > 0)
+            {
+                Queue<ThingDef> limitedWeapons = new Queue<ThingDef>();
+                while (pendingRangedWeaponDefs.Count > 0 && keptCount < limit)
+                {
+                    limitedWeapons.Enqueue(pendingRangedWeaponDefs.Dequeue());
+                    keptCount++;
+                }
+
+                pendingRangedWeaponDefs.Clear();
+                foreach (ThingDef weaponDef in limitedWeapons)
+                {
+                    pendingRangedWeaponDefs.Enqueue(weaponDef);
+                }
+            }
+
             Log.Message(string.Format(
                 "[LogSyncAutoTest] Batch limit applied. Keeping first {0} items.",
-                pendingItems.Count + pendingTurretDefs.Count));
+                pendingItems.Count + pendingTurretDefs.Count + pendingRangedWeaponDefs.Count));
         }
 
         private bool TryCaptureTurretScreenshot(TurretTestSession session, bool force)

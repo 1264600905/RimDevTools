@@ -12,7 +12,9 @@ namespace LogSyncMod
         public List<string> defNames = new List<string>();
         public bool captureScreenshots = false;
         public bool captureTurretProjectileScreenshots = false;
+        public bool captureProjectileScreenshots = false;
         public List<int> turretProjectileScreenshotTicks = new List<int> { 20, 30, 40 };
+        public List<int> projectileScreenshotTicks = new List<int> { 20, 40 };
 
         public override void ResolveReferences()
         {
@@ -20,6 +22,7 @@ namespace LogSyncMod
             categories = NormalizeStrings(categories);
             defNames = NormalizeStrings(defNames);
             turretProjectileScreenshotTicks = NormalizeTicks(turretProjectileScreenshotTicks);
+            projectileScreenshotTicks = NormalizeTicks(projectileScreenshotTicks);
         }
 
         private static List<string> NormalizeStrings(List<string> values)

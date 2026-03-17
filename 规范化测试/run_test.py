@@ -188,6 +188,9 @@ def normalize_scope_value(scope: str | None):
         "recipes": "Recipes",
         "hediffs": "Hediffs",
         "turrets": "Turrets",
+        "rangedweapons": "RangedWeapons",
+        "ranged-weapons": "RangedWeapons",
+        "ranged_weapons": "RangedWeapons",
     }
     return scope_map.get(normalized_scope, "All")
 
@@ -295,6 +298,7 @@ def write_temp_autotest_spec(package_id: str, scope: str, def_names: list[str], 
     lines.extend([
         "    </defNames>",
         f"    <captureScreenshots>{capture_value}</captureScreenshots>",
+        f"    <captureProjectileScreenshots>{capture_value}</captureProjectileScreenshots>",
         "  </LogSyncMod.LogSyncAutoTestSpecDef>",
         "</Defs>",
         "",
@@ -354,6 +358,40 @@ def restore_disabled_autotest_spec_files(disabled_pairs: list[tuple[Path, Path]]
             print(f"[信息] 已恢复目标模组自动测试 XML: {original_path}")
         except Exception as e:
             print(f"[警告] 恢复目标模组自动测试 XML 失败: {original_path} ({e})")
+
+def recover_stale_run_test_artifacts():
+    recovered_count = 0
+    cleaned_count = 0
+    for root in build_candidate_mod_roots():
+        for disabled_path in root.rglob(f"*{DISABLED_SPEC_SUFFIX}"):
+            if not disabled_path.is_file():
+                continue
+
+            original_name = disabled_path.name[:-len(DISABLED_SPEC_SUFFIX)]
+            original_path = disabled_path.with_name(original_name)
+            try:
+                if original_path.exists():
+                    disabled_path.unlink()
+                    cleaned_count += 1
+                    print(f"[信息] 清理残留禁用 XML: {disabled_path}")
+                else:
+                    disabled_path.replace(original_path)
+                    recovered_count += 1
+                    print(f"[信息] 恢复上次中断遗留的 XML: {original_path}")
+            except Exception as e:
+                print(f"[警告] 恢复残留禁用 XML 失败: {disabled_path} ({e})")
+
+        for temp_spec_path in root.rglob(TEMP_AUTOTEST_SPEC_FILE_NAME):
+            if not temp_spec_path.is_file():
+                continue
+            try:
+                temp_spec_path.unlink()
+                cleaned_count += 1
+                print(f"[信息] 清理残留临时自动测试 XML: {temp_spec_path}")
+            except Exception as e:
+                print(f"[警告] 清理残留临时自动测试 XML 失败: {temp_spec_path} ({e})")
+
+    return recovered_count, cleaned_count
 
 def ensure_text_node(parent, tag: str, value: str):
     node = parent.find(tag)
@@ -480,6 +518,9 @@ def update_mod_settings(
                 "recipes": "Recipes",
                 "hediffs": "Hediffs",
                 "turrets": "Turrets",
+                "rangedweapons": "RangedWeapons",
+                "ranged-weapons": "RangedWeapons",
+                "ranged_weapons": "RangedWeapons",
             }
             desired_scope = scope_map.get(normalized_scope, "All")
             if (mod_settings.findtext("autoTestScope") or "").strip() != desired_scope:
@@ -822,6 +863,10 @@ def monitor(
     if not wait_for_existing_rimworld_to_exit():
         return
 
+    recovered_specs, cleaned_specs = recover_stale_run_test_artifacts()
+    if recovered_specs > 0 or cleaned_specs > 0:
+        print(f"[信息] 已恢复/清理上次中断遗留的自动测试文件: recovered={recovered_specs}, cleaned={cleaned_specs}")
+
     # 恢复上次意外中断
     if MODS_CONFIG_BACKUP_FILE.exists():
         try:
@@ -997,7 +1042,7 @@ if __name__ == "__main__":
     parser.add_argument("--auto-test-package-id", default=None, help="auto/xml 模式下的目标模组 packageId")
     parser.add_argument("--auto-test-output-dir", default=None, help="自动测试报告输出目录")
     parser.add_argument("--auto-test-mode", choices=["automatic", "xml-driven"], default="automatic", help="兼容旧参数；未传 --mode 时用于自动推断 auto/xml")
-    parser.add_argument("--auto-test-scope", choices=["all", "content", "recipes", "hediffs", "turrets"], default="all", help="auto/xml 模式下的测试范围：all/content/recipes/hediffs/turrets")
+    parser.add_argument("--auto-test-scope", choices=["all", "content", "recipes", "hediffs", "turrets", "rangedweapons"], default="all", help="auto/xml 模式下的测试范围：all/content/recipes/hediffs/turrets/rangedweapons")
     parser.add_argument("--auto-test-capture-screenshots", action="store_true", help="auto/xml 模式下允许截图")
     parser.add_argument("--auto-test-batch-size", type=int, default=None, help="auto 模式下按范围限制测试数量；xml 模式下也可作为上限")
     parser.add_argument("--auto-test-defname", action="append", default=None, help="auto 模式下指定要测试的 defName，可重复传入；脚本会自动生成临时 XML 规则")
