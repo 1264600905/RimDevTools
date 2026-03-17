@@ -16,6 +16,8 @@ namespace LogSyncMod.AutoTest
             private const int MapReadyWaitTicks = 180;
             private const int FightDurationTicks = 60 * 60;
             private const int ObservationTicks = 60 * 10;
+            private const int ProjectileCenteredScreenshotTargetCount = 2;
+            private const int ProjectileScreenshotGraceTicks = 20 * 60;
             private const int VirtualProjectilePrimeTick = 5;
             private const int ScreenshotFocusWaitTicks = 6;
             private const int ScreenshotWaitTicks = 10;
@@ -62,6 +64,8 @@ namespace LogSyncMod.AutoTest
             public int ProjectileShotTick = -1;
             public int NextProjectileScreenshotIndex;
             public bool ProjectileScreenshotPrimed;
+            public int ProjectileScreenshotGraceTicksRemaining = -1;
+            public bool PostKillResultRecorded;
             public Dictionary<int, Vector3> ProjectileLastPositions = new Dictionary<int, Vector3>();
             public Dictionary<int, int> ProjectileLastTicks = new Dictionary<int, int>();
             private readonly Queue<StageScreenshotRequest> PendingStageScreenshots = new Queue<StageScreenshotRequest>();
@@ -233,9 +237,12 @@ namespace LogSyncMod.AutoTest
                             }
                             else
                             {
-                                int deadCount = EnemyPawns.Count(p => p == null || p.Destroyed || p.Dead || p.Downed);
-                                Result.Notes = AppendNote(Result.Notes, $"Final results: {deadCount}/5 targets eliminated.");
-                                Result.Status = "passed";
+                                RecordPostKillSuccessIfNeeded();
+                                if (TryWaitForRemainingProjectileScreenshots())
+                                {
+                                    break;
+                                }
+
                                 Log.Message($"[LogSyncAutoTest] Observation finished for '{TurretDef.defName}'. Result: {Result.Status}. Closing map.");
                                 LogTurretState("post_kill_observation_finished");
                                 TransitionToCleanup("test_passed_post_kill_delay", forceScreenshot: false);
@@ -621,7 +628,7 @@ namespace LogSyncMod.AutoTest
 
             private void UpdateProjectileScreenshotSchedule()
             {
-                if (!CaptureProjectileScreenshots || ProjectileScreenshotTicks == null || ProjectileScreenshotTicks.Count == 0)
+                if (!CaptureProjectileScreenshots)
                 {
                     return;
                 }
@@ -654,13 +661,13 @@ namespace LogSyncMod.AutoTest
                     Result.Notes = AppendNote(Result.Notes, "ProjectileScreenshotPrimed=True");
                 }
 
-                if (NextProjectileScreenshotIndex >= ProjectileScreenshotTicks.Count)
+                if (NextProjectileScreenshotIndex >= ResolveProjectileCenteredScreenshotTargetCount())
                 {
                     UpdateProjectileHistory(activeProjectiles);
                     return;
                 }
 
-                int offset = ProjectileScreenshotTicks[NextProjectileScreenshotIndex];
+                int offset = ResolveProjectileCenteredScreenshotOffset(NextProjectileScreenshotIndex);
                 if (currentTick - ProjectileShotTick < offset)
                 {
                     UpdateProjectileHistory(activeProjectiles);
@@ -1137,6 +1144,89 @@ namespace LogSyncMod.AutoTest
                 {
                     Phase = TurretTestPhase.CleaningUp;
                 }
+            }
+
+            private void RecordPostKillSuccessIfNeeded()
+            {
+                if (PostKillResultRecorded)
+                {
+                    return;
+                }
+
+                int deadCount = EnemyPawns.Count(p => p == null || p.Destroyed || p.Dead || p.Downed);
+                Result.Notes = AppendNote(Result.Notes, $"Final results: {deadCount}/5 targets eliminated.");
+                Result.Status = "passed";
+                PostKillResultRecorded = true;
+            }
+
+            private bool TryWaitForRemainingProjectileScreenshots()
+            {
+                if (!HasRemainingProjectileVisualCaptures())
+                {
+                    return false;
+                }
+
+                if (ProjectileScreenshotGraceTicksRemaining < 0)
+                {
+                    ProjectileScreenshotGraceTicksRemaining = ProjectileScreenshotGraceTicks;
+                    Result.Notes = AppendNote(Result.Notes, "ProjectileScreenshotGraceStarted=True");
+                    Log.Message($"[LogSyncAutoTest] Projectile screenshot grace started for '{TurretDef.defName}' with {ProjectileScreenshotGraceTicks / 60}s remaining.");
+                }
+
+                if (ProjectileScreenshotGraceTicksRemaining > 0)
+                {
+                    ProjectileScreenshotGraceTicksRemaining--;
+                    if (ProjectileScreenshotGraceTicksRemaining % 120 == 0)
+                    {
+                        int remainingSec = ProjectileScreenshotGraceTicksRemaining / 60;
+                        Result.Stage = $"projectile_grace_{remainingSec}s";
+                    }
+                    return true;
+                }
+
+                Result.Notes = AppendNote(
+                    Result.Notes,
+                    "ProjectileScreenshotGraceExpiredRemaining=" + CountRemainingProjectileVisualCaptures());
+                Log.Message($"[LogSyncAutoTest] Projectile screenshot grace expired for '{TurretDef.defName}'. Remaining captures={CountRemainingProjectileVisualCaptures()}.");
+                return false;
+            }
+
+            private bool HasRemainingProjectileVisualCaptures()
+            {
+                return CaptureProjectileScreenshots &&
+                    CountRemainingProjectileVisualCaptures() > 0;
+            }
+
+            private int CountRemainingProjectileVisualCaptures()
+            {
+                return Math.Max(0, ResolveProjectileCenteredScreenshotTargetCount() - NextProjectileScreenshotIndex);
+            }
+
+            private int ResolveProjectileCenteredScreenshotTargetCount()
+            {
+                return ProjectileScreenshotTicks == null || ProjectileScreenshotTicks.Count == 0
+                    ? 0
+                    : Math.Min(ProjectileCenteredScreenshotTargetCount, ProjectileScreenshotTicks.Count);
+            }
+
+            private int ResolveProjectileCenteredScreenshotOffset(int captureIndex)
+            {
+                if (ProjectileScreenshotTicks == null || ProjectileScreenshotTicks.Count == 0)
+                {
+                    return 0;
+                }
+
+                if (ProjectileScreenshotTicks.Count == 1)
+                {
+                    return ProjectileScreenshotTicks[0];
+                }
+
+                if (captureIndex <= 0)
+                {
+                    return ProjectileScreenshotTicks[0];
+                }
+
+                return ProjectileScreenshotTicks[ProjectileScreenshotTicks.Count - 1];
             }
 
             private bool TryBeginPostKillObservation()

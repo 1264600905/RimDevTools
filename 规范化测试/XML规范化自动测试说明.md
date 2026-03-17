@@ -23,9 +23,14 @@
 python .\规范化测试\run_test.py `
   --auto-test-package-id your.mod.packageid `
   --auto-test-mode xml-driven `
-  --auto-test-scope turrets `
+  --auto-test-scope all `
   --timeout-seconds 600
 ```
+
+说明：
+
+- 不传 `--auto-test-batch-size` 时，`run_test.py` 现在会主动清除旧的 `autoTestBatchSize` 配置，避免残留上一次的批量限制
+- 只有在你显式传入 `--auto-test-batch-size N` 时，才会写入新的批量上限
 
 ## Def 结构
 
@@ -77,13 +82,29 @@ python .\规范化测试\run_test.py `
 
 - 首次检测到口袋地图内有投射物实体出现时，记为开火起点
 - 按 `turretProjectileScreenshotTicks` 里的偏移 tick 依次截图
-- 默认值是 `5`、`20`、`30`
+- 默认值是 `20`、`30`、`40`
+- 内部会额外保留一个“虚拟 `t5` 预热帧”，只用于让第一张真正截图更稳定，不会生成图片文件
+- 截图仍然要求“射弹经过当前截图中心附近”才会真正落盘
+- 如果炮塔已经通过测试，但仍有剩余投射物截图时间点未完成，口袋地图会额外保留最多 `20` 秒截图宽限期
+- 宽限期内如果剩余时间点提前拍满，会提前关闭口袋地图，不会强制等满 `20` 秒
+
+建议：
+
+- 对高射速、短程或投射物较慢的炮塔，优先使用 `20`、`30`、`40`
+- 如果某类炮塔仍然难以抓到完整弹道，可以继续把时间点往后调，例如 `30`、`40`、`60`
+
+## XML 编写注意点
+
+- Def 根类型必须写全限定名：`LogSyncMod.LogSyncAutoTestSpecDef`
+- 不建议写成 `<LogSyncAutoTestSpecDef>`，否则 RimWorld 可能无法识别为有效 Def 类型
+- 建议把测试 XML 放在被测模组自己的 `Defs` 目录下，例如：
+  `1.6/Defs/LogSync_AutoTests/YourMod_LogSyncAutoTests.xml`
 
 ## XML 示例
 
 ```xml
 <Defs>
-  <LogSyncAutoTestSpecDef>
+  <LogSyncMod.LogSyncAutoTestSpecDef>
     <defName>MyMod_TurretVisualSpec</defName>
     <scope>Turrets</scope>
     <defNames>
@@ -92,13 +113,13 @@ python .\规范化测试\run_test.py `
     <captureScreenshots>true</captureScreenshots>
     <captureTurretProjectileScreenshots>true</captureTurretProjectileScreenshots>
     <turretProjectileScreenshotTicks>
-      <li>5</li>
       <li>20</li>
       <li>30</li>
+      <li>40</li>
     </turretProjectileScreenshotTicks>
-  </LogSyncAutoTestSpecDef>
+  </LogSyncMod.LogSyncAutoTestSpecDef>
 
-  <LogSyncAutoTestSpecDef>
+  <LogSyncMod.LogSyncAutoTestSpecDef>
     <defName>MyMod_ContentSanitySpec</defName>
     <scope>Content</scope>
     <categories>
@@ -106,16 +127,16 @@ python .\规范化测试\run_test.py `
       <li>Item</li>
     </categories>
     <captureScreenshots>true</captureScreenshots>
-  </LogSyncAutoTestSpecDef>
+  </LogSyncMod.LogSyncAutoTestSpecDef>
 
-  <LogSyncAutoTestSpecDef>
+  <LogSyncMod.LogSyncAutoTestSpecDef>
     <defName>MyMod_RecipeTargetedSpec</defName>
     <scope>Recipes</scope>
     <defNames>
       <li>Recipe_MyWeapon</li>
     </defNames>
     <captureScreenshots>false</captureScreenshots>
-  </LogSyncAutoTestSpecDef>
+  </LogSyncMod.LogSyncAutoTestSpecDef>
 </Defs>
 ```
 
@@ -133,3 +154,6 @@ python .\规范化测试\run_test.py `
 - `XmlDriven` 模式下，只会测试命中 `LogSyncAutoTestSpecDef` 的内容
 - 如果目标模组下没有任何 `LogSyncAutoTestSpecDef`，运行器会记录警告，并且不会选出测试目标
 - `scope=All` 现在会按统一调度顺序处理所有范围，不再只跑炮塔
+- `turretProjectileScreenshotTicks` 只是“允许尝试截图的时间点”，不是强制每个时间点都一定会落盘
+- 如果某个时间点没有命中“射弹经过截图中心”的条件，该时间点可能不会生成图片
+- 通过测试后的 `20` 秒截图宽限期，只用于补拍剩余炮塔截图，不会改变测试是否通过的判定

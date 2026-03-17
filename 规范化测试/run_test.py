@@ -178,6 +178,13 @@ def ensure_text_node(parent, tag: str, value: str):
         node = ET.SubElement(parent, tag)
     node.text = value
 
+def remove_child_node(parent, tag: str):
+    node = parent.find(tag)
+    if node is None:
+        return False
+    parent.remove(node)
+    return True
+
 def normalize_log_keywords(log_keywords):
     if log_keywords is None:
         return None
@@ -204,6 +211,7 @@ def update_mod_settings(
     auto_test_scope: str | None = None,
     auto_test_capture_screenshots: bool | None = None,
     auto_test_batch_size: int | None = None,
+    clear_auto_test_batch_size: bool = False,
 ):
     """
     在启动游戏前修改 LogSyncMod 的设置文件：
@@ -301,7 +309,10 @@ def update_mod_settings(
                 ensure_text_node(mod_settings, "autoTestCaptureScreenshots", desired_value)
                 changed = True
 
-        if auto_test_batch_size is not None:
+        if clear_auto_test_batch_size:
+            if remove_child_node(mod_settings, "autoTestBatchSize"):
+                changed = True
+        elif auto_test_batch_size is not None:
             normalized_batch_size = str(max(1, int(auto_test_batch_size)))
             if (mod_settings.findtext("autoTestBatchSize") or "").strip() != normalized_batch_size:
                 ensure_text_node(mod_settings, "autoTestBatchSize", normalized_batch_size)
@@ -617,6 +628,7 @@ def monitor(
         auto_test_scope=auto_test_scope if auto_test_package_id else None,
         auto_test_capture_screenshots=auto_test_capture_screenshots if auto_test_package_id else None,
         auto_test_batch_size=auto_test_batch_size if auto_test_package_id else None,
+        clear_auto_test_batch_size=bool(auto_test_package_id) and auto_test_batch_size is None,
     )
     current_package_id = read_current_mod_package_id()
     if current_package_id:
@@ -750,6 +762,7 @@ if __name__ == "__main__":
             auto_test_scope=args.auto_test_scope if args.auto_test_package_id else None,
             auto_test_capture_screenshots=True if args.auto_test_capture_screenshots and args.auto_test_package_id else None,
             auto_test_batch_size=args.auto_test_batch_size if args.auto_test_package_id else None,
+            clear_auto_test_batch_size=bool(args.auto_test_package_id) and args.auto_test_batch_size is None,
         )
         if resolved_auto_test_output_dir:
             prune_auto_test_output_runs(Path(resolved_auto_test_output_dir))
