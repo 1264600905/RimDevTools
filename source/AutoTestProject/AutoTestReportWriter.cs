@@ -86,13 +86,16 @@ namespace LogSyncMod.AutoTest
 
             foreach (AutoTestResult result in results)
             {
+                string screenshotValue = result.ScreenshotPaths != null && result.ScreenshotPaths.Count > 0
+                    ? string.Join("<br>", result.ScreenshotPaths.ToArray())
+                    : result.ScreenshotPath;
                 builder.AppendLine(string.Format(
                     "| {0} | `{1}` | {2} | {3} | {4} | {5} |",
                     EscapePipe(result.Category),
                     EscapePipe(result.DefName),
                     EscapePipe(result.Status),
                     EscapePipe(result.Stage),
-                    EscapePipe(result.ScreenshotPath),
+                    EscapePipe(screenshotValue),
                     EscapePipe(string.IsNullOrWhiteSpace(result.ErrorMessage) ? result.Notes : Trim(result.ErrorMessage, 160))));
             }
 
@@ -120,6 +123,7 @@ namespace LogSyncMod.AutoTest
                 builder.AppendLine("      \"stage\": \"" + EscapeJson(result.Stage) + "\",");
                 builder.AppendLine("      \"errorMessage\": \"" + EscapeJson(result.ErrorMessage) + "\",");
                 builder.AppendLine("      \"screenshotPath\": \"" + EscapeJson(result.ScreenshotPath) + "\",");
+                builder.AppendLine("      \"screenshotPaths\": " + BuildJsonArray(result.ScreenshotPaths) + ",");
                 builder.AppendLine("      \"notes\": \"" + EscapeJson(result.Notes) + "\"");
                 builder.Append("    }");
                 if (i < results.Count - 1) builder.Append(",");
@@ -155,6 +159,16 @@ namespace LogSyncMod.AutoTest
         private static string EscapePipe(string text)
         {
             return (text ?? string.Empty).Replace("|", "\\|").Replace("\r", " ").Replace("\n", " ");
+        }
+
+        private static string BuildJsonArray(List<string> values)
+        {
+            if (values == null || values.Count == 0)
+            {
+                return "[]";
+            }
+
+            return "[" + string.Join(", ", values.Select(value => "\"" + EscapeJson(value) + "\"").ToArray()) + "]";
         }
 
         private static string Trim(string text, int maxLength)

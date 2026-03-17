@@ -17,6 +17,9 @@ from datetime import datetime
 # 1. 配置部分 (需要修改的部分写在这里)
 # ==========================================
 
+WORKSPACE_DIR = Path(__file__).resolve().parent
+REPO_ROOT = WORKSPACE_DIR.parent
+
 # 环世界主程序路径
 GAME_PATH = r"H:\SteamLibrary\steamapps\common\RimWorld\RimWorldWin64.exe"
 
@@ -45,6 +48,8 @@ POST_EXISTING_GAME_EXIT_DELAY = 10
 
 # 测试日志总保留数（包含当前日志文件本身）
 MAX_MANAGED_LOG_FILES = 3
+# 自动测试输出总保留运行数
+MAX_MANAGED_AUTO_TEST_RUNS = 2
 
 # 默认的测试激活模组列表 (当没有预设文件时使用)
 MIN_ACTIVE_MODS = [
@@ -76,7 +81,7 @@ MIN_ACTIVE_MODS = [
 # 1.5. 从项目元数据读取当前模组信息
 # ==========================================
 
-ABOUT_XML_PATH = Path(__file__).resolve().parent / "About" / "About.xml"
+ABOUT_XML_PATH = REPO_ROOT / "About" / "About.xml"
 
 # ==========================================
 # 2. 内部路径配置 (通常不需要修改)
@@ -93,7 +98,7 @@ SYSTEM_LOG_PATH = RIMWORLD_CONFIG_DIR.parent / "Player.log"
 # LogSyncMod 模组的配置文件路径
 SETTINGS_FILE = RIMWORLD_CONFIG_DIR / "Mod_LogSyncMod_LogSyncMod.xml"
 # 本项目同步日志输出路径
-TARGET_SYNC_LOG = str((Path(__file__).resolve().parent / "精选日志.log"))
+TARGET_SYNC_LOG = str((WORKSPACE_DIR / "精选日志.log"))
 
 # ==========================================
 # 3. 内部逻辑部分 (不需要修改)
@@ -154,11 +159,18 @@ def load_mods_from_file(path: Path):
     return unique if unique else None
 
 def pick_default_mods_file():
-    root = Path(__file__).resolve().parent
+    root = REPO_ROOT
     for name in ["模组信息_vef.txt", "模组信息.txt"]:
         p = root / name
         if p.exists(): return p
     return None
+
+def resolve_auto_test_output_dir(auto_test_output_dir: str | None, auto_test_package_id: str | None):
+    if not auto_test_package_id:
+        return None
+    if auto_test_output_dir is not None:
+        return auto_test_output_dir
+    return str(WORKSPACE_DIR / "AutoTestOutput")
 
 def ensure_text_node(parent, tag: str, value: str):
     node = parent.find(tag)
@@ -188,6 +200,7 @@ def update_mod_settings(
     auto_test_enabled: bool | None = None,
     auto_test_target_package_id: str | None = None,
     auto_test_output_path: str | None = None,
+    auto_test_mode: str | None = None,
     auto_test_scope: str | None = None,
     auto_test_capture_screenshots: bool | None = None,
     auto_test_batch_size: int | None = None,
@@ -253,6 +266,19 @@ def update_mod_settings(
             normalized_output_path = (auto_test_output_path or "").strip()
             if (mod_settings.findtext("autoTestOutputPath") or "").strip() != normalized_output_path:
                 ensure_text_node(mod_settings, "autoTestOutputPath", normalized_output_path)
+                changed = True
+
+        if auto_test_mode is not None:
+            normalized_mode = (auto_test_mode or "").strip().lower()
+            mode_map = {
+                "automatic": "Automatic",
+                "xml": "XmlDriven",
+                "xml-driven": "XmlDriven",
+                "xmldriven": "XmlDriven",
+            }
+            desired_mode = mode_map.get(normalized_mode, "Automatic")
+            if (mod_settings.findtext("autoTestMode") or "").strip() != desired_mode:
+                ensure_text_node(mod_settings, "autoTestMode", desired_mode)
                 changed = True
 
         if auto_test_scope is not None:
@@ -355,6 +381,72 @@ def rotate_target_log(target_log: Path):
 
     target_log.write_text("", encoding="utf-8")
     prune_managed_log_files(target_log)
+
+def parse_auto_test_run_key(path: Path):
+    name = path.name
+    suffixes = ["_Report.md", "_Result.json", "_Screenshots"]
+    matched_suffix = None
+    for suffix in suffixes:
+        if name.endswith(suffix):
+            matched_suffix = suffix
+            break
+
+    if matched_suffix is None:
+        return None
+
+    base_name = name[:-len(matched_suffix)]
+    if len(base_name) < 16:
+        return None
+
+    stamp = base_name[-15:]
+    if len(stamp) != 15 or stamp[8] != "_":
+        return None
+
+    date_part = stamp[:8]
+    time_part = stamp[9:]
+    if not (date_part.isdigit() and time_part.isdigit()):
+        return None
+
+    if len(base_name) == 15 or base_name[-16] != "_":
+        return None
+
+    return base_name
+
+def prune_auto_test_output_runs(output_dir: Path, keep_count: int = MAX_MANAGED_AUTO_TEST_RUNS):
+    if output_dir is None or not output_dir.exists() or not output_dir.is_dir():
+        return
+
+    grouped_paths: dict[str, list[Path]] = {}
+    for path in output_dir.iterdir():
+        run_key = parse_auto_test_run_key(path)
+        if not run_key:
+            continue
+        grouped_paths.setdefault(run_key, []).append(path)
+
+    if len(grouped_paths) <= keep_count:
+        return
+
+    sorted_runs = sorted(
+        grouped_paths.items(),
+        key=lambda entry: max(item.stat().st_mtime for item in entry[1]),
+        reverse=True,
+    )
+
+    for run_key, paths in sorted_runs[keep_count:]:
+        for path in paths:
+            try:
+                if path.is_dir():
+                    for child in sorted(path.rglob("*"), reverse=True):
+                        if child.is_file():
+                            child.unlink()
+                        elif child.is_dir():
+                            child.rmdir()
+                    path.rmdir()
+                else:
+                    path.unlink()
+                print(f"[信息] 已删除旧自动测试归档: {path.name}")
+            except Exception as e:
+                print(f"[警告] 删除旧自动测试归档失败: {path} ({e})")
 
 def summarize_sync_log():
     sync_log_path = Path(TARGET_SYNC_LOG)
@@ -493,6 +585,7 @@ def monitor(
     clear_log_keywords: bool = False,
     auto_test_package_id: str | None = None,
     auto_test_output_dir: str | None = None,
+    auto_test_mode: str | None = "automatic",
     auto_test_scope: str | None = "all",
     auto_test_capture_screenshots: bool | None = None,
     auto_test_batch_size: int | None = None,
@@ -501,6 +594,7 @@ def monitor(
     check_sandbox_access()
     print("======= 环世界自动化监控测试启动 =======")
     game_process = None
+    resolved_auto_test_output_dir = resolve_auto_test_output_dir(auto_test_output_dir, auto_test_package_id)
 
     if not wait_for_existing_rimworld_to_exit():
         return
@@ -518,7 +612,8 @@ def monitor(
         clear_log_keywords=clear_log_keywords,
         auto_test_enabled=True if auto_test_package_id else None,
         auto_test_target_package_id=auto_test_package_id,
-        auto_test_output_path=auto_test_output_dir if auto_test_package_id else None,
+        auto_test_output_path=resolved_auto_test_output_dir,
+        auto_test_mode=auto_test_mode if auto_test_package_id else None,
         auto_test_scope=auto_test_scope if auto_test_package_id else None,
         auto_test_capture_screenshots=auto_test_capture_screenshots if auto_test_package_id else None,
         auto_test_batch_size=auto_test_batch_size if auto_test_package_id else None,
@@ -541,6 +636,8 @@ def monitor(
     # 日志归档
     target_log = Path(TARGET_SYNC_LOG)
     rotate_target_log(target_log)
+    if resolved_auto_test_output_dir:
+        prune_auto_test_output_runs(Path(resolved_auto_test_output_dir))
 
     # 启动
     if auto_test_package_id:
@@ -602,9 +699,12 @@ def monitor(
             update_mod_settings(
                 auto_test_enabled=False,
                 auto_test_target_package_id="",
+                auto_test_mode="automatic",
                 auto_test_scope="all",
                 auto_test_capture_screenshots=False if auto_test_capture_screenshots is not None else None,
             )
+            if resolved_auto_test_output_dir:
+                prune_auto_test_output_runs(Path(resolved_auto_test_output_dir))
         restore_mod_list(original_mods_config)
         print("\n======= 测试结束 =======")
 
@@ -623,6 +723,7 @@ if __name__ == "__main__":
     parser.add_argument("--clear-log-keywords", action="store_true", help="清空 LogSyncMod 配置中的 <keywords> 列表")
     parser.add_argument("--auto-test-package-id", default=None, help="启用定向自动测试，并指定目标模组 packageId")
     parser.add_argument("--auto-test-output-dir", default=None, help="自动测试报告输出目录")
+    parser.add_argument("--auto-test-mode", choices=["automatic", "xml-driven"], default="automatic", help="自动测试模式：automatic/xml-driven")
     parser.add_argument("--auto-test-scope", choices=["all", "content", "recipes", "hediffs", "turrets"], default="all", help="自动测试范围：all/content/recipes/hediffs/turrets")
     parser.add_argument("--auto-test-capture-screenshots", action="store_true", help="自动测试时对打开的 InfoCard 截图")
     parser.add_argument("--auto-test-batch-size", type=int, default=None, help="自动测试每批处理数量")
@@ -638,16 +739,20 @@ if __name__ == "__main__":
 
     if args.settings_only:
         check_sandbox_access()
+        resolved_auto_test_output_dir = resolve_auto_test_output_dir(args.auto_test_output_dir, args.auto_test_package_id)
         update_mod_settings(
             log_keywords=keywords_to_write,
             clear_log_keywords=args.clear_log_keywords,
             auto_test_enabled=True if args.auto_test_package_id else None,
             auto_test_target_package_id=args.auto_test_package_id,
-            auto_test_output_path=args.auto_test_output_dir if args.auto_test_package_id else None,
+            auto_test_output_path=resolved_auto_test_output_dir,
+            auto_test_mode=args.auto_test_mode if args.auto_test_package_id else None,
             auto_test_scope=args.auto_test_scope if args.auto_test_package_id else None,
             auto_test_capture_screenshots=True if args.auto_test_capture_screenshots and args.auto_test_package_id else None,
             auto_test_batch_size=args.auto_test_batch_size if args.auto_test_package_id else None,
         )
+        if resolved_auto_test_output_dir:
+            prune_auto_test_output_runs(Path(resolved_auto_test_output_dir))
         kws = get_logsync_keywords()
         if kws is None:
             print(f"[警告] 读取 LogSyncMod keywords 失败: {SETTINGS_FILE}")
@@ -663,6 +768,7 @@ if __name__ == "__main__":
         clear_log_keywords=args.clear_log_keywords,
         auto_test_package_id=args.auto_test_package_id,
         auto_test_output_dir=args.auto_test_output_dir,
+        auto_test_mode=args.auto_test_mode,
         auto_test_scope=args.auto_test_scope,
         auto_test_capture_screenshots=True if args.auto_test_capture_screenshots and args.auto_test_package_id else None,
         auto_test_batch_size=args.auto_test_batch_size,

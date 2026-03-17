@@ -15,6 +15,10 @@
   <LogSyncMod.AutoTestEnabled>启用定向自动测试</LogSyncMod.AutoTestEnabled>
   <LogSyncMod.AutoTestTargetPackageId>目标模组 PackageId：</LogSyncMod.AutoTestTargetPackageId>
   <LogSyncMod.AutoTestOutputPath>自动测试报告输出目录：</LogSyncMod.AutoTestOutputPath>
+  <LogSyncMod.AutoTestMode>测试模式：{0}</LogSyncMod.AutoTestMode>
+  <LogSyncMod.AutoTestModeSelect>选择测试模式（当前：{0}）</LogSyncMod.AutoTestModeSelect>
+  <LogSyncMod.AutoTestModeAutomatic>自动枚举</LogSyncMod.AutoTestModeAutomatic>
+  <LogSyncMod.AutoTestModeXmlDriven>XML 规范驱动</LogSyncMod.AutoTestModeXmlDriven>
   <LogSyncMod.AutoTestScope>测试范围：{0}</LogSyncMod.AutoTestScope>
   <LogSyncMod.AutoTestScopeSelect>选择测试范围（当前：{0}）</LogSyncMod.AutoTestScopeSelect>
   <LogSyncMod.AutoTestScopeAll>全量</LogSyncMod.AutoTestScopeAll>

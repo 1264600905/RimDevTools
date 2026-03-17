@@ -1,5 +1,7 @@
 using RimWorld;
 using Verse;
+using System.Collections.Generic;
+using LogSyncMod;
 
 namespace LogSyncMod.AutoTest
 {
@@ -21,6 +23,7 @@ namespace LogSyncMod.AutoTest
         public RecipeDef RecipeDef;
         public ThingDef WorktableDef;
         public HediffDef HediffDef;
+        public LogSyncAutoTestSpecDef SpecDef;
     }
 
     internal sealed class AutoTestResult
@@ -34,6 +37,7 @@ namespace LogSyncMod.AutoTest
         public string Stage;
         public string ErrorMessage;
         public string ScreenshotPath;
+        public List<string> ScreenshotPaths = new List<string>();
         public string Notes;
     }
 }

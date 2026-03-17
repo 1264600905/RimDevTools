@@ -34,6 +34,12 @@ namespace LogSyncMod.AutoTest
         private const int OpenTimeoutRepaintFrames = 180;
         private const int WaitBeforeCloseRepaintFrames = 12;
         private const int CloseTimeoutRepaintFrames = 180;
+        private const float TurretScreenshotMinRootSize = 6f;
+        private const float TurretScreenshotMaxRootSize = 18f;
+        private const float TurretScreenshotCellMargin = 3f;
+        private const float TurretScreenshotCameraPlusMinRootSize = 3.25f;
+        private const float TurretScreenshotCameraPlusMaxRootSize = 14f;
+        private const float TurretScreenshotCameraPlusCellMargin = 1.5f;
 
         private readonly LogSyncSettings settings;
         private readonly Map map; // 主地图，用于UI测试等
@@ -57,6 +63,7 @@ namespace LogSyncMod.AutoTest
         private ActiveSession activeSession;
         private AutoTestRunArtifacts runArtifacts;
         private AutoTestScreenshotService screenshotService;
+        private bool? cameraPlusActive;
 
         public AutoTestRunner(LogSyncSettings settings, Map map)
         {
@@ -71,7 +78,7 @@ namespace LogSyncMod.AutoTest
             targetPackageId = (settings.autoTestTargetPackageId ?? string.Empty).Trim().ToLowerInvariant();
             outputDirectory = ResolveOutputDirectory(settings);
             runArtifacts = AutoTestReportWriter.CreateRunArtifacts(outputDirectory, targetPackageId);
-            screenshotService = new AutoTestScreenshotService(settings, runArtifacts, AppendNote, TrimForNote);
+            screenshotService = new AutoTestScreenshotService(runArtifacts, AppendNote, TrimForNote);
             targetMod = LoadedModManager.RunningMods.FirstOrDefault(mod =>
                 string.Equals(mod.PackageIdPlayerFacing, targetPackageId, StringComparison.OrdinalIgnoreCase));
 
@@ -82,31 +89,30 @@ namespace LogSyncMod.AutoTest
                 return;
             }
 
+            LoadActiveSpecs();
+
             nextTerrainX = Math.Max(map.Size.x / 2, 10);
-            
-            // 根据 scope 填充队列
+
+            if (settings.ShouldTestContent())
+            {
+                EnqueueThingDefs();
+                EnqueueTerrainDefs();
+            }
+
+            if (settings.ShouldTestRecipes())
+            {
+                UnlockAllResearch();
+                EnqueueRecipeDefs();
+            }
+
+            if (settings.ShouldTestHediffs())
+            {
+                EnqueueHediffDefs();
+            }
+
             if (settings.ShouldTestTurrets())
             {
                 BeginTurretTestSession();
-            }
-            else
-            {
-                if (settings.ShouldTestContent())
-                {
-                    EnqueueThingDefs();
-                    EnqueueTerrainDefs();
-                }
-
-                if (settings.ShouldTestRecipes())
-                {
-                    UnlockAllResearch();
-                    EnqueueRecipeDefs();
-                }
-
-                if (settings.ShouldTestHediffs())
-                {
-                    EnqueueHediffDefs();
-                }
             }
 
             ApplyBatchLimit();
@@ -129,60 +135,46 @@ namespace LogSyncMod.AutoTest
         public void Tick()
         {
             if (completed) return;
-            
-            // 处理炮塔测试
-            if (settings.ShouldTestTurrets())
+
+            if (activeSession != null)
             {
-                // 填充并发池
-                while (activeTurretSessions.Count < MaxConcurrentTurretTests && pendingTurretDefs.Count > 0)
-                {
-                    ThingDef turretDef = pendingTurretDefs.Dequeue();
-                    StartNewTurretSession(turretDef);
-                }
-
-                // 心跳日志：每 500 帧打印一次状态
-                if (Find.TickManager.TicksGame % 500 == 0 && activeTurretSessions.Count > 0)
-                {
-                    string statusReport = string.Join(", ", activeTurretSessions.Select(s => $"{s.TurretDef.defName}({s.Phase})"));
-                    Log.Message($"[LogSyncAutoTest] Heartbeat: {activeTurretSessions.Count} active sessions. Details: {statusReport}");
-                }
-
-                // 更新活动的炮塔会话
-                foreach (var session in activeTurretSessions)
-                {
-                    session.Update();
-                }
-
-                // 清理已完成的炮塔会话
-                activeTurretSessions.RemoveAll(session => {
-                    if (session.Phase == TurretTestPhase.Done) {
-                        results.Add(session.Result);
-                        return true;
-                    }
-                    return false;
-                });
-                
-                // 结束条件
-                if (pendingTurretDefs.Count == 0 && activeTurretSessions.Count == 0)
-                {
-                    Finish();
-                }
+                return;
             }
-            // 处理原有测试
-            else
+
+            if (pendingItems.Count > 0)
             {
-                if (activeSession != null)
-                {
-                    return;
-                }
-
-                if (pendingItems.Count == 0)
-                {
-                    Finish();
-                    return;
-                }
-
                 StartNextSession();
+                return;
+            }
+
+            while (activeTurretSessions.Count < MaxConcurrentTurretTests && pendingTurretDefs.Count > 0)
+            {
+                ThingDef turretDef = pendingTurretDefs.Dequeue();
+                StartNewTurretSession(turretDef);
+            }
+
+            if (Find.TickManager.TicksGame % 500 == 0 && activeTurretSessions.Count > 0)
+            {
+                string statusReport = string.Join(", ", activeTurretSessions.Select(s => $"{s.TurretDef.defName}({s.Phase})"));
+                Log.Message($"[LogSyncAutoTest] Heartbeat: {activeTurretSessions.Count} active sessions. Details: {statusReport}");
+            }
+
+            foreach (var session in activeTurretSessions)
+            {
+                session.Update();
+            }
+
+            activeTurretSessions.RemoveAll(session => {
+                if (session.Phase == TurretTestPhase.Done) {
+                    results.Add(session.Result);
+                    return true;
+                }
+                return false;
+            });
+
+            if (pendingItems.Count == 0 && activeSession == null && pendingTurretDefs.Count == 0 && activeTurretSessions.Count == 0)
+            {
+                Finish();
             }
         }
 
@@ -289,37 +281,61 @@ namespace LogSyncMod.AutoTest
         private void ApplyBatchLimit()
         {
             int limit = Math.Max(1, settings.autoTestBatchSize);
-            Queue<object> genericQueue = new Queue<object>();
-            if (settings.ShouldTestTurrets())
+            int originalTotal = pendingItems.Count + pendingTurretDefs.Count;
+            if (originalTotal <= limit)
             {
-                foreach(var item in pendingTurretDefs) genericQueue.Enqueue(item);
-            }
-            else
-            {
-                foreach(var item in pendingItems) genericQueue.Enqueue(item);
+                return;
             }
 
-            if (genericQueue.Count <= limit) return;
+            int keptCount = 0;
 
-            var selectedItems = genericQueue.Take(limit).ToArray();
-            
-            if (settings.ShouldTestTurrets())
+            if (pendingItems.Count > 0)
             {
-                pendingTurretDefs.Clear();
-                foreach (var item in selectedItems.Cast<ThingDef>()) pendingTurretDefs.Enqueue(item);
-            }
-            else
-            {
+                Queue<AutoTestWorkItem> limitedItems = new Queue<AutoTestWorkItem>();
+                while (pendingItems.Count > 0 && keptCount < limit)
+                {
+                    limitedItems.Enqueue(pendingItems.Dequeue());
+                    keptCount++;
+                }
+
                 pendingItems.Clear();
-                foreach (var item in selectedItems.Cast<AutoTestWorkItem>()) pendingItems.Enqueue(item);
+                foreach (AutoTestWorkItem item in limitedItems)
+                {
+                    pendingItems.Enqueue(item);
+                }
+            }
+
+            if (pendingTurretDefs.Count > 0)
+            {
+                Queue<ThingDef> limitedTurrets = new Queue<ThingDef>();
+                while (pendingTurretDefs.Count > 0 && keptCount < limit)
+                {
+                    limitedTurrets.Enqueue(pendingTurretDefs.Dequeue());
+                    keptCount++;
+                }
+
+                pendingTurretDefs.Clear();
+                foreach (ThingDef turretDef in limitedTurrets)
+                {
+                    pendingTurretDefs.Enqueue(turretDef);
+                }
             }
 
             Log.Message(string.Format(
                 "[LogSyncAutoTest] Batch limit applied. Keeping first {0} items.",
-                settings.ShouldTestTurrets() ? pendingTurretDefs.Count : pendingItems.Count));
+                pendingItems.Count + pendingTurretDefs.Count));
         }
 
         private bool TryCaptureTurretScreenshot(TurretTestSession session, bool force)
+        {
+            return TryCaptureTurretStageScreenshot(
+                session,
+                session?.Result?.Status ?? session?.Phase.ToString(),
+                force,
+                session?.AllowScreenshots ?? false);
+        }
+
+        private bool TryCaptureTurretStageScreenshot(TurretTestSession session, string stageSuffix, bool force, bool allowCapture)
         {
             if (session == null || screenshotService == null)
             {
@@ -333,9 +349,10 @@ namespace LogSyncMod.AutoTest
 
             return screenshotService.TryCaptureMap(
                 session.Result,
+                allowCapture,
                 force,
                 screenshotService.ResolveTurretResultIndex(results, activeTurretSessions.IndexOf(session)),
-                session.Result.Status ?? session.Phase.ToString(),
+                stageSuffix,
                 () => FocusTurretScreenshotMap(session));
         }
 
@@ -353,8 +370,22 @@ namespace LogSyncMod.AutoTest
                     Current.Game.CurrentMap = session.TestMap;
                 }
 
-                IntVec3 focusCell = session.SpawnedTurret?.Position ?? session.TestMap.Center;
-                Find.CameraDriver?.JumpToCurrentMapLoc(focusCell);
+                CameraDriver cameraDriver = Find.CameraDriver;
+                if (cameraDriver == null)
+                {
+                    return false;
+                }
+
+                if (TryResolveTurretScreenshotView(session, cameraDriver, out Vector3 rootPos, out float rootSize))
+                {
+                    cameraDriver.SetRootPosAndSize(rootPos, rootSize);
+                }
+                else
+                {
+                    IntVec3 focusCell = session.SpawnedTurret?.Position ?? session.TestMap.Center;
+                    cameraDriver.JumpToCurrentMapLoc(focusCell);
+                }
+
                 return true;
             }
             catch (Exception ex)
@@ -372,6 +403,76 @@ namespace LogSyncMod.AutoTest
                 things.Where(thing => thing != null)
                     .Select(thing => thing.def.defName + "x" + thing.stackCount)
                     .ToArray());
+        }
+
+        private bool TryResolveTurretScreenshotView(TurretTestSession session, CameraDriver cameraDriver, out Vector3 rootPos, out float rootSize)
+        {
+            rootPos = default;
+            bool useCameraPlusZoom = IsCameraPlusActive();
+            float minRootSize = useCameraPlusZoom ? TurretScreenshotCameraPlusMinRootSize : TurretScreenshotMinRootSize;
+            float maxRootSize = useCameraPlusZoom ? TurretScreenshotCameraPlusMaxRootSize : TurretScreenshotMaxRootSize;
+            float cellMargin = useCameraPlusZoom ? TurretScreenshotCameraPlusCellMargin : TurretScreenshotCellMargin;
+            rootSize = minRootSize;
+
+            if (session?.SpawnedTurret == null || session.SpawnedTurret.Destroyed)
+            {
+                return false;
+            }
+
+            Vector3 turretPos = ToMapWorldCenter(session.SpawnedTurret.Position);
+            Pawn targetPawn = ResolveTurretScreenshotTarget(session);
+            if (targetPawn == null)
+            {
+                rootPos = turretPos;
+                rootSize = minRootSize;
+                return true;
+            }
+
+            Vector3 targetPos = ToMapWorldCenter(targetPawn.Position);
+            rootPos = (turretPos + targetPos) * 0.5f;
+
+            float halfWidth = Mathf.Abs(turretPos.x - targetPos.x) * 0.5f + cellMargin;
+            float halfHeight = Mathf.Abs(turretPos.z - targetPos.z) * 0.5f + cellMargin;
+            Camera camera = cameraDriver.GetComponent<Camera>();
+            float aspect = camera != null && camera.aspect > 0.01f
+                ? camera.aspect
+                : 16f / 9f;
+
+            float requiredRootSize = Mathf.Max(halfHeight, halfWidth / aspect);
+            rootSize = Mathf.Clamp(requiredRootSize, minRootSize, maxRootSize);
+            return true;
+        }
+
+        private static Pawn ResolveTurretScreenshotTarget(TurretTestSession session)
+        {
+            if (session?.SpawnedTurret == null || session.EnemyPawns == null)
+            {
+                return null;
+            }
+
+            IntVec3 turretCell = session.SpawnedTurret.Position;
+            return session.EnemyPawns
+                .Where(pawn => pawn != null && !pawn.Destroyed && pawn.Spawned && pawn.Map == session.TestMap)
+                .OrderBy(pawn => pawn.Position.DistanceToSquared(turretCell))
+                .ThenByDescending(pawn => pawn.Downed ? 0 : 1)
+                .FirstOrDefault();
+        }
+
+        private static Vector3 ToMapWorldCenter(IntVec3 cell)
+        {
+            return new Vector3(cell.x + 0.5f, 0f, cell.z + 0.5f);
+        }
+
+        private bool IsCameraPlusActive()
+        {
+            if (cameraPlusActive.HasValue)
+            {
+                return cameraPlusActive.Value;
+            }
+
+            cameraPlusActive = LoadedModManager.RunningMods.Any(mod =>
+                string.Equals(mod.PackageIdPlayerFacing, "brrainz.cameraplus", StringComparison.OrdinalIgnoreCase));
+            return cameraPlusActive.Value;
         }
 
         private static string SafeDefName(Def def)

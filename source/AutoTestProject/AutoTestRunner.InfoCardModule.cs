@@ -27,6 +27,7 @@ namespace LogSyncMod.AutoTest
             public IAutoTestUiHandle UiHandle;
             public bool CloseIssued;
             public bool ScreenshotCaptured;
+            public bool AllowScreenshots;
             public int OpenStableRepaintFrames;
             public int RemainingUiFrames;
             public SessionPhase Phase;
@@ -34,7 +35,7 @@ namespace LogSyncMod.AutoTest
 
         public void ProcessUi()
         {
-            if (completed || settings.ShouldTestTurrets()) return;
+            if (completed) return;
 
             if (activeSession == null) return;
             if (Event.current == null || Event.current.type != EventType.Repaint) return;
@@ -335,6 +336,7 @@ namespace LogSyncMod.AutoTest
             screenshotService.TryCaptureInfoCard(
                 activeSession.Result,
                 ref activeSession.ScreenshotCaptured,
+                activeSession.AllowScreenshots,
                 force,
                 results.Count,
                 IsInfoCardPresent);

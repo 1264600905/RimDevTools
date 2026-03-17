@@ -108,6 +108,17 @@ namespace LogSyncMod
             settings.autoTestTargetPackageId = listingStandard.TextEntry(settings.autoTestTargetPackageId);
             listingStandard.Label("LogSyncMod.AutoTestOutputPath".Translate());
             settings.autoTestOutputPath = listingStandard.TextEntry(settings.autoTestOutputPath);
+            string modeLabel = GetAutoTestModeLabel(settings.autoTestMode);
+            listingStandard.Label("LogSyncMod.AutoTestMode".Translate(modeLabel));
+            if (listingStandard.ButtonText("LogSyncMod.AutoTestModeSelect".Translate(modeLabel)))
+            {
+                List<FloatMenuOption> modeOptions = new List<FloatMenuOption>
+                {
+                    new FloatMenuOption("LogSyncMod.AutoTestModeAutomatic".Translate(), () => settings.autoTestMode = AutoTestMode.Automatic),
+                    new FloatMenuOption("LogSyncMod.AutoTestModeXmlDriven".Translate(), () => settings.autoTestMode = AutoTestMode.XmlDriven)
+                };
+                Find.WindowStack.Add(new FloatMenu(modeOptions));
+            }
             string scopeLabel = GetAutoTestScopeLabel(settings.autoTestScope);
             listingStandard.Label("LogSyncMod.AutoTestScope".Translate(scopeLabel));
             if (listingStandard.ButtonText("LogSyncMod.AutoTestScopeSelect".Translate(scopeLabel)))
@@ -215,6 +226,17 @@ namespace LogSyncMod
                     return "LogSyncMod.AutoTestScopeTurrets".Translate();
                 default:
                     return "LogSyncMod.AutoTestScopeAll".Translate();
+            }
+        }
+
+        private static string GetAutoTestModeLabel(AutoTestMode mode)
+        {
+            switch (mode)
+            {
+                case AutoTestMode.XmlDriven:
+                    return "LogSyncMod.AutoTestModeXmlDriven".Translate();
+                default:
+                    return "LogSyncMod.AutoTestModeAutomatic".Translate();
             }
         }
     }

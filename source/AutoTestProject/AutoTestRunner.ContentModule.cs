@@ -85,6 +85,7 @@ namespace LogSyncMod.AutoTest
                     Result = result,
                     SpawnedThing = thing,
                     InfoCardDef = def,
+                    AllowScreenshots = ShouldCaptureScreenshots(item.SpecDef),
                     RemainingUiFrames = PreOpenSettleRepaintFrames,
                     Phase = SessionPhase.WaitingForPreOpenSettle
                 };
@@ -124,6 +125,7 @@ namespace LogSyncMod.AutoTest
                     Result = result,
                     TerrainDef = item.TerrainDef,
                     InfoCardDef = item.TerrainDef,
+                    AllowScreenshots = ShouldCaptureScreenshots(item.SpecDef),
                     RemainingUiFrames = PreOpenSettleRepaintFrames,
                     Phase = SessionPhase.WaitingForPreOpenSettle
                 };
@@ -171,6 +173,7 @@ namespace LogSyncMod.AutoTest
                 Item = item,
                 Result = result,
                 InfoCardDef = item.ThingDef ?? (Def)item.RecipeDef,
+                AllowScreenshots = ShouldCaptureScreenshots(item.SpecDef),
                 RemainingUiFrames = PreOpenSettleRepaintFrames,
                 Phase = SessionPhase.WaitingForPreOpenSettle
             };
@@ -225,6 +228,7 @@ namespace LogSyncMod.AutoTest
                     InfoCardDef = item.HediffDef,
                     TestPawn = pawn,
                     AttachedHediff = hediff,
+                    AllowScreenshots = ShouldCaptureScreenshots(item.SpecDef),
                     RemainingUiFrames = PreOpenSettleRepaintFrames,
                     Phase = SessionPhase.WaitingForPreOpenSettle
                 };
@@ -245,14 +249,24 @@ namespace LogSyncMod.AutoTest
                 .Where(IsTargetBuildingDef)
                 .OrderBy(def => def.defName))
             {
-                pendingItems.Enqueue(new AutoTestWorkItem { Kind = AutoTestKind.Building, ThingDef = def });
+                pendingItems.Enqueue(new AutoTestWorkItem
+                {
+                    Kind = AutoTestKind.Building,
+                    ThingDef = def,
+                    SpecDef = ResolveBestMatchingSpec(AutoTestKind.Building, def)
+                });
             }
 
             foreach (ThingDef def in DefDatabase<ThingDef>.AllDefsListForReading
                 .Where(IsTargetItemDef)
                 .OrderBy(def => def.defName))
             {
-                pendingItems.Enqueue(new AutoTestWorkItem { Kind = AutoTestKind.Item, ThingDef = def });
+                pendingItems.Enqueue(new AutoTestWorkItem
+                {
+                    Kind = AutoTestKind.Item,
+                    ThingDef = def,
+                    SpecDef = ResolveBestMatchingSpec(AutoTestKind.Item, def)
+                });
             }
         }
 
@@ -262,7 +276,12 @@ namespace LogSyncMod.AutoTest
                 .Where(IsTargetTerrainDef)
                 .OrderBy(def => def.defName))
             {
-                pendingItems.Enqueue(new AutoTestWorkItem { Kind = AutoTestKind.Terrain, TerrainDef = def });
+                pendingItems.Enqueue(new AutoTestWorkItem
+                {
+                    Kind = AutoTestKind.Terrain,
+                    TerrainDef = def,
+                    SpecDef = ResolveBestMatchingSpec(AutoTestKind.Terrain, def)
+                });
             }
         }
 
@@ -272,7 +291,12 @@ namespace LogSyncMod.AutoTest
                 .Where(IsTargetHediffDef)
                 .OrderBy(def => def.defName))
             {
-                pendingItems.Enqueue(new AutoTestWorkItem { Kind = AutoTestKind.Hediff, HediffDef = def });
+                pendingItems.Enqueue(new AutoTestWorkItem
+                {
+                    Kind = AutoTestKind.Hediff,
+                    HediffDef = def,
+                    SpecDef = ResolveBestMatchingSpec(AutoTestKind.Hediff, def)
+                });
             }
         }
 
@@ -316,7 +340,8 @@ namespace LogSyncMod.AutoTest
                     Kind = AutoTestKind.Recipe,
                     RecipeDef = recipe,
                     ThingDef = productDef,
-                    WorktableDef = worktableDef
+                    WorktableDef = worktableDef,
+                    SpecDef = ResolveBestMatchingSpec(AutoTestKind.Recipe, recipe)
                 });
             }
 
@@ -349,7 +374,8 @@ namespace LogSyncMod.AutoTest
                    def.category == ThingCategory.Building &&
                    def.thingClass != null &&
                    !def.IsBlueprint &&
-                   !def.IsFrame;
+                   !def.IsFrame &&
+                   MatchesSpecFilters(AutoTestKind.Building, def);
         }
 
         private bool IsTargetItemDef(ThingDef def)
@@ -360,19 +386,23 @@ namespace LogSyncMod.AutoTest
                    def.thingClass != null &&
                    !typeof(Corpse).IsAssignableFrom(def.thingClass) &&
                    !def.IsBlueprint &&
-                   !def.IsFrame;
+                   !def.IsFrame &&
+                   MatchesSpecFilters(AutoTestKind.Item, def);
         }
 
         private bool IsTargetTerrainDef(TerrainDef def)
         {
-            return def != null && def.modContentPack == targetMod;
+            return def != null &&
+                   def.modContentPack == targetMod &&
+                   MatchesSpecFilters(AutoTestKind.Terrain, def);
         }
 
         private bool IsTargetHediffDef(HediffDef def)
         {
             return def != null &&
                    def.modContentPack == targetMod &&
-                   def.hediffClass != null;
+                   def.hediffClass != null &&
+                   MatchesSpecFilters(AutoTestKind.Hediff, def);
         }
 
         private Pawn EnsureSharedHediffPawn()
@@ -462,7 +492,8 @@ namespace LogSyncMod.AutoTest
                 IsSupportedRecipeProductDef(product.thingDef));
 
             if (!recipeOwnedByTargetMod && !producesTargetModThing) return false;
-            return ResolvePrimaryRecipeProduct(recipe) != null;
+            return ResolvePrimaryRecipeProduct(recipe) != null &&
+                   MatchesSpecFilters(AutoTestKind.Recipe, recipe);
         }
 
         private ThingDef ResolvePrimaryRecipeProduct(RecipeDef recipe)

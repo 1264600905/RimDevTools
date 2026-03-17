@@ -12,6 +12,12 @@ namespace LogSyncMod
         Turrets = 4
     }
 
+    public enum AutoTestMode
+    {
+        Automatic = 0,
+        XmlDriven = 1
+    }
+
     public class LogSyncSettings : ModSettings
     {
         public string logPath = "D:/RimWorldLogs.log";
@@ -29,6 +35,7 @@ namespace LogSyncMod
         public bool autoTestEnabled = false;
         public string autoTestTargetPackageId = "";
         public string autoTestOutputPath = "D:/RimWorldAutoTest";
+        public AutoTestMode autoTestMode = AutoTestMode.Automatic;
         public AutoTestScope autoTestScope = AutoTestScope.All;
         public bool autoTestBuildings = true;
         public bool autoTestItems = true;
@@ -51,6 +58,7 @@ namespace LogSyncMod
             Scribe_Values.Look(ref autoTestEnabled, "autoTestEnabled", false);
             Scribe_Values.Look(ref autoTestTargetPackageId, "autoTestTargetPackageId", "");
             Scribe_Values.Look(ref autoTestOutputPath, "autoTestOutputPath", "D:/RimWorldAutoTest");
+            Scribe_Values.Look(ref autoTestMode, "autoTestMode", AutoTestMode.Automatic);
             Scribe_Values.Look(ref autoTestScope, "autoTestScope", AutoTestScope.All);
             Scribe_Values.Look(ref autoTestBuildings, "autoTestBuildings", true);
             Scribe_Values.Look(ref autoTestItems, "autoTestItems", true);
@@ -62,6 +70,7 @@ namespace LogSyncMod
             if (keywords == null) keywords = new List<string>();
             if (autoTestTargetPackageId == null) autoTestTargetPackageId = "";
             if (autoTestOutputPath == null) autoTestOutputPath = "D:/RimWorldAutoTest";
+            if (!System.Enum.IsDefined(typeof(AutoTestMode), autoTestMode)) autoTestMode = AutoTestMode.Automatic;
             if (!System.Enum.IsDefined(typeof(AutoTestScope), autoTestScope)) autoTestScope = AutoTestScope.All;
             
             if (Scribe.mode == LoadSaveMode.PostLoadInit)
@@ -95,6 +104,11 @@ namespace LogSyncMod
         public bool ShouldTestContent()
         {
             return autoTestScope == AutoTestScope.All || autoTestScope == AutoTestScope.Content;
+        }
+
+        public bool UseXmlDrivenAutoTest()
+        {
+            return autoTestMode == AutoTestMode.XmlDriven;
         }
 
         public bool ShouldTestRecipes()

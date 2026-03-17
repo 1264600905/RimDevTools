@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using LogSyncMod;
 using RimWorld;
 using RimWorld.Planet;
 using UnityEngine;
@@ -42,6 +43,12 @@ namespace LogSyncMod.AutoTest
             public bool TurretScreenshotRequested;
             public bool TurretScreenshotForce;
             public bool TurretScreenshotCaptured;
+            public bool AllowScreenshots;
+            public bool CaptureProjectileScreenshots;
+            public List<int> ProjectileScreenshotTicks = new List<int>();
+            public bool ProjectileShotDetected;
+            public int ProjectileShotTick = -1;
+            public int NextProjectileScreenshotIndex;
 
             public TurretTestSession(AutoTestRunner owner, ThingDef turretDef, AutoTestResult result)
             {
@@ -153,6 +160,7 @@ namespace LogSyncMod.AutoTest
 
                         case TurretTestPhase.Fighting:
                             EnsureOperatorManning();
+                            UpdateProjectileScreenshotSchedule();
 
                             if (TryBeginPostKillObservation())
                             {
@@ -187,6 +195,7 @@ namespace LogSyncMod.AutoTest
 
                         case TurretTestPhase.WaitingAfterKill:
                             EnsureOperatorManning();
+                            UpdateProjectileScreenshotSchedule();
                             if (DelayTicks > 0)
                             {
                                 DelayTicks--;
@@ -584,6 +593,55 @@ namespace LogSyncMod.AutoTest
                 Log.Message($"[LogSyncAutoTest] Spawn process for '{TurretDef.defName}' finished. Total enemy count: {EnemyPawns.Count}.");
             }
 
+            private void UpdateProjectileScreenshotSchedule()
+            {
+                if (!CaptureProjectileScreenshots || ProjectileScreenshotTicks == null || ProjectileScreenshotTicks.Count == 0)
+                {
+                    return;
+                }
+
+                if (!ProjectileShotDetected)
+                {
+                    if (!HasActiveProjectile())
+                    {
+                        return;
+                    }
+
+                    ProjectileShotDetected = true;
+                    ProjectileShotTick = Find.TickManager.TicksGame;
+                    Result.Notes = AppendNote(Result.Notes, "ProjectileShotTick=" + ProjectileShotTick);
+                    Log.Message($"[LogSyncAutoTest] Projectile detected for turret '{TurretDef.defName}' at tick {ProjectileShotTick}.");
+                }
+
+                while (NextProjectileScreenshotIndex < ProjectileScreenshotTicks.Count)
+                {
+                    int offset = ProjectileScreenshotTicks[NextProjectileScreenshotIndex];
+                    if (Find.TickManager.TicksGame - ProjectileShotTick < offset)
+                    {
+                        break;
+                    }
+
+                    owner.TryCaptureTurretStageScreenshot(this, "projectile_t" + offset, force: true, allowCapture: true);
+                    NextProjectileScreenshotIndex++;
+                }
+            }
+
+            private bool HasActiveProjectile()
+            {
+                if (TestMap == null || !Find.Maps.Contains(TestMap))
+                {
+                    return false;
+                }
+
+                IEnumerable<Thing> projectiles = TestMap.listerThings?.ThingsInGroup(ThingRequestGroup.Projectile);
+                if (projectiles == null)
+                {
+                    return false;
+                }
+
+                return projectiles.Any(projectile => projectile != null && !projectile.Destroyed);
+            }
+
             private List<IntVec3> FindEnemySpawnCells(int count, float range)
             {
                 List<IntVec3> result = new List<IntVec3>();
@@ -820,7 +878,7 @@ namespace LogSyncMod.AutoTest
                 TurretScreenshotRequested = false;
                 TurretScreenshotCaptured = false;
 
-                if ((forceScreenshot || owner.settings.autoTestCaptureScreenshots) && TestMap != null && Find.Maps.Contains(TestMap))
+                if ((forceScreenshot || AllowScreenshots) && TestMap != null && Find.Maps.Contains(TestMap))
                 {
                     Phase = TurretTestPhase.CapturingScreenshot;
                 }
@@ -981,6 +1039,15 @@ namespace LogSyncMod.AutoTest
         {
             var result = CreateResult("Turret", "ThingDef", turretDef.defName, turretDef.label);
             var session = new TurretTestSession(this, turretDef, result);
+            LogSyncAutoTestSpecDef spec = ResolveBestMatchingSpec(AutoTestKind.TurretPocketMap, turretDef);
+            session.AllowScreenshots = ShouldCaptureScreenshots(spec);
+            session.CaptureProjectileScreenshots = ShouldCaptureTurretProjectileScreenshots(spec);
+            session.ProjectileScreenshotTicks = ResolveTurretProjectileScreenshotTicks(spec);
+            result.Notes = AppendNote(result.Notes, "AutoTestMode=" + (settings.UseXmlDrivenAutoTest() ? "XmlDriven" : "Automatic"));
+            if (spec != null)
+            {
+                result.Notes = AppendNote(result.Notes, "Spec=" + spec.defName);
+            }
 
             try
             {
@@ -1043,13 +1110,13 @@ namespace LogSyncMod.AutoTest
                 return false;
 
             if (def.building?.turretGunDef != null)
-                return true;
+                return MatchesSpecFilters(AutoTestKind.TurretPocketMap, def);
 
             Type type = def.thingClass;
             while (type != null && type != typeof(object))
             {
                 if (type.Name == "Building_Turret" || type.Name == "Building_TurretGunCE")
-                    return true;
+                    return MatchesSpecFilters(AutoTestKind.TurretPocketMap, def);
                 type = type.BaseType;
             }
 

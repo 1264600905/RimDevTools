@@ -8,18 +8,15 @@ namespace LogSyncMod.AutoTest
 {
     internal sealed class AutoTestScreenshotService
     {
-        private readonly LogSyncSettings settings;
         private readonly AutoTestRunArtifacts runArtifacts;
         private readonly Func<string, string, string> appendNote;
         private readonly Func<string, string> trimForNote;
 
         public AutoTestScreenshotService(
-            LogSyncSettings settings,
             AutoTestRunArtifacts runArtifacts,
             Func<string, string, string> appendNote,
             Func<string, string> trimForNote)
         {
-            this.settings = settings;
             this.runArtifacts = runArtifacts;
             this.appendNote = appendNote;
             this.trimForNote = trimForNote;
@@ -28,6 +25,7 @@ namespace LogSyncMod.AutoTest
         public bool TryCaptureInfoCard(
             AutoTestResult result,
             ref bool screenshotCaptured,
+            bool allowCapture,
             bool force,
             int resultIndex,
             Func<bool> isInfoCardPresent)
@@ -37,7 +35,7 @@ namespace LogSyncMod.AutoTest
                 return false;
             }
 
-            if (!force && !settings.autoTestCaptureScreenshots)
+            if (!force && !allowCapture)
             {
                 return false;
             }
@@ -58,6 +56,11 @@ namespace LogSyncMod.AutoTest
 
                 ScreenCapture.CaptureScreenshot(screenshotPath);
                 result.ScreenshotPath = screenshotPath;
+                if (result.ScreenshotPaths == null)
+                {
+                    result.ScreenshotPaths = new List<string>();
+                }
+                result.ScreenshotPaths.Add(screenshotPath);
                 result.Notes = appendNote(
                     result.Notes,
                     force ? "FailureScreenshotCaptured=True" : "ScreenshotCaptured=True");
@@ -83,6 +86,7 @@ namespace LogSyncMod.AutoTest
 
         public bool TryCaptureMap(
             AutoTestResult result,
+            bool allowCapture,
             bool force,
             int resultIndex,
             string stageSuffix,
@@ -93,7 +97,7 @@ namespace LogSyncMod.AutoTest
                 return false;
             }
 
-            if (!force && !settings.autoTestCaptureScreenshots)
+            if (!force && !allowCapture)
             {
                 return false;
             }
@@ -117,6 +121,11 @@ namespace LogSyncMod.AutoTest
 
                 ScreenCapture.CaptureScreenshot(screenshotPath);
                 result.ScreenshotPath = screenshotPath;
+                if (result.ScreenshotPaths == null)
+                {
+                    result.ScreenshotPaths = new List<string>();
+                }
+                result.ScreenshotPaths.Add(screenshotPath);
                 result.Notes = appendNote(
                     result.Notes,
                     force ? "TurretFailureScreenshotCaptured=True" : "TurretScreenshotCaptured=True");

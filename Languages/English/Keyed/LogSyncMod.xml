@@ -15,6 +15,10 @@
   <LogSyncMod.AutoTestEnabled>Enable targeted auto test</LogSyncMod.AutoTestEnabled>
   <LogSyncMod.AutoTestTargetPackageId>Target mod PackageId:</LogSyncMod.AutoTestTargetPackageId>
   <LogSyncMod.AutoTestOutputPath>Auto test report output directory:</LogSyncMod.AutoTestOutputPath>
+  <LogSyncMod.AutoTestMode>Test mode: {0}</LogSyncMod.AutoTestMode>
+  <LogSyncMod.AutoTestModeSelect>Select test mode (current: {0})</LogSyncMod.AutoTestModeSelect>
+  <LogSyncMod.AutoTestModeAutomatic>Automatic discovery</LogSyncMod.AutoTestModeAutomatic>
+  <LogSyncMod.AutoTestModeXmlDriven>XML-driven spec</LogSyncMod.AutoTestModeXmlDriven>
   <LogSyncMod.AutoTestScope>Test scope: {0}</LogSyncMod.AutoTestScope>
   <LogSyncMod.AutoTestScopeSelect>Select test scope (current: {0})</LogSyncMod.AutoTestScopeSelect>
   <LogSyncMod.AutoTestScopeAll>All</LogSyncMod.AutoTestScopeAll>
