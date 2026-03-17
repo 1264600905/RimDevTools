@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using RimWorld;
 using RimWorld.Planet;
 using UnityEngine;
@@ -34,12 +35,16 @@ namespace LogSyncMod.AutoTest
         private const int OpenTimeoutRepaintFrames = 180;
         private const int WaitBeforeCloseRepaintFrames = 12;
         private const int CloseTimeoutRepaintFrames = 180;
+        private const float TurretScreenshotRangeScale = 1.2f;
+        private const float DefaultTurretScreenshotAspect = 16f / 9f;
         private const float TurretScreenshotMinRootSize = 6f;
         private const float TurretScreenshotMaxRootSize = 18f;
         private const float TurretScreenshotCellMargin = 3f;
         private const float TurretScreenshotCameraPlusMinRootSize = 3.25f;
         private const float TurretScreenshotCameraPlusMaxRootSize = 14f;
         private const float TurretScreenshotCameraPlusCellMargin = 1.5f;
+        private static readonly FieldInfo ProjectileUsedTargetField = typeof(Projectile).GetField("usedTarget", BindingFlags.Instance | BindingFlags.NonPublic);
+        private static readonly FieldInfo ProjectileIntendedTargetField = typeof(Projectile).GetField("intendedTarget", BindingFlags.Instance | BindingFlags.NonPublic);
 
         private readonly LogSyncSettings settings;
         private readonly Map map; // 主地图，用于UI测试等
@@ -376,8 +381,14 @@ namespace LogSyncMod.AutoTest
                     return false;
                 }
 
-                if (TryResolveTurretScreenshotView(session, cameraDriver, out Vector3 rootPos, out float rootSize))
+                float aspect = ResolveTurretScreenshotAspect(cameraDriver);
+                if (TryResolveTurretScreenshotView(session, aspect, out Vector3 rootPos, out float rootSize))
                 {
+                    IntVec3 focusCell = new IntVec3(
+                        Mathf.Clamp(Mathf.RoundToInt(rootPos.x), 0, session.TestMap.Size.x - 1),
+                        0,
+                        Mathf.Clamp(Mathf.RoundToInt(rootPos.z), 0, session.TestMap.Size.z - 1));
+                    cameraDriver.JumpToCurrentMapLoc(focusCell);
                     cameraDriver.SetRootPosAndSize(rootPos, rootSize);
                 }
                 else
@@ -405,8 +416,13 @@ namespace LogSyncMod.AutoTest
                     .ToArray());
         }
 
-        private bool TryResolveTurretScreenshotView(TurretTestSession session, CameraDriver cameraDriver, out Vector3 rootPos, out float rootSize)
+        private bool TryResolveTurretScreenshotView(TurretTestSession session, float aspect, out Vector3 rootPos, out float rootSize)
         {
+            if (TryGetStageScreenshotOverride(session, out rootPos, out rootSize))
+            {
+                return true;
+            }
+
             rootPos = default;
             bool useCameraPlusZoom = IsCameraPlusActive();
             float minRootSize = useCameraPlusZoom ? TurretScreenshotCameraPlusMinRootSize : TurretScreenshotMinRootSize;
@@ -433,12 +449,43 @@ namespace LogSyncMod.AutoTest
 
             float halfWidth = Mathf.Abs(turretPos.x - targetPos.x) * 0.5f + cellMargin;
             float halfHeight = Mathf.Abs(turretPos.z - targetPos.z) * 0.5f + cellMargin;
-            Camera camera = cameraDriver.GetComponent<Camera>();
-            float aspect = camera != null && camera.aspect > 0.01f
-                ? camera.aspect
-                : 16f / 9f;
 
-            float requiredRootSize = Mathf.Max(halfHeight, halfWidth / aspect);
+            float normalizedAspect = aspect > 0.01f ? aspect : DefaultTurretScreenshotAspect;
+            float requiredRootSize = Mathf.Max(halfHeight, halfWidth / normalizedAspect) * TurretScreenshotRangeScale;
+            rootSize = Mathf.Clamp(requiredRootSize, minRootSize, maxRootSize);
+            return true;
+        }
+
+        private bool TryResolveProjectileFocusView(TurretTestSession session, Thing projectileThing, float aspect, out Vector3 rootPos, out float rootSize)
+        {
+            rootPos = default;
+            rootSize = TurretScreenshotMinRootSize;
+            if (session?.SpawnedTurret == null || projectileThing == null)
+            {
+                return false;
+            }
+
+            LocalTargetInfo target = ResolveProjectileTargetInfo(projectileThing as Projectile);
+            if (!target.IsValid)
+            {
+                return false;
+            }
+
+            Vector3 turretPos = ToMapWorldCenter(session.SpawnedTurret.Position);
+            Vector3 targetPos = target.Thing != null
+                ? target.Thing.DrawPos
+                : ToMapWorldCenter(target.Cell);
+
+            bool useCameraPlusZoom = IsCameraPlusActive();
+            float minRootSize = useCameraPlusZoom ? TurretScreenshotCameraPlusMinRootSize : TurretScreenshotMinRootSize;
+            float maxRootSize = useCameraPlusZoom ? TurretScreenshotCameraPlusMaxRootSize : TurretScreenshotMaxRootSize;
+            float cellMargin = useCameraPlusZoom ? TurretScreenshotCameraPlusCellMargin : TurretScreenshotCellMargin;
+
+            rootPos = (turretPos + targetPos) * 0.5f;
+            float normalizedAspect = aspect > 0.01f ? aspect : DefaultTurretScreenshotAspect;
+            float halfWidth = Mathf.Abs(turretPos.x - targetPos.x) * 0.5f + cellMargin;
+            float halfHeight = Mathf.Abs(turretPos.z - targetPos.z) * 0.5f + cellMargin;
+            float requiredRootSize = Mathf.Max(halfHeight, halfWidth / normalizedAspect) * TurretScreenshotRangeScale;
             rootSize = Mathf.Clamp(requiredRootSize, minRootSize, maxRootSize);
             return true;
         }
@@ -461,6 +508,54 @@ namespace LogSyncMod.AutoTest
         private static Vector3 ToMapWorldCenter(IntVec3 cell)
         {
             return new Vector3(cell.x + 0.5f, 0f, cell.z + 0.5f);
+        }
+
+        private static LocalTargetInfo ResolveProjectileTargetInfo(Projectile projectile)
+        {
+            if (projectile == null)
+            {
+                return LocalTargetInfo.Invalid;
+            }
+
+            if (ProjectileIntendedTargetField?.GetValue(projectile) is LocalTargetInfo intendedTarget && intendedTarget.IsValid)
+            {
+                return intendedTarget;
+            }
+
+            if (ProjectileUsedTargetField?.GetValue(projectile) is LocalTargetInfo usedTarget && usedTarget.IsValid)
+            {
+                return usedTarget;
+            }
+
+            return LocalTargetInfo.Invalid;
+        }
+
+        private static bool TryGetStageScreenshotOverride(TurretTestSession session, out Vector3 rootPos, out float rootSize)
+        {
+            rootPos = default;
+            rootSize = 0f;
+
+            if (session?.ActiveStageScreenshot?.FocusRootPos == null || session.ActiveStageScreenshot.FocusRootSize == null)
+            {
+                return false;
+            }
+
+            rootPos = session.ActiveStageScreenshot.FocusRootPos.Value;
+            rootSize = session.ActiveStageScreenshot.FocusRootSize.Value;
+            return true;
+        }
+
+        private static float ResolveTurretScreenshotAspect(CameraDriver cameraDriver)
+        {
+            if (cameraDriver == null)
+            {
+                return DefaultTurretScreenshotAspect;
+            }
+
+            Camera camera = cameraDriver.GetComponent<Camera>();
+            return camera != null && camera.aspect > 0.01f
+                ? camera.aspect
+                : DefaultTurretScreenshotAspect;
         }
 
         private bool IsCameraPlusActive()

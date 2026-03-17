@@ -92,9 +92,9 @@ namespace LogSyncMod.AutoTest
 
             if (ticks.Count == 0)
             {
-                ticks.Add(5);
                 ticks.Add(20);
                 ticks.Add(30);
+                ticks.Add(40);
             }
 
             return ticks;

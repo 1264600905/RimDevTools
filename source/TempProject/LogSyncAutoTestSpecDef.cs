@@ -12,7 +12,7 @@ namespace LogSyncMod
         public List<string> defNames = new List<string>();
         public bool captureScreenshots = false;
         public bool captureTurretProjectileScreenshots = false;
-        public List<int> turretProjectileScreenshotTicks = new List<int> { 5, 20, 30 };
+        public List<int> turretProjectileScreenshotTicks = new List<int> { 20, 30, 40 };
 
         public override void ResolveReferences()
         {
@@ -48,9 +48,9 @@ namespace LogSyncMod
 
             if (normalized.Count == 0)
             {
-                normalized.Add(5);
                 normalized.Add(20);
                 normalized.Add(30);
+                normalized.Add(40);
             }
 
             return normalized;

@@ -16,8 +16,20 @@ namespace LogSyncMod.AutoTest
             private const int MapReadyWaitTicks = 180;
             private const int FightDurationTicks = 60 * 60;
             private const int ObservationTicks = 60 * 10;
-            private const int ScreenshotFocusWaitTicks = 2;
+            private const int VirtualProjectilePrimeTick = 5;
+            private const int ScreenshotFocusWaitTicks = 6;
             private const int ScreenshotWaitTicks = 10;
+
+            internal sealed class StageScreenshotRequest
+            {
+                public string StageSuffix;
+                public bool Force;
+                public bool AllowCapture;
+                public Vector3? FocusRootPos;
+                public float? FocusRootSize;
+                public int FocusDelayTicks;
+                public bool PrimeOnly;
+            }
 
             private readonly AutoTestRunner owner;
 
@@ -49,6 +61,12 @@ namespace LogSyncMod.AutoTest
             public bool ProjectileShotDetected;
             public int ProjectileShotTick = -1;
             public int NextProjectileScreenshotIndex;
+            public bool ProjectileScreenshotPrimed;
+            public Dictionary<int, Vector3> ProjectileLastPositions = new Dictionary<int, Vector3>();
+            public Dictionary<int, int> ProjectileLastTicks = new Dictionary<int, int>();
+            private readonly Queue<StageScreenshotRequest> PendingStageScreenshots = new Queue<StageScreenshotRequest>();
+            internal StageScreenshotRequest ActiveStageScreenshot;
+            private int PendingStageScreenshotDelayTicks;
 
             public TurretTestSession(AutoTestRunner owner, ThingDef turretDef, AutoTestResult result)
             {
@@ -161,6 +179,10 @@ namespace LogSyncMod.AutoTest
                         case TurretTestPhase.Fighting:
                             EnsureOperatorManning();
                             UpdateProjectileScreenshotSchedule();
+                            if (ProcessPendingStageScreenshotQueue())
+                            {
+                                break;
+                            }
 
                             if (TryBeginPostKillObservation())
                             {
@@ -196,6 +218,10 @@ namespace LogSyncMod.AutoTest
                         case TurretTestPhase.WaitingAfterKill:
                             EnsureOperatorManning();
                             UpdateProjectileScreenshotSchedule();
+                            if (ProcessPendingStageScreenshotQueue())
+                            {
+                                break;
+                            }
                             if (DelayTicks > 0)
                             {
                                 DelayTicks--;
@@ -600,9 +626,10 @@ namespace LogSyncMod.AutoTest
                     return;
                 }
 
+                List<Thing> activeProjectiles = GetActiveProjectiles();
                 if (!ProjectileShotDetected)
                 {
-                    if (!HasActiveProjectile())
+                    if (activeProjectiles.Count == 0)
                     {
                         return;
                     }
@@ -613,17 +640,39 @@ namespace LogSyncMod.AutoTest
                     Log.Message($"[LogSyncAutoTest] Projectile detected for turret '{TurretDef.defName}' at tick {ProjectileShotTick}.");
                 }
 
-                while (NextProjectileScreenshotIndex < ProjectileScreenshotTicks.Count)
+                if (activeProjectiles.Count == 0)
                 {
-                    int offset = ProjectileScreenshotTicks[NextProjectileScreenshotIndex];
-                    if (Find.TickManager.TicksGame - ProjectileShotTick < offset)
-                    {
-                        break;
-                    }
+                    return;
+                }
 
-                    owner.TryCaptureTurretStageScreenshot(this, "projectile_t" + offset, force: true, allowCapture: true);
+                int currentTick = Find.TickManager.TicksGame;
+                PruneProjectileHistory(activeProjectiles);
+                if (!ProjectileScreenshotPrimed && currentTick - ProjectileShotTick >= VirtualProjectilePrimeTick)
+                {
+                    QueueStageScreenshot("projectile_prime_t" + VirtualProjectilePrimeTick, force: false, allowCapture: false, focusDelayTicks: 0, primeOnly: true);
+                    ProjectileScreenshotPrimed = true;
+                    Result.Notes = AppendNote(Result.Notes, "ProjectileScreenshotPrimed=True");
+                }
+
+                if (NextProjectileScreenshotIndex >= ProjectileScreenshotTicks.Count)
+                {
+                    UpdateProjectileHistory(activeProjectiles);
+                    return;
+                }
+
+                int offset = ProjectileScreenshotTicks[NextProjectileScreenshotIndex];
+                if (currentTick - ProjectileShotTick < offset)
+                {
+                    UpdateProjectileHistory(activeProjectiles);
+                    return;
+                }
+
+                if (TryCaptureCenteredProjectileScreenshot(activeProjectiles, currentTick, offset))
+                {
                     NextProjectileScreenshotIndex++;
                 }
+
+                UpdateProjectileHistory(activeProjectiles);
             }
 
             private bool HasActiveProjectile()
@@ -640,6 +689,206 @@ namespace LogSyncMod.AutoTest
                 }
 
                 return projectiles.Any(projectile => projectile != null && !projectile.Destroyed);
+            }
+
+            private List<Thing> GetActiveProjectiles()
+            {
+                if (TestMap == null || !Find.Maps.Contains(TestMap))
+                {
+                    return new List<Thing>();
+                }
+
+                IEnumerable<Thing> projectiles = TestMap.listerThings?.ThingsInGroup(ThingRequestGroup.Projectile);
+                if (projectiles == null)
+                {
+                    return new List<Thing>();
+                }
+
+                return projectiles
+                    .Where(projectile => projectile != null && !projectile.Destroyed && projectile.Spawned && projectile.Map == TestMap)
+                    .ToList();
+            }
+
+            private void PruneProjectileHistory(List<Thing> activeProjectiles)
+            {
+                HashSet<int> activeIds = new HashSet<int>(activeProjectiles.Select(projectile => projectile.thingIDNumber));
+                foreach (int thingId in ProjectileLastPositions.Keys.Where(id => !activeIds.Contains(id)).ToList())
+                {
+                    ProjectileLastPositions.Remove(thingId);
+                    ProjectileLastTicks.Remove(thingId);
+                }
+            }
+
+            private void UpdateProjectileHistory(List<Thing> activeProjectiles)
+            {
+                int currentTick = Find.TickManager.TicksGame;
+                foreach (Thing projectile in activeProjectiles)
+                {
+                    ProjectileLastPositions[projectile.thingIDNumber] = projectile.DrawPos;
+                    ProjectileLastTicks[projectile.thingIDNumber] = currentTick;
+                }
+            }
+
+            private bool TryCaptureCenteredProjectileScreenshot(List<Thing> activeProjectiles, int currentTick, int offset)
+            {
+                float aspect = ResolveTurretScreenshotAspect(Find.CameraDriver);
+                if (!owner.TryResolveTurretScreenshotView(this, aspect, out Vector3 screenshotCenter, out float rootSize))
+                {
+                    return false;
+                }
+
+                Thing bestProjectile = null;
+                float bestDistance = float.MaxValue;
+                float bestSpeed = 0f;
+                foreach (Thing projectile in activeProjectiles)
+                {
+                    if (!ProjectileLastPositions.TryGetValue(projectile.thingIDNumber, out Vector3 previousPos) ||
+                        !ProjectileLastTicks.TryGetValue(projectile.thingIDNumber, out int previousTick))
+                    {
+                        continue;
+                    }
+
+                    int deltaTicks = Math.Max(1, currentTick - previousTick);
+                    Vector3 currentPos = projectile.DrawPos;
+                    Vector3 segment = currentPos - previousPos;
+                    Vector3 velocityPerTick = segment / deltaTicks;
+                    float speedPerTick = HorizontalMagnitude(velocityPerTick);
+                    if (speedPerTick <= 0.001f)
+                    {
+                        continue;
+                    }
+
+                    Vector3 closestPoint = ClosestPointOnHorizontalSegment(previousPos, currentPos, screenshotCenter, out float segmentProgress);
+                    float closestDistance = HorizontalDistance(closestPoint, screenshotCenter);
+                    float captureRadius = Mathf.Max(0.35f, rootSize * 0.035f);
+                    if (closestDistance > captureRadius)
+                    {
+                        continue;
+                    }
+
+                    if (segmentProgress <= 0f || segmentProgress > 1f)
+                    {
+                        continue;
+                    }
+
+                    if (closestDistance < bestDistance)
+                    {
+                        bestProjectile = projectile;
+                        bestDistance = closestDistance;
+                        bestSpeed = speedPerTick;
+                    }
+                }
+
+                if (bestProjectile == null)
+                {
+                    return false;
+                }
+
+                Vector3? focusRootPos = null;
+                float? focusRootSize = null;
+                if (owner.TryResolveProjectileFocusView(this, bestProjectile, aspect, out Vector3 resolvedRootPos, out float resolvedRootSize))
+                {
+                    focusRootPos = resolvedRootPos;
+                    focusRootSize = resolvedRootSize;
+                }
+
+                Result.Notes = AppendNote(
+                    Result.Notes,
+                    $"ProjectileCenteredCapture=tick:{currentTick},offset:{offset},dist:{bestDistance:0.00},speed:{bestSpeed:0.00}");
+                QueueStageScreenshot("projectile_center_t" + offset, force: true, allowCapture: true, focusRootPos, focusRootSize);
+                return true;
+            }
+
+            private bool ProcessPendingStageScreenshotQueue()
+            {
+                if (ActiveStageScreenshot == null && PendingStageScreenshots.Count == 0)
+                {
+                    return false;
+                }
+
+                if (ActiveStageScreenshot == null)
+                {
+                    ActiveStageScreenshot = PendingStageScreenshots.Dequeue();
+                    PendingStageScreenshotDelayTicks = Math.Max(0, ActiveStageScreenshot.FocusDelayTicks);
+                }
+
+                if (!owner.FocusTurretScreenshotMap(this))
+                {
+                    ActiveStageScreenshot = null;
+                    PendingStageScreenshotDelayTicks = 0;
+                    return false;
+                }
+
+                if (PendingStageScreenshotDelayTicks > 0)
+                {
+                    PendingStageScreenshotDelayTicks--;
+                    return true;
+                }
+
+                if (ActiveStageScreenshot.PrimeOnly)
+                {
+                    ActiveStageScreenshot = null;
+                    return true;
+                }
+
+                owner.TryCaptureTurretStageScreenshot(
+                    this,
+                    ActiveStageScreenshot.StageSuffix,
+                    ActiveStageScreenshot.Force,
+                    ActiveStageScreenshot.AllowCapture);
+                ActiveStageScreenshot = null;
+                return true;
+            }
+
+            private void QueueStageScreenshot(
+                string stageSuffix,
+                bool force,
+                bool allowCapture,
+                Vector3? focusRootPos = null,
+                float? focusRootSize = null,
+                int focusDelayTicks = 0,
+                bool primeOnly = false)
+            {
+                PendingStageScreenshots.Enqueue(new StageScreenshotRequest
+                {
+                    StageSuffix = stageSuffix,
+                    Force = force,
+                    AllowCapture = allowCapture,
+                    FocusRootPos = focusRootPos,
+                    FocusRootSize = focusRootSize,
+                    FocusDelayTicks = focusDelayTicks,
+                    PrimeOnly = primeOnly
+                });
+            }
+
+            private static float HorizontalDistance(Vector3 a, Vector3 b)
+            {
+                float dx = a.x - b.x;
+                float dz = a.z - b.z;
+                return Mathf.Sqrt(dx * dx + dz * dz);
+            }
+
+            private static Vector3 ClosestPointOnHorizontalSegment(Vector3 start, Vector3 end, Vector3 point, out float progress)
+            {
+                Vector2 start2 = new Vector2(start.x, start.z);
+                Vector2 end2 = new Vector2(end.x, end.z);
+                Vector2 point2 = new Vector2(point.x, point.z);
+                Vector2 segment = end2 - start2;
+                float segmentLengthSquared = segment.sqrMagnitude;
+                if (segmentLengthSquared <= 0.0001f)
+                {
+                    progress = 0f;
+                    return start;
+                }
+
+                progress = Mathf.Clamp01(Vector2.Dot(point2 - start2, segment) / segmentLengthSquared);
+                Vector2 closest2 = start2 + segment * progress;
+                return new Vector3(closest2.x, point.y, closest2.y);
+            }
+
+            private static float HorizontalMagnitude(Vector3 value)
+            {
+                return Mathf.Sqrt(value.x * value.x + value.z * value.z);
             }
 
             private List<IntVec3> FindEnemySpawnCells(int count, float range)
@@ -877,8 +1126,10 @@ namespace LogSyncMod.AutoTest
                 TurretScreenshotForce = forceScreenshot;
                 TurretScreenshotRequested = false;
                 TurretScreenshotCaptured = false;
+                bool shouldCaptureFinalScreenshot = forceScreenshot ||
+                    (AllowScreenshots && !(CaptureProjectileScreenshots && Result?.ScreenshotPaths != null && Result.ScreenshotPaths.Count > 0));
 
-                if ((forceScreenshot || AllowScreenshots) && TestMap != null && Find.Maps.Contains(TestMap))
+                if (shouldCaptureFinalScreenshot && TestMap != null && Find.Maps.Contains(TestMap))
                 {
                     Phase = TurretTestPhase.CapturingScreenshot;
                 }
