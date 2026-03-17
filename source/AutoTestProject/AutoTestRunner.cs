@@ -90,7 +90,7 @@ namespace LogSyncMod.AutoTest
         {
             private const int MapReadyWaitTicks = 180;
             private const int FightDurationTicks = 60 * 20;
-            private const int ObservationTicks = 60 * 2;
+            private const int ObservationTicks = 60 * 10;
 
             public Map TestMap;
             public ThingDef TurretDef;
@@ -105,6 +105,8 @@ namespace LogSyncMod.AutoTest
             public int WaitTicks; // 用于等待地图注册的计数器
             public RimWorld.Planet.MapParent Parent; // 持有父对象
             public string CleanupReason = "initialized"; // 新增原因记录
+            public int FirstKillTick = -1;
+            public string FirstKillPawnLabel = string.Empty;
 
             public TurretTestSession(ThingDef turretDef, AutoTestResult result)
             {
@@ -208,7 +210,12 @@ namespace LogSyncMod.AutoTest
                             break;
 
                         case TurretTestPhase.Fighting:
-                            // 强制等待 20 秒
+                            if (TryBeginPostKillObservation())
+                            {
+                                break;
+                            }
+
+                            // 最多等待 20 秒触发首个倒地/死亡
                             if (DelayTicks > 0)
                             {
                                 DelayTicks--;
@@ -221,35 +228,30 @@ namespace LogSyncMod.AutoTest
                             }
                             else
                             {
-                                // 调试阶段只保留很短观察期，缩短单次回归时间
-                                Log.Message($"[LogSyncAutoTest] 20s combat finished for '{TurretDef.defName}'. Entering short observation.");
-                                Result.Stage = "observation_short";
-                                DelayTicks = ObservationTicks;
-                                Phase = TurretTestPhase.WaitingAfterKill;
+                                Result.Status = "failed_no_kills";
+                                CleanupReason = "test_failed_no_kills";
+                                Result.Notes = AppendNote(Result.Notes, "No target was downed or killed within 20 seconds.");
+                                Log.Message($"[LogSyncAutoTest] Combat timeout for '{TurretDef.defName}'. No target was downed or killed within 20 seconds.");
+                                Phase = TurretTestPhase.CleaningUp;
                             }
                             break;
 
                         case TurretTestPhase.WaitingAfterKill:
-                            // 强制等待 10 秒观察
                             if (DelayTicks > 0)
                             {
                                 DelayTicks--;
+                                if (DelayTicks % 120 == 0)
+                                {
+                                    int remainingSec = DelayTicks / 60;
+                                    Result.Stage = $"post_kill_{remainingSec}s";
+                                }
                             }
                             else
                             {
-                                // 最终判定
                                 int deadCount = EnemyPawns.Count(p => p == null || p.Destroyed || p.Dead || p.Downed);
                                 Result.Notes = AppendNote(Result.Notes, $"Final results: {deadCount}/5 targets eliminated.");
-                                if (deadCount > 0)
-                                {
-                                    Result.Status = "passed";
-                                    CleanupReason = "test_passed_final";
-                                }
-                                else
-                                {
-                                    Result.Status = "failed_no_kills";
-                                    CleanupReason = "test_failed_no_kills";
-                                }
+                                Result.Status = "passed";
+                                CleanupReason = "test_passed_post_kill_delay";
                                 Log.Message($"[LogSyncAutoTest] Observation finished for '{TurretDef.defName}'. Result: {Result.Status}. Closing map.");
                                 Phase = TurretTestPhase.CleaningUp;
                             }
@@ -416,6 +418,37 @@ namespace LogSyncMod.AutoTest
                     }
                 }
                 Log.Message($"[LogSyncAutoTest] Spawn process for '{TurretDef.defName}' finished. Total enemy count: {EnemyPawns.Count}.");
+            }
+
+            private bool TryBeginPostKillObservation()
+            {
+                Pawn firstKilledPawn = null;
+                bool foundKilledPawn = false;
+                foreach (Pawn pawn in EnemyPawns)
+                {
+                    if (pawn == null || pawn.Destroyed || pawn.Dead || pawn.Downed)
+                    {
+                        firstKilledPawn = pawn;
+                        foundKilledPawn = true;
+                        break;
+                    }
+                }
+
+                if (!foundKilledPawn)
+                {
+                    return false;
+                }
+
+                FirstKillTick = Find.TickManager.TicksGame;
+                FirstKillPawnLabel = firstKilledPawn == null ? "destroyed_target" : firstKilledPawn.LabelShortCap;
+                DelayTicks = ObservationTicks;
+                Result.Stage = "post_kill_10s";
+                Result.Notes = AppendNote(Result.Notes, "FirstKillTarget=" + FirstKillPawnLabel);
+                Result.Notes = AppendNote(Result.Notes, "FirstKillTick=" + FirstKillTick);
+                Log.Message($"[LogSyncAutoTest] First target downed or killed for '{TurretDef.defName}'. Target={FirstKillPawnLabel}. Starting 10s pass countdown.");
+                Phase = TurretTestPhase.WaitingAfterKill;
+                CleanupReason = "waiting_post_kill_delay";
+                return true;
             }
 
             private void Fail(string status, string message = "")

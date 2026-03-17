@@ -12,16 +12,18 @@
       <canBeCleaned>true</canBeCleaned>
     </pocketMapProperties>
     <genSteps>
-      <!-- 基础步骤，用于初始化地图数据结构 -->
+      <!-- 只保留基础网格初始化，然后用专用 GenStep 强制铺成纯 Soil 平地 -->
       <li>ElevationFertility</li>
-      <!-- 确保有地形网格 -->
-      <li>Terrain</li>
-      <!-- 用石头填充地图，防止全空虚空 -->
-      <li>RocksFromGrid</li>
-      <!-- 清理可能残留的雾气 -->
+      <li>LogSync_AutoTestFlatSoil</li>
       <li>Fog</li>
     </genSteps>
   </MapGeneratorDef>
+
+  <GenStepDef>
+    <defName>LogSync_AutoTestFlatSoil</defName>
+    <order>200</order>
+    <genStep Class="LogSyncMod.AutoTest.GenStep_LogSyncAutoTestFlatSoil" />
+  </GenStepDef>
 
   <!-- 测试专用：大功率发电机 -->
   <ThingDef>
@@ -86,17 +88,16 @@
   <HediffDef>
     <defName>LogSync_TurretTestTarget</defName>
     <label>Auto-Test Target Buff</label>
-    <description>Reduces move speed to 10% and incoming damage to 10%.</description>
+    <description>Keeps incoming damage at 10%, applies an immediate 10-second stun, and stuns again for 10 seconds whenever the pawn moves to a new cell.</description>
     <hediffClass>HediffWithComps</hediffClass>
     <defaultLabelColor>(0.5, 0.5, 1.0)</defaultLabelColor>
+    <comps>
+      <li Class="LogSyncMod.AutoTest.HediffCompProperties_LogSyncTurretTestTarget">
+        <stunTicks>600</stunTicks>
+      </li>
+    </comps>
     <stages>
       <li>
-        <capMods>
-          <li>
-            <capacity>Moving</capacity>
-            <postFactor>0.1</postFactor>
-          </li>
-        </capMods>
         <statOffsets>
           <IncomingDamageFactor>-0.9</IncomingDamageFactor>
         </statOffsets>
