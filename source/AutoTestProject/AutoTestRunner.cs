@@ -75,7 +75,8 @@ namespace LogSyncMod.AutoTest
         private const int OpenTimeoutRepaintFrames = 180;
         private const int WaitBeforeCloseRepaintFrames = 12;
         private const int CloseTimeoutRepaintFrames = 180;
-        private const float TurretScreenshotRangeScale = 2.7232f;
+        private const float TurretScreenshotRangeScale = 3.81248f;
+        private const float RangedWeaponScreenshotRangeScale = 2.7232f;
         private const float DefaultTurretScreenshotAspect = 16f / 9f;
         
         // 关键修复：将最小 rootSize 统一提升至 11.0f。
@@ -529,7 +530,7 @@ namespace LogSyncMod.AutoTest
                 force: true,
                 resultIndex: screenshotService.ResolveTurretResultIndex(results, activeTurretSessions.IndexOf(session)),
                 stageSuffix: session.Result?.Status ?? "failed",
-                prepare: () => FocusPocketMapOverview(session.TestMap),
+                prepare: () => FocusTurretScreenshotMap(session),
                 relativeSubdirectory: "fail");
         }
 
@@ -1013,7 +1014,7 @@ namespace LogSyncMod.AutoTest
             float normalizedAspect = aspect > 0.01f ? aspect : DefaultTurretScreenshotAspect;
             float halfWidth = Mathf.Abs(shooterPos.x - targetPos.x) * 0.5f + cellMargin;
             float halfHeight = Mathf.Abs(shooterPos.z - targetPos.z) * 0.5f + cellMargin;
-            rootSize = Mathf.Clamp(Mathf.Max(halfHeight, halfWidth / normalizedAspect) * TurretScreenshotRangeScale, minRootSize, maxRootSize);
+            rootSize = Mathf.Clamp(Mathf.Max(halfHeight, halfWidth / normalizedAspect) * RangedWeaponScreenshotRangeScale, minRootSize, maxRootSize);
             return true;
         }
 
@@ -1044,7 +1045,7 @@ namespace LogSyncMod.AutoTest
 
             float halfWidth = Mathf.Abs(shooterPos.x - targetPos.x) * 0.5f + cellMargin;
             float halfHeight = Mathf.Abs(shooterPos.z - targetPos.z) * 0.5f + cellMargin;
-            rootSize = Mathf.Clamp(Mathf.Max(halfHeight, halfWidth / normalizedAspect) * TurretScreenshotRangeScale, minRootSize, maxRootSize);
+            rootSize = Mathf.Clamp(Mathf.Max(halfHeight, halfWidth / normalizedAspect) * RangedWeaponScreenshotRangeScale, minRootSize, maxRootSize);
             return true;
         }
 
