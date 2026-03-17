@@ -26,6 +26,14 @@ GAME_PATH = r"H:\SteamLibrary\steamapps\common\RimWorld\RimWorldWin64.exe"
 # Steam 启动协议
 STEAM_URL = "steam://rungameid/294100"
 
+RUNNER_MODE_QUICK = "quick"
+RUNNER_MODE_MANUAL = "manual"
+RUNNER_MODE_AUTO = "auto"
+RUNNER_MODE_XML = "xml"
+RUNNER_MODES = [RUNNER_MODE_QUICK, RUNNER_MODE_MANUAL, RUNNER_MODE_AUTO, RUNNER_MODE_XML]
+TEMP_AUTOTEST_SPEC_FILE_NAME = "LogSync_RunTest_TemporaryAutoTests.xml"
+DISABLED_SPEC_SUFFIX = ".logsyncruntest.disabled"
+
 # 模组发出的就绪信号字符串 (检测到此字符串后脚本将自动关闭游戏)
 READY_SIGNAL = "[LogSyncMod] RUNTIME_READY_TO_CLOSE"
 AUTO_TEST_READY_SIGNAL = "[LogSyncAutoTest] COMPLETED"
@@ -171,6 +179,181 @@ def resolve_auto_test_output_dir(auto_test_output_dir: str | None, auto_test_pac
     if auto_test_output_dir is not None:
         return auto_test_output_dir
     return str(WORKSPACE_DIR / "AutoTestOutput")
+
+def normalize_scope_value(scope: str | None):
+    normalized_scope = (scope or "").strip().lower()
+    scope_map = {
+        "all": "All",
+        "content": "Content",
+        "recipes": "Recipes",
+        "hediffs": "Hediffs",
+        "turrets": "Turrets",
+    }
+    return scope_map.get(normalized_scope, "All")
+
+def determine_runner_mode(explicit_mode: str | None, auto_test_package_id: str | None, auto_test_mode: str | None):
+    if explicit_mode:
+        return explicit_mode
+
+    if auto_test_package_id:
+        normalized_auto_test_mode = (auto_test_mode or "").strip().lower()
+        return RUNNER_MODE_XML if normalized_auto_test_mode in {"xml", "xml-driven", "xmldriven"} else RUNNER_MODE_AUTO
+
+    return RUNNER_MODE_QUICK
+
+def build_candidate_mod_roots():
+    roots = []
+    game_path = Path(GAME_PATH)
+    if game_path.exists():
+        rimworld_dir = game_path.parent
+        roots.append(rimworld_dir / "Mods")
+        try:
+            steamapps_dir = game_path.parents[2]
+            roots.append(steamapps_dir / "workshop" / "content" / "294100")
+        except Exception:
+            pass
+    return [root for root in roots if root.exists() and root.is_dir()]
+
+def read_mod_package_id_from_about(about_xml_path: Path):
+    if not about_xml_path.exists():
+        return None
+
+    try:
+        tree = ET.parse(about_xml_path)
+        root = tree.getroot()
+        node = root.find("./packageId") or root.find("packageId")
+        if node is None or not (node.text or "").strip():
+            return None
+        return (node.text or "").strip().lower()
+    except Exception:
+        return None
+
+def find_mod_directory_by_package_id(package_id: str | None):
+    normalized_package_id = (package_id or "").strip().lower()
+    if not normalized_package_id:
+        return None
+
+    for root in build_candidate_mod_roots():
+        for about_xml_path in root.rglob("About.xml"):
+            if read_mod_package_id_from_about(about_xml_path) != normalized_package_id:
+                continue
+            if about_xml_path.parent.name.lower() == "about":
+                return about_xml_path.parent.parent
+            return about_xml_path.parent
+
+    return None
+
+def resolve_temp_autotest_spec_path(package_id: str):
+    mod_dir = find_mod_directory_by_package_id(package_id)
+    if mod_dir is None:
+        raise RuntimeError(f"未能根据 packageId 找到目标模组目录: {package_id}")
+
+    candidate_dirs = [
+        mod_dir / "1.6" / "Defs" / "LogSync_AutoTests",
+        mod_dir / "Defs" / "LogSync_AutoTests",
+        mod_dir / "1.6" / "Defs",
+        mod_dir / "Defs",
+    ]
+
+    for candidate_dir in candidate_dirs:
+        if candidate_dir.exists():
+            return candidate_dir / TEMP_AUTOTEST_SPEC_FILE_NAME
+
+    target_dir = candidate_dirs[0]
+    target_dir.mkdir(parents=True, exist_ok=True)
+    return target_dir / TEMP_AUTOTEST_SPEC_FILE_NAME
+
+def write_temp_autotest_spec(package_id: str, scope: str, def_names: list[str], capture_screenshots: bool):
+    spec_path = resolve_temp_autotest_spec_path(package_id)
+    normalized_def_names = []
+    seen = set()
+    for value in def_names:
+        text = (value or "").strip()
+        if not text:
+            continue
+        lowered = text.lower()
+        if lowered in seen:
+            continue
+        seen.add(lowered)
+        normalized_def_names.append(text)
+
+    if not normalized_def_names:
+        raise RuntimeError("未提供有效的 defName，无法生成临时自动测试 XML。")
+
+    capture_value = "true" if capture_screenshots else "false"
+    lines = [
+        '<?xml version="1.0" encoding="utf-8" ?>',
+        "<Defs>",
+        "  <LogSyncMod.LogSyncAutoTestSpecDef>",
+        "    <defName>LogSync_RunTest_TemporarySpec</defName>",
+        "    <enabled>true</enabled>",
+        f"    <scope>{scope}</scope>",
+        "    <defNames>",
+    ]
+    for def_name in normalized_def_names:
+        lines.append(f"      <li>{def_name}</li>")
+    lines.extend([
+        "    </defNames>",
+        f"    <captureScreenshots>{capture_value}</captureScreenshots>",
+        "  </LogSyncMod.LogSyncAutoTestSpecDef>",
+        "</Defs>",
+        "",
+    ])
+
+    spec_path.write_text("\n".join(lines), encoding="utf-8")
+    return spec_path
+
+def remove_temp_autotest_spec(spec_path: Path | None):
+    if spec_path is None or not spec_path.exists():
+        return
+    try:
+        spec_path.unlink()
+        print(f"[信息] 已删除临时自动测试 XML: {spec_path}")
+    except Exception as e:
+        print(f"[警告] 删除临时自动测试 XML 失败: {spec_path} ({e})")
+
+def find_existing_autotest_spec_files(package_id: str, excluded_paths: set[Path] | None = None):
+    mod_dir = find_mod_directory_by_package_id(package_id)
+    if mod_dir is None:
+        raise RuntimeError(f"未能根据 packageId 找到目标模组目录: {package_id}")
+
+    excluded = {path.resolve() for path in (excluded_paths or set())}
+    matched_files = []
+    for xml_path in mod_dir.rglob("*.xml"):
+        try:
+            resolved_path = xml_path.resolve()
+        except Exception:
+            resolved_path = xml_path
+        if resolved_path in excluded:
+            continue
+        try:
+            text = xml_path.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
+        if "LogSyncAutoTestSpecDef" not in text:
+            continue
+        matched_files.append(xml_path)
+
+    return matched_files
+
+def disable_existing_autotest_spec_files(package_id: str, excluded_paths: set[Path] | None = None):
+    disabled_pairs = []
+    for source_path in find_existing_autotest_spec_files(package_id, excluded_paths=excluded_paths):
+        disabled_path = source_path.with_name(source_path.name + DISABLED_SPEC_SUFFIX)
+        source_path.replace(disabled_path)
+        disabled_pairs.append((source_path, disabled_path))
+        print(f"[信息] 已临时禁用目标模组自动测试 XML: {source_path}")
+    return disabled_pairs
+
+def restore_disabled_autotest_spec_files(disabled_pairs: list[tuple[Path, Path]] | None):
+    for original_path, disabled_path in disabled_pairs or []:
+        if not disabled_path.exists():
+            continue
+        try:
+            disabled_path.replace(original_path)
+            print(f"[信息] 已恢复目标模组自动测试 XML: {original_path}")
+        except Exception as e:
+            print(f"[警告] 恢复目标模组自动测试 XML 失败: {original_path} ({e})")
 
 def ensure_text_node(parent, tag: str, value: str):
     node = parent.find(tag)
@@ -569,6 +752,30 @@ def is_rimworld_running():
     )
     return "RimWorld.exe" in (result.stdout or "")
 
+def launch_rimworld(use_quicktest: bool):
+    game_path = Path(GAME_PATH)
+    if game_path.exists():
+        command = [str(game_path)]
+        if use_quicktest:
+            command.append("quicktest")
+        return subprocess.Popen(command, shell=False)
+
+    if use_quicktest:
+        raise RuntimeError(f"找不到游戏 exe，无法以 quicktest 模式启动: {GAME_PATH}")
+
+    try:
+        subprocess.Popen(["start", STEAM_URL], shell=True)
+    except Exception:
+        pass
+
+    steam_start = time.time()
+    while time.time() - steam_start < STEAM_LAUNCH_DETECT_TIMEOUT:
+        if is_rimworld_running():
+            return None
+        time.sleep(2)
+
+    raise RuntimeError(f"Steam 启动失败且找不到游戏 exe 路径: {GAME_PATH}")
+
 def wait_for_existing_rimworld_to_exit(timeout_seconds: int = WAIT_FOR_EXISTING_GAME_EXIT_TIMEOUT):
     """若检测到已有 RimWorld 进程正在运行，则等待其退出。等待期间不改模组配置。"""
     if not is_rimworld_running():
@@ -591,6 +798,7 @@ def wait_for_existing_rimworld_to_exit(timeout_seconds: int = WAIT_FOR_EXISTING_
     return False
 
 def monitor(
+    runner_mode: str = RUNNER_MODE_QUICK,
     mod_list_file: Path | None = None,
     log_keywords: list[str] | None = None,
     clear_log_keywords: bool = False,
@@ -600,12 +808,16 @@ def monitor(
     auto_test_scope: str | None = "all",
     auto_test_capture_screenshots: bool | None = None,
     auto_test_batch_size: int | None = None,
+    auto_test_defnames: list[str] | None = None,
     timeout_seconds: int = TIMEOUT,
 ):
     check_sandbox_access()
     print("======= 环世界自动化监控测试启动 =======")
     game_process = None
-    resolved_auto_test_output_dir = resolve_auto_test_output_dir(auto_test_output_dir, auto_test_package_id)
+    generated_spec_path = None
+    disabled_spec_pairs = []
+    is_auto_test_mode = runner_mode in {RUNNER_MODE_AUTO, RUNNER_MODE_XML}
+    resolved_auto_test_output_dir = resolve_auto_test_output_dir(auto_test_output_dir, auto_test_package_id if is_auto_test_mode else None)
 
     if not wait_for_existing_rimworld_to_exit():
         return
@@ -618,17 +830,50 @@ def monitor(
             MODS_CONFIG_BACKUP_FILE.unlink()
         except: pass
 
+    effective_auto_test_mode = None
+    if runner_mode == RUNNER_MODE_XML:
+        if not auto_test_package_id:
+            print("[错误] xml 模式必须提供 --auto-test-package-id")
+            return
+        effective_auto_test_mode = "xml-driven"
+    elif runner_mode == RUNNER_MODE_AUTO:
+        if not auto_test_package_id:
+            print("[错误] auto 模式必须提供 --auto-test-package-id")
+            return
+        if auto_test_defnames:
+            try:
+                normalized_scope = normalize_scope_value(auto_test_scope)
+                generated_spec_path = write_temp_autotest_spec(
+                    auto_test_package_id,
+                    normalized_scope,
+                    auto_test_defnames,
+                    bool(auto_test_capture_screenshots),
+                )
+                disabled_spec_pairs = disable_existing_autotest_spec_files(
+                    auto_test_package_id,
+                    excluded_paths={generated_spec_path},
+                )
+                print(f"[信息] 已生成临时自动测试 XML: {generated_spec_path}")
+                effective_auto_test_mode = "xml-driven"
+            except Exception as e:
+                restore_disabled_autotest_spec_files(disabled_spec_pairs)
+                remove_temp_autotest_spec(generated_spec_path)
+                print(f"[错误] 生成临时自动测试 XML 失败: {e}")
+                return
+        else:
+            effective_auto_test_mode = "automatic"
+
     update_mod_settings(
         log_keywords=log_keywords,
         clear_log_keywords=clear_log_keywords,
-        auto_test_enabled=True if auto_test_package_id else None,
-        auto_test_target_package_id=auto_test_package_id,
-        auto_test_output_path=resolved_auto_test_output_dir,
-        auto_test_mode=auto_test_mode if auto_test_package_id else None,
-        auto_test_scope=auto_test_scope if auto_test_package_id else None,
-        auto_test_capture_screenshots=auto_test_capture_screenshots if auto_test_package_id else None,
-        auto_test_batch_size=auto_test_batch_size if auto_test_package_id else None,
-        clear_auto_test_batch_size=bool(auto_test_package_id) and auto_test_batch_size is None,
+        auto_test_enabled=True if is_auto_test_mode else False,
+        auto_test_target_package_id=auto_test_package_id if is_auto_test_mode else "",
+        auto_test_output_path=resolved_auto_test_output_dir if is_auto_test_mode else None,
+        auto_test_mode=effective_auto_test_mode if is_auto_test_mode else "automatic",
+        auto_test_scope=auto_test_scope if is_auto_test_mode else "all",
+        auto_test_capture_screenshots=auto_test_capture_screenshots if is_auto_test_mode else False,
+        auto_test_batch_size=auto_test_batch_size if is_auto_test_mode else None,
+        clear_auto_test_batch_size=(is_auto_test_mode and auto_test_batch_size is None) or (not is_auto_test_mode),
     )
     current_package_id = read_current_mod_package_id()
     if current_package_id:
@@ -640,7 +885,7 @@ def monitor(
         mod_list_file=mod_list_file,
         include_package_ids=[
             (current_package_id, "当前项目包名"),
-            (auto_test_package_id, "被测模组包名"),
+            (auto_test_package_id if is_auto_test_mode else None, "被测模组包名"),
         ],
     )
     kill_rimworld()
@@ -652,32 +897,34 @@ def monitor(
         prune_auto_test_output_runs(Path(resolved_auto_test_output_dir))
 
     # 启动
-    if auto_test_package_id:
-        if not os.path.exists(GAME_PATH):
-            print(f"[警告] 自动测试模式下找不到游戏 exe 路径: {GAME_PATH}")
-        else:
+    try:
+        if runner_mode in {RUNNER_MODE_AUTO, RUNNER_MODE_XML}:
             print("[信息] 自动测试模式：直接以 quicktest 参数启动游戏。")
-            game_process = subprocess.Popen([GAME_PATH, "quicktest"], shell=False)
+            game_process = launch_rimworld(use_quicktest=True)
+        elif runner_mode == RUNNER_MODE_MANUAL:
+            print("[信息] 手动测试模式：启动游戏并等待用户手动关闭。")
+            game_process = launch_rimworld(use_quicktest=False)
+        else:
+            print("[信息] 快速测试模式：启动游戏并等待运行就绪信号。")
+            game_process = launch_rimworld(use_quicktest=False)
+    except Exception as e:
+        restore_mod_list(original_mods_config)
+        restore_disabled_autotest_spec_files(disabled_spec_pairs)
+        remove_temp_autotest_spec(generated_spec_path)
+        print(f"[错误] 启动游戏失败: {e}")
+        return
+
+    ready_signal = None
+    if runner_mode in {RUNNER_MODE_AUTO, RUNNER_MODE_XML}:
+        ready_signal = AUTO_TEST_READY_SIGNAL
+    elif runner_mode == RUNNER_MODE_QUICK:
+        ready_signal = READY_SIGNAL
+
+    if ready_signal:
+        print(f"等待信号: {ready_signal}...")
     else:
-        try:
-            subprocess.Popen(["start", STEAM_URL], shell=True)
-        except:
-            pass
+        print("等待用户关闭游戏...")
 
-        steam_start = time.time()
-        while time.time() - steam_start < STEAM_LAUNCH_DETECT_TIMEOUT:
-            if is_rimworld_running():
-                break
-            time.sleep(2)
-
-        if not is_rimworld_running():
-            if not os.path.exists(GAME_PATH):
-                print(f"[警告] Steam 启动失败且找不到游戏 exe 路径: {GAME_PATH}")
-            else:
-                subprocess.Popen([GAME_PATH], shell=False)
-
-    ready_signal = AUTO_TEST_READY_SIGNAL if auto_test_package_id else READY_SIGNAL
-    print(f"等待信号: {ready_signal}...")
     start_time = time.time()
     last_pos = 0
     if SYSTEM_LOG_PATH.exists(): last_pos = SYSTEM_LOG_PATH.stat().st_size
@@ -685,11 +932,21 @@ def monitor(
     found = False
     try:
         while time.time() - start_time < timeout_seconds:
-            if auto_test_package_id and game_process is not None:
+            if runner_mode in {RUNNER_MODE_AUTO, RUNNER_MODE_XML} and game_process is not None:
                 exit_code = game_process.poll()
                 if exit_code is not None:
                     print(f"\n[错误] RimWorld 进程已提前退出，退出码: {exit_code}")
                     break
+
+            if runner_mode == RUNNER_MODE_MANUAL:
+                process_exited = game_process.poll() is not None if game_process is not None else not is_rimworld_running()
+                if process_exited:
+                    print("\n[✔] 检测到用户已关闭 RimWorld。")
+                    found = True
+                    break
+                print(f"\r耗时: {int(time.time() - start_time)}s", end="", flush=True)
+                time.sleep(2)
+                continue
 
             if SYSTEM_LOG_PATH.exists():
                 current_size = SYSTEM_LOG_PATH.stat().st_size
@@ -707,17 +964,20 @@ def monitor(
     except KeyboardInterrupt: print("\n[!] 中断。")
     finally:
         kill_rimworld()
-        if auto_test_package_id:
+        if is_auto_test_mode:
             update_mod_settings(
                 auto_test_enabled=False,
                 auto_test_target_package_id="",
                 auto_test_mode="automatic",
                 auto_test_scope="all",
-                auto_test_capture_screenshots=False if auto_test_capture_screenshots is not None else None,
+                auto_test_capture_screenshots=False,
+                clear_auto_test_batch_size=True,
             )
             if resolved_auto_test_output_dir:
                 prune_auto_test_output_runs(Path(resolved_auto_test_output_dir))
         restore_mod_list(original_mods_config)
+        restore_disabled_autotest_spec_files(disabled_spec_pairs)
+        remove_temp_autotest_spec(generated_spec_path)
         print("\n======= 测试结束 =======")
 
     if found:
@@ -730,18 +990,23 @@ def monitor(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument("--mode", choices=RUNNER_MODES, default=None, help="启动模式：quick/manual/auto/xml；默认会根据旧参数自动推断")
     parser.add_argument("--mods-file", default=None, help="自定义模组预设路径")
     parser.add_argument("--log-keyword", action="append", default=None, help="写入 LogSyncMod 配置 <keywords> 的条目，可重复传入")
     parser.add_argument("--clear-log-keywords", action="store_true", help="清空 LogSyncMod 配置中的 <keywords> 列表")
-    parser.add_argument("--auto-test-package-id", default=None, help="启用定向自动测试，并指定目标模组 packageId")
+    parser.add_argument("--auto-test-package-id", default=None, help="auto/xml 模式下的目标模组 packageId")
     parser.add_argument("--auto-test-output-dir", default=None, help="自动测试报告输出目录")
-    parser.add_argument("--auto-test-mode", choices=["automatic", "xml-driven"], default="automatic", help="自动测试模式：automatic/xml-driven")
-    parser.add_argument("--auto-test-scope", choices=["all", "content", "recipes", "hediffs", "turrets"], default="all", help="自动测试范围：all/content/recipes/hediffs/turrets")
-    parser.add_argument("--auto-test-capture-screenshots", action="store_true", help="自动测试时对打开的 InfoCard 截图")
-    parser.add_argument("--auto-test-batch-size", type=int, default=None, help="自动测试每批处理数量")
+    parser.add_argument("--auto-test-mode", choices=["automatic", "xml-driven"], default="automatic", help="兼容旧参数；未传 --mode 时用于自动推断 auto/xml")
+    parser.add_argument("--auto-test-scope", choices=["all", "content", "recipes", "hediffs", "turrets"], default="all", help="auto/xml 模式下的测试范围：all/content/recipes/hediffs/turrets")
+    parser.add_argument("--auto-test-capture-screenshots", action="store_true", help="auto/xml 模式下允许截图")
+    parser.add_argument("--auto-test-batch-size", type=int, default=None, help="auto 模式下按范围限制测试数量；xml 模式下也可作为上限")
+    parser.add_argument("--auto-test-defname", action="append", default=None, help="auto 模式下指定要测试的 defName，可重复传入；脚本会自动生成临时 XML 规则")
     parser.add_argument("--timeout-seconds", type=int, default=TIMEOUT, help="等待测试完成的最长秒数")
     parser.add_argument("--settings-only", action="store_true", help="只更新 LogSyncMod 配置（logPath/keywords），不启动游戏")
     args = parser.parse_args()
+
+    runner_mode = determine_runner_mode(args.mode, args.auto_test_package_id, args.auto_test_mode)
+    is_auto_test_mode = runner_mode in {RUNNER_MODE_AUTO, RUNNER_MODE_XML}
 
     keywords_to_write = DEFAULT_LOG_KEYWORDS
     if args.clear_log_keywords:
@@ -749,20 +1014,32 @@ if __name__ == "__main__":
     elif args.log_keyword is not None:
         keywords_to_write = args.log_keyword
 
+    if runner_mode in {RUNNER_MODE_AUTO, RUNNER_MODE_XML} and not args.auto_test_package_id:
+        raise SystemExit("[错误] auto/xml 模式必须提供 --auto-test-package-id")
+
+    if runner_mode != RUNNER_MODE_AUTO and args.auto_test_defname:
+        raise SystemExit("[错误] --auto-test-defname 仅支持在 auto 模式下使用")
+
     if args.settings_only:
         check_sandbox_access()
-        resolved_auto_test_output_dir = resolve_auto_test_output_dir(args.auto_test_output_dir, args.auto_test_package_id)
+        resolved_auto_test_output_dir = resolve_auto_test_output_dir(args.auto_test_output_dir, args.auto_test_package_id if is_auto_test_mode else None)
+        effective_auto_test_mode = None
+        if runner_mode == RUNNER_MODE_XML:
+            effective_auto_test_mode = "xml-driven"
+        elif runner_mode == RUNNER_MODE_AUTO:
+            effective_auto_test_mode = "xml-driven" if args.auto_test_defname else "automatic"
+
         update_mod_settings(
             log_keywords=keywords_to_write,
             clear_log_keywords=args.clear_log_keywords,
-            auto_test_enabled=True if args.auto_test_package_id else None,
-            auto_test_target_package_id=args.auto_test_package_id,
+            auto_test_enabled=True if is_auto_test_mode else False,
+            auto_test_target_package_id=args.auto_test_package_id if is_auto_test_mode else "",
             auto_test_output_path=resolved_auto_test_output_dir,
-            auto_test_mode=args.auto_test_mode if args.auto_test_package_id else None,
-            auto_test_scope=args.auto_test_scope if args.auto_test_package_id else None,
-            auto_test_capture_screenshots=True if args.auto_test_capture_screenshots and args.auto_test_package_id else None,
-            auto_test_batch_size=args.auto_test_batch_size if args.auto_test_package_id else None,
-            clear_auto_test_batch_size=bool(args.auto_test_package_id) and args.auto_test_batch_size is None,
+            auto_test_mode=effective_auto_test_mode if is_auto_test_mode else "automatic",
+            auto_test_scope=args.auto_test_scope if is_auto_test_mode else "all",
+            auto_test_capture_screenshots=True if args.auto_test_capture_screenshots and is_auto_test_mode else False,
+            auto_test_batch_size=args.auto_test_batch_size if is_auto_test_mode else None,
+            clear_auto_test_batch_size=(is_auto_test_mode and args.auto_test_batch_size is None) or (not is_auto_test_mode),
         )
         if resolved_auto_test_output_dir:
             prune_auto_test_output_runs(Path(resolved_auto_test_output_dir))
@@ -776,6 +1053,7 @@ if __name__ == "__main__":
         raise SystemExit(0)
 
     monitor(
+        runner_mode=runner_mode,
         mod_list_file=Path(args.mods_file) if args.mods_file else None,
         log_keywords=keywords_to_write,
         clear_log_keywords=args.clear_log_keywords,
@@ -783,7 +1061,8 @@ if __name__ == "__main__":
         auto_test_output_dir=args.auto_test_output_dir,
         auto_test_mode=args.auto_test_mode,
         auto_test_scope=args.auto_test_scope,
-        auto_test_capture_screenshots=True if args.auto_test_capture_screenshots and args.auto_test_package_id else None,
+        auto_test_capture_screenshots=True if args.auto_test_capture_screenshots and is_auto_test_mode else False,
         auto_test_batch_size=args.auto_test_batch_size,
+        auto_test_defnames=args.auto_test_defname,
         timeout_seconds=max(1, int(args.timeout_seconds)),
     )
