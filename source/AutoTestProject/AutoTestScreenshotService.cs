@@ -90,7 +90,8 @@ namespace LogSyncMod.AutoTest
             bool force,
             int resultIndex,
             string stageSuffix,
-            Action prepare)
+            Action prepare,
+            string relativeSubdirectory = null)
         {
             if (result == null)
             {
@@ -110,14 +111,17 @@ namespace LogSyncMod.AutoTest
             try
             {
                 prepare?.Invoke();
-                Directory.CreateDirectory(runArtifacts.ScreenshotDirectory);
+                string screenshotDirectory = string.IsNullOrWhiteSpace(relativeSubdirectory)
+                    ? runArtifacts.ScreenshotDirectory
+                    : Path.Combine(runArtifacts.ScreenshotDirectory, relativeSubdirectory);
+                Directory.CreateDirectory(screenshotDirectory);
 
                 string fileName = string.Format(
                     "{0:D4}_{1}_{2}.png",
                     resultIndex,
                     SanitizeFileName(result.DefName),
                     SanitizeFileName(stageSuffix));
-                string screenshotPath = Path.Combine(runArtifacts.ScreenshotDirectory, fileName);
+                string screenshotPath = Path.Combine(screenshotDirectory, fileName);
 
                 ScreenCapture.CaptureScreenshot(screenshotPath);
                 result.ScreenshotPath = screenshotPath;

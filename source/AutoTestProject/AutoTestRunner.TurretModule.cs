@@ -1091,6 +1091,7 @@ namespace LogSyncMod.AutoTest
                 }
 
                 GenSpawn.Spawn(OperatorPawn, spawnPos, TestMap);
+                ConfigureTestPawnCombatStats(OperatorPawn);
                 OperatorPawn.Name = new NameSingle("自动测试炮手");
                 Result.Notes = AppendNote(Result.Notes, "OperatorPawnSpawned=True");
             }

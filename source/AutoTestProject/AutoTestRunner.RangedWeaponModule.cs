@@ -225,6 +225,7 @@ namespace LogSyncMod.AutoTest
                 }
 
                 GenSpawn.Spawn(ShooterPawn, TestMap.Center, TestMap);
+                ConfigureTestPawnCombatStats(ShooterPawn);
                 ShooterPawn.Name = new NameSingle("自动测试射手");
                 if (ShooterPawn.drafter != null)
                 {
@@ -1144,7 +1145,17 @@ namespace LogSyncMod.AutoTest
 
         private bool TryCaptureRangedWeaponScreenshot(RangedWeaponTestSession session, bool force)
         {
-            return TryCaptureRangedWeaponStageScreenshot(session, session?.Result?.Status ?? session?.Phase.ToString(), force, session?.AllowScreenshots ?? false);
+            if (session == null)
+            {
+                return false;
+            }
+
+            if (force)
+            {
+                return TryCaptureRangedWeaponFailureScreenshot(session);
+            }
+
+            return TryCaptureRangedWeaponStageScreenshot(session, session.Result?.Status ?? session.Phase.ToString(), force: false, allowCapture: session.AllowScreenshots);
         }
 
         private bool TryCaptureRangedWeaponStageScreenshot(RangedWeaponTestSession session, string stageSuffix, bool force, bool allowCapture)
@@ -1155,6 +1166,23 @@ namespace LogSyncMod.AutoTest
             }
 
             return screenshotService.TryCaptureMap(session.Result, allowCapture, force, screenshotService.ResolveTurretResultIndex(results, activeRangedWeaponSessions.IndexOf(session)), stageSuffix, () => FocusRangedWeaponScreenshotMap(session));
+        }
+
+        private bool TryCaptureRangedWeaponFailureScreenshot(RangedWeaponTestSession session)
+        {
+            if (session == null || screenshotService == null || session.TestMap == null || !Find.Maps.Contains(session.TestMap))
+            {
+                return false;
+            }
+
+            return screenshotService.TryCaptureMap(
+                session.Result,
+                allowCapture: true,
+                force: true,
+                resultIndex: screenshotService.ResolveTurretResultIndex(results, activeRangedWeaponSessions.IndexOf(session)),
+                stageSuffix: session.Result?.Status ?? "failed",
+                prepare: () => FocusPocketMapOverview(session.TestMap),
+                relativeSubdirectory: "fail");
         }
 
         private bool FocusRangedWeaponScreenshotMap(RangedWeaponTestSession session)

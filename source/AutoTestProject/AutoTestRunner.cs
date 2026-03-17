@@ -400,11 +400,17 @@ namespace LogSyncMod.AutoTest
 
         private bool TryCaptureTurretScreenshot(TurretTestSession session, bool force)
         {
-            return TryCaptureTurretStageScreenshot(
-                session,
-                session?.Result?.Status ?? session?.Phase.ToString(),
-                force,
-                session?.AllowScreenshots ?? false);
+            if (session == null)
+            {
+                return false;
+            }
+
+            if (force)
+            {
+                return TryCaptureTurretFailureScreenshot(session);
+            }
+
+            return TryCaptureTurretStageScreenshot(session, session.Result?.Status ?? session.Phase.ToString(), force: false, allowCapture: session.AllowScreenshots);
         }
 
         private bool TryCaptureTurretStageScreenshot(TurretTestSession session, string stageSuffix, bool force, bool allowCapture)
@@ -426,6 +432,23 @@ namespace LogSyncMod.AutoTest
                 screenshotService.ResolveTurretResultIndex(results, activeTurretSessions.IndexOf(session)),
                 stageSuffix,
                 () => FocusTurretScreenshotMap(session));
+        }
+
+        private bool TryCaptureTurretFailureScreenshot(TurretTestSession session)
+        {
+            if (session == null || screenshotService == null || session.TestMap == null || !Find.Maps.Contains(session.TestMap))
+            {
+                return false;
+            }
+
+            return screenshotService.TryCaptureMap(
+                session.Result,
+                allowCapture: true,
+                force: true,
+                resultIndex: screenshotService.ResolveTurretResultIndex(results, activeTurretSessions.IndexOf(session)),
+                stageSuffix: session.Result?.Status ?? "failed",
+                prepare: () => FocusPocketMapOverview(session.TestMap),
+                relativeSubdirectory: "fail");
         }
 
         private bool FocusTurretScreenshotMap(TurretTestSession session)
@@ -481,6 +504,42 @@ namespace LogSyncMod.AutoTest
                 things.Where(thing => thing != null)
                     .Select(thing => thing.def.defName + "x" + thing.stackCount)
                     .ToArray());
+        }
+
+        private bool FocusPocketMapOverview(Map targetMap)
+        {
+            if (targetMap == null || !Find.Maps.Contains(targetMap))
+            {
+                return false;
+            }
+
+            try
+            {
+                if (Current.Game != null)
+                {
+                    Current.Game.CurrentMap = targetMap;
+                }
+
+                CameraDriver cameraDriver = Find.CameraDriver;
+                if (cameraDriver == null)
+                {
+                    return false;
+                }
+
+                float aspect = ResolveTurretScreenshotAspect(cameraDriver);
+                Vector3 rootPos = ToMapWorldCenter(targetMap.Center);
+                float normalizedAspect = aspect > 0.01f ? aspect : DefaultTurretScreenshotAspect;
+                float rootSize = Mathf.Max(targetMap.Size.z * 0.58f, (targetMap.Size.x / normalizedAspect) * 0.58f);
+                rootSize = Mathf.Max(rootSize, TurretScreenshotMaxRootSize);
+                cameraDriver.JumpToCurrentMapLoc(targetMap.Center);
+                cameraDriver.SetRootPosAndSize(rootPos, rootSize);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Log.Warning("[LogSyncAutoTest] Pocket map overview focus failed: " + ex.Message);
+                return false;
+            }
         }
 
         private bool TryResolveTurretScreenshotView(TurretTestSession session, float aspect, out Vector3 rootPos, out float rootSize)
@@ -575,6 +634,20 @@ namespace LogSyncMod.AutoTest
         private static Vector3 ToMapWorldCenter(IntVec3 cell)
         {
             return new Vector3(cell.x + 0.5f, 0f, cell.z + 0.5f);
+        }
+
+        private static void ConfigureTestPawnCombatStats(Pawn pawn)
+        {
+            if (pawn?.skills == null)
+            {
+                return;
+            }
+
+            SkillRecord shootingSkill = pawn.skills.GetSkill(SkillDefOf.Shooting);
+            if (shootingSkill != null)
+            {
+                shootingSkill.Level = 20;
+            }
         }
 
         private static LocalTargetInfo ResolveProjectileTargetInfo(Projectile projectile)
