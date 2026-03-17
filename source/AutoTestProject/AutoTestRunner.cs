@@ -21,6 +21,7 @@ namespace LogSyncMod.AutoTest
         SpawningEnemies, // 新增：生成敌人
         Fighting,       // 新增：战斗监控
         WaitingAfterKill, // 新增：杀敌后延迟
+        WaitingAfterDamage,
         CapturingScreenshot,
         CleaningUp,
         Done

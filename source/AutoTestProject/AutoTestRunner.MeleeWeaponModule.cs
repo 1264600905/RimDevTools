@@ -16,6 +16,7 @@ namespace LogSyncMod.AutoTest
             private const int MapReadyWaitTicks = 180;
             private const int FightDurationTicks = 60 * 60;
             private const int ObservationTicks = 60 * 10;
+            private const int PostDamageObservationTicks = 60 * 30;
             private const int ScreenshotFocusWaitTicks = 6;
             private const int ScreenshotWaitTicks = 10;
 
@@ -545,8 +546,8 @@ namespace LogSyncMod.AutoTest
 
                 FirstDamageTick = Find.TickManager.TicksGame;
                 FirstDamagePawnLabel = firstDamagedPawn.LabelShortCap;
-                DelayTicks = ObservationTicks;
-                Result.Stage = "post_damage_10s";
+                DelayTicks = PostDamageObservationTicks;
+                Result.Stage = "post_damage_30s";
                 Result.Notes = AppendNote(Result.Notes, "FirstDamageTarget=" + FirstDamagePawnLabel);
                 Phase = MeleeWeaponTestPhase.WaitingAfterHit;
                 CleanupReason = "waiting_post_damage_delay";

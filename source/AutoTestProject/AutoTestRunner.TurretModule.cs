@@ -16,6 +16,7 @@ namespace LogSyncMod.AutoTest
             private const int MapReadyWaitTicks = 180;
             private const int FightDurationTicks = 60 * 60;
             private const int ObservationTicks = 60 * 10;
+            private const int PostDamageObservationTicks = 60 * 30;
             private const int ProjectileCenteredScreenshotTargetCount = 2;
             private const int ProjectileScreenshotGraceTicks = 20 * 60;
             private const int VirtualProjectilePrimeTick = 5;
@@ -248,6 +249,36 @@ namespace LogSyncMod.AutoTest
                                 TransitionToCleanup("test_passed_post_kill_delay", forceScreenshot: false);
                             }
 
+                            break;
+
+                        case TurretTestPhase.WaitingAfterDamage:
+                            EnsureOperatorManning();
+                            UpdateProjectileScreenshotSchedule();
+                            if (ProcessPendingStageScreenshotQueue())
+                            {
+                                break;
+                            }
+                            if (DelayTicks > 0)
+                            {
+                                DelayTicks--;
+                                if (DelayTicks % 120 == 0)
+                                {
+                                    int remainingSec = DelayTicks / 60;
+                                    Result.Stage = $"post_damage_{remainingSec}s";
+                                }
+                            }
+                            else
+                            {
+                                RecordPostKillSuccessIfNeeded();
+                                if (TryWaitForRemainingProjectileScreenshots())
+                                {
+                                    break;
+                                }
+
+                                Log.Message($"[LogSyncAutoTest] Observation finished for '{TurretDef.defName}'. Result: {Result.Status}. Closing map.");
+                                LogTurretState("post_damage_observation_finished");
+                                TransitionToCleanup("test_passed_post_damage_delay", forceScreenshot: false);
+                            }
                             break;
 
                         case TurretTestPhase.CapturingScreenshot:
@@ -1291,12 +1322,12 @@ namespace LogSyncMod.AutoTest
 
                 FirstDamageTick = Find.TickManager.TicksGame;
                 FirstDamagePawnLabel = firstDamagedPawn.LabelShortCap;
-                DelayTicks = ObservationTicks;
-                Result.Stage = "post_damage_10s";
+                DelayTicks = PostDamageObservationTicks;
+                Result.Stage = "post_damage_30s";
                 Result.Notes = AppendNote(Result.Notes, "FirstDamageTarget=" + FirstDamagePawnLabel);
                 Result.Notes = AppendNote(Result.Notes, "FirstDamageTick=" + FirstDamageTick);
-                Log.Message($"[LogSyncAutoTest] First target damaged for '{TurretDef.defName}'. Target={FirstDamagePawnLabel}. Starting 10s pass countdown.");
-                Phase = TurretTestPhase.WaitingAfterKill;
+                Log.Message($"[LogSyncAutoTest] First target damaged for '{TurretDef.defName}'. Target={FirstDamagePawnLabel}. Starting 30s pass countdown.");
+                Phase = TurretTestPhase.WaitingAfterDamage;
                 CleanupReason = "waiting_post_damage_delay";
                 return true;
             }
