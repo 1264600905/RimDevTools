@@ -4,6 +4,13 @@
   <!-- 测试专用：空口袋地图生成器 -->
   <MapGeneratorDef>
     <defName>LogSync_AutoTestPocketMap</defName>
+    <label>log sync auto test pocket map</label>
+    <disableCallAid>true</disableCallAid>
+    <pocketMapProperties>
+      <biome>Underground</biome>
+      <temperature>15</temperature>
+      <canBeCleaned>true</canBeCleaned>
+    </pocketMapProperties>
     <genSteps>
       <!-- 基础步骤，用于初始化地图数据结构 -->
       <li>ElevationFertility</li>
@@ -49,5 +56,52 @@
       <ai_chillDestination>false</ai_chillDestination>
     </building>
   </ThingDef>
+
+  <!-- 测试专用：口袋地图入口 -->
+  <ThingDef>
+    <defName>LogSync_AutoTestPortal</defName>
+    <label>Auto-Test Portal</label>
+    <thingClass>Building</thingClass>
+    <category>Building</category>
+    <graphicData>
+      <texPath>UI/Buttons/Dev/Add</texPath>
+      <graphicClass>Graphic_Single</graphicClass>
+      <drawSize>(1,1)</drawSize>
+      <color>(1,0.5,1)</color>
+    </graphicData>
+    <altitudeLayer>Building</altitudeLayer>
+    <passability>PassThroughOnly</passability>
+    <statBases>
+      <MaxHitPoints>1000</MaxHitPoints>
+      <WorkToBuild>0</WorkToBuild>
+      <Flammability>0</Flammability>
+    </statBases>
+    <size>(1,1)</size>
+    <building>
+      <ai_chillDestination>false</ai_chillDestination>
+    </building>
+  </ThingDef>
+
+  <!-- 测试专用：靶子 Hediff -->
+  <HediffDef>
+    <defName>LogSync_TurretTestTarget</defName>
+    <label>Auto-Test Target Buff</label>
+    <description>Reduces move speed to 10% and incoming damage to 10%.</description>
+    <hediffClass>HediffWithComps</hediffClass>
+    <defaultLabelColor>(0.5, 0.5, 1.0)</defaultLabelColor>
+    <stages>
+      <li>
+        <capMods>
+          <li>
+            <capacity>Moving</capacity>
+            <postFactor>0.1</postFactor>
+          </li>
+        </capMods>
+        <statOffsets>
+          <IncomingDamageFactor>-0.9</IncomingDamageFactor>
+        </statOffsets>
+      </li>
+    </stages>
+  </HediffDef>
 
 </Defs>
