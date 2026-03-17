@@ -10,10 +10,14 @@ namespace LogSyncMod.AutoTest
     public static class AutoTestBootstrap
     {
         private const string HarmonyId = "trigger.logsyncmod.autotest";
+        private const int StartupMapSettleTicks = 10;
         private static readonly FieldInfo QuickStartedField = typeof(QuickStarter).GetField("quickStarted", BindingFlags.NonPublic | BindingFlags.Static);
+        private static readonly FieldInfo LogAutoOpenField = AccessTools.Field("LudeonTK.EditWindow_Log:canAutoOpen");
         private static bool startupReady;
         private static bool waitingForMapLogged;
         private static bool quickStartAttempted;
+        private static int playableMapReadyTick = -1;
+        private static bool? previousLogAutoOpenState;
         private static AutoTestRunner runner;
 
         static AutoTestBootstrap()
@@ -38,6 +42,7 @@ namespace LogSyncMod.AutoTest
                 runner.Tick();
                 if (runner.Completed)
                 {
+                    RestoreLogAutoOpen();
                     runner = null;
                     settings.autoTestEnabled = false;
                     settings.Write();
@@ -48,6 +53,7 @@ namespace LogSyncMod.AutoTest
             string packageId = (settings.autoTestTargetPackageId ?? string.Empty).Trim().ToLowerInvariant();
             if (string.IsNullOrEmpty(packageId))
             {
+                RestoreLogAutoOpen();
                 Log.Warning("[LogSyncAutoTest] Missing target packageId. Auto test aborted.");
                 settings.autoTestEnabled = false;
                 settings.Write();
@@ -66,6 +72,7 @@ namespace LogSyncMod.AutoTest
             if (map == null)
             {
                 TryStartQuickTest();
+                playableMapReadyTick = -1;
                 if (!waitingForMapLogged)
                 {
                     Log.Message("[LogSyncAutoTest] Waiting for a playable map.");
@@ -75,8 +82,22 @@ namespace LogSyncMod.AutoTest
             }
 
             waitingForMapLogged = false;
+            if (playableMapReadyTick < 0)
+            {
+                playableMapReadyTick = Find.TickManager.TicksGame;
+                Log.Message("[LogSyncAutoTest] Playable map detected. Waiting " + StartupMapSettleTicks + " ticks before starting auto test.");
+                return;
+            }
+
+            if (Find.TickManager.TicksGame - playableMapReadyTick < StartupMapSettleTicks)
+            {
+                return;
+            }
+
+            DisableLogAutoOpenForAutoTest();
             runner = new AutoTestRunner(settings, map);
             runner.Initialize();
+            playableMapReadyTick = -1;
         }
 
         public static void OnGui()
@@ -119,6 +140,47 @@ namespace LogSyncMod.AutoTest
             }
 
             Log.Message("[LogSyncAutoTest] QuickStart requested. Result=" + started);
+        }
+
+        private static void DisableLogAutoOpenForAutoTest()
+        {
+            if (previousLogAutoOpenState.HasValue || LogAutoOpenField == null)
+            {
+                return;
+            }
+
+            try
+            {
+                previousLogAutoOpenState = (bool)LogAutoOpenField.GetValue(null);
+                LogAutoOpenField.SetValue(null, false);
+                Log.Message("[LogSyncAutoTest] Disabled debug log auto-open during auto test.");
+            }
+            catch (System.Exception ex)
+            {
+                previousLogAutoOpenState = null;
+                Log.Warning("[LogSyncAutoTest] Failed to disable debug log auto-open: " + ex.Message);
+            }
+        }
+
+        private static void RestoreLogAutoOpen()
+        {
+            if (!previousLogAutoOpenState.HasValue || LogAutoOpenField == null)
+            {
+                return;
+            }
+
+            try
+            {
+                LogAutoOpenField.SetValue(null, previousLogAutoOpenState.Value);
+            }
+            catch (System.Exception ex)
+            {
+                Log.Warning("[LogSyncAutoTest] Failed to restore debug log auto-open: " + ex.Message);
+            }
+            finally
+            {
+                previousLogAutoOpenState = null;
+            }
         }
     }
 

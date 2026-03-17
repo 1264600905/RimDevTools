@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using RimWorld;
+using RimWorld.Planet;
 using UnityEngine;
 using Verse;
 
@@ -195,7 +196,9 @@ namespace LogSyncMod.AutoTest
                         case TurretTestPhase.SpawningTurret:
                             LogMapState("before_spawn_turret");
                             // 生成炮塔并连接电力
-                            SpawnedTurret = GenSpawn.Spawn(TurretDef, TestMap.Center, TestMap);
+                            ThingDef turretStuff = owner.ResolveStuff(TurretDef);
+                            Thing turretThing = ThingMaker.MakeThing(TurretDef, turretStuff);
+                            SpawnedTurret = turretThing != null ? GenSpawn.Spawn(turretThing, TestMap.Center, TestMap) : null;
                             if (SpawnedTurret == null)
                             {
                                 Fail("failed_turret_spawn", "Turret returned null when spawning.");
@@ -621,9 +624,18 @@ namespace LogSyncMod.AutoTest
                     {
                         var kind = DefDatabase<PawnKindDef>.GetNamedSilentFail("SpaceRefugee") ?? DefDatabase<PawnKindDef>.GetNamedSilentFail("Colonist") ?? PawnKindDefOf.WildMan;
                         var faction = Faction.OfAncientsHostile ?? Faction.OfMechanoids;
-                        
-                        Pawn pawn = PawnGenerator.GeneratePawn(kind, faction); 
-                            if (pawn != null && TestMap != null)
+
+                        var request = new PawnGenerationRequest(
+                            kind,
+                            faction,
+                            PawnGenerationContext.NonPlayer,
+                            TestMap.Tile,
+                            forceGenerateNewPawn: true,
+                            canGeneratePawnRelations: false,
+                            mustBeCapableOfViolence: true);
+
+                        Pawn pawn = PawnGenerator.GeneratePawn(request);
+                        if (pawn != null && TestMap != null)
                         {
                             GenSpawn.Spawn(pawn, spawnPos, TestMap);
                             EnemyInitialHealthPercent[pawn.thingIDNumber] = pawn.health?.summaryHealth?.SummaryHealthPercent ?? 1f;
@@ -801,15 +813,35 @@ namespace LogSyncMod.AutoTest
                     spawnPos = CellFinder.RandomClosewalkCellNear(SpawnedTurret.Position, TestMap, 2);
                 }
 
-                var request = new PawnGenerationRequest(
-                    PawnKindDefOf.Colonist,
-                    playerFaction,
-                    PawnGenerationContext.NonPlayer,
-                    TestMap.Tile,
-                    forceGenerateNewPawn: true,
-                    canGeneratePawnRelations: false);
+                OperatorPawn = null;
+                for (int attempt = 0; attempt < 5 && OperatorPawn == null; attempt++)
+                {
+                    var request = new PawnGenerationRequest(
+                        PawnKindDefOf.Colonist,
+                        playerFaction,
+                        PawnGenerationContext.NonPlayer,
+                        TestMap.Tile,
+                        forceGenerateNewPawn: true,
+                        canGeneratePawnRelations: false,
+                        mustBeCapableOfViolence: true);
 
-                OperatorPawn = PawnGenerator.GeneratePawn(request);
+                    Pawn candidate = PawnGenerator.GeneratePawn(request);
+                    if (candidate == null)
+                    {
+                        continue;
+                    }
+
+                    bool violentDisabled = candidate.WorkTagIsDisabled(WorkTags.Violent);
+                    bool canManipulate = candidate.health?.capacities?.CapableOf(PawnCapacityDefOf.Manipulation) ?? false;
+                    if (violentDisabled || !canManipulate)
+                    {
+                        candidate.Destroy();
+                        continue;
+                    }
+
+                    OperatorPawn = candidate;
+                }
+
                 if (OperatorPawn == null)
                 {
                     Result.Notes = AppendNote(Result.Notes, "OperatorSpawnFailed=True");
@@ -1226,20 +1258,38 @@ namespace LogSyncMod.AutoTest
             {
                 var mapGenerator = DefDatabase<MapGeneratorDef>.GetNamed("LogSync_AutoTestPocketMap");
                 var mapSize = new IntVec3(50, 1, 50);
-                
-                // 使用官方 PocketMapUtility 生成口袋地图，它会自动处理 Parent 创建和 Map 绑定
-                session.TestMap = PocketMapUtility.GeneratePocketMap(mapSize, mapGenerator, null, this.map);
+                var pocketMapParent = WorldObjectMaker.MakeWorldObject(WorldObjectDefOf.PocketMap) as RimWorld.Planet.PocketMapParent;
+                if (pocketMapParent == null)
+                {
+                    result.Status = "failed_map_generation";
+                    result.ErrorMessage = "Failed to create PocketMapParent.";
+                    results.Add(result);
+                    return;
+                }
+
+                pocketMapParent.sourceMap = this.map;
+                pocketMapParent.mapGenerator = mapGenerator;
+                session.Parent = pocketMapParent;
+
+                session.TestMap = MapGenerator.GenerateMap(
+                    mapSize,
+                    pocketMapParent,
+                    mapGenerator,
+                    null,
+                    generatedMap => MapGenerator.PlayerStartSpot = generatedMap.Center,
+                    isPocketMap: true);
                 
                 if (session.TestMap != null)
                 {
-                    session.Parent = session.TestMap.Parent as RimWorld.Planet.PocketMapParent;
+                    Find.World.pocketMaps.Add(pocketMapParent);
+                    session.Parent = session.TestMap.Parent as RimWorld.Planet.PocketMapParent ?? pocketMapParent;
                     activeTurretSessions.Add(session);
-                    Log.Message("[LogSyncAutoTest] Starting official POCKET MAP via PocketMapUtility for '" + turretDef.defName + "' in Map " + session.TestMap.uniqueID + ". SourceMap=" + this.map.uniqueID + ".");
+                    Log.Message("[LogSyncAutoTest] Starting managed POCKET MAP for '" + turretDef.defName + "' in Map " + session.TestMap.uniqueID + ". SourceMap=" + this.map.uniqueID + ".");
                 }
                 else
                 {
                     result.Status = "failed_map_generation";
-                    result.ErrorMessage = "PocketMapUtility returned null Map.";
+                    result.ErrorMessage = "Managed pocket map generation returned null Map.";
                     results.Add(result);
                 }
             }
