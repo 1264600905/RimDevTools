@@ -55,6 +55,17 @@ namespace LogSyncMod.AutoTest
         Done
     }
 
+    internal sealed class StageScreenshotRequest
+    {
+        public string StageSuffix;
+        public bool Force;
+        public bool AllowCapture;
+        public Vector3? FocusRootPos;
+        public float? FocusRootSize;
+        public int FocusDelayTicks;
+        public bool PrimeOnly;
+    }
+
     internal sealed partial class AutoTestRunner
     {
         // --- 常量和字段 ---
@@ -64,14 +75,19 @@ namespace LogSyncMod.AutoTest
         private const int OpenTimeoutRepaintFrames = 180;
         private const int WaitBeforeCloseRepaintFrames = 12;
         private const int CloseTimeoutRepaintFrames = 180;
-        private const float TurretScreenshotRangeScale = 1.2f;
+        private const float TurretScreenshotRangeScale = 1.656f;
         private const float DefaultTurretScreenshotAspect = 16f / 9f;
-        private const float TurretScreenshotMinRootSize = 6f;
-        private const float TurretScreenshotMaxRootSize = 18f;
+        
+        // 关键修复：将最小 rootSize 统一提升至 11.0f。
+        // 因为 CameraPlus 会对 rootSize 进行插值计算，如果输入低于 11.0 (其内部 minRootInput)，
+        // 会产生负数的 orthographicSize，导致 Unity 相机上下左右完全翻转。
+        private const float TurretScreenshotMinRootSize = 11f;
+        private const float TurretScreenshotMaxRootSize = 26f;
         private const float TurretScreenshotCellMargin = 3f;
-        private const float TurretScreenshotCameraPlusMinRootSize = 3.25f;
-        private const float TurretScreenshotCameraPlusMaxRootSize = 14f;
+        private const float TurretScreenshotCameraPlusMinRootSize = 11f;
+        private const float TurretScreenshotCameraPlusMaxRootSize = 21f;
         private const float TurretScreenshotCameraPlusCellMargin = 1.5f;
+
         private static readonly FieldInfo ProjectileUsedTargetField = typeof(Projectile).GetField("usedTarget", BindingFlags.Instance | BindingFlags.NonPublic);
         private static readonly FieldInfo ProjectileIntendedTargetField = typeof(Projectile).GetField("intendedTarget", BindingFlags.Instance | BindingFlags.NonPublic);
 
@@ -88,6 +104,7 @@ namespace LogSyncMod.AutoTest
         private readonly Queue<ThingDef> pendingRangedWeaponDefs = new Queue<ThingDef>();
         private readonly List<MeleeWeaponTestSession> activeMeleeWeaponSessions = new List<MeleeWeaponTestSession>();
         private readonly Queue<ThingDef> pendingMeleeWeaponDefs = new Queue<ThingDef>();
+        private int pocketMapCooldownUntilTick = -1;
         private ModContentPack targetMod;
         private Pawn sharedHediffPawn;
         private string targetPackageId;
@@ -194,22 +211,25 @@ namespace LogSyncMod.AutoTest
                 return;
             }
 
-            while (activeTurretSessions.Count < MaxConcurrentTurretTests && pendingTurretDefs.Count > 0)
+            if (Find.TickManager.TicksGame > pocketMapCooldownUntilTick)
             {
-                ThingDef turretDef = pendingTurretDefs.Dequeue();
-                StartNewTurretSession(turretDef);
-            }
+                while (activeTurretSessions.Count < MaxConcurrentTurretTests && pendingTurretDefs.Count > 0)
+                {
+                    ThingDef turretDef = pendingTurretDefs.Dequeue();
+                    StartNewTurretSession(turretDef);
+                }
 
-            while (activeRangedWeaponSessions.Count < MaxConcurrentTurretTests && pendingRangedWeaponDefs.Count > 0)
-            {
-                ThingDef weaponDef = pendingRangedWeaponDefs.Dequeue();
-                StartNewRangedWeaponSession(weaponDef);
-            }
+                while (activeRangedWeaponSessions.Count < MaxConcurrentTurretTests && pendingRangedWeaponDefs.Count > 0)
+                {
+                    ThingDef weaponDef = pendingRangedWeaponDefs.Dequeue();
+                    StartNewRangedWeaponSession(weaponDef);
+                }
 
-            while (activeMeleeWeaponSessions.Count < MaxConcurrentTurretTests && pendingMeleeWeaponDefs.Count > 0)
-            {
-                ThingDef weaponDef = pendingMeleeWeaponDefs.Dequeue();
-                StartNewMeleeWeaponSession(weaponDef);
+                while (activeMeleeWeaponSessions.Count < MaxConcurrentTurretTests && pendingMeleeWeaponDefs.Count > 0)
+                {
+                    ThingDef weaponDef = pendingMeleeWeaponDefs.Dequeue();
+                    StartNewMeleeWeaponSession(weaponDef);
+                }
             }
 
             if (Find.TickManager.TicksGame % 500 == 0 && activeTurretSessions.Count > 0)
@@ -248,6 +268,7 @@ namespace LogSyncMod.AutoTest
             activeTurretSessions.RemoveAll(session => {
                 if (session.Phase == TurretTestPhase.Done) {
                     results.Add(session.Result);
+                    pocketMapCooldownUntilTick = Find.TickManager.TicksGame + 120;
                     return true;
                 }
                 return false;
@@ -256,6 +277,7 @@ namespace LogSyncMod.AutoTest
             activeRangedWeaponSessions.RemoveAll(session => {
                 if (session.Phase == RangedWeaponTestPhase.Done) {
                     results.Add(session.Result);
+                    pocketMapCooldownUntilTick = Find.TickManager.TicksGame + 120;
                     return true;
                 }
                 return false;
@@ -264,6 +286,7 @@ namespace LogSyncMod.AutoTest
             activeMeleeWeaponSessions.RemoveAll(session => {
                 if (session.Phase == MeleeWeaponTestPhase.Done) {
                     results.Add(session.Result);
+                    pocketMapCooldownUntilTick = Find.TickManager.TicksGame + 120;
                     return true;
                 }
                 return false;
@@ -510,40 +533,103 @@ namespace LogSyncMod.AutoTest
                 relativeSubdirectory: "fail");
         }
 
+        private bool TryCaptureRangedWeaponScreenshot(RangedWeaponTestSession session, bool force)
+        {
+            if (session == null) return false;
+            if (force) return TryCaptureRangedWeaponFailureScreenshot(session);
+            return TryCaptureRangedWeaponStageScreenshot(session, session.Result?.Status ?? session.Phase.ToString(), force: false, allowCapture: session.AllowScreenshots);
+        }
+
+        private bool TryCaptureRangedWeaponStageScreenshot(RangedWeaponTestSession session, string stageSuffix, bool force, bool allowCapture)
+        {
+            if (session == null || screenshotService == null || session.TestMap == null || !Find.Maps.Contains(session.TestMap)) return false;
+            return screenshotService.TryCaptureMap(
+                session.Result,
+                allowCapture,
+                force,
+                screenshotService.ResolveTurretResultIndex(results, activeRangedWeaponSessions.IndexOf(session)),
+                stageSuffix,
+                () => FocusRangedWeaponScreenshotMap(session));
+        }
+
+        private bool TryCaptureRangedWeaponFailureScreenshot(RangedWeaponTestSession session)
+        {
+            if (session == null || screenshotService == null || session.TestMap == null || !Find.Maps.Contains(session.TestMap)) return false;
+            return screenshotService.TryCaptureMap(
+                session.Result,
+                allowCapture: true,
+                force: true,
+                resultIndex: screenshotService.ResolveTurretResultIndex(results, activeRangedWeaponSessions.IndexOf(session)),
+                stageSuffix: session.Result?.Status ?? "failed",
+                prepare: () => FocusPocketMapOverview(session.TestMap),
+                relativeSubdirectory: "fail");
+        }
+
+        private bool TryCaptureMeleeWeaponScreenshot(MeleeWeaponTestSession session, bool force)
+        {
+            if (session == null) return false;
+            if (force) return TryCaptureMeleeWeaponFailureScreenshot(session);
+            return TryCaptureMeleeWeaponStageScreenshot(session, session.Result?.Status ?? session.Phase.ToString(), force: false, allowCapture: session.AllowScreenshots);
+        }
+
+        private bool TryCaptureMeleeWeaponStageScreenshot(MeleeWeaponTestSession session, string stageSuffix, bool force, bool allowCapture)
+        {
+            if (session == null || screenshotService == null || session.TestMap == null || !Find.Maps.Contains(session.TestMap)) return false;
+            return screenshotService.TryCaptureMap(
+                session.Result,
+                allowCapture,
+                force,
+                screenshotService.ResolveTurretResultIndex(results, activeMeleeWeaponSessions.IndexOf(session)),
+                stageSuffix,
+                () => FocusMeleeWeaponScreenshotMap(session));
+        }
+
+        private bool TryCaptureMeleeWeaponFailureScreenshot(MeleeWeaponTestSession session)
+        {
+            if (session == null || screenshotService == null || session.TestMap == null || !Find.Maps.Contains(session.TestMap)) return false;
+            return screenshotService.TryCaptureMap(
+                session.Result,
+                allowCapture: true,
+                force: true,
+                resultIndex: screenshotService.ResolveTurretResultIndex(results, activeMeleeWeaponSessions.IndexOf(session)),
+                stageSuffix: session.Result?.Status ?? "failed",
+                prepare: () => FocusPocketMapOverview(session.TestMap),
+                relativeSubdirectory: "fail");
+        }
+
+        private bool TryCaptureMeleeActionScreenshot(MeleeWeaponTestSession session)
+        {
+            if (session == null || screenshotService == null) return false;
+
+            return screenshotService.TryCaptureMap(
+                session.Result,
+                allowCapture: true,
+                force: true,
+                resultIndex: screenshotService.ResolveTurretResultIndex(results, activeMeleeWeaponSessions.IndexOf(session)),
+                stageSuffix: "action_t15",
+                prepare: () => FocusMeleeAction(session));
+        }
+
         private bool FocusTurretScreenshotMap(TurretTestSession session)
         {
-            if (session?.TestMap == null || !Find.Maps.Contains(session.TestMap))
-            {
-                return false;
-            }
+            if (session?.TestMap == null || !Find.Maps.Contains(session.TestMap)) return false;
 
             try
             {
-                if (Current.Game != null)
-                {
-                    Current.Game.CurrentMap = session.TestMap;
-                }
-
+                if (Current.Game != null) Current.Game.CurrentMap = session.TestMap;
                 CameraDriver cameraDriver = Find.CameraDriver;
-                if (cameraDriver == null)
-                {
-                    return false;
-                }
+                if (cameraDriver == null) return false;
 
                 float aspect = ResolveTurretScreenshotAspect(cameraDriver);
-                if (TryResolveTurretScreenshotView(session, aspect, out Vector3 rootPos, out float rootSize))
+                if (TryResolveTurretScreenshotView(session, aspect, out Vector3 targetPos, out float rootSize))
                 {
-                    IntVec3 focusCell = new IntVec3(
-                        Mathf.Clamp(Mathf.RoundToInt(rootPos.x), 0, session.TestMap.Size.x - 1),
-                        0,
-                        Mathf.Clamp(Mathf.RoundToInt(rootPos.z), 0, session.TestMap.Size.z - 1));
-                    cameraDriver.JumpToCurrentMapLoc(focusCell);
-                    cameraDriver.SetRootPosAndSize(rootPos, rootSize);
+                    // 显式重置 Y 轴高度并使用 SetRootPosAndSize，确保相机位于地图上方并重新计算正确的 Y 轴。
+                    cameraDriver.SetRootPosAndSize(new Vector3(targetPos.x, 65f, targetPos.z), rootSize);
                 }
                 else
                 {
-                    IntVec3 focusCell = session.SpawnedTurret?.Position ?? session.TestMap.Center;
-                    cameraDriver.JumpToCurrentMapLoc(focusCell);
+                    Vector3 center = ToMapWorldCenter(session.SpawnedTurret?.Position ?? session.TestMap.Center);
+                    cameraDriver.SetRootPosAndSize(new Vector3(center.x, 65f, center.z), TurretScreenshotMinRootSize);
                 }
 
                 return true;
@@ -556,42 +642,105 @@ namespace LogSyncMod.AutoTest
             }
         }
 
-        private string BuildThingSummary(IEnumerable<Thing> things)
+        private bool FocusRangedWeaponScreenshotMap(RangedWeaponTestSession session)
         {
-            return string.Join(
-                ", ",
-                things.Where(thing => thing != null)
-                    .Select(thing => thing.def.defName + "x" + thing.stackCount)
-                    .ToArray());
+            if (session?.TestMap == null || !Find.Maps.Contains(session.TestMap)) return false;
+
+            try
+            {
+                if (Current.Game != null) Current.Game.CurrentMap = session.TestMap;
+
+                CameraDriver cameraDriver = Find.CameraDriver;
+                if (cameraDriver == null) return false;
+
+                float aspect = ResolveTurretScreenshotAspect(cameraDriver);
+                if (TryResolveRangedWeaponScreenshotView(session, aspect, out Vector3 targetPos, out float rootSize))
+                {
+                    cameraDriver.SetRootPosAndSize(new Vector3(targetPos.x, 65f, targetPos.z), rootSize);
+                }
+                else
+                {
+                    Vector3 center = ToMapWorldCenter(session.ShooterPawn?.Position ?? session.TestMap.Center);
+                    cameraDriver.SetRootPosAndSize(new Vector3(center.x, 65f, center.z), TurretScreenshotMinRootSize);
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                session.Result.Notes = AppendNote(session.Result.Notes, "RangedScreenshotFocusError=" + TrimForNote(ex.Message));
+                Log.Warning("[LogSyncAutoTest] Ranged screenshot focus failed for " + session.Result.DefName + ": " + ex.Message);
+                return false;
+            }
+        }
+
+        private bool FocusMeleeWeaponScreenshotMap(MeleeWeaponTestSession session)
+        {
+            if (session?.TestMap == null || !Find.Maps.Contains(session.TestMap)) return false;
+
+            try
+            {
+                if (Current.Game != null) Current.Game.CurrentMap = session.TestMap;
+
+                CameraDriver cameraDriver = Find.CameraDriver;
+                if (cameraDriver == null) return false;
+
+                if (TryResolveMeleeWeaponScreenshotView(session, out Vector3 targetPos, out float rootSize))
+                {
+                    cameraDriver.SetRootPosAndSize(new Vector3(targetPos.x, 65f, targetPos.z), rootSize);
+                }
+                else
+                {
+                    Vector3 center = ToMapWorldCenter(session.ShooterPawn?.Position ?? session.TestMap.Center);
+                    cameraDriver.SetRootPosAndSize(new Vector3(center.x, 65f, center.z), 11f);
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                session.Result.Notes = AppendNote(session.Result.Notes, "MeleeScreenshotFocusError=" + TrimForNote(ex.Message));
+                Log.Warning("[LogSyncAutoTest] Melee screenshot focus failed for " + session.Result.DefName + ": " + ex.Message);
+                return false;
+            }
+        }
+
+        private void FocusMeleeAction(MeleeWeaponTestSession session)
+        {
+            if (session?.ShooterPawn == null || session.TestMap == null) return;
+
+            try
+            {
+                if (Current.Game != null) Current.Game.CurrentMap = session.TestMap;
+
+                CameraDriver cameraDriver = Find.CameraDriver;
+                if (cameraDriver == null) return;
+
+                Vector3 center = session.ShooterPawn.DrawPos;
+                cameraDriver.SetRootPosAndSize(new Vector3(center.x, 65f, center.z), 11f);
+            }
+            catch (Exception ex)
+            {
+                Log.Warning("[LogSyncAutoTest] Melee action focus failed: " + ex.Message);
+            }
         }
 
         private bool FocusPocketMapOverview(Map targetMap)
         {
-            if (targetMap == null || !Find.Maps.Contains(targetMap))
-            {
-                return false;
-            }
+            if (targetMap == null || !Find.Maps.Contains(targetMap)) return false;
 
             try
             {
-                if (Current.Game != null)
-                {
-                    Current.Game.CurrentMap = targetMap;
-                }
-
+                if (Current.Game != null) Current.Game.CurrentMap = targetMap;
                 CameraDriver cameraDriver = Find.CameraDriver;
-                if (cameraDriver == null)
-                {
-                    return false;
-                }
+                if (cameraDriver == null) return false;
 
                 float aspect = ResolveTurretScreenshotAspect(cameraDriver);
-                Vector3 rootPos = ToMapWorldCenter(targetMap.Center);
                 float normalizedAspect = aspect > 0.01f ? aspect : DefaultTurretScreenshotAspect;
                 float rootSize = Mathf.Max(targetMap.Size.z * 0.58f, (targetMap.Size.x / normalizedAspect) * 0.58f);
                 rootSize = Mathf.Max(rootSize, TurretScreenshotMaxRootSize);
-                cameraDriver.JumpToCurrentMapLoc(targetMap.Center);
-                cameraDriver.SetRootPosAndSize(rootPos, rootSize);
+
+                cameraDriver.SetRootPosAndSize(new Vector3(targetMap.Center.x, 65f, targetMap.Center.z), rootSize);
                 return true;
             }
             catch (Exception ex)
@@ -675,6 +824,30 @@ namespace LogSyncMod.AutoTest
             return true;
         }
 
+        private bool TryResolveMeleeWeaponScreenshotView(MeleeWeaponTestSession session, out Vector3 rootPos, out float rootSize)
+        {
+            rootPos = default;
+            rootSize = 11f; // 固定 11.0 缩放防止 CameraPlus 翻转
+
+            if (session?.ShooterPawn == null || session.ShooterPawn.Destroyed)
+            {
+                return false;
+            }
+
+            Vector3 shooterPos = session.ShooterPawn.DrawPos;
+            Pawn targetPawn = session.EnemyPawns?.Where(p => p != null && !p.Destroyed && p.Spawned && p.Map == session.TestMap).OrderBy(p => p.Position.DistanceToSquared(session.ShooterPawn.Position)).FirstOrDefault();
+
+            if (targetPawn == null || targetPawn.Destroyed)
+            {
+                rootPos = shooterPos;
+                return true;
+            }
+
+            Vector3 targetPos = targetPawn.DrawPos;
+            rootPos = (shooterPos + targetPos) * 0.5f;
+            return true;
+        }
+
         private static Pawn ResolveTurretScreenshotTarget(TurretTestSession session)
         {
             if (session?.SpawnedTurret == null || session.EnemyPawns == null)
@@ -692,7 +865,7 @@ namespace LogSyncMod.AutoTest
 
         private static Vector3 ToMapWorldCenter(IntVec3 cell)
         {
-            return new Vector3(cell.x + 0.5f, 0f, cell.z + 0.5f);
+            return cell.ToVector3Shifted();
         }
 
         private static void ConfigureTestPawnCombatStats(Pawn pawn)
@@ -807,7 +980,90 @@ namespace LogSyncMod.AutoTest
             return LocalTargetInfo.Invalid;
         }
 
+        private bool TryResolveRangedWeaponScreenshotView(RangedWeaponTestSession session, float aspect, out Vector3 rootPos, out float rootSize)
+        {
+            if (TryGetStageScreenshotOverride(session, out rootPos, out rootSize))
+            {
+                return true;
+            }
+
+            rootPos = default;
+            bool useCameraPlusZoom = IsCameraPlusActive();
+            float minRootSize = useCameraPlusZoom ? TurretScreenshotCameraPlusMinRootSize : TurretScreenshotMinRootSize;
+            float maxRootSize = useCameraPlusZoom ? TurretScreenshotCameraPlusMaxRootSize : TurretScreenshotMaxRootSize;
+            float cellMargin = useCameraPlusZoom ? TurretScreenshotCameraPlusCellMargin : TurretScreenshotCellMargin;
+            if (session?.ShooterPawn == null || session.ShooterPawn.Destroyed)
+            {
+                rootSize = minRootSize;
+                return false;
+            }
+
+            Vector3 shooterPos = ToMapWorldCenter(session.ShooterPawn.Position);
+            Pawn targetPawn = session.ResolvePrimaryTarget();
+            if (targetPawn == null)
+            {
+                rootPos = shooterPos;
+                rootSize = minRootSize;
+                return true;
+            }
+
+            Vector3 targetPos = ToMapWorldCenter(targetPawn.Position);
+            rootPos = (shooterPos + targetPos) * 0.5f;
+
+            float normalizedAspect = aspect > 0.01f ? aspect : DefaultTurretScreenshotAspect;
+            float halfWidth = Mathf.Abs(shooterPos.x - targetPos.x) * 0.5f + cellMargin;
+            float halfHeight = Mathf.Abs(shooterPos.z - targetPos.z) * 0.5f + cellMargin;
+            rootSize = Mathf.Clamp(Mathf.Max(halfHeight, halfWidth / normalizedAspect) * TurretScreenshotRangeScale, minRootSize, maxRootSize);
+            return true;
+        }
+
+        private bool TryResolveRangedWeaponProjectileFocusView(RangedWeaponTestSession session, Thing projectileThing, float aspect, out Vector3 rootPos, out float rootSize)
+        {
+            rootPos = default;
+            rootSize = TurretScreenshotMinRootSize;
+            if (session?.ShooterPawn == null || projectileThing == null)
+            {
+                return false;
+            }
+
+            LocalTargetInfo target = ResolveProjectileTargetInfo(projectileThing as Projectile);
+            if (!target.IsValid)
+            {
+                return false;
+            }
+
+            Vector3 shooterPos = ToMapWorldCenter(session.ShooterPawn.Position);
+            Vector3 targetPos = target.Thing != null ? target.Thing.DrawPos : ToMapWorldCenter(target.Cell);
+            bool useCameraPlusZoom = IsCameraPlusActive();
+            float minRootSize = useCameraPlusZoom ? TurretScreenshotCameraPlusMinRootSize : TurretScreenshotMinRootSize;
+            float maxRootSize = useCameraPlusZoom ? TurretScreenshotCameraPlusMaxRootSize : TurretScreenshotMaxRootSize;
+            float cellMargin = useCameraPlusZoom ? TurretScreenshotCameraPlusCellMargin : TurretScreenshotCellMargin;
+            float normalizedAspect = aspect > 0.01f ? aspect : DefaultTurretScreenshotAspect;
+
+            rootPos = (shooterPos + targetPos) * 0.5f;
+
+            float halfWidth = Mathf.Abs(shooterPos.x - targetPos.x) * 0.5f + cellMargin;
+            float halfHeight = Mathf.Abs(shooterPos.z - targetPos.z) * 0.5f + cellMargin;
+            rootSize = Mathf.Clamp(Mathf.Max(halfHeight, halfWidth / normalizedAspect) * TurretScreenshotRangeScale, minRootSize, maxRootSize);
+            return true;
+        }
+
         private static bool TryGetStageScreenshotOverride(TurretTestSession session, out Vector3 rootPos, out float rootSize)
+        {
+            rootPos = default;
+            rootSize = 0f;
+
+            if (session?.ActiveStageScreenshot?.FocusRootPos == null || session.ActiveStageScreenshot.FocusRootSize == null)
+            {
+                return false;
+            }
+
+            rootPos = session.ActiveStageScreenshot.FocusRootPos.Value;
+            rootSize = session.ActiveStageScreenshot.FocusRootSize.Value;
+            return true;
+        }
+
+        private static bool TryGetStageScreenshotOverride(RangedWeaponTestSession session, out Vector3 rootPos, out float rootSize)
         {
             rootPos = default;
             rootSize = 0f;
@@ -845,6 +1101,15 @@ namespace LogSyncMod.AutoTest
             cameraPlusActive = LoadedModManager.RunningMods.Any(mod =>
                 string.Equals(mod.PackageIdPlayerFacing, "brrainz.cameraplus", StringComparison.OrdinalIgnoreCase));
             return cameraPlusActive.Value;
+        }
+
+        private string BuildThingSummary(IEnumerable<Thing> things)
+        {
+            return string.Join(
+                ", ",
+                things.Where(thing => thing != null)
+                    .Select(thing => thing.def.defName + "x" + thing.stackCount)
+                    .ToArray());
         }
 
         private static string SafeDefName(Def def)

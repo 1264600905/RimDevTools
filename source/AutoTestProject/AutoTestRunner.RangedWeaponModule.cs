@@ -23,17 +23,6 @@ namespace LogSyncMod.AutoTest
             private const int ScreenshotFocusWaitTicks = 6;
             private const int ScreenshotWaitTicks = 10;
 
-            internal sealed class StageScreenshotRequest
-            {
-                public string StageSuffix;
-                public bool Force;
-                public bool AllowCapture;
-                public Vector3? FocusRootPos;
-                public float? FocusRootSize;
-                public int FocusDelayTicks;
-                public bool PrimeOnly;
-            }
-
             private readonly AutoTestRunner owner;
             private readonly Queue<StageScreenshotRequest> pendingStageScreenshots = new Queue<StageScreenshotRequest>();
             private int pendingStageScreenshotDelayTicks;
@@ -225,7 +214,8 @@ namespace LogSyncMod.AutoTest
                     return;
                 }
 
-                GenSpawn.Spawn(ShooterPawn, TestMap.Center, TestMap);
+                IntVec3 spawnPos = new IntVec3(Mathf.RoundToInt(TestMap.Size.x * 0.375f), 0, TestMap.Size.z / 2);
+                GenSpawn.Spawn(ShooterPawn, spawnPos, TestMap);
                 ConfigureTestPawnCombatStats(ShooterPawn);
                 ShooterPawn.Name = new NameSingle("自动测试射手");
                 if (ShooterPawn.drafter != null)
@@ -423,22 +413,30 @@ namespace LogSyncMod.AutoTest
 
                 CellRect safeRect = CellRect.FromLimits(5, 5, TestMap.Size.x - 6, TestMap.Size.z - 6);
                 IntVec3 shooterCell = ShooterPawn.Position;
-                IntVec3 forward = new IntVec3(0, 0, 1);
-                IntVec3 lateral = new IntVec3(1, 0, 0);
+                IntVec3 forward = new IntVec3(1, 0, 0);
+                IntVec3 lateral = new IntVec3(0, 0, 1);
+
                 int maxDistance = MaxDistanceInSafeRect(shooterCell, forward, safeRect);
-                int targetDistance = Mathf.Min(Mathf.Max(2, Mathf.FloorToInt(range) - 1), maxDistance);
+                int preferredDistance = Mathf.RoundToInt(Mathf.Min(range * 0.8f, TestMap.Size.x * 0.5f));
+                int targetDistance = Mathf.Clamp(preferredDistance, 5, maxDistance);
+
                 if (targetDistance < 2)
                 {
                     return result;
                 }
 
-                IntVec3 anchor = shooterCell + forward * targetDistance;
+                IntVec3 anchor = new IntVec3(Mathf.RoundToInt(TestMap.Size.x * 0.625f), 0, TestMap.Size.z / 2);
                 int lateralRadius = Mathf.Max(count, 3);
                 List<IntVec3> candidates = new List<IntVec3>();
                 for (int offset = -lateralRadius; offset <= lateralRadius; offset++)
                 {
                     IntVec3 candidate = anchor + lateral * offset;
                     if (!candidate.InBounds(TestMap) || !safeRect.Contains(candidate))
+                    {
+                        continue;
+                    }
+
+                    if (candidate.z < 15 || candidate.z > 35)
                     {
                         continue;
                     }
@@ -456,7 +454,7 @@ namespace LogSyncMod.AutoTest
                     candidates.Add(candidate);
                 }
 
-                foreach (IntVec3 candidate in candidates.OrderBy(cell => Mathf.Abs(cell.x - anchor.x)))
+                foreach (IntVec3 candidate in candidates.OrderBy(cell => Mathf.Abs(cell.z - anchor.z)))
                 {
                     if (result.Count >= count)
                     {
@@ -1142,170 +1140,6 @@ namespace LogSyncMod.AutoTest
                 def.IsWeapon &&
                 def.IsRangedWeapon &&
                 MatchesSpecFilters(AutoTestKind.RangedWeaponPocketMap, def);
-        }
-
-        private bool TryCaptureRangedWeaponScreenshot(RangedWeaponTestSession session, bool force)
-        {
-            if (session == null)
-            {
-                return false;
-            }
-
-            if (force)
-            {
-                return TryCaptureRangedWeaponFailureScreenshot(session);
-            }
-
-            return TryCaptureRangedWeaponStageScreenshot(session, session.Result?.Status ?? session.Phase.ToString(), force: false, allowCapture: session.AllowScreenshots);
-        }
-
-        private bool TryCaptureRangedWeaponStageScreenshot(RangedWeaponTestSession session, string stageSuffix, bool force, bool allowCapture)
-        {
-            if (session == null || screenshotService == null || session.TestMap == null || !Find.Maps.Contains(session.TestMap))
-            {
-                return false;
-            }
-
-            return screenshotService.TryCaptureMap(session.Result, allowCapture, force, screenshotService.ResolveTurretResultIndex(results, activeRangedWeaponSessions.IndexOf(session)), stageSuffix, () => FocusRangedWeaponScreenshotMap(session));
-        }
-
-        private bool TryCaptureRangedWeaponFailureScreenshot(RangedWeaponTestSession session)
-        {
-            if (session == null || screenshotService == null || session.TestMap == null || !Find.Maps.Contains(session.TestMap))
-            {
-                return false;
-            }
-
-            return screenshotService.TryCaptureMap(
-                session.Result,
-                allowCapture: true,
-                force: true,
-                resultIndex: screenshotService.ResolveTurretResultIndex(results, activeRangedWeaponSessions.IndexOf(session)),
-                stageSuffix: session.Result?.Status ?? "failed",
-                prepare: () => FocusPocketMapOverview(session.TestMap),
-                relativeSubdirectory: "fail");
-        }
-
-        private bool FocusRangedWeaponScreenshotMap(RangedWeaponTestSession session)
-        {
-            if (session?.TestMap == null || !Find.Maps.Contains(session.TestMap))
-            {
-                return false;
-            }
-
-            try
-            {
-                if (Current.Game != null)
-                {
-                    Current.Game.CurrentMap = session.TestMap;
-                }
-
-                CameraDriver cameraDriver = Find.CameraDriver;
-                if (cameraDriver == null)
-                {
-                    return false;
-                }
-
-                float aspect = ResolveTurretScreenshotAspect(cameraDriver);
-                if (TryResolveRangedWeaponScreenshotView(session, aspect, out Vector3 rootPos, out float rootSize))
-                {
-                    IntVec3 focusCell = new IntVec3(Mathf.Clamp(Mathf.RoundToInt(rootPos.x), 0, session.TestMap.Size.x - 1), 0, Mathf.Clamp(Mathf.RoundToInt(rootPos.z), 0, session.TestMap.Size.z - 1));
-                    cameraDriver.JumpToCurrentMapLoc(focusCell);
-                    cameraDriver.SetRootPosAndSize(rootPos, rootSize);
-                }
-                else
-                {
-                    cameraDriver.JumpToCurrentMapLoc(session.ShooterPawn?.Position ?? session.TestMap.Center);
-                }
-
-                return true;
-            }
-            catch (Exception ex)
-            {
-                session.Result.Notes = AppendNote(session.Result.Notes, "RangedScreenshotFocusError=" + TrimForNote(ex.Message));
-                Log.Warning("[LogSyncAutoTest] Ranged screenshot focus failed for " + session.Result.DefName + ": " + ex.Message);
-                return false;
-            }
-        }
-
-        private bool TryResolveRangedWeaponScreenshotView(RangedWeaponTestSession session, float aspect, out Vector3 rootPos, out float rootSize)
-        {
-            if (TryGetStageScreenshotOverride(session, out rootPos, out rootSize))
-            {
-                return true;
-            }
-
-            rootPos = default;
-            bool useCameraPlusZoom = IsCameraPlusActive();
-            float minRootSize = useCameraPlusZoom ? TurretScreenshotCameraPlusMinRootSize : TurretScreenshotMinRootSize;
-            float maxRootSize = useCameraPlusZoom ? TurretScreenshotCameraPlusMaxRootSize : TurretScreenshotMaxRootSize;
-            float cellMargin = useCameraPlusZoom ? TurretScreenshotCameraPlusCellMargin : TurretScreenshotCellMargin;
-            if (session?.ShooterPawn == null || session.ShooterPawn.Destroyed)
-            {
-                rootSize = minRootSize;
-                return false;
-            }
-
-            Vector3 shooterPos = ToMapWorldCenter(session.ShooterPawn.Position);
-            Pawn targetPawn = session.ResolvePrimaryTarget();
-            if (targetPawn == null)
-            {
-                rootPos = shooterPos;
-                rootSize = minRootSize;
-                return true;
-            }
-
-            Vector3 targetPos = ToMapWorldCenter(targetPawn.Position);
-            rootPos = (shooterPos + targetPos) * 0.5f;
-            float normalizedAspect = aspect > 0.01f ? aspect : DefaultTurretScreenshotAspect;
-            float halfWidth = Mathf.Abs(shooterPos.x - targetPos.x) * 0.5f + cellMargin;
-            float halfHeight = Mathf.Abs(shooterPos.z - targetPos.z) * 0.5f + cellMargin;
-            rootSize = Mathf.Clamp(Mathf.Max(halfHeight, halfWidth / normalizedAspect) * TurretScreenshotRangeScale, minRootSize, maxRootSize);
-            return true;
-        }
-
-        private bool TryResolveRangedWeaponProjectileFocusView(RangedWeaponTestSession session, Thing projectileThing, float aspect, out Vector3 rootPos, out float rootSize)
-        {
-            rootPos = default;
-            rootSize = TurretScreenshotMinRootSize;
-            if (session?.ShooterPawn == null || projectileThing == null)
-            {
-                return false;
-            }
-
-            LocalTargetInfo target = ResolveProjectileTargetInfo(projectileThing as Projectile);
-            if (!target.IsValid)
-            {
-                return false;
-            }
-
-            Vector3 shooterPos = ToMapWorldCenter(session.ShooterPawn.Position);
-            Vector3 targetPos = target.Thing != null ? target.Thing.DrawPos : ToMapWorldCenter(target.Cell);
-            bool useCameraPlusZoom = IsCameraPlusActive();
-            float minRootSize = useCameraPlusZoom ? TurretScreenshotCameraPlusMinRootSize : TurretScreenshotMinRootSize;
-            float maxRootSize = useCameraPlusZoom ? TurretScreenshotCameraPlusMaxRootSize : TurretScreenshotMaxRootSize;
-            float cellMargin = useCameraPlusZoom ? TurretScreenshotCameraPlusCellMargin : TurretScreenshotCellMargin;
-            float normalizedAspect = aspect > 0.01f ? aspect : DefaultTurretScreenshotAspect;
-
-            rootPos = (shooterPos + targetPos) * 0.5f;
-            float halfWidth = Mathf.Abs(shooterPos.x - targetPos.x) * 0.5f + cellMargin;
-            float halfHeight = Mathf.Abs(shooterPos.z - targetPos.z) * 0.5f + cellMargin;
-            rootSize = Mathf.Clamp(Mathf.Max(halfHeight, halfWidth / normalizedAspect) * TurretScreenshotRangeScale, minRootSize, maxRootSize);
-            return true;
-        }
-
-        private static bool TryGetStageScreenshotOverride(RangedWeaponTestSession session, out Vector3 rootPos, out float rootSize)
-        {
-            rootPos = default;
-            rootSize = 0f;
-            if (session?.ActiveStageScreenshot?.FocusRootPos == null || session.ActiveStageScreenshot.FocusRootSize == null)
-            {
-                return false;
-            }
-
-            rootPos = session.ActiveStageScreenshot.FocusRootPos.Value;
-            rootSize = session.ActiveStageScreenshot.FocusRootSize.Value;
-            return true;
         }
     }
 }

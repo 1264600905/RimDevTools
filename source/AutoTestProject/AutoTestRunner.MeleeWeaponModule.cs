@@ -43,6 +43,7 @@ namespace LogSyncMod.AutoTest
             public bool FinalScreenshotRequested;
             public bool FinalScreenshotForce;
             public bool FinalScreenshotCaptured;
+            public bool ActionScreenshotCaptured;
             public bool AllowScreenshots;
             public bool SearchAndDestroyEnabled;
             public string SearchAndDestroyStatus = string.Empty;
@@ -200,8 +201,32 @@ namespace LogSyncMod.AutoTest
                     return;
                 }
 
-                GenSpawn.Spawn(ShooterPawn, TestMap.Center, TestMap);
+                IntVec3 spawnPos = new IntVec3(Mathf.RoundToInt(TestMap.Size.x * 0.375f), 0, TestMap.Size.z / 2);
+                GenSpawn.Spawn(ShooterPawn, spawnPos, TestMap);
                 ConfigureTestPawnCombatStats(ShooterPawn);
+
+                // 穿上传奇品质的海军装备
+                try
+                {
+                    ShooterPawn.apparel?.DestroyAll();
+
+                    ThingDef armorDef = ThingDef.Named("Apparel_PowerArmor");
+                    ThingDef helmetDef = ThingDef.Named("Apparel_PowerArmorHelmet");
+
+                    Apparel armor = ThingMaker.MakeThing(armorDef) as Apparel;
+                    Apparel helmet = ThingMaker.MakeThing(helmetDef) as Apparel;
+
+                    armor.TryGetComp<CompQuality>()?.SetQuality(QualityCategory.Legendary, ArtGenerationContext.Colony);
+                    helmet.TryGetComp<CompQuality>()?.SetQuality(QualityCategory.Legendary, ArtGenerationContext.Colony);
+
+                    ShooterPawn.apparel?.Wear(armor);
+                    ShooterPawn.apparel?.Wear(helmet);
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning("[LogSyncAutoTest] Failed to equip legendary marine gear: " + ex.Message);
+                }
+
                 ShooterPawn.Name = new NameSingle("自动测试近战员");
                 if (ShooterPawn.drafter != null)
                 {
@@ -296,8 +321,9 @@ namespace LogSyncMod.AutoTest
                 }
 
                 CellRect safeRect = CellRect.FromLimits(5, 5, TestMap.Size.x - 6, TestMap.Size.z - 6);
-                IntVec3 shooterCell = ShooterPawn.Position;
-                IntVec3 anchor = shooterCell + new IntVec3(0, 0, 8);
+                // 敌人生成在地图 X 轴 5/8 处 (31.25)
+                IntVec3 anchor = new IntVec3(Mathf.RoundToInt(TestMap.Size.x * 0.625f), 0, TestMap.Size.z / 2);
+                // 纵向分布偏移
                 int[] lateralOffsets = { 0, -1, 1, -2, 2, -3, 3 };
 
                 foreach (int offset in lateralOffsets)
@@ -307,7 +333,7 @@ namespace LogSyncMod.AutoTest
                         break;
                     }
 
-                    IntVec3 candidate = anchor + new IntVec3(offset, 0, 0);
+                    IntVec3 candidate = anchor + new IntVec3(0, 0, offset);
                     if (!candidate.InBounds(TestMap) || !safeRect.Contains(candidate))
                     {
                         continue;
@@ -350,6 +376,22 @@ namespace LogSyncMod.AutoTest
             private void UpdateObservationPhase()
             {
                 EnsureShooterAttacking();
+
+                if (!ActionScreenshotCaptured)
+                {
+                    int startDelay = (FirstKillTick != -1) ? ObservationTicks : PostDamageObservationTicks;
+                    int elapsed = startDelay - DelayTicks;
+
+                    if (elapsed == 10)
+                    {
+                        owner.FocusMeleeAction(this);
+                    }
+                    else if (elapsed >= 15)
+                    {
+                        owner.TryCaptureMeleeActionScreenshot(this);
+                        ActionScreenshotCaptured = true;
+                    }
+                }
 
                 if (DelayTicks > 0)
                 {
@@ -682,121 +724,6 @@ namespace LogSyncMod.AutoTest
                 def.IsWeapon &&
                 def.IsMeleeWeapon &&
                 MatchesSpecFilters(AutoTestKind.MeleeWeaponPocketMap, def);
-        }
-
-        private bool TryCaptureMeleeWeaponScreenshot(MeleeWeaponTestSession session, bool force)
-        {
-            if (session == null)
-            {
-                return false;
-            }
-
-            if (force)
-            {
-                return TryCaptureMeleeWeaponFailureScreenshot(session);
-            }
-
-            return TryCaptureMeleeWeaponStageScreenshot(session, session.Result?.Status ?? session.Phase.ToString(), force: false, allowCapture: session.AllowScreenshots);
-        }
-
-        private bool TryCaptureMeleeWeaponStageScreenshot(MeleeWeaponTestSession session, string stageSuffix, bool force, bool allowCapture)
-        {
-            if (session == null || screenshotService == null || session.TestMap == null || !Find.Maps.Contains(session.TestMap))
-            {
-                return false;
-            }
-
-            return screenshotService.TryCaptureMap(session.Result, allowCapture, force, screenshotService.ResolveTurretResultIndex(results, activeMeleeWeaponSessions.IndexOf(session)), stageSuffix, () => FocusMeleeWeaponScreenshotMap(session));
-        }
-
-        private bool TryCaptureMeleeWeaponFailureScreenshot(MeleeWeaponTestSession session)
-        {
-            if (session == null || screenshotService == null || session.TestMap == null || !Find.Maps.Contains(session.TestMap))
-            {
-                return false;
-            }
-
-            return screenshotService.TryCaptureMap(
-                session.Result,
-                allowCapture: true,
-                force: true,
-                resultIndex: screenshotService.ResolveTurretResultIndex(results, activeMeleeWeaponSessions.IndexOf(session)),
-                stageSuffix: session.Result?.Status ?? "failed",
-                prepare: () => FocusPocketMapOverview(session.TestMap),
-                relativeSubdirectory: "fail");
-        }
-
-        private bool FocusMeleeWeaponScreenshotMap(MeleeWeaponTestSession session)
-        {
-            if (session?.TestMap == null || !Find.Maps.Contains(session.TestMap))
-            {
-                return false;
-            }
-
-            try
-            {
-                if (Current.Game != null)
-                {
-                    Current.Game.CurrentMap = session.TestMap;
-                }
-
-                CameraDriver cameraDriver = Find.CameraDriver;
-                if (cameraDriver == null)
-                {
-                    return false;
-                }
-
-                if (!TryResolveMeleeWeaponScreenshotView(session, out Vector3 rootPos, out float rootSize))
-                {
-                    return FocusPocketMapOverview(session.TestMap);
-                }
-
-                IntVec3 focusCell = new IntVec3(
-                    Mathf.Clamp(Mathf.RoundToInt(rootPos.x), 0, session.TestMap.Size.x - 1),
-                    0,
-                    Mathf.Clamp(Mathf.RoundToInt(rootPos.z), 0, session.TestMap.Size.z - 1));
-                cameraDriver.JumpToCurrentMapLoc(focusCell);
-                cameraDriver.SetRootPosAndSize(rootPos, rootSize);
-                return true;
-            }
-            catch (Exception ex)
-            {
-                session.Result.Notes = AppendNote(session.Result.Notes, "MeleeScreenshotFocusError=" + TrimForNote(ex.Message));
-                Log.Warning("[LogSyncAutoTest] Melee screenshot focus failed for " + session.Result.DefName + ": " + ex.Message);
-                return false;
-            }
-        }
-
-        private static bool TryResolveMeleeWeaponScreenshotView(MeleeWeaponTestSession session, out Vector3 rootPos, out float rootSize)
-        {
-            rootPos = default;
-            rootSize = 0f;
-
-            if (session?.ShooterPawn == null || session.ShooterPawn.Destroyed)
-            {
-                return false;
-            }
-
-            Vector3 shooterPos = session.ShooterPawn.DrawPos;
-            Pawn targetPawn = session.ResolvePrimaryTarget();
-            if (targetPawn == null || targetPawn.Destroyed)
-            {
-                rootPos = shooterPos;
-                rootSize = 7f;
-                return true;
-            }
-
-            Vector3 targetPos = targetPawn.DrawPos;
-            Vector3 midpoint = new Vector3(
-                (shooterPos.x + targetPos.x) * 0.5f,
-                0f,
-                (shooterPos.z + targetPos.z) * 0.5f);
-            float dx = Mathf.Abs(shooterPos.x - targetPos.x);
-            float dz = Mathf.Abs(shooterPos.z - targetPos.z);
-            float diameter = Mathf.Max(dx, dz) + 6f;
-            rootPos = midpoint;
-            rootSize = Mathf.Clamp(diameter, 6f, 14f);
-            return true;
         }
     }
 }

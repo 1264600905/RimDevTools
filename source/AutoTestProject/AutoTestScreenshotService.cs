@@ -111,6 +111,7 @@ namespace LogSyncMod.AutoTest
             try
             {
                 prepare?.Invoke();
+
                 string screenshotDirectory = string.IsNullOrWhiteSpace(relativeSubdirectory)
                     ? runArtifacts.ScreenshotDirectory
                     : Path.Combine(runArtifacts.ScreenshotDirectory, relativeSubdirectory);

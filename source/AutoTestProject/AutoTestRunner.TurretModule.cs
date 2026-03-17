@@ -23,17 +23,6 @@ namespace LogSyncMod.AutoTest
             private const int ScreenshotFocusWaitTicks = 6;
             private const int ScreenshotWaitTicks = 10;
 
-            internal sealed class StageScreenshotRequest
-            {
-                public string StageSuffix;
-                public bool Force;
-                public bool AllowCapture;
-                public Vector3? FocusRootPos;
-                public float? FocusRootSize;
-                public int FocusDelayTicks;
-                public bool PrimeOnly;
-            }
-
             private readonly AutoTestRunner owner;
 
             public Map TestMap;
@@ -151,7 +140,9 @@ namespace LogSyncMod.AutoTest
                             LogMapState("before_spawn_turret");
                             ThingDef turretStuff = owner.ResolveStuff(TurretDef);
                             Thing turretThing = ThingMaker.MakeThing(TurretDef, turretStuff);
-                            SpawnedTurret = turretThing != null ? GenSpawn.Spawn(turretThing, TestMap.Center, TestMap) : null;
+                            // 布局 3/8
+                            IntVec3 turretPos = new IntVec3(Mathf.RoundToInt(TestMap.Size.x * 0.375f), 0, TestMap.Size.z / 2);
+                            SpawnedTurret = turretThing != null ? GenSpawn.Spawn(turretThing, turretPos, TestMap) : null;
                             if (SpawnedTurret == null)
                             {
                                 Fail("failed_turret_spawn", "Turret returned null when spawning.");
@@ -466,7 +457,7 @@ namespace LogSyncMod.AutoTest
 
             private void PrepareTurretForCombat()
             {
-                Faction playerFaction = Faction.OfPlayer;
+                Faction playerFaction = Find.FactionManager.OfPlayer;
                 if (playerFaction == null)
                 {
                     Result.Notes = AppendNote(Result.Notes, "PlayerFactionMissing=True");
@@ -502,7 +493,7 @@ namespace LogSyncMod.AutoTest
                     return;
                 }
 
-                Faction playerFaction = Faction.OfPlayer;
+                Faction playerFaction = Find.FactionManager.OfPlayer;
                 if (playerFaction != null && PowerGenerator.def.CanHaveFaction && PowerGenerator.Faction != playerFaction)
                 {
                     PowerGenerator.SetFaction(playerFaction);
@@ -944,46 +935,36 @@ namespace LogSyncMod.AutoTest
                 }
 
                 IntVec3 turretCell = SpawnedTurret.Position;
-                IntVec3[] directions =
-                {
-                    new IntVec3(0, 0, 1),
-                    new IntVec3(1, 0, 0),
-                    new IntVec3(0, 0, -1),
-                    new IntVec3(-1, 0, 0)
-                };
+                IntVec3 forward = new IntVec3(1, 0, 0);
 
-                IntVec3 bestDirection = new IntVec3(0, 0, 1);
-                int bestDistance = -1;
-                foreach (IntVec3 direction in directions)
-                {
-                    int maxDistanceInSafeRect = MaxDistanceInSafeRect(turretCell, direction, safeRect);
-                    int candidateDistance = Mathf.Min(Mathf.RoundToInt(range * 0.7f), maxDistanceInSafeRect);
-                    if (candidateDistance > bestDistance)
-                    {
-                        bestDistance = candidateDistance;
-                        bestDirection = direction;
-                    }
-                }
+                int maxDistanceInSafeRect = MaxDistanceInSafeRect(turretCell, forward, safeRect);
+                int preferredDistance = Mathf.RoundToInt(Mathf.Min(range * 0.8f, TestMap.Size.x * 0.5f));
+                int targetDistance = Mathf.Clamp(preferredDistance, 5, maxDistanceInSafeRect);
 
-                if (bestDistance < 1)
+                if (targetDistance < 1)
                 {
                     return result;
                 }
 
-                int targetDistance = Mathf.Max(1, bestDistance);
-                IntVec3 anchor = turretCell + bestDirection * targetDistance;
+                // 布局 5/8
+                IntVec3 anchor = new IntVec3(Mathf.RoundToInt(TestMap.Size.x * 0.625f), 0, TestMap.Size.z / 2);
                 if (!anchor.InBounds(TestMap) || !safeRect.Contains(anchor))
                 {
                     return result;
                 }
 
-                IntVec3 lateral = new IntVec3(bestDirection.z, 0, -bestDirection.x);
+                IntVec3 lateral = new IntVec3(0, 0, 1);
                 int lateralRadius = Mathf.Max(count, 3);
                 List<IntVec3> candidates = new List<IntVec3>();
                 for (int offset = -lateralRadius; offset <= lateralRadius; offset++)
                 {
                     IntVec3 candidate = anchor + lateral * offset;
                     if (!candidate.InBounds(TestMap) || !safeRect.Contains(candidate))
+                    {
+                        continue;
+                    }
+
+                    if (candidate.z < 15 || candidate.z > 35)
                     {
                         continue;
                     }
@@ -1007,7 +988,7 @@ namespace LogSyncMod.AutoTest
                     candidates.Add(candidate);
                 }
 
-                foreach (IntVec3 candidate in candidates.OrderBy(cell => Mathf.Abs((cell - anchor).LengthHorizontalSquared)))
+                foreach (IntVec3 candidate in candidates.OrderBy(cell => Mathf.Abs(cell.z - anchor.z)))
                 {
                     if (result.Count >= count)
                     {
@@ -1074,7 +1055,7 @@ namespace LogSyncMod.AutoTest
 
             private void SpawnOperatorPawn()
             {
-                Faction playerFaction = Faction.OfPlayer;
+                Faction playerFaction = Find.FactionManager.OfPlayer;
                 if (playerFaction == null || TestMap == null || SpawnedTurret == null)
                 {
                     return;
