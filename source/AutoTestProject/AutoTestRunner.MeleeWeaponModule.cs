@@ -679,10 +679,7 @@ namespace LogSyncMod.AutoTest
                 def.modContentPack == targetMod &&
                 def.category == ThingCategory.Item &&
                 def.IsWeapon &&
-                def.equipmentType == EquipmentType.Primary &&
                 def.IsMeleeWeapon &&
-                def.weaponTags != null &&
-                def.weaponTags.Count > 0 &&
                 MatchesSpecFilters(AutoTestKind.MeleeWeaponPocketMap, def);
         }
 

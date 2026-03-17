@@ -183,14 +183,13 @@ namespace LogSyncMod.AutoTest
         {
             if (completed) return;
 
-            if (activeSession != null)
-            {
-                return;
-            }
-
-            if (pendingItems.Count > 0)
+            if (activeSession == null && pendingItems.Count > 0)
             {
                 StartNextSession();
+            }
+
+            if (activeSession != null || pendingItems.Count > 0)
+            {
                 return;
             }
 
@@ -391,75 +390,70 @@ namespace LogSyncMod.AutoTest
                 return;
             }
 
+            var limitedItems = new Queue<AutoTestWorkItem>();
+            var limitedTurrets = new Queue<ThingDef>();
+            var limitedRangedWeapons = new Queue<ThingDef>();
+            var limitedMeleeWeapons = new Queue<ThingDef>();
             int keptCount = 0;
 
-            if (pendingItems.Count > 0)
+            while (keptCount < limit)
             {
-                Queue<AutoTestWorkItem> limitedItems = new Queue<AutoTestWorkItem>();
-                while (pendingItems.Count > 0 && keptCount < limit)
+                bool itemAddedInRound = false;
+
+                if (pendingItems.Count > 0)
                 {
                     limitedItems.Enqueue(pendingItems.Dequeue());
                     keptCount++;
+                    itemAddedInRound = true;
+                    if (keptCount >= limit) break;
                 }
 
-                pendingItems.Clear();
-                foreach (AutoTestWorkItem item in limitedItems)
-                {
-                    pendingItems.Enqueue(item);
-                }
-            }
-
-            if (pendingTurretDefs.Count > 0)
-            {
-                Queue<ThingDef> limitedTurrets = new Queue<ThingDef>();
-                while (pendingTurretDefs.Count > 0 && keptCount < limit)
+                if (pendingTurretDefs.Count > 0)
                 {
                     limitedTurrets.Enqueue(pendingTurretDefs.Dequeue());
                     keptCount++;
+                    itemAddedInRound = true;
+                    if (keptCount >= limit) break;
                 }
 
-                pendingTurretDefs.Clear();
-                foreach (ThingDef turretDef in limitedTurrets)
+                if (pendingRangedWeaponDefs.Count > 0)
                 {
-                    pendingTurretDefs.Enqueue(turretDef);
-                }
-            }
-
-            if (pendingRangedWeaponDefs.Count > 0)
-            {
-                Queue<ThingDef> limitedWeapons = new Queue<ThingDef>();
-                while (pendingRangedWeaponDefs.Count > 0 && keptCount < limit)
-                {
-                    limitedWeapons.Enqueue(pendingRangedWeaponDefs.Dequeue());
+                    limitedRangedWeapons.Enqueue(pendingRangedWeaponDefs.Dequeue());
                     keptCount++;
+                    itemAddedInRound = true;
+                    if (keptCount >= limit) break;
                 }
 
-                pendingRangedWeaponDefs.Clear();
-                foreach (ThingDef weaponDef in limitedWeapons)
-                {
-                    pendingRangedWeaponDefs.Enqueue(weaponDef);
-                }
-            }
-
-            if (pendingMeleeWeaponDefs.Count > 0)
-            {
-                Queue<ThingDef> limitedMeleeWeapons = new Queue<ThingDef>();
-                while (pendingMeleeWeaponDefs.Count > 0 && keptCount < limit)
+                if (pendingMeleeWeaponDefs.Count > 0)
                 {
                     limitedMeleeWeapons.Enqueue(pendingMeleeWeaponDefs.Dequeue());
                     keptCount++;
+                    itemAddedInRound = true;
+                    if (keptCount >= limit) break;
                 }
 
-                pendingMeleeWeaponDefs.Clear();
-                foreach (ThingDef weaponDef in limitedMeleeWeapons)
+                if (!itemAddedInRound)
                 {
-                    pendingMeleeWeaponDefs.Enqueue(weaponDef);
+                    break; // All queues are empty
                 }
             }
 
+            // Clear the remaining items in the original queues
+            pendingItems.Clear();
+            pendingTurretDefs.Clear();
+            pendingRangedWeaponDefs.Clear();
+            pendingMeleeWeaponDefs.Clear();
+
+            // Repopulate with the limited items
+            foreach (var item in limitedItems) pendingItems.Enqueue(item);
+            foreach (var item in limitedTurrets) pendingTurretDefs.Enqueue(item);
+            foreach (var item in limitedRangedWeapons) pendingRangedWeaponDefs.Enqueue(item);
+            foreach (var item in limitedMeleeWeapons) pendingMeleeWeaponDefs.Enqueue(item);
+
             Log.Message(string.Format(
-                "[LogSyncAutoTest] Batch limit applied. Keeping first {0} items.",
-                pendingItems.Count + pendingTurretDefs.Count + pendingRangedWeaponDefs.Count + pendingMeleeWeaponDefs.Count));
+                "[LogSyncAutoTest] Batch limit applied. Original={0}, Kept={1}",
+                originalTotal,
+                keptCount));
         }
 
         private bool TryCaptureTurretScreenshot(TurretTestSession session, bool force)
