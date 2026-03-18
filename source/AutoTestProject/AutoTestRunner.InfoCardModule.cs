@@ -208,6 +208,15 @@ namespace LogSyncMod.AutoTest
                 Log.Message("[LogSyncAutoTest] InfoCard close requested for " + activeSession.Result.DefName);
             }
 
+            if (activeSession.CloseIssued &&
+                activeSession.RemainingUiFrames == CloseTimeoutRepaintFrames / 2 &&
+                activeSession.UiHandle != null &&
+                activeSession.UiHandle.IsOpen)
+            {
+                InfoCardCloseTrace.AddReason("CloseFallback.ForceClose");
+                activeSession.UiHandle.ForceClose();
+            }
+
             activeSession.RemainingUiFrames--;
             if (activeSession.RemainingUiFrames > 0) return;
 
