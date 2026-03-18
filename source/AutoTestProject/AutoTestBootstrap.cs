@@ -26,6 +26,7 @@ namespace LogSyncMod.AutoTest
         private static bool? lastObservedPausedState;
         private static bool? lastObservedForcePausedState;
         private static string lastObservedSmartSpeedState;
+        private static bool temporaryPauseBypass;
         private static readonly AutoTestSmartSpeedBridge SmartSpeedBridge = new AutoTestSmartSpeedBridge();
         private static AutoTestRunner runner;
 
@@ -258,6 +259,8 @@ namespace LogSyncMod.AutoTest
                 previousTimeSpeed = null;
                 runtimeGuardsArmed = false;
                 runtimeGuardsUsingSmartSpeed = false;
+                temporaryPauseBypass = false;
+                SmartSpeedBridge.SetPauseBypass(false);
                 lastObservedGuardSpeed = null;
                 lastObservedPausedState = null;
                 lastObservedForcePausedState = null;
@@ -282,11 +285,18 @@ namespace LogSyncMod.AutoTest
             {
                 previousTimeSpeed = null;
                 runtimeGuardsArmed = false;
+                temporaryPauseBypass = false;
                 lastObservedGuardSpeed = null;
                 lastObservedPausedState = null;
                 lastObservedForcePausedState = null;
                 lastObservedSmartSpeedState = null;
             }
+        }
+
+        public static void SetTemporaryPauseBypass(bool active)
+        {
+            temporaryPauseBypass = active;
+            SmartSpeedBridge.SetPauseBypass(active);
         }
 
         private static void MaintainRuntimeGuards(LogSyncSettings settings, string source)
@@ -326,6 +336,14 @@ namespace LogSyncMod.AutoTest
             bool forcePaused = tickManager.ForcePaused;
             TimeSpeed currentSpeed = tickManager.CurTimeSpeed;
             TimeSpeed desiredSpeed = settings.autoTestUseFastSpeed ? TimeSpeed.Fast : TimeSpeed.Normal;
+
+            if (temporaryPauseBypass)
+            {
+                lastObservedPausedState = paused;
+                lastObservedForcePausedState = forcePaused;
+                lastObservedGuardSpeed = currentSpeed;
+                return;
+            }
 
             bool shouldAdjustSpeed = false;
             if (settings.autoTestPreventPause && paused)

@@ -23,6 +23,7 @@ namespace LogSyncMod.AutoTest
         private FieldInfo fastSpeedField;
         private FieldInfo currentSettingField;
         private Type optionType;
+        private bool pauseBypassActive;
 
         public bool IsArmed => armed;
 
@@ -80,6 +81,16 @@ namespace LogSyncMod.AutoTest
             }
 
             bool adjusted = false;
+            if (pauseBypassActive)
+            {
+                details = "PauseBypassActive curTimeSpeed=" + tickManager.CurTimeSpeed +
+                    " paused=" + tickManager.Paused +
+                    " forcePaused=" + tickManager.ForcePaused +
+                    " fastSpeed=" + Convert.ToSingle(fastSpeedField.GetValue(null)) +
+                    " currSetting=" + currentSettingField.GetValue(null);
+                return false;
+            }
+
             if (Convert.ToSingle(fastSpeedField.GetValue(null)) != AutoTestFastSpeedMultiplier)
             {
                 fastSpeedField.SetValue(null, AutoTestFastSpeedMultiplier);
@@ -105,6 +116,11 @@ namespace LogSyncMod.AutoTest
                 " fastSpeed=" + Convert.ToSingle(fastSpeedField.GetValue(null)) +
                 " currSetting=" + currentSettingField.GetValue(null);
             return adjusted;
+        }
+
+        public void SetPauseBypass(bool active)
+        {
+            pauseBypassActive = active;
         }
 
         public void Restore(out string details)
@@ -136,6 +152,7 @@ namespace LogSyncMod.AutoTest
                 " currSettingRestored=" + previousCurrentSetting +
                 " curTimeSpeedRestored=" + previousTimeSpeed;
             armed = false;
+            pauseBypassActive = false;
             fastSpeedField = null;
             currentSettingField = null;
             optionType = null;

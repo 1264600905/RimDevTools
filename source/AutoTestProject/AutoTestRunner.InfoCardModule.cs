@@ -38,6 +38,11 @@ namespace LogSyncMod.AutoTest
         {
             if (Event.current == null || Event.current.type != EventType.Repaint) return;
 
+            if (activeThreeViewUiSession != null)
+            {
+                AutoTestScreenshotOverlay.Request(activeThreeViewUiSession.Result);
+            }
+
             if (activeSession != null)
             {
                 AutoTestScreenshotOverlay.Request(activeSession.Result);
@@ -45,6 +50,20 @@ namespace LogSyncMod.AutoTest
             AutoTestScreenshotOverlay.DrawOverlay();
 
             if (completed) return;
+
+            if (activeThreeViewUiSession != null)
+            {
+                try
+                {
+                    ProcessThreeViewUiSession();
+                }
+                catch (Exception ex)
+                {
+                    activeThreeViewUiSession.FailFromUi("ui_capture_failed", ex.ToString());
+                    activeThreeViewUiSession = null;
+                }
+            }
+
             if (activeSession == null) return;
 
             try
@@ -80,6 +99,20 @@ namespace LogSyncMod.AutoTest
                 CleanupSelectionAndWindows();
                 InfoCardCloseTrace.Stop();
                 activeSession = null;
+            }
+        }
+
+        private void ProcessThreeViewUiSession()
+        {
+            ThreeViewTestSession session = activeThreeViewUiSession;
+            if (session == null)
+            {
+                return;
+            }
+
+            if (session.ProcessUiFrame())
+            {
+                activeThreeViewUiSession = null;
             }
         }
 

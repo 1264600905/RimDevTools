@@ -61,9 +61,7 @@ namespace LogSyncMod.AutoTest
         Initializing,
         WaitingForMap,
         SpawningTargets,
-        WaitingForSettle,
-        WaitingForMotionPrime,
-        CapturingScreenshot,
+        PausingForCapture,
         CleaningUp,
         Done
     }
@@ -89,6 +87,7 @@ namespace LogSyncMod.AutoTest
         private const int WaitBeforeCloseRepaintFrames = 12;
         private const int CloseTimeoutRepaintFrames = 180;
         private const int PocketMapSharedCooldownTicks = 120;
+        private const int ThreeViewSharedCooldownTicks = 60;
         private const float DefaultTurretScreenshotAspect = 16f / 9f;
 
         private static readonly FieldInfo ProjectileUsedTargetField = typeof(Projectile).GetField("usedTarget", BindingFlags.Instance | BindingFlags.NonPublic);
@@ -117,6 +116,7 @@ namespace LogSyncMod.AutoTest
         private readonly List<CombatPawnTestSession> activeCombatPawnSessions = new List<CombatPawnTestSession>();
         private readonly Queue<AutoTestCombatPawnTargetSpec> pendingCombatPawnTargets = new Queue<AutoTestCombatPawnTargetSpec>();
         private int pocketMapCooldownUntilTick = -1;
+        private int threeViewCooldownUntilTick = -1;
         private ModContentPack targetMod;
         private Pawn sharedHediffPawn;
         private string targetPackageId;
@@ -128,6 +128,7 @@ namespace LogSyncMod.AutoTest
         private int nextTerrainZ = 10;
         private bool completed;
         private ActiveSession activeSession;
+        private ThreeViewTestSession activeThreeViewUiSession;
         private AutoTestRunArtifacts runArtifacts;
         private AutoTestRunSummary runSummary;
         private AutoTestScreenshotService screenshotService;
@@ -300,7 +301,14 @@ namespace LogSyncMod.AutoTest
             if (Find.TickManager.TicksGame % 500 == 0 && activeThreeViewSessions.Count > 0)
             {
                 string statusReport = string.Join(", ", activeThreeViewSessions.Select(s => $"{s.Spec.DefName}({s.Phase})"));
-                Log.Message($"[LogSyncAutoTest] ThreeView heartbeat: {activeThreeViewSessions.Count} active sessions. TotalPocketMaps={GetActivePocketMapSessionCount()}/{settings.GetPocketMapMaxConcurrent()}. Details: {statusReport}");
+                if (activeThreeViewSessions.Count > 1)
+                {
+                    Log.Warning($"[LogSyncAutoTest] ThreeView heartbeat invariant broken: {activeThreeViewSessions.Count} active sessions. TotalPocketMaps={GetActivePocketMapSessionCount()}/{settings.GetPocketMapMaxConcurrent()}. Details: {statusReport}");
+                }
+                else
+                {
+                    Log.Message($"[LogSyncAutoTest] ThreeView heartbeat: {activeThreeViewSessions.Count} active sessions. TotalPocketMaps={GetActivePocketMapSessionCount()}/{settings.GetPocketMapMaxConcurrent()}. Details: {statusReport}");
+                }
             }
 
             if (Find.TickManager.TicksGame % 500 == 0 && activeCombatPawnSessions.Count > 0)
@@ -420,6 +428,21 @@ namespace LogSyncMod.AutoTest
 
             if (pendingThreeViewTargets.Count > 0)
             {
+                if (activeThreeViewSessions.Count > 0)
+                {
+                    if (Find.TickManager != null && Find.TickManager.TicksGame % 300 == 0)
+                    {
+                        Log.Message("[LogSyncAutoTest] ThreeView launch blocked: active session still running. pending=" + pendingThreeViewTargets.Count + " active=" + activeThreeViewSessions.Count);
+                    }
+
+                    return false;
+                }
+
+                if (IsThreeViewCooldownActive())
+                {
+                    return false;
+                }
+
                 StartNewThreeViewSession(pendingThreeViewTargets.Dequeue());
                 return true;
             }
@@ -436,6 +459,11 @@ namespace LogSyncMod.AutoTest
         private bool IsPocketMapCooldownActive()
         {
             return Find.TickManager != null && Find.TickManager.TicksGame <= pocketMapCooldownUntilTick;
+        }
+
+        private bool IsThreeViewCooldownActive()
+        {
+            return Find.TickManager != null && Find.TickManager.TicksGame <= threeViewCooldownUntilTick;
         }
 
         private int GetActivePocketMapSessionCount()
@@ -457,6 +485,18 @@ namespace LogSyncMod.AutoTest
             }
 
             Log.Message("[LogSyncAutoTest] Pocket map shared cooldown refreshed: reason=" + reason + " untilTick=" + pocketMapCooldownUntilTick);
+        }
+
+        private void RefreshThreeViewCooldown(string reason)
+        {
+            int currentTick = Find.TickManager?.TicksGame ?? 0;
+            int nextTick = currentTick + ThreeViewSharedCooldownTicks;
+            if (nextTick > threeViewCooldownUntilTick)
+            {
+                threeViewCooldownUntilTick = nextTick;
+            }
+
+            Log.Message("[LogSyncAutoTest] ThreeView shared cooldown refreshed: reason=" + reason + " untilTick=" + threeViewCooldownUntilTick);
         }
 
         private void AddImmediateResult(AutoTestResult result, string status, string stage, string errorMessage)

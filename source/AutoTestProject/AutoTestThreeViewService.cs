@@ -138,38 +138,10 @@ namespace LogSyncMod.AutoTest
                 return targets;
             }
 
-            AddIfResolved(
-                targets,
-                registerDiscoveredCase,
-                AutoTestKind.HumanoidThreeView,
-                AutoTestCaseType.HumanoidThreeView,
-                ResolvePawnKind(new[] { "Colonist" }, def => def?.race == ThingDefOf.Human),
-                AutoTestScreenshotProfiles.ThreeViewHumanoid);
-
-            AddIfResolved(
-                targets,
-                registerDiscoveredCase,
-                AutoTestKind.AnimalThreeView,
-                AutoTestCaseType.AnimalThreeView,
-                ResolvePawnKind(new[] { "Capybara", "Muffalo", "LabradorRetriever", "Gazelle" }, def => def?.race?.race?.Animal == true),
-                AutoTestScreenshotProfiles.ThreeViewAnimal);
-
-            AddIfResolved(
-                targets,
-                registerDiscoveredCase,
-                AutoTestKind.MechanoidThreeView,
-                AutoTestCaseType.MechanoidThreeView,
-                ResolvePawnKind(new[] { "Mech_Scyther", "Mech_Lancer", "Mech_Pikeman", "Mech_Termite" }, def => def?.race?.race?.IsMechanoid == true),
-                AutoTestScreenshotProfiles.ThreeViewMechanoid);
-
-            AddIfResolved(
-                targets,
-                registerDiscoveredCase,
-                AutoTestKind.AlienThreeView,
-                AutoTestCaseType.AlienThreeView,
-                ResolvePawnKind(new[] { "Axolotl_Colonist", "Axolotl_PlayerFaction", "Axolotl_Refugee" }, def => IsAlienHumanlike(def?.race)),
-                AutoTestScreenshotProfiles.ThreeViewAlien);
-
+            AddTargetModPawnKindTargets(targets, targetMod, registerDiscoveredCase, AutoTestKind.HumanoidThreeView, AutoTestCaseType.HumanoidThreeView, def => def?.race == ThingDefOf.Human);
+            AddTargetModPawnKindTargets(targets, targetMod, registerDiscoveredCase, AutoTestKind.AnimalThreeView, AutoTestCaseType.AnimalThreeView, def => def?.race?.race?.Animal == true);
+            AddTargetModPawnKindTargets(targets, targetMod, registerDiscoveredCase, AutoTestKind.MechanoidThreeView, AutoTestCaseType.MechanoidThreeView, def => def?.race?.race?.IsMechanoid == true);
+            AddTargetModPawnKindTargets(targets, targetMod, registerDiscoveredCase, AutoTestKind.AlienThreeView, AutoTestCaseType.AlienThreeView, def => IsAlienHumanlike(def?.race));
             AddTargetModApparelTargets(targets, targetMod, registerDiscoveredCase);
             AddTargetModWeaponTargets(targets, targetMod, excludedWeaponDefs, registerDiscoveredCase);
 
@@ -313,6 +285,58 @@ namespace LogSyncMod.AutoTest
                     {
                         pawn.pather?.StartPath(walkTarget, Verse.AI.PathEndMode.OnCell);
                     }
+                }
+
+                context.DirectionalWalkPrimed = true;
+                return true;
+            }
+            catch (Exception ex)
+            {
+                errorMessage = ex.Message;
+                return false;
+            }
+        }
+
+        public bool TryPrimeDirectionalFacingForPausedCapture(AutoTestThreeViewTargetContext context, out string errorMessage)
+        {
+            errorMessage = null;
+            if (context == null)
+            {
+                errorMessage = "ThreeView context was null.";
+                return false;
+            }
+
+            try
+            {
+                for (int i = 0; i < context.Pawns.Count; i++)
+                {
+                    Pawn pawn = context.Pawns[i];
+                    if (pawn == null || pawn.Destroyed || !pawn.Spawned)
+                    {
+                        errorMessage = "ThreeView pawn was missing before paused capture prime.";
+                        return false;
+                    }
+
+                    IntVec3 origin = context.Cells[i];
+                    IntVec3 walkTarget = i < context.WalkTargets.Count ? context.WalkTargets[i] : origin;
+                    if (pawn.Position != origin)
+                    {
+                        pawn.Position = origin;
+                    }
+
+                    pawn.jobs?.StopAll();
+                    pawn.pather?.StopDead();
+                    if (pawn.drafter != null)
+                    {
+                        pawn.drafter.Drafted = true;
+                    }
+
+                    if (walkTarget != origin)
+                    {
+                        pawn.pather?.StartPath(walkTarget, Verse.AI.PathEndMode.OnCell);
+                    }
+
+                    pawn.Drawer?.renderer?.SetAllGraphicsDirty();
                 }
 
                 context.DirectionalWalkPrimed = true;
@@ -486,6 +510,33 @@ namespace LogSyncMod.AutoTest
             });
         }
 
+        private static void AddTargetModPawnKindTargets(
+            ICollection<AutoTestThreeViewTargetSpec> targets,
+            ModContentPack targetMod,
+            Func<AutoTestCaseType, string, string, string, AutoTestManifestEntry> registerDiscoveredCase,
+            AutoTestKind kind,
+            AutoTestCaseType caseType,
+            Func<PawnKindDef, bool> predicate)
+        {
+            if (targets == null || targetMod == null || registerDiscoveredCase == null || predicate == null)
+            {
+                return;
+            }
+
+            foreach (PawnKindDef pawnKindDef in DefDatabase<PawnKindDef>.AllDefsListForReading
+                .Where(def => def != null && def.modContentPack == targetMod && predicate(def))
+                .OrderBy(def => def.defName))
+            {
+                AddIfResolved(
+                    targets,
+                    registerDiscoveredCase,
+                    kind,
+                    caseType,
+                    pawnKindDef,
+                    ResolveThreeViewProfileForPawnKind(pawnKindDef));
+            }
+        }
+
         private static void AddTargetModApparelTargets(
             ICollection<AutoTestThreeViewTargetSpec> targets,
             ModContentPack targetMod,
@@ -496,8 +547,8 @@ namespace LogSyncMod.AutoTest
                 return;
             }
 
-            PawnKindDef humanPawnKind = ResolveDefaultHumanPawnKind();
             List<PawnKindDef> alienPawnKinds = ResolvePreferredAlienPawnKinds(targetMod);
+            PawnKindDef humanPawnKind = ResolveDefaultHumanPawnKind();
 
             foreach (ThingDef apparelDef in DefDatabase<ThingDef>.AllDefsListForReading
                 .Where(def => def != null && def.modContentPack == targetMod && def.IsApparel)
@@ -559,8 +610,8 @@ namespace LogSyncMod.AutoTest
                 return;
             }
 
-            PawnKindDef humanPawnKind = ResolveDefaultHumanPawnKind();
             List<PawnKindDef> alienPawnKinds = ResolvePreferredAlienPawnKinds(targetMod);
+            PawnKindDef humanPawnKind = ResolveDefaultHumanPawnKind();
 
             foreach (ThingDef weaponDef in DefDatabase<ThingDef>.AllDefsListForReading
                 .Where(def =>
@@ -611,9 +662,8 @@ namespace LogSyncMod.AutoTest
         private static List<PawnKindDef> ResolvePreferredAlienPawnKinds(ModContentPack targetMod)
         {
             return DefDatabase<PawnKindDef>.AllDefsListForReading
-                .Where(def => def != null && IsAlienHumanlike(def.race))
-                .OrderByDescending(def => def.modContentPack == targetMod ? 1 : 0)
-                .ThenBy(def => def.defName)
+                .Where(def => def != null && def.modContentPack == targetMod && IsAlienHumanlike(def.race))
+                .OrderBy(def => def.defName)
                 .ToList();
         }
 
@@ -826,12 +876,6 @@ namespace LogSyncMod.AutoTest
             out PawnKindDef pawnKind)
         {
             pawnKind = null;
-            if (CanPawnKindWearApparel(humanPawnKind, apparelDef, bodyType, forcedGender))
-            {
-                pawnKind = humanPawnKind;
-                return true;
-            }
-
             foreach (PawnKindDef alienPawnKind in alienPawnKinds ?? Enumerable.Empty<PawnKindDef>())
             {
                 if (CanPawnKindWearApparel(alienPawnKind, apparelDef, bodyType, forcedGender))
@@ -839,6 +883,12 @@ namespace LogSyncMod.AutoTest
                     pawnKind = alienPawnKind;
                     return true;
                 }
+            }
+
+            if (CanPawnKindWearApparel(humanPawnKind, apparelDef, bodyType, forcedGender))
+            {
+                pawnKind = humanPawnKind;
+                return true;
             }
 
             return false;
@@ -853,12 +903,6 @@ namespace LogSyncMod.AutoTest
             out PawnKindDef pawnKind)
         {
             pawnKind = null;
-            if (CanPawnKindHoldWeapon(humanPawnKind, weaponDef, bodyType, forcedGender))
-            {
-                pawnKind = humanPawnKind;
-                return true;
-            }
-
             foreach (PawnKindDef alienPawnKind in alienPawnKinds ?? Enumerable.Empty<PawnKindDef>())
             {
                 if (CanPawnKindHoldWeapon(alienPawnKind, weaponDef, bodyType, forcedGender))
@@ -866,6 +910,12 @@ namespace LogSyncMod.AutoTest
                     pawnKind = alienPawnKind;
                     return true;
                 }
+            }
+
+            if (CanPawnKindHoldWeapon(humanPawnKind, weaponDef, bodyType, forcedGender))
+            {
+                pawnKind = humanPawnKind;
+                return true;
             }
 
             return false;

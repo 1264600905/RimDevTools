@@ -1,6 +1,7 @@
 using System;
 using RimWorld;
 using RimWorld.Planet;
+using UnityEngine;
 using Verse;
 
 namespace LogSyncMod.AutoTest
@@ -9,8 +10,8 @@ namespace LogSyncMod.AutoTest
     {
         private sealed class ThreeViewTestSession
         {
-            private const int SettleTicks = 45;
-            private const int MotionPrimeTimeoutTicks = 30;
+            private const float PausedCaptureSettleSeconds = 1f;
+            private const int CaptureWindowTailTicks = 3;
             private const int StudioWidth = 21;
             private const int StudioHeight = 21;
 
@@ -24,6 +25,10 @@ namespace LogSyncMod.AutoTest
             public bool AllowScreenshots;
             public int WaitTicks;
             public ThreeViewTestPhase Phase;
+            public TimeSpeed ResumeSpeed;
+            public bool PauseBypassArmed;
+            public float PausedCaptureStartRealtime;
+            public bool PauseUiCaptureStarted;
 
             public ThreeViewTestSession(AutoTestRunner owner)
             {
@@ -39,14 +44,8 @@ namespace LogSyncMod.AutoTest
                         case ThreeViewTestPhase.SpawningTargets:
                             SpawnTargets();
                             break;
-                        case ThreeViewTestPhase.WaitingForSettle:
-                            UpdateWaitingForSettle();
-                            break;
-                        case ThreeViewTestPhase.WaitingForMotionPrime:
-                            UpdateWaitingForMotionPrime();
-                            break;
-                        case ThreeViewTestPhase.CapturingScreenshot:
-                            CaptureScreenshot();
+                        case ThreeViewTestPhase.PausingForCapture:
+                            PauseForCapture();
                             break;
                         case ThreeViewTestPhase.CleaningUp:
                             Cleanup();
@@ -90,11 +89,88 @@ namespace LogSyncMod.AutoTest
                 {
                     Result.Notes = AppendNote(Result.Notes, "ThreeViewBodyType=" + Spec.PawnBodyTypeDefName);
                 }
-                WaitTicks = SettleTicks;
-                Phase = ThreeViewTestPhase.WaitingForSettle;
+                if (!owner.threeViewService.TryPrimeDirectionalFacingForPausedCapture(Context, out string pausedCaptureError))
+                {
+                    Fail("motion_prime_failed", pausedCaptureError ?? "ThreeView paused capture directional facing could not be primed.");
+                    return;
+                }
+
+                Result.Notes = AppendNote(Result.Notes, "ThreeViewPausedCapture=True");
+                Log.Message("[LogSyncAutoTest] ThreeView paused capture primed: def=" + Spec.DefName + " tick=" + (Find.TickManager?.TicksGame ?? -1));
+                Phase = ThreeViewTestPhase.PausingForCapture;
             }
 
-            private void UpdateWaitingForSettle()
+            private void PauseForCapture()
+            {
+                owner.threeViewService.PrepareForCapture(Context);
+                owner.threeViewService.Focus(TestMap, Context);
+
+                TickManager tickManager = Find.TickManager;
+                if (tickManager == null)
+                {
+                    Fail("pause_failed", "TickManager missing before paused capture.");
+                    return;
+                }
+
+                if (!PauseBypassArmed)
+                {
+                    ResumeSpeed = tickManager.CurTimeSpeed;
+                    AutoTestBootstrap.SetTemporaryPauseBypass(true);
+                    PauseBypassArmed = true;
+                }
+
+                tickManager.CurTimeSpeed = TimeSpeed.Paused;
+                Result.Notes = AppendNote(Result.Notes, "ThreeViewPauseTick=" + (Find.TickManager?.TicksGame ?? -1));
+                Log.Message("[LogSyncAutoTest] ThreeView paused for capture: def=" + Spec.DefName + " tick=" + (Find.TickManager?.TicksGame ?? -1) + " resumeSpeed=" + ResumeSpeed);
+                PausedCaptureStartRealtime = Time.realtimeSinceStartup;
+                PauseUiCaptureStarted = true;
+                Result.Notes = AppendNote(Result.Notes, "ThreeViewPausedCaptureSettleSeconds=" + PausedCaptureSettleSeconds.ToString("0.0"));
+                owner.activeThreeViewUiSession = this;
+                Phase = ThreeViewTestPhase.CleaningUp;
+            }
+
+            public bool ProcessUiFrame()
+            {
+                if (!PauseUiCaptureStarted)
+                {
+                    return true;
+                }
+
+                owner.threeViewService.PrepareForCapture(Context);
+                owner.threeViewService.Focus(TestMap, Context);
+
+                TickManager tickManager = Find.TickManager;
+                if (tickManager == null)
+                {
+                    FailFromUi("pause_failed", "TickManager missing during paused UI capture.");
+                    return true;
+                }
+
+                tickManager.CurTimeSpeed = TimeSpeed.Paused;
+                float elapsed = Time.realtimeSinceStartup - PausedCaptureStartRealtime;
+                if (elapsed < PausedCaptureSettleSeconds)
+                {
+                    return false;
+                }
+
+                Result.Stage = "capture";
+                Log.Message("[LogSyncAutoTest] ThreeView capture begin: def=" + Spec.DefName + " tick=" + (Find.TickManager?.TicksGame ?? -1) + " paused=" + (Find.TickManager?.Paused ?? false) + " elapsedRealtime=" + elapsed.ToString("0.000") + " allowScreenshots=" + AllowScreenshots + " rootCell=" + RootCell);
+                bool captureRequested = AllowScreenshots;
+                bool captured = owner.TryCaptureThreeViewScreenshot(this, false);
+                RestoreTimeAfterCapture();
+                if (captureRequested && !captured)
+                {
+                    FailFromUi("capture_failed", "ThreeView screenshot was requested but not captured.");
+                    return true;
+                }
+
+                Result.Status = "passed";
+                WaitTicks = CaptureWindowTailTicks;
+                PauseUiCaptureStarted = false;
+                return true;
+            }
+
+            private void Cleanup()
             {
                 if (WaitTicks > 0)
                 {
@@ -104,68 +180,63 @@ namespace LogSyncMod.AutoTest
                     return;
                 }
 
-                if (!owner.threeViewService.TryPrimeDirectionalWalk(Context, out string errorMessage))
-                {
-                    Fail("motion_prime_failed", errorMessage ?? "ThreeView directional walk could not be primed.");
-                    return;
-                }
-
-                WaitTicks = MotionPrimeTimeoutTicks;
-                Phase = ThreeViewTestPhase.WaitingForMotionPrime;
-            }
-
-            private void UpdateWaitingForMotionPrime()
-            {
-                owner.threeViewService.PrepareForCapture(Context);
-                owner.threeViewService.Focus(TestMap, Context);
-
-                if (owner.threeViewService.IsReadyForCapture(Context, out string readinessDetails))
-                {
-                    Result.Notes = AppendNote(Result.Notes, "ThreeViewMotionReady=" + readinessDetails);
-                    Phase = ThreeViewTestPhase.CapturingScreenshot;
-                    return;
-                }
-
-                if (WaitTicks > 0)
-                {
-                    WaitTicks--;
-                    return;
-                }
-
-                Fail("motion_timeout", "ThreeView targets did not reach capture walk state in time.");
-            }
-
-            private void CaptureScreenshot()
-            {
-                Result.Stage = "capture";
-                bool captureRequested = AllowScreenshots;
-                bool captured = owner.TryCaptureThreeViewScreenshot(this, false);
-                if (captureRequested && !captured)
-                {
-                    Fail("capture_failed", "ThreeView screenshot was requested but not captured.");
-                    return;
-                }
-
-                Result.Status = "passed";
-                Phase = ThreeViewTestPhase.CleaningUp;
-            }
-
-            private void Cleanup()
-            {
                 owner.threeViewService.Cleanup(Context);
                 Context = null;
                 owner.ClearArea(RootCell, StudioWidth, StudioHeight);
                 owner.threeViewService.PrepareStudioArea(TestMap, RootCell, StudioWidth, StudioHeight);
+                owner.RefreshThreeViewCooldown("cleanup");
                 Phase = ThreeViewTestPhase.Done;
             }
 
             private void Fail(string stage, string message)
             {
+                RestoreTimeAfterCapture();
                 Result.Status = "failed";
                 Result.Stage = stage;
                 Result.ErrorMessage = message ?? string.Empty;
                 owner.TryCaptureThreeViewScreenshot(this, true);
                 Phase = ThreeViewTestPhase.CleaningUp;
+            }
+
+            public void FailFromUi(string stage, string message)
+            {
+                Fail(stage, message);
+                PauseUiCaptureStarted = false;
+            }
+
+            private void RestoreTimeAfterCapture()
+            {
+                if (!PauseBypassArmed)
+                {
+                    return;
+                }
+
+                try
+                {
+                    TickManager tickManager = Find.TickManager;
+                    if (tickManager != null)
+                    {
+                        tickManager.CurTimeSpeed = ResumeSpeed;
+                    }
+                }
+                catch
+                {
+                }
+                finally
+                {
+                    AutoTestBootstrap.SetTemporaryPauseBypass(false);
+                    PauseBypassArmed = false;
+                    Log.Message("[LogSyncAutoTest] ThreeView capture speed restored: def=" + Spec.DefName + " speed=" + ResumeSpeed + " tick=" + (Find.TickManager?.TicksGame ?? -1));
+                    TickManager tickManager = Find.TickManager;
+                    if (tickManager != null)
+                    {
+                        Log.Message("[LogSyncAutoTest] ThreeView restore observed state: def=" + Spec.DefName + " paused=" + tickManager.Paused + " forcePaused=" + tickManager.ForcePaused + " speed=" + tickManager.CurTimeSpeed);
+                        if (tickManager.Paused || tickManager.ForcePaused)
+                        {
+                            Log.Warning("[LogSyncAutoTest] ThreeView restore left game paused: def=" + Spec.DefName + " paused=" + tickManager.Paused + " forcePaused=" + tickManager.ForcePaused + " speed=" + tickManager.CurTimeSpeed);
+                        }
+                    }
+                }
             }
 
             public static ThreeViewTestSession Create(
@@ -277,6 +348,13 @@ namespace LogSyncMod.AutoTest
         {
             if (spec == null)
             {
+                return;
+            }
+
+            if (activeThreeViewSessions.Count > 0)
+            {
+                Log.Warning("[LogSyncAutoTest] ThreeView start rejected because another session is still active. pending=" + pendingThreeViewTargets.Count + " active=" + activeThreeViewSessions.Count + " def=" + spec.DefName);
+                pendingThreeViewTargets.Enqueue(spec);
                 return;
             }
 
