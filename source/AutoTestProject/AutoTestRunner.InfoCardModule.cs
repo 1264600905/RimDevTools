@@ -11,6 +11,7 @@ namespace LogSyncMod.AutoTest
         {
             WaitingForPreOpenSettle,
             WaitingForInfoCardOpen,
+            WaitingForCaptureSettle,
             WaitingBeforeClose,
             WaitingForInfoCardClose
         }
@@ -35,10 +36,16 @@ namespace LogSyncMod.AutoTest
 
         public void ProcessUi()
         {
-            if (completed) return;
-
-            if (activeSession == null) return;
             if (Event.current == null || Event.current.type != EventType.Repaint) return;
+
+            if (activeSession != null)
+            {
+                AutoTestScreenshotOverlay.Request(activeSession.Result);
+            }
+            AutoTestScreenshotOverlay.DrawOverlay();
+
+            if (completed) return;
+            if (activeSession == null) return;
 
             try
             {
@@ -49,6 +56,9 @@ namespace LogSyncMod.AutoTest
                         break;
                     case SessionPhase.WaitingForInfoCardOpen:
                         ProcessWaitingForInfoCardOpen();
+                        break;
+                    case SessionPhase.WaitingForCaptureSettle:
+                        ProcessWaitingForCaptureSettle();
                         break;
                     case SessionPhase.WaitingBeforeClose:
                         ProcessWaitingBeforeClose();
@@ -109,9 +119,8 @@ namespace LogSyncMod.AutoTest
                 {
                     InfoCardCloseTrace.AddReason("OpenConfirmed.RepaintFrames=" + activeSession.OpenStableRepaintFrames);
                     Log.Message("[LogSyncAutoTest] InfoCard open confirmed for " + activeSession.Result.DefName);
-                    TryCaptureInfoCardScreenshot(false);
-                    activeSession.Phase = SessionPhase.WaitingBeforeClose;
-                    activeSession.RemainingUiFrames = WaitBeforeCloseRepaintFrames;
+                    activeSession.Phase = SessionPhase.WaitingForCaptureSettle;
+                    activeSession.RemainingUiFrames = 2;
                 }
 
                 return;
@@ -125,6 +134,27 @@ namespace LogSyncMod.AutoTest
                 "failed_info_card_open",
                 "info_open",
                 "InfoCard did not stay open long enough to confirm opening. " + BuildWindowSummary());
+        }
+
+        private void ProcessWaitingForCaptureSettle()
+        {
+            if (activeSession == null) return;
+
+            if (!IsInfoCardPresent())
+            {
+                FailActiveSession(
+                    "failed_info_card_interrupted",
+                    "info_open",
+                    "InfoCard disappeared before screenshot capture.");
+                return;
+            }
+
+            activeSession.RemainingUiFrames--;
+            if (activeSession.RemainingUiFrames > 0) return;
+
+            TryCaptureInfoCardScreenshot(false);
+            activeSession.Phase = SessionPhase.WaitingBeforeClose;
+            activeSession.RemainingUiFrames = WaitBeforeCloseRepaintFrames;
         }
 
         private void ProcessWaitingBeforeClose()

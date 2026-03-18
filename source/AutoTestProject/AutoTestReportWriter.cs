@@ -52,7 +52,7 @@ namespace LogSyncMod.AutoTest
                 }
 
                 Directory.CreateDirectory(artifacts.OutputDirectory);
-                File.WriteAllText(artifacts.ReportPath, BuildMarkdown(packageId, modName, results), Encoding.UTF8);
+                File.WriteAllText(artifacts.ReportPath, BuildMarkdown(artifacts, packageId, modName, results), Encoding.UTF8);
                 File.WriteAllText(artifacts.ResultPath, BuildJson(packageId, modName, results), Encoding.UTF8);
                 PruneArchives(artifacts.OutputDirectory, artifacts.SafePackageId);
             }
@@ -62,7 +62,7 @@ namespace LogSyncMod.AutoTest
             }
         }
 
-        private static string BuildMarkdown(string packageId, string modName, List<AutoTestResult> results)
+        private static string BuildMarkdown(AutoTestRunArtifacts artifacts, string packageId, string modName, List<AutoTestResult> results)
         {
             StringBuilder builder = new StringBuilder();
             int passed = results.Count(result => result.Status == "passed");
@@ -87,16 +87,36 @@ namespace LogSyncMod.AutoTest
             foreach (AutoTestResult result in results)
             {
                 string screenshotValue = result.ScreenshotPaths != null && result.ScreenshotPaths.Count > 0
-                    ? string.Join("<br>", result.ScreenshotPaths.ToArray())
-                    : result.ScreenshotPath;
+                    ? string.Join("<br>", result.ScreenshotPaths.Select(path => BuildMarkdownLink(artifacts, path)).ToArray())
+                    : BuildMarkdownLink(artifacts, result.ScreenshotPath);
                 builder.AppendLine(string.Format(
                     "| {0} | `{1}` | {2} | {3} | {4} | {5} |",
                     EscapePipe(result.Category),
                     EscapePipe(result.DefName),
                     EscapePipe(result.Status),
                     EscapePipe(result.Stage),
-                    EscapePipe(screenshotValue),
+                    screenshotValue,
                     EscapePipe(string.IsNullOrWhiteSpace(result.ErrorMessage) ? result.Notes : Trim(result.ErrorMessage, 160))));
+            }
+
+            builder.AppendLine();
+            builder.AppendLine("## Screenshot Gallery");
+            builder.AppendLine();
+
+            foreach (AutoTestResult result in results.Where(result => result.ScreenshotPaths != null && result.ScreenshotPaths.Count > 0))
+            {
+                builder.AppendLine("### " + result.DefName);
+                builder.AppendLine();
+                builder.AppendLine("- Label: " + (string.IsNullOrWhiteSpace(result.Label) ? result.DefName : result.Label));
+                builder.AppendLine("- Status: " + result.Status);
+                builder.AppendLine();
+
+                foreach (string screenshotPath in result.ScreenshotPaths.Where(path => !string.IsNullOrWhiteSpace(path)))
+                {
+                    string relativePath = BuildRelativeImagePath(artifacts, screenshotPath);
+                    builder.AppendLine("![" + EscapeImageAltText(result.DefName) + "](" + relativePath + ")");
+                    builder.AppendLine();
+                }
             }
 
             return builder.ToString();
@@ -159,6 +179,62 @@ namespace LogSyncMod.AutoTest
         private static string EscapePipe(string text)
         {
             return (text ?? string.Empty).Replace("|", "\\|").Replace("\r", " ").Replace("\n", " ");
+        }
+
+        private static string EscapeImageAltText(string text)
+        {
+            return (text ?? string.Empty).Replace("[", "\\[").Replace("]", "\\]");
+        }
+
+        private static string BuildMarkdownLink(AutoTestRunArtifacts artifacts, string screenshotPath)
+        {
+            string relativePath = BuildRelativeImagePath(artifacts, screenshotPath);
+            string fileName = Path.GetFileName(screenshotPath ?? string.Empty);
+            return string.IsNullOrWhiteSpace(relativePath)
+                ? string.Empty
+                : "[" + EscapePipe(fileName) + "](" + relativePath + ")";
+        }
+
+        private static string BuildRelativeImagePath(AutoTestRunArtifacts artifacts, string screenshotPath)
+        {
+            if (artifacts == null || string.IsNullOrWhiteSpace(artifacts.ReportPath) || string.IsNullOrWhiteSpace(screenshotPath))
+            {
+                return string.Empty;
+            }
+
+            try
+            {
+                string reportDirectory = Path.GetDirectoryName(artifacts.ReportPath);
+                if (string.IsNullOrWhiteSpace(reportDirectory))
+                {
+                    return screenshotPath.Replace('\\', '/');
+                }
+
+                Uri reportUri = new Uri(AppendDirectorySeparator(reportDirectory));
+                Uri screenshotUri = new Uri(screenshotPath);
+                string relativePath = Uri.UnescapeDataString(reportUri.MakeRelativeUri(screenshotUri).ToString());
+                return relativePath.Replace('\\', '/');
+            }
+            catch
+            {
+                return screenshotPath.Replace('\\', '/');
+            }
+        }
+
+        private static string AppendDirectorySeparator(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return path ?? string.Empty;
+            }
+
+            char lastChar = path[path.Length - 1];
+            if (lastChar == Path.DirectorySeparatorChar || lastChar == Path.AltDirectorySeparatorChar)
+            {
+                return path;
+            }
+
+            return path + Path.DirectorySeparatorChar;
         }
 
         private static string BuildJsonArray(List<string> values)

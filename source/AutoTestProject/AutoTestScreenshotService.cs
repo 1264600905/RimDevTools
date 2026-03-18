@@ -54,6 +54,7 @@ namespace LogSyncMod.AutoTest
                     SanitizeFileName(result.DefName));
                 string screenshotPath = Path.Combine(runArtifacts.ScreenshotDirectory, fileName);
 
+                AutoTestScreenshotOverlay.Request(result);
                 ScreenCapture.CaptureScreenshot(screenshotPath);
                 result.ScreenshotPath = screenshotPath;
                 if (result.ScreenshotPaths == null)
@@ -124,6 +125,7 @@ namespace LogSyncMod.AutoTest
                     SanitizeFileName(stageSuffix));
                 string screenshotPath = Path.Combine(screenshotDirectory, fileName);
 
+                AutoTestScreenshotOverlay.Request(result);
                 ScreenCapture.CaptureScreenshot(screenshotPath);
                 result.ScreenshotPath = screenshotPath;
                 if (result.ScreenshotPaths == null)
@@ -169,6 +171,75 @@ namespace LogSyncMod.AutoTest
             }
 
             return value;
+        }
+    }
+
+    internal static class AutoTestScreenshotOverlay
+    {
+        private const int OverlayRepaintFrames = 3;
+        private static string line1 = string.Empty;
+        private static string line2 = string.Empty;
+        private static int remainingRepaintFrames;
+
+        public static void Request(AutoTestResult result)
+        {
+            line1 = string.IsNullOrWhiteSpace(result?.DefName) ? "UnknownDef" : result.DefName.Trim();
+            line2 = string.IsNullOrWhiteSpace(result?.Label) ? line1 : result.Label.Trim();
+            remainingRepaintFrames = Math.Max(remainingRepaintFrames, OverlayRepaintFrames);
+        }
+
+        public static void DrawOverlay()
+        {
+            if (remainingRepaintFrames <= 0 || Event.current == null || Event.current.type != EventType.Repaint)
+            {
+                return;
+            }
+
+            float margin = 16f;
+            float width = Mathf.Min(Screen.width - margin * 2f, Screen.width * 0.7f);
+            Rect backgroundRect = new Rect(margin, margin, width, 150f);
+            Widgets.DrawBoxSolid(backgroundRect, new Color(0f, 0f, 0f, 0.72f));
+
+            Color originalColor = GUI.color;
+            GameFont originalFont = Text.Font;
+            TextAnchor originalAnchor = Text.Anchor;
+
+            try
+            {
+                Text.Font = GameFont.Medium;
+                Text.Anchor = TextAnchor.UpperLeft;
+
+                DrawShadowedLabel(new Rect(backgroundRect.x + 14f, backgroundRect.y + 10f, backgroundRect.width - 20f, 58f), line1);
+                DrawShadowedLabel(new Rect(backgroundRect.x + 14f, backgroundRect.y + 76f, backgroundRect.width - 20f, 58f), line2);
+            }
+            finally
+            {
+                GUI.color = originalColor;
+                Text.Font = originalFont;
+                Text.Anchor = originalAnchor;
+                remainingRepaintFrames--;
+            }
+        }
+
+        private static void DrawShadowedLabel(Rect rect, string text)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                return;
+            }
+
+            GUIStyle style = new GUIStyle(Text.CurFontStyle)
+            {
+                alignment = TextAnchor.UpperLeft,
+                fontSize = 38,
+                wordWrap = false,
+                clipping = TextClipping.Overflow
+            };
+
+            GUI.color = Color.black;
+            GUI.Label(new Rect(rect.x + 3f, rect.y + 3f, rect.width, rect.height), text, style);
+            GUI.color = Color.white;
+            GUI.Label(rect, text, style);
         }
     }
 }
