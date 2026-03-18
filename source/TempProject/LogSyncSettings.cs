@@ -46,6 +46,9 @@ namespace LogSyncMod
         public bool autoTestTerrains = true;
         public bool autoTestCaptureScreenshots = false;
         public int autoTestBatchSize = 40;
+        public bool autoTestPreventPause = true;
+        public bool autoTestUseFastSpeed = true;
+        public int autoTestPocketMapMaxConcurrent = 5;
         public bool autoTestRunRequested;
 
         public override void ExposeData()
@@ -69,6 +72,9 @@ namespace LogSyncMod
             Scribe_Values.Look(ref autoTestTerrains, "autoTestTerrains", true);
             Scribe_Values.Look(ref autoTestCaptureScreenshots, "autoTestCaptureScreenshots", false);
             Scribe_Values.Look(ref autoTestBatchSize, "autoTestBatchSize", 40);
+            Scribe_Values.Look(ref autoTestPreventPause, "autoTestPreventPause", true);
+            Scribe_Values.Look(ref autoTestUseFastSpeed, "autoTestUseFastSpeed", true);
+            Scribe_Values.Look(ref autoTestPocketMapMaxConcurrent, "autoTestPocketMapMaxConcurrent", 5);
 
             if (targetModIds == null) targetModIds = new List<string>();
             if (keywords == null) keywords = new List<string>();
@@ -103,6 +109,7 @@ namespace LogSyncMod
             autoTestTargetPackageId = (autoTestTargetPackageId ?? "").Trim().ToLowerInvariant();
             autoTestOutputPath = (autoTestOutputPath ?? "").Trim();
             if (autoTestBatchSize < 1) autoTestBatchSize = 1;
+            if (autoTestPocketMapMaxConcurrent < 1) autoTestPocketMapMaxConcurrent = 1;
         }
 
         public bool ShouldTestContent()
@@ -142,12 +149,17 @@ namespace LogSyncMod
 
         public bool ShouldTestThreeViews()
         {
-            return autoTestScope == AutoTestScope.ThreeViews;
+            return autoTestScope == AutoTestScope.All || autoTestScope == AutoTestScope.ThreeViews;
         }
 
         public bool ShouldTestCombatPawns()
         {
             return autoTestScope == AutoTestScope.All || autoTestScope == AutoTestScope.CombatPawns;
+        }
+
+        public int GetPocketMapMaxConcurrent()
+        {
+            return autoTestPocketMapMaxConcurrent < 1 ? 1 : autoTestPocketMapMaxConcurrent;
         }
 
         public void RequestAutoTestRun()

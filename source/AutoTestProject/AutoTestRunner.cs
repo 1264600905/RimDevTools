@@ -83,7 +83,6 @@ namespace LogSyncMod.AutoTest
     internal sealed partial class AutoTestRunner
     {
         // --- 常量和字段 ---
-        private const int MaxConcurrentTurretTests = 3;
         private const int PreOpenSettleRepaintFrames = 10;
         private const int OpenStableFrameRequirement = 3;
         private const int OpenTimeoutRepaintFrames = 180;
@@ -91,7 +90,6 @@ namespace LogSyncMod.AutoTest
         private const int CloseTimeoutRepaintFrames = 180;
         private const int PocketMapSharedCooldownTicks = 120;
         private const float DefaultTurretScreenshotAspect = 16f / 9f;
-        private const int MaxConcurrentThreeViewTests = 1;
 
         private static readonly FieldInfo ProjectileUsedTargetField = typeof(Projectile).GetField("usedTarget", BindingFlags.Instance | BindingFlags.NonPublic);
         private static readonly FieldInfo ProjectileIntendedTargetField = typeof(Projectile).GetField("intendedTarget", BindingFlags.Instance | BindingFlags.NonPublic);
@@ -218,12 +216,24 @@ namespace LogSyncMod.AutoTest
             BuildPlannedManifest();
 
             int totalPending = pendingItems.Count + pendingTurretDefs.Count + pendingRangedWeaponDefs.Count + pendingMeleeWeaponDefs.Count + pendingThreeViewTargets.Count + pendingCombatPawnTargets.Count;
+            int pocketMapMaxConcurrent = settings.GetPocketMapMaxConcurrent();
             Log.Message(string.Format(
-                "[LogSyncAutoTest] START packageId={0} map={1} scope={2} pending={3}",
+                "[LogSyncAutoTest] START packageId={0} map={1} scope={2} pending={3} pocketMapMaxConcurrent={4}",
                 targetPackageId,
                 map.info?.parent?.LabelCap ?? map.ToString(),
                 settings.autoTestScope,
-                totalPending));
+                totalPending,
+                pocketMapMaxConcurrent));
+            Log.Message(string.Format(
+                "[LogSyncAutoTest] ENABLED scopes: content={0}, recipes={1}, hediffs={2}, turrets={3}, ranged={4}, melee={5}, threeViews={6}, combatPawns={7}",
+                settings.ShouldTestContent(),
+                settings.ShouldTestRecipes(),
+                settings.ShouldTestHediffs(),
+                settings.ShouldTestTurrets(),
+                settings.ShouldTestRangedWeapons(),
+                settings.ShouldTestMeleeWeapons(),
+                settings.ShouldTestThreeViews(),
+                settings.ShouldTestCombatPawns()));
 
             if (totalPending == 0)
             {
@@ -272,31 +282,31 @@ namespace LogSyncMod.AutoTest
             if (Find.TickManager.TicksGame % 500 == 0 && activeTurretSessions.Count > 0)
             {
                 string statusReport = string.Join(", ", activeTurretSessions.Select(s => $"{s.TurretDef.defName}({s.Phase})"));
-                Log.Message($"[LogSyncAutoTest] Heartbeat: {activeTurretSessions.Count} active sessions. Details: {statusReport}");
+                Log.Message($"[LogSyncAutoTest] Heartbeat: {activeTurretSessions.Count} active turret sessions. TotalPocketMaps={GetActivePocketMapSessionCount()}/{settings.GetPocketMapMaxConcurrent()}. Details: {statusReport}");
             }
 
             if (Find.TickManager.TicksGame % 500 == 0 && activeRangedWeaponSessions.Count > 0)
             {
                 string statusReport = string.Join(", ", activeRangedWeaponSessions.Select(s => $"{s.WeaponDef.defName}({s.Phase})"));
-                Log.Message($"[LogSyncAutoTest] Ranged heartbeat: {activeRangedWeaponSessions.Count} active sessions. Details: {statusReport}");
+                Log.Message($"[LogSyncAutoTest] Ranged heartbeat: {activeRangedWeaponSessions.Count} active sessions. TotalPocketMaps={GetActivePocketMapSessionCount()}/{settings.GetPocketMapMaxConcurrent()}. Details: {statusReport}");
             }
 
             if (Find.TickManager.TicksGame % 500 == 0 && activeMeleeWeaponSessions.Count > 0)
             {
                 string statusReport = string.Join(", ", activeMeleeWeaponSessions.Select(s => $"{s.WeaponDef.defName}({s.Phase})"));
-                Log.Message($"[LogSyncAutoTest] Melee heartbeat: {activeMeleeWeaponSessions.Count} active sessions. Details: {statusReport}");
+                Log.Message($"[LogSyncAutoTest] Melee heartbeat: {activeMeleeWeaponSessions.Count} active sessions. TotalPocketMaps={GetActivePocketMapSessionCount()}/{settings.GetPocketMapMaxConcurrent()}. Details: {statusReport}");
             }
 
             if (Find.TickManager.TicksGame % 500 == 0 && activeThreeViewSessions.Count > 0)
             {
                 string statusReport = string.Join(", ", activeThreeViewSessions.Select(s => $"{s.Spec.DefName}({s.Phase})"));
-                Log.Message($"[LogSyncAutoTest] ThreeView heartbeat: {activeThreeViewSessions.Count} active sessions. Details: {statusReport}");
+                Log.Message($"[LogSyncAutoTest] ThreeView heartbeat: {activeThreeViewSessions.Count} active sessions. TotalPocketMaps={GetActivePocketMapSessionCount()}/{settings.GetPocketMapMaxConcurrent()}. Details: {statusReport}");
             }
 
             if (Find.TickManager.TicksGame % 500 == 0 && activeCombatPawnSessions.Count > 0)
             {
-                string statusReport = string.Join(", ", activeCombatPawnSessions.Select(s => $"{s.Spec.DefName}({s.Phase})"));
-                Log.Message($"[LogSyncAutoTest] CombatPawn heartbeat: {activeCombatPawnSessions.Count} active sessions. Details: {statusReport}");
+                string statusReport = string.Join(", ", activeCombatPawnSessions.Select(s => $"{s.Spec.DefName}({s.Phase}) {s.BuildDebugStatus()}"));
+                Log.Message($"[LogSyncAutoTest] CombatPawn heartbeat: {activeCombatPawnSessions.Count} active sessions. TotalPocketMaps={GetActivePocketMapSessionCount()}/{settings.GetPocketMapMaxConcurrent()}. Details: {statusReport}");
             }
 
             foreach (var session in activeTurretSessions)
@@ -383,31 +393,38 @@ namespace LogSyncMod.AutoTest
 
         private bool TryStartNextPocketMapSession()
         {
-            if (activeTurretSessions.Count < MaxConcurrentTurretTests && pendingTurretDefs.Count > 0)
+            int maxConcurrentPocketMaps = settings.GetPocketMapMaxConcurrent();
+            int activePocketMaps = GetActivePocketMapSessionCount();
+            if (activePocketMaps >= maxConcurrentPocketMaps)
+            {
+                return false;
+            }
+
+            if (pendingTurretDefs.Count > 0)
             {
                 StartNewTurretSession(pendingTurretDefs.Dequeue());
                 return true;
             }
 
-            if (activeRangedWeaponSessions.Count < MaxConcurrentTurretTests && pendingRangedWeaponDefs.Count > 0)
+            if (pendingRangedWeaponDefs.Count > 0)
             {
                 StartNewRangedWeaponSession(pendingRangedWeaponDefs.Dequeue());
                 return true;
             }
 
-            if (activeMeleeWeaponSessions.Count < MaxConcurrentTurretTests && pendingMeleeWeaponDefs.Count > 0)
+            if (pendingMeleeWeaponDefs.Count > 0)
             {
                 StartNewMeleeWeaponSession(pendingMeleeWeaponDefs.Dequeue());
                 return true;
             }
 
-            if (activeThreeViewSessions.Count < MaxConcurrentThreeViewTests && pendingThreeViewTargets.Count > 0)
+            if (pendingThreeViewTargets.Count > 0)
             {
                 StartNewThreeViewSession(pendingThreeViewTargets.Dequeue());
                 return true;
             }
 
-            if (activeCombatPawnSessions.Count < MaxConcurrentTurretTests && pendingCombatPawnTargets.Count > 0)
+            if (pendingCombatPawnTargets.Count > 0)
             {
                 StartNewCombatPawnSession(pendingCombatPawnTargets.Dequeue());
                 return true;
@@ -419,6 +436,15 @@ namespace LogSyncMod.AutoTest
         private bool IsPocketMapCooldownActive()
         {
             return Find.TickManager != null && Find.TickManager.TicksGame <= pocketMapCooldownUntilTick;
+        }
+
+        private int GetActivePocketMapSessionCount()
+        {
+            return activeTurretSessions.Count +
+                   activeRangedWeaponSessions.Count +
+                   activeMeleeWeaponSessions.Count +
+                   activeThreeViewSessions.Count +
+                   activeCombatPawnSessions.Count;
         }
 
         private void RefreshPocketMapCooldown(string reason)

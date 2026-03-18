@@ -107,6 +107,18 @@
   </HediffDef>
 
   <HediffDef>
+    <defName>LogSync_CombatPawnTargetMarker</defName>
+    <label>Auto-Test Combat Pawn Target Marker</label>
+    <description>Pure marker used to identify the receive-hit combat test target.</description>
+    <hediffClass>HediffWithComps</hediffClass>
+    <defaultLabelColor>(0.35, 0.85, 1.0)</defaultLabelColor>
+    <isBad>false</isBad>
+    <stages>
+      <li />
+    </stages>
+  </HediffDef>
+
+  <HediffDef>
     <defName>LogSync_CombatAssaulter</defName>
     <label>Auto-Test Combat Assaulter</label>
     <description>Keeps incoming damage at 10% and grants +300 move speed for receive-hit combat tests.</description>

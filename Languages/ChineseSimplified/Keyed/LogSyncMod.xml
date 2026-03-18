@@ -31,7 +31,10 @@
   <LogSyncMod.AutoTestScopeThreeViews>三视图静态摄影棚</LogSyncMod.AutoTestScopeThreeViews>
   <LogSyncMod.AutoTestScopeCombatPawns>受击向战斗口袋地图</LogSyncMod.AutoTestScopeCombatPawns>
   <LogSyncMod.AutoTestCaptureScreenshots>为已打开的 InfoCard 自动截图</LogSyncMod.AutoTestCaptureScreenshots>
+  <LogSyncMod.AutoTestPreventPause>自动测试期间阻止游戏暂停</LogSyncMod.AutoTestPreventPause>
+  <LogSyncMod.AutoTestUseFastSpeed>自动测试期间强制二倍速</LogSyncMod.AutoTestUseFastSpeed>
   <LogSyncMod.AutoTestBatchSize>每批测试数量：{0}</LogSyncMod.AutoTestBatchSize>
+  <LogSyncMod.AutoTestPocketMapMaxConcurrent>口袋地图最大并发数：{0}</LogSyncMod.AutoTestPocketMapMaxConcurrent>
   <LogSyncMod.AutoTestRunNow>立即启动自动测试</LogSyncMod.AutoTestRunNow>
   <LogSyncMod.AutoTestRunRequested>已请求启动自动测试</LogSyncMod.AutoTestRunRequested>
   <LogSyncMod.ApplyAndSave>应用并保存设置</LogSyncMod.ApplyAndSave>

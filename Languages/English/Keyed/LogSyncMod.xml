@@ -31,7 +31,10 @@
   <LogSyncMod.AutoTestScopeThreeViews>Three-view studio screenshots</LogSyncMod.AutoTestScopeThreeViews>
   <LogSyncMod.AutoTestScopeCombatPawns>Combat pawn pocket maps</LogSyncMod.AutoTestScopeCombatPawns>
   <LogSyncMod.AutoTestCaptureScreenshots>Capture screenshots for opened InfoCards</LogSyncMod.AutoTestCaptureScreenshots>
+  <LogSyncMod.AutoTestPreventPause>Prevent game pause during auto tests</LogSyncMod.AutoTestPreventPause>
+  <LogSyncMod.AutoTestUseFastSpeed>Force 2x speed during auto tests</LogSyncMod.AutoTestUseFastSpeed>
   <LogSyncMod.AutoTestBatchSize>Batch size per step: {0}</LogSyncMod.AutoTestBatchSize>
+  <LogSyncMod.AutoTestPocketMapMaxConcurrent>Max concurrent pocket maps: {0}</LogSyncMod.AutoTestPocketMapMaxConcurrent>
   <LogSyncMod.AutoTestRunNow>Run auto test now</LogSyncMod.AutoTestRunNow>
   <LogSyncMod.AutoTestRunRequested>Auto test run requested</LogSyncMod.AutoTestRunRequested>
   <LogSyncMod.ApplyAndSave>Apply And Save</LogSyncMod.ApplyAndSave>

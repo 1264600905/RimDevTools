@@ -657,7 +657,7 @@ namespace LogSyncMod.AutoTest
                 pendingMeleeWeaponDefs.Enqueue(weaponDef);
             }
 
-            Log.Message("[LogSyncAutoTest] Melee weapon queue prepared. ConcurrentLimit=" + MaxConcurrentTurretTests + " Total=" + pendingMeleeWeaponDefs.Count);
+            Log.Message("[LogSyncAutoTest] Melee weapon queue prepared. PocketMapConcurrentLimit=" + settings.GetPocketMapMaxConcurrent() + " Total=" + pendingMeleeWeaponDefs.Count);
         }
 
         private void StartNewMeleeWeaponSession(ThingDef weaponDef)

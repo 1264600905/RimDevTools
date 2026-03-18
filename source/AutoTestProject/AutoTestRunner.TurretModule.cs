@@ -1396,7 +1396,7 @@ namespace LogSyncMod.AutoTest
                 pendingTurretDefs.Enqueue(turretDef);
             }
 
-            Log.Message("[LogSyncAutoTest] Turret queue prepared. ConcurrentLimit=" + MaxConcurrentTurretTests + " Total=" + pendingTurretDefs.Count);
+            Log.Message("[LogSyncAutoTest] Turret queue prepared. PocketMapConcurrentLimit=" + settings.GetPocketMapMaxConcurrent() + " Total=" + pendingTurretDefs.Count);
         }
 
         private void StartNewTurretSession(ThingDef turretDef)

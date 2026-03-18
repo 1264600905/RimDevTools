@@ -27,6 +27,7 @@ namespace LogSyncMod.AutoTest
             private const int MapReadyWaitTicks = 180;
             private const int FightDurationTicks = 60 * 60;
             private const int ScreenshotFocusWaitTicks = 6;
+            private const string TargetMarkerHediffDefName = "LogSync_CombatPawnTargetMarker";
 
             private readonly AutoTestRunner owner;
             private int lastEnemyAttackOrderTick = -9999;
@@ -59,6 +60,7 @@ namespace LogSyncMod.AutoTest
             {
                 if (TimeoutTicks > 0 && --TimeoutTicks == 0)
                 {
+                    LogCombatSnapshot("timeout");
                     Fail("timeout", "Total session timeout reached.");
                     return;
                 }
@@ -101,10 +103,11 @@ namespace LogSyncMod.AutoTest
 
             public Pawn ResolvePrimaryEnemy()
             {
+                Pawn trackedTarget = ResolveTrackedTargetPawn();
                 return EnemyPawns
                     .Where(pawn => pawn != null && !pawn.Destroyed && pawn.Spawned && pawn.Map == TestMap && !pawn.Dead)
                     .OrderBy(pawn => pawn.Downed ? 1 : 0)
-                    .ThenBy(pawn => pawn.Position.DistanceToSquared(TargetPawn?.Position ?? IntVec3.Zero))
+                    .ThenBy(pawn => pawn.Position.DistanceToSquared(trackedTarget?.Position ?? IntVec3.Zero))
                     .FirstOrDefault();
             }
 
@@ -150,6 +153,7 @@ namespace LogSyncMod.AutoTest
                 TargetPawn = pawn;
                 IntVec3 spawnPos = new IntVec3(Mathf.RoundToInt(TestMap.Size.x * 0.375f), 0, TestMap.Size.z / 2);
                 GenSpawn.Spawn(TargetPawn, spawnPos, TestMap);
+                ApplyTargetMarkerHediff(TargetPawn);
                 ConfigureTestPawnCombatStats(TargetPawn);
                 TargetPawn.Name = new NameSingle("自动测试目标");
                 if (TargetPawn.drafter != null)
@@ -161,6 +165,7 @@ namespace LogSyncMod.AutoTest
                 initialHealthPercent = TargetPawn.health?.summaryHealth?.SummaryHealthPercent ?? 1f;
                 Result.Stage = "spawn_target";
                 Result.Notes = AppendNote(Result.Notes, "TargetPawn=" + (TargetPawn.kindDef?.defName ?? "Unknown"));
+                Log.Message("[LogSyncAutoTest] CombatPawn target spawned: " + BuildTargetSummary(TargetPawn));
                 Phase = CombatPawnTestPhase.SpawningEnemies;
             }
 
@@ -220,6 +225,9 @@ namespace LogSyncMod.AutoTest
 
                 Result.Stage = "fighting_60s";
                 Result.Notes = AppendNote(Result.Notes, "EnemyCount=" + EnemyPawns.Count);
+                Log.Message("[LogSyncAutoTest] CombatPawn enemies spawned: targetCount=" + GetTargetCount() +
+                    " targets=[" + BuildCurrentTargetList() + "] enemyCount=" + EnemyPawns.Count +
+                    " enemies=[" + BuildEnemyList() + "]");
                 FightTicksRemaining = FightDurationTicks;
                 Phase = CombatPawnTestPhase.Fighting;
             }
@@ -257,15 +265,31 @@ namespace LogSyncMod.AutoTest
 
             private void UpdateFighting()
             {
+                Pawn trackedTarget = ResolveTrackedTargetPawn();
                 MaintainEnemyAttackOrders();
                 UpdateFirstHitScreenshot();
                 ObserveFirstDamage();
 
-                if (TargetPawn == null || TargetPawn.Destroyed || TargetPawn.Dead)
+                if (trackedTarget == null || trackedTarget.Destroyed || trackedTarget.Dead || trackedTarget.Downed)
                 {
+                    Log.Message("[LogSyncAutoTest] CombatPawn finish condition met: " +
+                        "def=" + (Spec?.DefName ?? "unknown") +
+                        " judgeTarget=" + BuildTargetSummary(trackedTarget) +
+                        " targetCount=" + GetTargetCount() +
+                        " targets=[" + BuildCurrentTargetList() + "]" +
+                        " enemyCount=" + EnemyPawns.Count +
+                        " enemies=[" + BuildEnemyList() + "]");
                     Result.Status = "passed";
-                    Result.Stage = "target_dead";
-                    Result.Notes = AppendNote(Result.Notes, "CombatOutcome=TargetDead");
+                    if (trackedTarget != null && trackedTarget.Downed && !trackedTarget.Dead)
+                    {
+                        Result.Stage = "target_downed";
+                        Result.Notes = AppendNote(Result.Notes, "CombatOutcome=TargetDowned");
+                    }
+                    else
+                    {
+                        Result.Stage = "target_dead";
+                        Result.Notes = AppendNote(Result.Notes, "CombatOutcome=TargetDead");
+                    }
                     if (FirstHitObserved && !FirstHitScreenshotCaptured)
                     {
                         owner.TryCaptureCombatPawnHitScreenshot(this, force: true);
@@ -287,17 +311,25 @@ namespace LogSyncMod.AutoTest
                 Result.Status = "passed";
                 Result.Stage = "survived_60s";
                 Result.Notes = AppendNote(Result.Notes, "CombatOutcome=Survived60Seconds");
+                Log.Message("[LogSyncAutoTest] CombatPawn survived full duration: " +
+                    "def=" + (Spec?.DefName ?? "unknown") +
+                    " judgeTarget=" + BuildTargetSummary(trackedTarget) +
+                    " targetCount=" + GetTargetCount() +
+                    " targets=[" + BuildCurrentTargetList() + "]" +
+                    " enemyCount=" + EnemyPawns.Count +
+                    " enemies=[" + BuildEnemyList() + "]");
                 Phase = CombatPawnTestPhase.CleaningUp;
             }
 
             private void ObserveFirstDamage()
             {
-                if (FirstHitObserved || TargetPawn == null || TargetPawn.Destroyed || TargetPawn.health == null)
+                Pawn trackedTarget = ResolveTrackedTargetPawn();
+                if (FirstHitObserved || trackedTarget == null || trackedTarget.Destroyed || trackedTarget.health == null)
                 {
                     return;
                 }
 
-                float currentHealthPercent = TargetPawn.health.summaryHealth?.SummaryHealthPercent ?? 1f;
+                float currentHealthPercent = trackedTarget.health.summaryHealth?.SummaryHealthPercent ?? 1f;
                 if (currentHealthPercent >= initialHealthPercent - 0.0001f)
                 {
                     return;
@@ -347,7 +379,8 @@ namespace LogSyncMod.AutoTest
 
             private void MaintainEnemyAttackOrders()
             {
-                if (TargetPawn == null || TargetPawn.Destroyed || !TargetPawn.Spawned || TargetPawn.Map != TestMap)
+                Pawn trackedTarget = ResolveTrackedTargetPawn();
+                if (trackedTarget == null || trackedTarget.Destroyed || !trackedTarget.Spawned || trackedTarget.Map != TestMap)
                 {
                     return;
                 }
@@ -362,17 +395,57 @@ namespace LogSyncMod.AutoTest
                 {
                     if (enemy.CurJob != null &&
                         enemy.CurJob.def == JobDefOf.AttackMelee &&
-                        enemy.CurJob.targetA.Thing == TargetPawn)
+                        enemy.CurJob.targetA.Thing == trackedTarget)
                     {
                         continue;
                     }
 
-                    Job attackJob = JobMaker.MakeJob(JobDefOf.AttackMelee, TargetPawn);
+                    Job attackJob = JobMaker.MakeJob(JobDefOf.AttackMelee, trackedTarget);
                     attackJob.expiryInterval = 1200;
                     enemy.jobs?.TryTakeOrderedJob(attackJob, null, false);
                 }
 
                 lastEnemyAttackOrderTick = currentTick;
+            }
+
+            private Pawn ResolveTrackedTargetPawn()
+            {
+                if (HasTargetMarkerHediff(TargetPawn))
+                {
+                    return TargetPawn;
+                }
+
+                Pawn resolvedPawn = TestMap?.mapPawns?.AllPawnsSpawned?
+                    .FirstOrDefault(HasTargetMarkerHediff);
+                if (resolvedPawn != null)
+                {
+                    TargetPawn = resolvedPawn;
+                }
+
+                return TargetPawn;
+            }
+
+            private static bool HasTargetMarkerHediff(Pawn pawn)
+            {
+                return pawn != null &&
+                       !pawn.Destroyed &&
+                       pawn.health?.hediffSet?.HasHediff(DefDatabase<HediffDef>.GetNamedSilentFail(TargetMarkerHediffDefName)) == true;
+            }
+
+            private static void ApplyTargetMarkerHediff(Pawn pawn)
+            {
+                if (pawn?.health == null)
+                {
+                    return;
+                }
+
+                HediffDef markerHediff = DefDatabase<HediffDef>.GetNamedSilentFail(TargetMarkerHediffDefName);
+                if (markerHediff == null || pawn.health.hediffSet?.HasHediff(markerHediff) == true)
+                {
+                    return;
+                }
+
+                HealthUtility.AdjustSeverity(pawn, markerHediff, 1f);
             }
 
             private void CleanupAndClose()
@@ -408,11 +481,81 @@ namespace LogSyncMod.AutoTest
 
             private void Fail(string stage, string message)
             {
+                LogCombatSnapshot("fail_" + stage);
                 Result.Status = "failed";
                 Result.Stage = stage;
                 Result.ErrorMessage = message ?? string.Empty;
                 owner.TryCaptureCombatPawnFailureScreenshot(this);
                 Phase = CombatPawnTestPhase.CleaningUp;
+            }
+
+            public string BuildDebugStatus()
+            {
+                Pawn trackedTarget = ResolveTrackedTargetPawn();
+                return "def=" + (Spec?.DefName ?? "unknown") +
+                    " targetCount=" + GetTargetCount() +
+                    " targets=[" + BuildCurrentTargetList() + "]" +
+                    " enemyCount=" + EnemyPawns.Count +
+                    " enemies=[" + BuildEnemyList() + "]" +
+                    " judgeTarget=" + BuildTargetSummary(trackedTarget);
+            }
+
+            private void LogCombatSnapshot(string reason)
+            {
+                Log.Message("[LogSyncAutoTest] CombatPawn snapshot(" + reason + "): " + BuildDebugStatus());
+            }
+
+            private int GetTargetCount()
+            {
+                return TestMap?.mapPawns?.AllPawnsSpawned?.Count(HasTargetMarkerHediff) ?? (HasTargetMarkerHediff(TargetPawn) ? 1 : 0);
+            }
+
+            private string BuildCurrentTargetList()
+            {
+                IEnumerable<Pawn> targets = TestMap?.mapPawns?.AllPawnsSpawned?.Where(HasTargetMarkerHediff) ?? Enumerable.Empty<Pawn>();
+                string[] entries = targets.Select(BuildTargetSummary).ToArray();
+                if (entries.Length == 0 && TargetPawn != null)
+                {
+                    return BuildTargetSummary(TargetPawn);
+                }
+
+                return entries.Length == 0 ? "none" : string.Join("; ", entries);
+            }
+
+            private string BuildEnemyList()
+            {
+                List<string> entries = EnemyPawns
+                    .Where(pawn => pawn != null)
+                    .Select(BuildTargetSummary)
+                    .ToList();
+                return entries.Count == 0 ? "none" : string.Join("; ", entries);
+            }
+
+            private static string BuildTargetSummary(Pawn pawn)
+            {
+                if (pawn == null)
+                {
+                    return "null";
+                }
+
+                string label = pawn.LabelShortCap;
+                string kind = pawn.kindDef?.defName ?? "UnknownKind";
+                string name = pawn.Name?.ToStringShort ?? label;
+                bool marked = HasTargetMarkerHediff(pawn);
+                bool downed = pawn.Downed;
+                bool dead = pawn.Dead;
+                bool spawned = pawn.Spawned;
+                bool destroyed = pawn.Destroyed;
+                return string.Format(
+                    "{0}/{1}(kind={2},marked={3},downed={4},dead={5},spawned={6},destroyed={7})",
+                    label,
+                    name,
+                    kind,
+                    marked,
+                    downed,
+                    dead,
+                    spawned,
+                    destroyed);
             }
 
             public static CombatPawnTestSession Create(

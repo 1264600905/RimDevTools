@@ -1,3 +1,4 @@
+using System;
 using System.Linq;
 using System.Reflection;
 using HarmonyLib;
@@ -18,6 +19,14 @@ namespace LogSyncMod.AutoTest
         private static bool quickStartAttempted;
         private static int playableMapReadyTick = -1;
         private static bool? previousLogAutoOpenState;
+        private static TimeSpeed? previousTimeSpeed;
+        private static bool runtimeGuardsArmed;
+        private static bool runtimeGuardsUsingSmartSpeed;
+        private static TimeSpeed? lastObservedGuardSpeed;
+        private static bool? lastObservedPausedState;
+        private static bool? lastObservedForcePausedState;
+        private static string lastObservedSmartSpeedState;
+        private static readonly AutoTestSmartSpeedBridge SmartSpeedBridge = new AutoTestSmartSpeedBridge();
         private static AutoTestRunner runner;
 
         static AutoTestBootstrap()
@@ -39,10 +48,12 @@ namespace LogSyncMod.AutoTest
 
             if (runner != null)
             {
+                MaintainRuntimeGuards(settings, "Tick");
                 runner.Tick();
                 if (runner.Completed)
                 {
                     RestoreLogAutoOpen();
+                    RestoreRuntimeGuards();
                     runner = null;
                     settings.autoTestEnabled = false;
                     settings.Write();
@@ -95,6 +106,7 @@ namespace LogSyncMod.AutoTest
             }
 
             DisableLogAutoOpenForAutoTest();
+            ArmRuntimeGuards(settings);
             runner = new AutoTestRunner(settings, map);
             runner.Initialize();
             playableMapReadyTick = -1;
@@ -102,6 +114,12 @@ namespace LogSyncMod.AutoTest
 
         public static void OnGui()
         {
+            LogSyncSettings settings = global::LogSyncMod.LogSyncMod.settings;
+            if (settings != null)
+            {
+                MaintainRuntimeGuards(settings, "OnGUI");
+            }
+
             runner?.ProcessUi();
         }
 
@@ -181,6 +199,175 @@ namespace LogSyncMod.AutoTest
             {
                 previousLogAutoOpenState = null;
             }
+        }
+
+        private static void ArmRuntimeGuards(LogSyncSettings settings)
+        {
+            if (runtimeGuardsArmed)
+            {
+                return;
+            }
+
+            TickManager tickManager = Find.TickManager;
+            if (tickManager == null)
+            {
+                return;
+            }
+
+            runtimeGuardsUsingSmartSpeed = false;
+            if (SmartSpeedBridge.TryArm(out string smartSpeedDetails))
+            {
+                runtimeGuardsArmed = true;
+                runtimeGuardsUsingSmartSpeed = true;
+                previousTimeSpeed = null;
+                lastObservedGuardSpeed = null;
+                lastObservedPausedState = null;
+                lastObservedForcePausedState = null;
+                lastObservedSmartSpeedState = null;
+                Log.Message("[LogSyncAutoTest] Runtime guards armed via SmartSpeed. " + smartSpeedDetails);
+                return;
+            }
+
+            previousTimeSpeed = tickManager.CurTimeSpeed;
+            runtimeGuardsArmed = settings.autoTestPreventPause || settings.autoTestUseFastSpeed;
+            lastObservedGuardSpeed = null;
+            lastObservedPausedState = null;
+            lastObservedForcePausedState = null;
+
+            if (runtimeGuardsArmed)
+            {
+                Log.Warning("[LogSyncAutoTest] SmartSpeed bridge unavailable, falling back to local runtime guards.");
+                Log.Message("[LogSyncAutoTest] Runtime guards armed. preventPause=" + settings.autoTestPreventPause +
+                    " useFastSpeed=" + settings.autoTestUseFastSpeed +
+                    " previousSpeed=" + previousTimeSpeed.Value);
+            }
+        }
+
+        private static void RestoreRuntimeGuards()
+        {
+            if (!runtimeGuardsArmed)
+            {
+                previousTimeSpeed = null;
+                return;
+            }
+
+            if (runtimeGuardsUsingSmartSpeed)
+            {
+                SmartSpeedBridge.Restore(out string smartSpeedDetails);
+                Log.Message("[LogSyncAutoTest] Runtime guards restored SmartSpeed state: " + smartSpeedDetails);
+                previousTimeSpeed = null;
+                runtimeGuardsArmed = false;
+                runtimeGuardsUsingSmartSpeed = false;
+                lastObservedGuardSpeed = null;
+                lastObservedPausedState = null;
+                lastObservedForcePausedState = null;
+                lastObservedSmartSpeedState = null;
+                return;
+            }
+
+            try
+            {
+                TickManager tickManager = Find.TickManager;
+                if (tickManager != null && previousTimeSpeed.HasValue)
+                {
+                    tickManager.CurTimeSpeed = previousTimeSpeed.Value;
+                    Log.Message("[LogSyncAutoTest] Runtime guards restored previous speed: " + previousTimeSpeed.Value);
+                }
+            }
+            catch (System.Exception ex)
+            {
+                Log.Warning("[LogSyncAutoTest] Failed to restore runtime guard state: " + ex.Message);
+            }
+            finally
+            {
+                previousTimeSpeed = null;
+                runtimeGuardsArmed = false;
+                lastObservedGuardSpeed = null;
+                lastObservedPausedState = null;
+                lastObservedForcePausedState = null;
+                lastObservedSmartSpeedState = null;
+            }
+        }
+
+        private static void MaintainRuntimeGuards(LogSyncSettings settings, string source)
+        {
+            if (!runtimeGuardsArmed || runner == null)
+            {
+                return;
+            }
+
+            if (runtimeGuardsUsingSmartSpeed)
+            {
+                bool adjusted = SmartSpeedBridge.TryMaintain(out string smartSpeedDetails);
+                if (adjusted)
+                {
+                    Log.Message("[LogSyncAutoTest] Runtime guard adjusted state via SmartSpeed/" + source + ": " + smartSpeedDetails);
+                }
+                else if (!string.Equals(smartSpeedDetails, lastObservedSmartSpeedState, StringComparison.Ordinal))
+                {
+                    Log.Message("[LogSyncAutoTest] Runtime guard observed state via SmartSpeed/" + source + ": " + smartSpeedDetails);
+                }
+
+                TickManager smartSpeedTickManager = Find.TickManager;
+                lastObservedGuardSpeed = smartSpeedTickManager?.CurTimeSpeed;
+                lastObservedPausedState = smartSpeedTickManager?.Paused;
+                lastObservedForcePausedState = smartSpeedTickManager?.ForcePaused;
+                lastObservedSmartSpeedState = smartSpeedDetails;
+                return;
+            }
+
+            TickManager tickManager = Find.TickManager;
+            if (tickManager == null)
+            {
+                return;
+            }
+
+            bool paused = tickManager.Paused;
+            bool forcePaused = tickManager.ForcePaused;
+            TimeSpeed currentSpeed = tickManager.CurTimeSpeed;
+            TimeSpeed desiredSpeed = settings.autoTestUseFastSpeed ? TimeSpeed.Fast : TimeSpeed.Normal;
+
+            bool shouldAdjustSpeed = false;
+            if (settings.autoTestPreventPause && paused)
+            {
+                shouldAdjustSpeed = true;
+            }
+
+            if (settings.autoTestUseFastSpeed && currentSpeed != desiredSpeed)
+            {
+                shouldAdjustSpeed = true;
+            }
+
+            if (shouldAdjustSpeed)
+            {
+                tickManager.CurTimeSpeed = desiredSpeed;
+                TimeSpeed updatedSpeed = tickManager.CurTimeSpeed;
+                bool updatedPaused = tickManager.Paused;
+                bool updatedForcePaused = tickManager.ForcePaused;
+                Log.Message("[LogSyncAutoTest] Runtime guard adjusted state via " + source +
+                    ": paused=" + paused +
+                    ", forcePaused=" + forcePaused +
+                    ", speed=" + currentSpeed +
+                    " -> paused=" + updatedPaused +
+                    ", forcePaused=" + updatedForcePaused +
+                    ", speed=" + updatedSpeed);
+                paused = updatedPaused;
+                forcePaused = updatedForcePaused;
+                currentSpeed = updatedSpeed;
+            }
+            else if (paused != lastObservedPausedState ||
+                     forcePaused != lastObservedForcePausedState ||
+                     currentSpeed != lastObservedGuardSpeed)
+            {
+                Log.Message("[LogSyncAutoTest] Runtime guard observed state via " + source +
+                    ": paused=" + paused +
+                    ", forcePaused=" + forcePaused +
+                    ", speed=" + currentSpeed);
+            }
+
+            lastObservedPausedState = paused;
+            lastObservedForcePausedState = forcePaused;
+            lastObservedGuardSpeed = currentSpeed;
         }
     }
 

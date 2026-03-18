@@ -138,11 +138,19 @@ namespace LogSyncMod
                 Find.WindowStack.Add(new FloatMenu(options));
             }
             listingStandard.CheckboxLabeled("LogSyncMod.AutoTestCaptureScreenshots".Translate(), ref settings.autoTestCaptureScreenshots);
+            listingStandard.CheckboxLabeled("LogSyncMod.AutoTestPreventPause".Translate(), ref settings.autoTestPreventPause);
+            listingStandard.CheckboxLabeled("LogSyncMod.AutoTestUseFastSpeed".Translate(), ref settings.autoTestUseFastSpeed);
             listingStandard.Label("LogSyncMod.AutoTestBatchSize".Translate(settings.autoTestBatchSize));
             string batchSizeInput = listingStandard.TextEntry(settings.autoTestBatchSize.ToString());
             if (int.TryParse(batchSizeInput, out int parsedBatchSize))
             {
                 settings.autoTestBatchSize = parsedBatchSize;
+            }
+            listingStandard.Label("LogSyncMod.AutoTestPocketMapMaxConcurrent".Translate(settings.autoTestPocketMapMaxConcurrent));
+            string pocketMapMaxConcurrentInput = listingStandard.TextEntry(settings.autoTestPocketMapMaxConcurrent.ToString());
+            if (int.TryParse(pocketMapMaxConcurrentInput, out int parsedPocketMapMaxConcurrent))
+            {
+                settings.autoTestPocketMapMaxConcurrent = parsedPocketMapMaxConcurrent;
             }
             if (listingStandard.ButtonText("LogSyncMod.AutoTestRunNow".Translate()))
             {

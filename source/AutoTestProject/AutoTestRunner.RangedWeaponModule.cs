@@ -1085,7 +1085,7 @@ namespace LogSyncMod.AutoTest
                 pendingRangedWeaponDefs.Enqueue(weaponDef);
             }
 
-            Log.Message("[LogSyncAutoTest] Ranged weapon queue prepared. ConcurrentLimit=" + MaxConcurrentTurretTests + " Total=" + pendingRangedWeaponDefs.Count);
+            Log.Message("[LogSyncAutoTest] Ranged weapon queue prepared. PocketMapConcurrentLimit=" + settings.GetPocketMapMaxConcurrent() + " Total=" + pendingRangedWeaponDefs.Count);
         }
 
         private void StartNewRangedWeaponSession(ThingDef weaponDef)
