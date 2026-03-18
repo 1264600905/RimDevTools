@@ -106,4 +106,20 @@
     </stages>
   </HediffDef>
 
+  <HediffDef>
+    <defName>LogSync_CombatAssaulter</defName>
+    <label>Auto-Test Combat Assaulter</label>
+    <description>Keeps incoming damage at 10% and grants +300 move speed for receive-hit combat tests.</description>
+    <hediffClass>HediffWithComps</hediffClass>
+    <defaultLabelColor>(1.0, 0.65, 0.35)</defaultLabelColor>
+    <stages>
+      <li>
+        <statOffsets>
+          <IncomingDamageFactor>-0.9</IncomingDamageFactor>
+          <MoveSpeed>300</MoveSpeed>
+        </statOffsets>
+      </li>
+    </stages>
+  </HediffDef>
+
 </Defs>

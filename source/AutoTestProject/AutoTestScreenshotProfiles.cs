@@ -88,6 +88,14 @@ namespace LogSyncMod.AutoTest
             MaxRootSize = 11f
         };
 
+        public static readonly AutoTestScreenshotProfile CombatPawnHit = new AutoTestScreenshotProfile
+        {
+            ProfileId = "CombatPawnHit",
+            FixedRootSize = 11f,
+            MinRootSize = 11f,
+            MaxRootSize = 11f
+        };
+
         public static readonly AutoTestScreenshotProfile PocketMapOverview = new AutoTestScreenshotProfile
         {
             ProfileId = "PocketMapOverview",

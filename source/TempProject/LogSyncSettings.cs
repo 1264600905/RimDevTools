@@ -12,7 +12,8 @@ namespace LogSyncMod
         Turrets = 4,
         RangedWeapons = 5,
         MeleeWeapons = 6,
-        ThreeViews = 7
+        ThreeViews = 7,
+        CombatPawns = 8
     }
 
     public enum AutoTestMode
@@ -142,6 +143,11 @@ namespace LogSyncMod
         public bool ShouldTestThreeViews()
         {
             return autoTestScope == AutoTestScope.ThreeViews;
+        }
+
+        public bool ShouldTestCombatPawns()
+        {
+            return autoTestScope == AutoTestScope.All || autoTestScope == AutoTestScope.CombatPawns;
         }
 
         public void RequestAutoTestRun()

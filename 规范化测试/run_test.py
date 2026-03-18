@@ -199,6 +199,9 @@ def normalize_scope_value(scope: str | None):
         "threeviews": "ThreeViews",
         "three-views": "ThreeViews",
         "three_views": "ThreeViews",
+        "combatpawns": "CombatPawns",
+        "combat-pawns": "CombatPawns",
+        "combat_pawns": "CombatPawns",
     }
     return scope_map.get(normalized_scope, "All")
 
@@ -243,6 +246,21 @@ def find_mod_directory_by_package_id(package_id: str | None):
     normalized_package_id = (package_id or "").strip().lower()
     if not normalized_package_id:
         return None
+
+    game_path = Path(GAME_PATH)
+    if game_path.exists() and normalized_package_id.startswith("ludeon.rimworld"):
+        data_root = game_path.parent / "Data"
+        official_map = {
+            "ludeon.rimworld": data_root / "Core",
+            "ludeon.rimworld.royalty": data_root / "Royalty",
+            "ludeon.rimworld.ideology": data_root / "Ideology",
+            "ludeon.rimworld.biotech": data_root / "Biotech",
+            "ludeon.rimworld.anomaly": data_root / "Anomaly",
+            "ludeon.rimworld.odyssey": data_root / "Odyssey",
+        }
+        official_dir = official_map.get(normalized_package_id)
+        if official_dir and official_dir.exists():
+            return official_dir
 
     for root in build_candidate_mod_roots():
         for about_xml_path in root.rglob("About.xml"):
@@ -535,6 +553,9 @@ def update_mod_settings(
                 "threeviews": "ThreeViews",
                 "three-views": "ThreeViews",
                 "three_views": "ThreeViews",
+                "combatpawns": "CombatPawns",
+                "combat-pawns": "CombatPawns",
+                "combat_pawns": "CombatPawns",
             }
             desired_scope = scope_map.get(normalized_scope, "All")
             if (mod_settings.findtext("autoTestScope") or "").strip() != desired_scope:
@@ -1056,7 +1077,7 @@ if __name__ == "__main__":
     parser.add_argument("--auto-test-package-id", default=None, help="auto/xml 模式下的目标模组 packageId")
     parser.add_argument("--auto-test-output-dir", default=None, help="自动测试报告输出目录")
     parser.add_argument("--auto-test-mode", choices=["automatic", "xml-driven"], default="automatic", help="兼容旧参数；未传 --mode 时用于自动推断 auto/xml")
-    parser.add_argument("--auto-test-scope", choices=["all", "content", "recipes", "hediffs", "turrets", "rangedweapons", "meleeweapons", "threeviews"], default="all", help="auto/xml 模式下的测试范围：all/content/recipes/hediffs/turrets/rangedweapons/meleeweapons/threeviews")
+    parser.add_argument("--auto-test-scope", choices=["all", "content", "recipes", "hediffs", "turrets", "rangedweapons", "meleeweapons", "threeviews", "combatpawns"], default="all", help="auto/xml 模式下的测试范围：all/content/recipes/hediffs/turrets/rangedweapons/meleeweapons/threeviews/combatpawns")
     parser.add_argument("--auto-test-capture-screenshots", action="store_true", help="auto/xml 模式下允许截图")
     parser.add_argument("--auto-test-batch-size", type=int, default=None, help="auto 模式下按范围限制测试数量；xml 模式下也可作为上限")
     parser.add_argument("--auto-test-defname", action="append", default=None, help="auto 模式下指定要测试的 defName，可重复传入；脚本会自动生成临时 XML 规则")

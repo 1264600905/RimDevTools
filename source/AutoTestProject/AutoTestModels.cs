@@ -20,7 +20,11 @@ namespace LogSyncMod.AutoTest
         MechanoidThreeView,
         AlienThreeView,
         ApparelThreeView,
-        WeaponThreeView
+        WeaponThreeView,
+        ApparelCombat,
+        AnimalCombat,
+        MechanoidCombat,
+        AlienCombat
     }
 
     internal enum AutoTestCaseType
@@ -38,7 +42,11 @@ namespace LogSyncMod.AutoTest
         MechanoidThreeView,
         AlienThreeView,
         ApparelThreeView,
-        WeaponThreeView
+        WeaponThreeView,
+        ApparelCombat,
+        AnimalCombat,
+        MechanoidCombat,
+        AlienCombat
     }
 
     internal sealed class AutoTestWorkItem
