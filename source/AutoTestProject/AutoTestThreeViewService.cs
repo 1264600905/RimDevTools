@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Reflection;
 using RimWorld;
@@ -13,8 +14,18 @@ namespace LogSyncMod.AutoTest
         public AutoTestKind Kind;
         public AutoTestCaseType CaseType;
         public AutoTestManifestEntry ManifestEntry;
+        public Def TargetDef;
         public PawnKindDef PawnKindDef;
         public ThingDef RaceDef;
+        public ThingDef ItemDef;
+        public BodyTypeDef ForcedBodyType;
+        public Gender? ForcedGender;
+        public bool WearAsApparel;
+        public bool HoldAsWeapon;
+        public string PawnRaceDefName;
+        public string PawnRaceLabel;
+        public string PawnBodyTypeDefName;
+        public string PawnBodyTypeLabel;
         public string DefName;
         public string Label;
         public AutoTestScreenshotProfile Profile;
@@ -116,7 +127,10 @@ namespace LogSyncMod.AutoTest
             return true;
         }
 
-        public List<AutoTestThreeViewTargetSpec> ResolveDefaultTargets(Func<AutoTestCaseType, string, string, string, AutoTestManifestEntry> registerDiscoveredCase)
+        public List<AutoTestThreeViewTargetSpec> ResolveDefaultTargets(
+            ModContentPack targetMod,
+            ISet<ThingDef> excludedWeaponDefs,
+            Func<AutoTestCaseType, string, string, string, AutoTestManifestEntry> registerDiscoveredCase)
         {
             List<AutoTestThreeViewTargetSpec> targets = new List<AutoTestThreeViewTargetSpec>();
             if (registerDiscoveredCase == null)
@@ -155,6 +169,9 @@ namespace LogSyncMod.AutoTest
                 AutoTestCaseType.AlienThreeView,
                 ResolvePawnKind(new[] { "Axolotl_Colonist", "Axolotl_PlayerFaction", "Axolotl_Refugee" }, def => IsAlienHumanlike(def?.race)),
                 AutoTestScreenshotProfiles.ThreeViewAlien);
+
+            AddTargetModApparelTargets(targets, targetMod, registerDiscoveredCase);
+            AddTargetModWeaponTargets(targets, targetMod, excludedWeaponDefs, registerDiscoveredCase);
 
             return targets;
         }
@@ -458,12 +475,400 @@ namespace LogSyncMod.AutoTest
                 Kind = kind,
                 CaseType = caseType,
                 ManifestEntry = registerDiscoveredCase(caseType, nameof(PawnKindDef), pawnKindDef.defName, pawnKindDef.label),
+                TargetDef = pawnKindDef,
                 PawnKindDef = pawnKindDef,
                 RaceDef = pawnKindDef.race,
+                PawnRaceDefName = pawnKindDef.race?.defName,
+                PawnRaceLabel = pawnKindDef.race?.label ?? pawnKindDef.race?.defName ?? string.Empty,
                 DefName = pawnKindDef.defName,
                 Label = pawnKindDef.label,
                 Profile = profile
             });
+        }
+
+        private static void AddTargetModApparelTargets(
+            ICollection<AutoTestThreeViewTargetSpec> targets,
+            ModContentPack targetMod,
+            Func<AutoTestCaseType, string, string, string, AutoTestManifestEntry> registerDiscoveredCase)
+        {
+            if (targets == null || targetMod == null || registerDiscoveredCase == null)
+            {
+                return;
+            }
+
+            PawnKindDef humanPawnKind = ResolveDefaultHumanPawnKind();
+            List<PawnKindDef> alienPawnKinds = ResolvePreferredAlienPawnKinds(targetMod);
+
+            foreach (ThingDef apparelDef in DefDatabase<ThingDef>.AllDefsListForReading
+                .Where(def => def != null && def.modContentPack == targetMod && def.IsApparel)
+                .OrderBy(def => def.defName))
+            {
+                List<BodyTypeDef> explicitBodyTypes = ResolveSupportedApparelBodyTypes(apparelDef);
+                if (explicitBodyTypes.Count == 0)
+                {
+                    explicitBodyTypes.Add(ResolveDeterministicBodyType(ResolvePreferredGenderForVariant(apparelDef, null)));
+                }
+
+                foreach (BodyTypeDef bodyType in explicitBodyTypes.Distinct())
+                {
+                    Gender? forcedGender = ResolvePreferredGenderForVariant(apparelDef, bodyType);
+                    if (!TryResolvePresenterPawnKindForApparel(apparelDef, bodyType, forcedGender, humanPawnKind, alienPawnKinds, out PawnKindDef pawnKind))
+                    {
+                        continue;
+                    }
+
+                    string manifestDefName = BuildVariantManifestKey(apparelDef.defName, pawnKind?.defName, bodyType?.defName);
+                    string displayBodyType = bodyType?.label ?? bodyType?.defName ?? "Default";
+                    string label = string.IsNullOrWhiteSpace(apparelDef.label)
+                        ? apparelDef.defName
+                        : apparelDef.label + " [" + displayBodyType + "]";
+
+                    targets.Add(new AutoTestThreeViewTargetSpec
+                    {
+                        Kind = AutoTestKind.ApparelThreeView,
+                        CaseType = AutoTestCaseType.ApparelThreeView,
+                        ManifestEntry = registerDiscoveredCase(AutoTestCaseType.ApparelThreeView, nameof(ThingDef), manifestDefName, label),
+                        TargetDef = apparelDef,
+                        PawnKindDef = pawnKind,
+                        RaceDef = pawnKind?.race,
+                        ItemDef = apparelDef,
+                        ForcedBodyType = bodyType,
+                        ForcedGender = forcedGender,
+                        WearAsApparel = true,
+                        HoldAsWeapon = false,
+                        PawnRaceDefName = pawnKind?.race?.defName,
+                        PawnRaceLabel = pawnKind?.race?.label ?? pawnKind?.race?.defName ?? string.Empty,
+                        PawnBodyTypeDefName = bodyType?.defName ?? string.Empty,
+                        PawnBodyTypeLabel = displayBodyType,
+                        DefName = apparelDef.defName,
+                        Label = apparelDef.label,
+                        Profile = ResolveThreeViewProfileForPawnKind(pawnKind)
+                    });
+                }
+            }
+        }
+
+        private static void AddTargetModWeaponTargets(
+            ICollection<AutoTestThreeViewTargetSpec> targets,
+            ModContentPack targetMod,
+            ISet<ThingDef> excludedWeaponDefs,
+            Func<AutoTestCaseType, string, string, string, AutoTestManifestEntry> registerDiscoveredCase)
+        {
+            if (targets == null || targetMod == null || registerDiscoveredCase == null)
+            {
+                return;
+            }
+
+            PawnKindDef humanPawnKind = ResolveDefaultHumanPawnKind();
+            List<PawnKindDef> alienPawnKinds = ResolvePreferredAlienPawnKinds(targetMod);
+
+            foreach (ThingDef weaponDef in DefDatabase<ThingDef>.AllDefsListForReading
+                .Where(def =>
+                    def != null &&
+                    def.modContentPack == targetMod &&
+                    def.IsWeapon &&
+                    !def.IsApparel &&
+                    (excludedWeaponDefs == null || !excludedWeaponDefs.Contains(def)))
+                .OrderBy(def => def.defName))
+            {
+                Gender? forcedGender = null;
+                BodyTypeDef forcedBodyType = ResolveDeterministicBodyType(forcedGender);
+                if (!TryResolvePresenterPawnKindForWeapon(weaponDef, forcedBodyType, forcedGender, humanPawnKind, alienPawnKinds, out PawnKindDef pawnKind))
+                {
+                    continue;
+                }
+
+                string manifestDefName = BuildVariantManifestKey(weaponDef.defName, pawnKind?.defName, forcedBodyType?.defName);
+                targets.Add(new AutoTestThreeViewTargetSpec
+                {
+                    Kind = AutoTestKind.WeaponThreeView,
+                    CaseType = AutoTestCaseType.WeaponThreeView,
+                    ManifestEntry = registerDiscoveredCase(AutoTestCaseType.WeaponThreeView, nameof(ThingDef), manifestDefName, weaponDef.label),
+                    TargetDef = weaponDef,
+                    PawnKindDef = pawnKind,
+                    RaceDef = pawnKind?.race,
+                    ItemDef = weaponDef,
+                    ForcedBodyType = forcedBodyType,
+                    ForcedGender = forcedGender,
+                    WearAsApparel = false,
+                    HoldAsWeapon = true,
+                    PawnRaceDefName = pawnKind?.race?.defName,
+                    PawnRaceLabel = pawnKind?.race?.label ?? pawnKind?.race?.defName ?? string.Empty,
+                    PawnBodyTypeDefName = forcedBodyType?.defName ?? string.Empty,
+                    PawnBodyTypeLabel = forcedBodyType?.label ?? forcedBodyType?.defName ?? "Default",
+                    DefName = weaponDef.defName,
+                    Label = weaponDef.label,
+                    Profile = ResolveThreeViewProfileForPawnKind(pawnKind)
+                });
+            }
+        }
+
+        private static PawnKindDef ResolveDefaultHumanPawnKind()
+        {
+            return ResolvePawnKind(new[] { "Colonist" }, def => def?.race == ThingDefOf.Human);
+        }
+
+        private static List<PawnKindDef> ResolvePreferredAlienPawnKinds(ModContentPack targetMod)
+        {
+            return DefDatabase<PawnKindDef>.AllDefsListForReading
+                .Where(def => def != null && IsAlienHumanlike(def.race))
+                .OrderByDescending(def => def.modContentPack == targetMod ? 1 : 0)
+                .ThenBy(def => def.defName)
+                .ToList();
+        }
+
+        private static AutoTestScreenshotProfile ResolveThreeViewProfileForPawnKind(PawnKindDef pawnKindDef)
+        {
+            if (pawnKindDef?.race?.race?.IsMechanoid == true)
+            {
+                return AutoTestScreenshotProfiles.ThreeViewMechanoid;
+            }
+
+            if (pawnKindDef?.race?.race?.Animal == true)
+            {
+                return AutoTestScreenshotProfiles.ThreeViewAnimal;
+            }
+
+            if (IsAlienHumanlike(pawnKindDef?.race))
+            {
+                return AutoTestScreenshotProfiles.ThreeViewAlien;
+            }
+
+            return AutoTestScreenshotProfiles.ThreeViewHumanoid;
+        }
+
+        private static string BuildVariantManifestKey(string defName, string pawnKindDefName, string bodyTypeDefName)
+        {
+            return (defName ?? "UnknownDef") + "@" + (pawnKindDefName ?? "UnknownPawn") + "@" + (bodyTypeDefName ?? "Default");
+        }
+
+        private static Gender? ResolvePreferredGenderForVariant(ThingDef apparelDef, BodyTypeDef bodyType)
+        {
+            if (bodyType != null)
+            {
+                if (string.Equals(bodyType.defName, "Female", StringComparison.OrdinalIgnoreCase))
+                {
+                    return Gender.Female;
+                }
+
+                if (string.Equals(bodyType.defName, "Male", StringComparison.OrdinalIgnoreCase))
+                {
+                    return Gender.Male;
+                }
+            }
+
+            if (apparelDef?.apparel != null && apparelDef.apparel.gender != Gender.None)
+            {
+                return apparelDef.apparel.gender;
+            }
+
+            return null;
+        }
+
+        private static BodyTypeDef ResolveDeterministicBodyType(Gender? gender)
+        {
+            string preferredDefName = gender == Gender.Female ? "Female" : "Male";
+            return DefDatabase<BodyTypeDef>.GetNamedSilentFail(preferredDefName)
+                ?? DefDatabase<BodyTypeDef>.GetNamedSilentFail("Thin")
+                ?? DefDatabase<BodyTypeDef>.AllDefsListForReading.OrderBy(def => def.defName).FirstOrDefault();
+        }
+
+        private static List<BodyTypeDef> ResolveSupportedApparelBodyTypes(ThingDef apparelDef)
+        {
+            HashSet<BodyTypeDef> bodyTypes = new HashSet<BodyTypeDef>();
+            WornGraphicData wornGraphicData = apparelDef?.apparel?.wornGraphicData;
+            if (wornGraphicData != null)
+            {
+                TryAddSupportedBodyType(bodyTypes, "Male", wornGraphicData.male);
+                TryAddSupportedBodyType(bodyTypes, "Female", wornGraphicData.female);
+                TryAddSupportedBodyType(bodyTypes, "Thin", wornGraphicData.thin);
+                TryAddSupportedBodyType(bodyTypes, "Fat", wornGraphicData.fat);
+                TryAddSupportedBodyType(bodyTypes, "Hulk", wornGraphicData.hulk);
+
+                TryAddDirectionBodyTypes(bodyTypes, wornGraphicData.north);
+                TryAddDirectionBodyTypes(bodyTypes, wornGraphicData.south);
+                TryAddDirectionBodyTypes(bodyTypes, wornGraphicData.east);
+                TryAddDirectionBodyTypes(bodyTypes, wornGraphicData.west);
+            }
+
+            foreach (BodyTypeDef inferredBodyType in ResolveTextureBackedApparelBodyTypes(apparelDef))
+            {
+                if (inferredBodyType != null)
+                {
+                    bodyTypes.Add(inferredBodyType);
+                }
+            }
+
+            return bodyTypes
+                .Where(def => def != null)
+                .OrderBy(def => def.defName)
+                .ToList();
+        }
+
+        private static IEnumerable<BodyTypeDef> ResolveTextureBackedApparelBodyTypes(ThingDef apparelDef)
+        {
+            string wornGraphicPath = apparelDef?.apparel?.wornGraphicPath;
+            string modRootDirectory = apparelDef?.modContentPack?.RootDir;
+            if (string.IsNullOrWhiteSpace(wornGraphicPath) || string.IsNullOrWhiteSpace(modRootDirectory))
+            {
+                return Enumerable.Empty<BodyTypeDef>();
+            }
+
+            try
+            {
+                string normalizedGraphicPath = wornGraphicPath
+                    .Replace('\\', Path.DirectorySeparatorChar)
+                    .Replace('/', Path.DirectorySeparatorChar);
+                string graphicDirectory = Path.GetDirectoryName(normalizedGraphicPath);
+                string graphicBaseName = Path.GetFileName(normalizedGraphicPath);
+                if (string.IsNullOrWhiteSpace(graphicBaseName))
+                {
+                    return Enumerable.Empty<BodyTypeDef>();
+                }
+
+                string texturesRoot = Path.Combine(modRootDirectory, "Textures");
+                string searchDirectory = string.IsNullOrWhiteSpace(graphicDirectory)
+                    ? texturesRoot
+                    : Path.Combine(texturesRoot, graphicDirectory);
+                if (!Directory.Exists(searchDirectory))
+                {
+                    return Enumerable.Empty<BodyTypeDef>();
+                }
+
+                HashSet<BodyTypeDef> inferredBodyTypes = new HashSet<BodyTypeDef>();
+                foreach (string filePath in Directory.EnumerateFiles(searchDirectory, graphicBaseName + "*.*", SearchOption.TopDirectoryOnly))
+                {
+                    string fileName = Path.GetFileNameWithoutExtension(filePath);
+                    if (!fileName.StartsWith(graphicBaseName + "_", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    string suffix = fileName.Substring(graphicBaseName.Length + 1);
+                    int separatorIndex = suffix.IndexOf('_');
+                    string token = separatorIndex >= 0 ? suffix.Substring(0, separatorIndex) : suffix;
+                    BodyTypeDef bodyType = ResolveBodyTypeByGraphicToken(token);
+                    if (bodyType != null)
+                    {
+                        inferredBodyTypes.Add(bodyType);
+                    }
+                }
+
+                return inferredBodyTypes
+                    .Where(def => def != null)
+                    .OrderBy(def => def.defName)
+                    .ToList();
+            }
+            catch
+            {
+                return Enumerable.Empty<BodyTypeDef>();
+            }
+        }
+
+        private static BodyTypeDef ResolveBodyTypeByGraphicToken(string token)
+        {
+            if (string.IsNullOrWhiteSpace(token))
+            {
+                return null;
+            }
+
+            switch (token.Trim().ToLowerInvariant())
+            {
+                case "male":
+                    return DefDatabase<BodyTypeDef>.GetNamedSilentFail("Male");
+                case "female":
+                    return DefDatabase<BodyTypeDef>.GetNamedSilentFail("Female");
+                case "thin":
+                    return DefDatabase<BodyTypeDef>.GetNamedSilentFail("Thin");
+                case "fat":
+                    return DefDatabase<BodyTypeDef>.GetNamedSilentFail("Fat");
+                case "hulk":
+                    return DefDatabase<BodyTypeDef>.GetNamedSilentFail("Hulk");
+                default:
+                    return null;
+            }
+        }
+
+        private static void TryAddDirectionBodyTypes(ICollection<BodyTypeDef> bodyTypes, WornGraphicDirectionData directionData)
+        {
+            if (bodyTypes == null)
+            {
+                return;
+            }
+
+            TryAddSupportedBodyType(bodyTypes, "Male", directionData.male);
+            TryAddSupportedBodyType(bodyTypes, "Female", directionData.female);
+            TryAddSupportedBodyType(bodyTypes, "Thin", directionData.thin);
+            TryAddSupportedBodyType(bodyTypes, "Fat", directionData.fat);
+            TryAddSupportedBodyType(bodyTypes, "Hulk", directionData.hulk);
+        }
+
+        private static void TryAddSupportedBodyType(ICollection<BodyTypeDef> bodyTypes, string defName, object bodyTypeData)
+        {
+            if (bodyTypes == null || bodyTypeData == null)
+            {
+                return;
+            }
+
+            BodyTypeDef bodyTypeDef = DefDatabase<BodyTypeDef>.GetNamedSilentFail(defName);
+            if (bodyTypeDef != null)
+            {
+                bodyTypes.Add(bodyTypeDef);
+            }
+        }
+
+        private static bool TryResolvePresenterPawnKindForApparel(
+            ThingDef apparelDef,
+            BodyTypeDef bodyType,
+            Gender? forcedGender,
+            PawnKindDef humanPawnKind,
+            IEnumerable<PawnKindDef> alienPawnKinds,
+            out PawnKindDef pawnKind)
+        {
+            pawnKind = null;
+            if (CanPawnKindWearApparel(humanPawnKind, apparelDef, bodyType, forcedGender))
+            {
+                pawnKind = humanPawnKind;
+                return true;
+            }
+
+            foreach (PawnKindDef alienPawnKind in alienPawnKinds ?? Enumerable.Empty<PawnKindDef>())
+            {
+                if (CanPawnKindWearApparel(alienPawnKind, apparelDef, bodyType, forcedGender))
+                {
+                    pawnKind = alienPawnKind;
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool TryResolvePresenterPawnKindForWeapon(
+            ThingDef weaponDef,
+            BodyTypeDef bodyType,
+            Gender? forcedGender,
+            PawnKindDef humanPawnKind,
+            IEnumerable<PawnKindDef> alienPawnKinds,
+            out PawnKindDef pawnKind)
+        {
+            pawnKind = null;
+            if (CanPawnKindHoldWeapon(humanPawnKind, weaponDef, bodyType, forcedGender))
+            {
+                pawnKind = humanPawnKind;
+                return true;
+            }
+
+            foreach (PawnKindDef alienPawnKind in alienPawnKinds ?? Enumerable.Empty<PawnKindDef>())
+            {
+                if (CanPawnKindHoldWeapon(alienPawnKind, weaponDef, bodyType, forcedGender))
+                {
+                    pawnKind = alienPawnKind;
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private static PawnKindDef ResolvePawnKind(IEnumerable<string> preferredDefNames, Func<PawnKindDef, bool> fallbackPredicate)
@@ -525,6 +930,20 @@ namespace LogSyncMod.AutoTest
                         }
                     }
 
+                    if (!PreparePawnForSpec(candidate, spec, out string prepareError))
+                    {
+                        try
+                        {
+                            candidate.Destroy(DestroyMode.Vanish);
+                        }
+                        catch
+                        {
+                        }
+
+                        lastException = new InvalidOperationException(prepareError ?? "Failed to prepare pawn for three-view spec.");
+                        continue;
+                    }
+
                     pawn = candidate;
                 }
                 catch (Exception ex)
@@ -564,6 +983,271 @@ namespace LogSyncMod.AutoTest
             return null;
         }
 
+        private static bool PreparePawnForSpec(Pawn pawn, AutoTestThreeViewTargetSpec spec, out string errorMessage)
+        {
+            errorMessage = null;
+            if (pawn == null)
+            {
+                errorMessage = "Preview pawn was null.";
+                return false;
+            }
+
+            try
+            {
+                if (spec?.ForcedGender.HasValue == true)
+                {
+                    pawn.gender = spec.ForcedGender.Value;
+                }
+
+                if (pawn.story != null && spec?.ForcedBodyType != null)
+                {
+                    pawn.story.bodyType = spec.ForcedBodyType;
+                }
+
+                if (pawn.RaceProps?.Humanlike == true)
+                {
+                    pawn.apparel?.DestroyAll();
+                    pawn.equipment?.DestroyAllEquipment();
+                }
+
+                if (spec?.WearAsApparel == true && spec.ItemDef != null)
+                {
+                    Apparel apparel = ThingMaker.MakeThing(spec.ItemDef, ResolveStuff(spec.ItemDef)) as Apparel;
+                    if (apparel == null)
+                    {
+                        errorMessage = "Thing could not be created as apparel: " + spec.ItemDef.defName;
+                        return false;
+                    }
+
+                    if (!apparel.PawnCanWear(pawn))
+                    {
+                        apparel.Destroy(DestroyMode.Vanish);
+                        errorMessage = "Pawn cannot wear apparel: " + spec.ItemDef.defName;
+                        return false;
+                    }
+
+                    if (pawn.apparel != null && !pawn.apparel.CanWearWithoutDroppingAnything(apparel.def))
+                    {
+                        pawn.apparel.DestroyAll();
+                    }
+
+                    pawn.apparel?.Wear(apparel, false, false);
+                }
+
+                if (spec?.HoldAsWeapon == true && spec.ItemDef != null)
+                {
+                    ThingWithComps equippedThing = ThingMaker.MakeThing(spec.ItemDef, ResolveStuff(spec.ItemDef)) as ThingWithComps;
+                    if (equippedThing == null)
+                    {
+                        errorMessage = "Thing could not be created as equippable weapon: " + spec.ItemDef.defName;
+                        return false;
+                    }
+
+                    pawn.equipment?.AddEquipment(equippedThing);
+                    if (pawn.equipment?.Primary != equippedThing)
+                    {
+                        errorMessage = "Pawn failed to hold weapon: " + spec.ItemDef.defName;
+                        return false;
+                    }
+                }
+
+                RefreshPawnGraphics(pawn);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                errorMessage = ex.Message;
+                return false;
+            }
+        }
+
+        private static bool CanPawnKindWearApparel(PawnKindDef pawnKindDef, ThingDef apparelDef, BodyTypeDef bodyType, Gender? forcedGender)
+        {
+            if (pawnKindDef == null || apparelDef == null || !apparelDef.IsApparel)
+            {
+                return false;
+            }
+
+            Pawn pawn = null;
+            Apparel apparel = null;
+            try
+            {
+                if (!TryGenerateProbePawn(pawnKindDef, out pawn))
+                {
+                    return false;
+                }
+
+                if (forcedGender.HasValue)
+                {
+                    pawn.gender = forcedGender.Value;
+                }
+
+                if (bodyType != null && pawn.story != null)
+                {
+                    pawn.story.bodyType = bodyType;
+                }
+
+                apparel = ThingMaker.MakeThing(apparelDef, ResolveStuff(apparelDef)) as Apparel;
+                if (apparel == null)
+                {
+                    return false;
+                }
+
+                return apparel.PawnCanWear(pawn) && (pawn.apparel == null || pawn.apparel.CanWearWithoutDroppingAnything(apparel.def));
+            }
+            catch
+            {
+                return false;
+            }
+            finally
+            {
+                try
+                {
+                    apparel?.Destroy(DestroyMode.Vanish);
+                }
+                catch
+                {
+                }
+
+                try
+                {
+                    pawn?.Destroy(DestroyMode.Vanish);
+                }
+                catch
+                {
+                }
+            }
+        }
+
+        private static bool CanPawnKindHoldWeapon(PawnKindDef pawnKindDef, ThingDef weaponDef, BodyTypeDef bodyType, Gender? forcedGender)
+        {
+            if (pawnKindDef == null || weaponDef == null || !weaponDef.IsWeapon)
+            {
+                return false;
+            }
+
+            Pawn pawn = null;
+            ThingWithComps weapon = null;
+            try
+            {
+                if (!TryGenerateProbePawn(pawnKindDef, out pawn))
+                {
+                    return false;
+                }
+
+                if (forcedGender.HasValue)
+                {
+                    pawn.gender = forcedGender.Value;
+                }
+
+                if (bodyType != null && pawn.story != null)
+                {
+                    pawn.story.bodyType = bodyType;
+                }
+
+                pawn.equipment?.DestroyAllEquipment();
+                weapon = ThingMaker.MakeThing(weaponDef, ResolveStuff(weaponDef)) as ThingWithComps;
+                if (weapon == null)
+                {
+                    return false;
+                }
+
+                pawn.equipment?.AddEquipment(weapon);
+                return pawn.equipment?.Primary == weapon;
+            }
+            catch
+            {
+                return false;
+            }
+            finally
+            {
+                try
+                {
+                    weapon?.Destroy(DestroyMode.Vanish);
+                }
+                catch
+                {
+                }
+
+                try
+                {
+                    pawn?.Destroy(DestroyMode.Vanish);
+                }
+                catch
+                {
+                }
+            }
+        }
+
+        private static bool TryGenerateProbePawn(PawnKindDef pawnKindDef, out Pawn pawn)
+        {
+            pawn = null;
+            if (pawnKindDef == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                PawnGenerationRequest request = new PawnGenerationRequest(
+                    pawnKindDef,
+                    ResolveFaction(new AutoTestThreeViewTargetSpec
+                    {
+                        PawnKindDef = pawnKindDef,
+                        RaceDef = pawnKindDef.race,
+                        Kind = pawnKindDef.race?.race?.IsMechanoid == true
+                            ? AutoTestKind.MechanoidThreeView
+                            : AutoTestKind.HumanoidThreeView
+                    }),
+                    PawnGenerationContext.NonPlayer,
+                    -1,
+                    forceGenerateNewPawn: true,
+                    canGeneratePawnRelations: false,
+                    mustBeCapableOfViolence: false);
+
+                pawn = PawnGenerator.GeneratePawn(request);
+                if (pawn?.RaceProps?.Humanlike == true)
+                {
+                    pawn.apparel?.DestroyAll();
+                    pawn.equipment?.DestroyAllEquipment();
+                }
+
+                return pawn != null;
+            }
+            catch
+            {
+                pawn = null;
+                return false;
+            }
+        }
+
+        private static ThingDef ResolveStuff(ThingDef def)
+        {
+            if (def == null || !def.MadeFromStuff)
+            {
+                return null;
+            }
+
+            if (def.defaultStuff != null)
+            {
+                return def.defaultStuff;
+            }
+
+            if (def.stuffCategories == null || def.stuffCategories.Count == 0)
+            {
+                return null;
+            }
+
+            return DefDatabase<ThingDef>.AllDefsListForReading
+                .Where(candidate =>
+                    candidate != null &&
+                    candidate.IsStuff &&
+                    candidate.stuffProps?.categories != null &&
+                    candidate.stuffProps.categories.Any(category => def.stuffCategories.Contains(category)))
+                .OrderBy(candidate => candidate.defName)
+                .FirstOrDefault();
+        }
+
         private static bool TryCreateReplicaPawn(AutoTestThreeViewTargetSpec spec, int tile, Pawn sourcePawn, out Pawn pawn, out string errorMessage)
         {
             pawn = null;
@@ -583,6 +1267,11 @@ namespace LogSyncMod.AutoTest
             {
                 AutoTestThreeViewAppearanceTemplate template = CaptureAppearanceTemplate(sourcePawn);
                 ApplyAppearanceTemplate(pawn, template);
+                if (!PreparePawnForSpec(pawn, spec, out errorMessage))
+                {
+                    throw new InvalidOperationException(errorMessage ?? "Failed to prepare replica pawn for three-view spec.");
+                }
+
                 RefreshPawnGraphics(pawn);
                 return true;
             }

@@ -18,7 +18,9 @@ namespace LogSyncMod.AutoTest
         HumanoidThreeView,
         AnimalThreeView,
         MechanoidThreeView,
-        AlienThreeView
+        AlienThreeView,
+        ApparelThreeView,
+        WeaponThreeView
     }
 
     internal enum AutoTestCaseType
@@ -34,7 +36,9 @@ namespace LogSyncMod.AutoTest
         HumanoidThreeView,
         AnimalThreeView,
         MechanoidThreeView,
-        AlienThreeView
+        AlienThreeView,
+        ApparelThreeView,
+        WeaponThreeView
     }
 
     internal sealed class AutoTestWorkItem
@@ -95,5 +99,7 @@ namespace LogSyncMod.AutoTest
         public string ScreenshotPath;
         public List<string> ScreenshotPaths = new List<string>();
         public string Notes;
+        public string OverlayLine3;
+        public string OverlayLine4;
     }
 }

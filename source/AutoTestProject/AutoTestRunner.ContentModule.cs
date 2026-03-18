@@ -917,6 +917,7 @@ namespace LogSyncMod.AutoTest
                     foreach (Thing thing in cell.GetThingList(map).ToList())
                     {
                         if (thing == null || thing.Destroyed) continue;
+                        if (!(thing.def?.destroyable ?? false)) continue;
                         try
                         {
                             thing.Destroy(DestroyMode.Vanish);

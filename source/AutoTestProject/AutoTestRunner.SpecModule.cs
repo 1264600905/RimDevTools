@@ -134,6 +134,8 @@ namespace LogSyncMod.AutoTest
                 case AutoTestKind.AnimalThreeView:
                 case AutoTestKind.MechanoidThreeView:
                 case AutoTestKind.AlienThreeView:
+                case AutoTestKind.ApparelThreeView:
+                case AutoTestKind.WeaponThreeView:
                     return AutoTestScope.ThreeViews;
                 default:
                     return AutoTestScope.Content;
@@ -168,6 +170,10 @@ namespace LogSyncMod.AutoTest
                     return "MechanoidThreeView";
                 case AutoTestKind.AlienThreeView:
                     return "AlienThreeView";
+                case AutoTestKind.ApparelThreeView:
+                    return "ApparelThreeView";
+                case AutoTestKind.WeaponThreeView:
+                    return "WeaponThreeView";
                 default:
                     return kind.ToString();
             }

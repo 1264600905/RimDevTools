@@ -240,12 +240,16 @@ namespace LogSyncMod.AutoTest
         private const int OverlayRepaintFrames = 3;
         private static string line1 = string.Empty;
         private static string line2 = string.Empty;
+        private static string line3 = string.Empty;
+        private static string line4 = string.Empty;
         private static int remainingRepaintFrames;
 
         public static void Request(AutoTestResult result)
         {
             line1 = string.IsNullOrWhiteSpace(result?.DefName) ? "UnknownDef" : result.DefName.Trim();
             line2 = string.IsNullOrWhiteSpace(result?.Label) ? line1 : result.Label.Trim();
+            line3 = string.IsNullOrWhiteSpace(result?.OverlayLine3) ? string.Empty : result.OverlayLine3.Trim();
+            line4 = string.IsNullOrWhiteSpace(result?.OverlayLine4) ? string.Empty : result.OverlayLine4.Trim();
             remainingRepaintFrames = Math.Max(remainingRepaintFrames, OverlayRepaintFrames);
         }
 
@@ -258,7 +262,14 @@ namespace LogSyncMod.AutoTest
 
             float margin = 16f;
             float width = Mathf.Min(Screen.width - margin * 2f, Screen.width * 0.7f);
-            Rect backgroundRect = new Rect(margin, margin, width, 150f);
+            int visibleLineCount = 0;
+            if (!string.IsNullOrWhiteSpace(line1)) visibleLineCount++;
+            if (!string.IsNullOrWhiteSpace(line2)) visibleLineCount++;
+            if (!string.IsNullOrWhiteSpace(line3)) visibleLineCount++;
+            if (!string.IsNullOrWhiteSpace(line4)) visibleLineCount++;
+
+            float backgroundHeight = visibleLineCount >= 4 ? 206f : 150f;
+            Rect backgroundRect = new Rect(margin, margin, width, backgroundHeight);
             Widgets.DrawBoxSolid(backgroundRect, new Color(0f, 0f, 0f, 0.72f));
 
             Color originalColor = GUI.color;
@@ -270,8 +281,10 @@ namespace LogSyncMod.AutoTest
                 Text.Font = GameFont.Medium;
                 Text.Anchor = TextAnchor.UpperLeft;
 
-                DrawShadowedLabel(new Rect(backgroundRect.x + 14f, backgroundRect.y + 10f, backgroundRect.width - 20f, 58f), line1);
-                DrawShadowedLabel(new Rect(backgroundRect.x + 14f, backgroundRect.y + 76f, backgroundRect.width - 20f, 58f), line2);
+                DrawShadowedLabel(new Rect(backgroundRect.x + 14f, backgroundRect.y + 10f, backgroundRect.width - 20f, 52f), line1, 38);
+                DrawShadowedLabel(new Rect(backgroundRect.x + 14f, backgroundRect.y + 66f, backgroundRect.width - 20f, 52f), line2, 38);
+                DrawShadowedLabel(new Rect(backgroundRect.x + 14f, backgroundRect.y + 122f, backgroundRect.width - 20f, 36f), line3, 26);
+                DrawShadowedLabel(new Rect(backgroundRect.x + 14f, backgroundRect.y + 158f, backgroundRect.width - 20f, 36f), line4, 26);
             }
             finally
             {
@@ -282,7 +295,7 @@ namespace LogSyncMod.AutoTest
             }
         }
 
-        private static void DrawShadowedLabel(Rect rect, string text)
+        private static void DrawShadowedLabel(Rect rect, string text, int fontSize)
         {
             if (string.IsNullOrWhiteSpace(text))
             {
@@ -292,7 +305,7 @@ namespace LogSyncMod.AutoTest
             GUIStyle style = new GUIStyle(Text.CurFontStyle)
             {
                 alignment = TextAnchor.UpperLeft,
-                fontSize = 38,
+                fontSize = fontSize,
                 wordWrap = false,
                 clipping = TextClipping.Overflow
             };

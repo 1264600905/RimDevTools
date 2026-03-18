@@ -77,8 +77,19 @@ namespace LogSyncMod.AutoTest
                 Context = context;
                 Result.Stage = "spawn";
                 Result.Label = string.IsNullOrWhiteSpace(Spec.Label) ? Spec.DefName : Spec.Label;
+                Result.OverlayLine3 = string.IsNullOrWhiteSpace(Spec.PawnRaceLabel) ? string.Empty : "PawnRace: " + Spec.PawnRaceLabel;
+                Result.OverlayLine4 = string.IsNullOrWhiteSpace(Spec.PawnBodyTypeLabel) ? string.Empty : "BodyType: " + Spec.PawnBodyTypeLabel;
                 Result.Notes = AppendNote(Result.Notes, "ThreeViewTriptych=True");
                 Result.Notes = AppendNote(Result.Notes, "SpawnedPawns=" + Context.Pawns.Count);
+                if (!string.IsNullOrWhiteSpace(Spec.PawnRaceDefName))
+                {
+                    Result.Notes = AppendNote(Result.Notes, "ThreeViewPawnRace=" + Spec.PawnRaceDefName);
+                }
+
+                if (!string.IsNullOrWhiteSpace(Spec.PawnBodyTypeDefName))
+                {
+                    Result.Notes = AppendNote(Result.Notes, "ThreeViewBodyType=" + Spec.PawnBodyTypeDefName);
+                }
                 WaitTicks = SettleTicks;
                 Phase = ThreeViewTestPhase.WaitingForSettle;
             }
@@ -172,7 +183,7 @@ namespace LogSyncMod.AutoTest
                     Phase = ThreeViewTestPhase.Initializing
                 };
 
-                if (!owner.TryAllocateThingRoot(StudioWidth, StudioHeight, out IntVec3 rootCell))
+                if (!owner.TryAllocateThreeViewStudioRoot(StudioWidth, StudioHeight, out IntVec3 rootCell))
                 {
                     result.Status = "failed";
                     result.Stage = "layout";
@@ -192,20 +203,74 @@ namespace LogSyncMod.AutoTest
 
         private void BeginThreeViewTestSession()
         {
-            foreach (AutoTestThreeViewTargetSpec spec in threeViewService.ResolveDefaultTargets(RegisterDiscoveredCase))
+            foreach (AutoTestThreeViewTargetSpec spec in threeViewService.ResolveDefaultTargets(targetMod, turretMountedGunDefs, RegisterDiscoveredCase))
             {
                 if (spec == null)
                 {
                     continue;
                 }
 
-                if (!MatchesSpecFilters(spec.Kind, spec.PawnKindDef))
+                if (!MatchesSpecFilters(spec.Kind, spec.TargetDef ?? (Def)spec.PawnKindDef))
                 {
                     continue;
                 }
 
                 pendingThreeViewTargets.Enqueue(spec);
             }
+        }
+
+        private bool TryAllocateThreeViewStudioRoot(int width, int height, out IntVec3 rootCell)
+        {
+            int safeWidth = Math.Max(1, width);
+            int safeHeight = Math.Max(1, height);
+            int maxX = Math.Max(10, map.Size.x - safeWidth - 10);
+            int maxZ = Math.Max(10, map.Size.z - safeHeight - 10);
+
+            for (int z = 10; z <= maxZ; z += 2)
+            {
+                for (int x = 10; x <= maxX; x += 2)
+                {
+                    IntVec3 candidate = new IntVec3(x, 0, z);
+                    if (IsThreeViewStudioAreaUsable(candidate, safeWidth, safeHeight))
+                    {
+                        rootCell = candidate;
+                        return true;
+                    }
+                }
+            }
+
+            rootCell = IntVec3.Invalid;
+            return false;
+        }
+
+        private bool IsThreeViewStudioAreaUsable(IntVec3 rootCell, int width, int height)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                for (int z = 0; z < height; z++)
+                {
+                    IntVec3 cell = new IntVec3(rootCell.x + x, 0, rootCell.z + z);
+                    if (!cell.InBounds(map))
+                    {
+                        return false;
+                    }
+
+                    foreach (Thing thing in cell.GetThingList(map))
+                    {
+                        if (thing == null || thing.Destroyed)
+                        {
+                            continue;
+                        }
+
+                        if (!(thing.def?.destroyable ?? false))
+                        {
+                            return false;
+                        }
+                    }
+                }
+            }
+
+            return true;
         }
 
         private void StartNewThreeViewSession(AutoTestThreeViewTargetSpec spec)
@@ -215,8 +280,9 @@ namespace LogSyncMod.AutoTest
                 return;
             }
 
-            AutoTestResult result = CreateResult(spec.ManifestEntry, nameof(PawnKindDef), spec.DefName, spec.Label);
-            LogSyncAutoTestSpecDef matchedSpec = ResolveBestMatchingSpec(spec.Kind, spec.PawnKindDef);
+            string defType = spec.TargetDef?.GetType().Name ?? nameof(PawnKindDef);
+            AutoTestResult result = CreateResult(spec.ManifestEntry, defType, spec.DefName, spec.Label);
+            LogSyncAutoTestSpecDef matchedSpec = ResolveBestMatchingSpec(spec.Kind, spec.TargetDef ?? (Def)spec.PawnKindDef);
             bool allowScreenshots = ShouldCaptureScreenshots(matchedSpec);
             result.Notes = AppendNote(result.Notes, "AutoTestMode=" + (settings.UseXmlDrivenAutoTest() ? "XmlDriven" : "Automatic"));
             result.Notes = AppendNote(result.Notes, "ThreeViewProfile=" + (spec.Profile?.ProfileId ?? "Unknown"));

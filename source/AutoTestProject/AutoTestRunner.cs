@@ -604,6 +604,10 @@ namespace LogSyncMod.AutoTest
                     return AutoTestCaseType.MechanoidThreeView;
                 case AutoTestKind.AlienThreeView:
                     return AutoTestCaseType.AlienThreeView;
+                case AutoTestKind.ApparelThreeView:
+                    return AutoTestCaseType.ApparelThreeView;
+                case AutoTestKind.WeaponThreeView:
+                    return AutoTestCaseType.WeaponThreeView;
                 default:
                     return AutoTestCaseType.ItemInfoCard;
             }
@@ -637,6 +641,10 @@ namespace LogSyncMod.AutoTest
                     return "MechanoidThreeView";
                 case AutoTestCaseType.AlienThreeView:
                     return "AlienThreeView";
+                case AutoTestCaseType.ApparelThreeView:
+                    return "ApparelThreeView";
+                case AutoTestCaseType.WeaponThreeView:
+                    return "WeaponThreeView";
                 default:
                     return caseType.ToString();
             }
@@ -660,6 +668,8 @@ namespace LogSyncMod.AutoTest
                 case AutoTestCaseType.AnimalThreeView:
                 case AutoTestCaseType.MechanoidThreeView:
                 case AutoTestCaseType.AlienThreeView:
+                case AutoTestCaseType.ApparelThreeView:
+                case AutoTestCaseType.WeaponThreeView:
                     return AutoTestScope.ThreeViews;
                 default:
                     return AutoTestScope.Content;
