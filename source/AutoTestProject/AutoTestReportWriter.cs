@@ -134,18 +134,53 @@ namespace LogSyncMod.AutoTest
             builder.AppendLine("## Screenshot Gallery");
             builder.AppendLine();
 
-            foreach (AutoTestResult result in results.Where(result => result.ScreenshotPaths != null && result.ScreenshotPaths.Count > 0))
+            foreach (IGrouping<string, AutoTestResult> group in results
+                .Where(HasMainGalleryScreenshots)
+                .GroupBy(result => result.CaseType ?? string.Empty)
+                .OrderBy(group => group.Key))
             {
-                builder.AppendLine("### " + result.DefName);
-                builder.AppendLine();
-                builder.AppendLine("- Label: " + (string.IsNullOrWhiteSpace(result.Label) ? result.DefName : result.Label));
-                builder.AppendLine("- Status: " + result.Status);
+                builder.AppendLine("### " + (string.IsNullOrWhiteSpace(group.Key) ? "Other" : group.Key));
                 builder.AppendLine();
 
-                foreach (string screenshotPath in result.ScreenshotPaths.Where(path => !string.IsNullOrWhiteSpace(path)))
+                foreach (AutoTestResult result in group)
                 {
-                    string relativePath = BuildRelativeImagePath(artifacts, screenshotPath);
-                    builder.AppendLine("![" + EscapeImageAltText(result.DefName) + "](" + relativePath + ")");
+                    builder.AppendLine("#### " + result.DefName);
+                    builder.AppendLine();
+                    builder.AppendLine("- Label: " + (string.IsNullOrWhiteSpace(result.Label) ? result.DefName : result.Label));
+                    builder.AppendLine("- Status: " + result.Status);
+                    builder.AppendLine();
+
+                    foreach (string screenshotPath in result.ScreenshotPaths.Where(IsMainGalleryScreenshotPath))
+                    {
+                        string relativePath = BuildRelativeImagePath(artifacts, screenshotPath);
+                        builder.AppendLine("![" + EscapeImageAltText(result.DefName) + "](" + relativePath + ")");
+                        builder.AppendLine();
+                    }
+                }
+            }
+
+            List<(AutoTestResult Result, string ScreenshotPath)> failureScreenshots = results
+                .SelectMany(result => (result.ScreenshotPaths ?? new List<string>())
+                    .Where(IsFailureScreenshotPath)
+                    .Select(path => (Result: result, ScreenshotPath: path)))
+                .ToList();
+
+            if (failureScreenshots.Count > 0)
+            {
+                builder.AppendLine();
+                builder.AppendLine("## Failure Screenshots");
+                builder.AppendLine();
+
+                foreach ((AutoTestResult Result, string ScreenshotPath) failure in failureScreenshots)
+                {
+                    builder.AppendLine("### " + failure.Result.DefName);
+                    builder.AppendLine();
+                    builder.AppendLine("- CaseType: " + failure.Result.CaseType);
+                    builder.AppendLine("- Label: " + (string.IsNullOrWhiteSpace(failure.Result.Label) ? failure.Result.DefName : failure.Result.Label));
+                    builder.AppendLine("- Status: " + failure.Result.Status);
+                    builder.AppendLine("- Stage: " + failure.Result.Stage);
+                    builder.AppendLine();
+                    builder.AppendLine("![" + EscapeImageAltText(failure.Result.DefName) + "](" + BuildRelativeImagePath(artifacts, failure.ScreenshotPath) + ")");
                     builder.AppendLine();
                 }
             }
@@ -302,6 +337,32 @@ namespace LogSyncMod.AutoTest
             }
 
             return path + Path.DirectorySeparatorChar;
+        }
+
+        private static bool HasMainGalleryScreenshots(AutoTestResult result)
+        {
+            if (result == null || string.Equals(result.CaseType, "MeleeWeaponPocketMap", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            return result.ScreenshotPaths != null && result.ScreenshotPaths.Any(IsMainGalleryScreenshotPath);
+        }
+
+        private static bool IsMainGalleryScreenshotPath(string path)
+        {
+            return !string.IsNullOrWhiteSpace(path) && !IsFailureScreenshotPath(path);
+        }
+
+        private static bool IsFailureScreenshotPath(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return false;
+            }
+
+            return path.IndexOf("\\fail\\", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                path.IndexOf("/fail/", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private static string BuildJsonArray(List<string> values)

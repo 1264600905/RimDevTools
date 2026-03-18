@@ -121,9 +121,7 @@ namespace LogSyncMod.AutoTest
             {
                 request.Prepare?.Invoke();
 
-                string screenshotDirectory = string.IsNullOrWhiteSpace(request.RelativeSubdirectory)
-                    ? runArtifacts.ScreenshotDirectory
-                    : Path.Combine(runArtifacts.ScreenshotDirectory, request.RelativeSubdirectory);
+                string screenshotDirectory = ResolveScreenshotDirectory(request);
                 Directory.CreateDirectory(screenshotDirectory);
 
                 string suffix = string.IsNullOrWhiteSpace(request.StageSuffix)
@@ -143,7 +141,7 @@ namespace LogSyncMod.AutoTest
                 }
 
                 result.ScreenshotPaths.Add(screenshotPath);
-                string noteKey = request.Force
+                string noteKey = request.IsFailureArtifact
                     ? (request.FailureNoteKey ?? "FailureScreenshotCaptured=True")
                     : (request.SuccessNoteKey ?? "ScreenshotCaptured=True");
                 result.Notes = appendNote(result.Notes, noteKey);
@@ -170,6 +168,29 @@ namespace LogSyncMod.AutoTest
                 Log.Warning("[LogSyncAutoTest] Screenshot capture failed for " + result.DefName + ": " + ex.Message);
                 return false;
             }
+        }
+
+        private string ResolveScreenshotDirectory(AutoTestScreenshotRequest request)
+        {
+            string baseDirectory;
+            if (request != null && request.IsFailureArtifact)
+            {
+                baseDirectory = Path.Combine(runArtifacts.ScreenshotDirectory, "fail");
+            }
+            else
+            {
+                string caseTypeDirectory = SanitizeFileName(request?.Result?.CaseType);
+                baseDirectory = string.IsNullOrWhiteSpace(caseTypeDirectory)
+                    ? runArtifacts.ScreenshotDirectory
+                    : Path.Combine(runArtifacts.ScreenshotDirectory, caseTypeDirectory);
+            }
+
+            if (string.IsNullOrWhiteSpace(request?.RelativeSubdirectory))
+            {
+                return baseDirectory;
+            }
+
+            return Path.Combine(baseDirectory, request.RelativeSubdirectory);
         }
 
         public int ResolveTurretResultIndex(IReadOnlyList<AutoTestResult> results, int activeSessionIndex)

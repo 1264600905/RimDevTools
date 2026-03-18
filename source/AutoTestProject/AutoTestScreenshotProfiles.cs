@@ -22,6 +22,7 @@ namespace LogSyncMod.AutoTest
         public AutoTestResult Result;
         public bool AllowCapture;
         public bool Force;
+        public bool IsFailureArtifact;
         public int ResultIndex;
         public string StageSuffix;
         public string RelativeSubdirectory;
