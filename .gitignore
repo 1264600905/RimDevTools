@@ -17,6 +17,8 @@
 *.log
 *.tmp
 *.cache
+__pycache__/
+*.pyc
 *.vscode/
 .claude/
 # 配置文件
