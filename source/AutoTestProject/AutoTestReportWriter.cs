@@ -15,6 +15,7 @@ namespace LogSyncMod.AutoTest
         public string BasePath;
         public string ReportPath;
         public string ResultPath;
+        public string ManifestPath;
         public string ScreenshotDirectory;
     }
 
@@ -38,11 +39,19 @@ namespace LogSyncMod.AutoTest
                 BasePath = basePath,
                 ReportPath = basePath + "_Report.md",
                 ResultPath = basePath + "_Result.json",
+                ManifestPath = basePath + "_Manifest.json",
                 ScreenshotDirectory = basePath + "_Screenshots"
             };
         }
 
-        public static void Write(AutoTestRunArtifacts artifacts, string packageId, List<AutoTestResult> results, string modName)
+        public static void Write(
+            AutoTestRunArtifacts artifacts,
+            string packageId,
+            List<AutoTestResult> results,
+            string modName,
+            List<AutoTestManifestEntry> discoveredManifest,
+            List<AutoTestManifestEntry> plannedManifest,
+            AutoTestRunSummary runSummary)
         {
             try
             {
@@ -52,8 +61,9 @@ namespace LogSyncMod.AutoTest
                 }
 
                 Directory.CreateDirectory(artifacts.OutputDirectory);
-                File.WriteAllText(artifacts.ReportPath, BuildMarkdown(artifacts, packageId, modName, results), Encoding.UTF8);
-                File.WriteAllText(artifacts.ResultPath, BuildJson(packageId, modName, results), Encoding.UTF8);
+                File.WriteAllText(artifacts.ReportPath, BuildMarkdown(artifacts, packageId, modName, results, runSummary), Encoding.UTF8);
+                File.WriteAllText(artifacts.ResultPath, BuildJson(packageId, modName, results, runSummary), Encoding.UTF8);
+                File.WriteAllText(artifacts.ManifestPath, BuildManifestJson(packageId, modName, discoveredManifest, plannedManifest, runSummary), Encoding.UTF8);
                 PruneArchives(artifacts.OutputDirectory, artifacts.SafePackageId);
             }
             catch (Exception ex)
@@ -62,7 +72,7 @@ namespace LogSyncMod.AutoTest
             }
         }
 
-        private static string BuildMarkdown(AutoTestRunArtifacts artifacts, string packageId, string modName, List<AutoTestResult> results)
+        private static string BuildMarkdown(AutoTestRunArtifacts artifacts, string packageId, string modName, List<AutoTestResult> results, AutoTestRunSummary runSummary)
         {
             StringBuilder builder = new StringBuilder();
             int passed = results.Count(result => result.Status == "passed");
@@ -78,11 +88,20 @@ namespace LogSyncMod.AutoTest
             builder.AppendLine("- Passed: " + passed);
             builder.AppendLine("- Failed: " + failed);
             builder.AppendLine("- Skipped: " + skipped);
+            if (runSummary != null)
+            {
+                builder.AppendLine("- RunMode: " + runSummary.RunMode);
+                builder.AppendLine("- Completeness: " + (runSummary.Complete ? "Complete" : "Incomplete"));
+                builder.AppendLine("- ManifestDiscovered: " + runSummary.DiscoveredCount);
+                builder.AppendLine("- ManifestPlanned: " + runSummary.PlannedCount);
+                builder.AppendLine("- ManifestExecuted: " + runSummary.ExecutedCount);
+                builder.AppendLine("- ManifestMissing: " + runSummary.MissingCount);
+            }
             builder.AppendLine();
             builder.AppendLine("## Results");
             builder.AppendLine();
-            builder.AppendLine("| Category | DefName | Status | Stage | Screenshot | Notes |");
-            builder.AppendLine("| --- | --- | --- | --- | --- | --- |");
+            builder.AppendLine("| CaseType | Category | DefName | Status | Stage | Screenshot | Notes |");
+            builder.AppendLine("| --- | --- | --- | --- | --- | --- | --- |");
 
             foreach (AutoTestResult result in results)
             {
@@ -90,13 +109,25 @@ namespace LogSyncMod.AutoTest
                     ? string.Join("<br>", result.ScreenshotPaths.Select(path => BuildMarkdownLink(artifacts, path)).ToArray())
                     : BuildMarkdownLink(artifacts, result.ScreenshotPath);
                 builder.AppendLine(string.Format(
-                    "| {0} | `{1}` | {2} | {3} | {4} | {5} |",
+                    "| {0} | {1} | `{2}` | {3} | {4} | {5} | {6} |",
+                    EscapePipe(result.CaseType),
                     EscapePipe(result.Category),
                     EscapePipe(result.DefName),
                     EscapePipe(result.Status),
                     EscapePipe(result.Stage),
                     screenshotValue,
                     EscapePipe(string.IsNullOrWhiteSpace(result.ErrorMessage) ? result.Notes : Trim(result.ErrorMessage, 160))));
+            }
+
+            if (runSummary != null && runSummary.MissingCaseIds.Count > 0)
+            {
+                builder.AppendLine();
+                builder.AppendLine("## Missing Cases");
+                builder.AppendLine();
+                foreach (string caseId in runSummary.MissingCaseIds)
+                {
+                    builder.AppendLine("- `" + caseId + "`");
+                }
             }
 
             builder.AppendLine();
@@ -122,19 +153,31 @@ namespace LogSyncMod.AutoTest
             return builder.ToString();
         }
 
-        private static string BuildJson(string packageId, string modName, List<AutoTestResult> results)
+        private static string BuildJson(string packageId, string modName, List<AutoTestResult> results, AutoTestRunSummary runSummary)
         {
             StringBuilder builder = new StringBuilder();
             builder.AppendLine("{");
             builder.AppendLine("  \"packageId\": \"" + EscapeJson(packageId) + "\",");
             builder.AppendLine("  \"modName\": \"" + EscapeJson(modName) + "\",");
             builder.AppendLine("  \"generatedAt\": \"" + DateTime.Now.ToString("o") + "\",");
+            if (runSummary != null)
+            {
+                builder.AppendLine("  \"runMode\": \"" + EscapeJson(runSummary.RunMode) + "\",");
+                builder.AppendLine("  \"completeness\": \"" + (runSummary.Complete ? "Complete" : "Incomplete") + "\",");
+                builder.AppendLine("  \"manifestDiscovered\": " + runSummary.DiscoveredCount + ",");
+                builder.AppendLine("  \"manifestPlanned\": " + runSummary.PlannedCount + ",");
+                builder.AppendLine("  \"manifestExecuted\": " + runSummary.ExecutedCount + ",");
+                builder.AppendLine("  \"manifestMissing\": " + runSummary.MissingCount + ",");
+            }
             builder.AppendLine("  \"results\": [");
 
             for (int i = 0; i < results.Count; i++)
             {
                 AutoTestResult result = results[i];
                 builder.AppendLine("    {");
+                builder.AppendLine("      \"caseId\": \"" + EscapeJson(result.CaseId) + "\",");
+                builder.AppendLine("      \"caseType\": \"" + EscapeJson(result.CaseType) + "\",");
+                builder.AppendLine("      \"scope\": \"" + EscapeJson(result.Scope) + "\",");
                 builder.AppendLine("      \"category\": \"" + EscapeJson(result.Category) + "\",");
                 builder.AppendLine("      \"defType\": \"" + EscapeJson(result.DefType) + "\",");
                 builder.AppendLine("      \"defName\": \"" + EscapeJson(result.DefName) + "\",");
@@ -151,6 +194,30 @@ namespace LogSyncMod.AutoTest
             }
 
             builder.AppendLine("  ]");
+            builder.AppendLine("}");
+            return builder.ToString();
+        }
+
+        private static string BuildManifestJson(
+            string packageId,
+            string modName,
+            List<AutoTestManifestEntry> discoveredManifest,
+            List<AutoTestManifestEntry> plannedManifest,
+            AutoTestRunSummary runSummary)
+        {
+            discoveredManifest = discoveredManifest ?? new List<AutoTestManifestEntry>();
+            plannedManifest = plannedManifest ?? new List<AutoTestManifestEntry>();
+
+            StringBuilder builder = new StringBuilder();
+            builder.AppendLine("{");
+            builder.AppendLine("  \"packageId\": \"" + EscapeJson(packageId) + "\",");
+            builder.AppendLine("  \"modName\": \"" + EscapeJson(modName) + "\",");
+            builder.AppendLine("  \"generatedAt\": \"" + DateTime.Now.ToString("o") + "\",");
+            builder.AppendLine("  \"runMode\": \"" + EscapeJson(runSummary?.RunMode ?? string.Empty) + "\",");
+            builder.AppendLine("  \"completeness\": \"" + (runSummary?.Complete == true ? "Complete" : "Incomplete") + "\",");
+            builder.AppendLine("  \"discovered\": " + BuildManifestEntryArray(discoveredManifest) + ",");
+            builder.AppendLine("  \"planned\": " + BuildManifestEntryArray(plannedManifest) + ",");
+            builder.AppendLine("  \"missingCaseIds\": " + BuildJsonArray(runSummary?.MissingCaseIds));
             builder.AppendLine("}");
             return builder.ToString();
         }
@@ -247,6 +314,31 @@ namespace LogSyncMod.AutoTest
             return "[" + string.Join(", ", values.Select(value => "\"" + EscapeJson(value) + "\"").ToArray()) + "]";
         }
 
+        private static string BuildManifestEntryArray(List<AutoTestManifestEntry> entries)
+        {
+            if (entries == null || entries.Count == 0)
+            {
+                return "[]";
+            }
+
+            return "[" + string.Join(
+                ", ",
+                entries.Select(entry =>
+                    "{" +
+                    "\"caseId\":\"" + EscapeJson(entry.CaseId) + "\"," +
+                    "\"caseType\":\"" + EscapeJson(entry.CaseType) + "\"," +
+                    "\"category\":\"" + EscapeJson(entry.Category) + "\"," +
+                    "\"scope\":\"" + EscapeJson(entry.Scope) + "\"," +
+                    "\"defType\":\"" + EscapeJson(entry.DefType) + "\"," +
+                    "\"defName\":\"" + EscapeJson(entry.DefName) + "\"," +
+                    "\"label\":\"" + EscapeJson(entry.Label) + "\"," +
+                    "\"discoverOrder\":" + entry.DiscoverOrder + "," +
+                    "\"planned\":" + (entry.Planned ? "true" : "false") + "," +
+                    "\"plannedOrder\":" + entry.PlannedOrder +
+                    "}")
+                    .ToArray()) + "]";
+        }
+
         private static string Trim(string text, int maxLength)
         {
             if (string.IsNullOrWhiteSpace(text) || text.Length <= maxLength) return text ?? string.Empty;
@@ -261,7 +353,7 @@ namespace LogSyncMod.AutoTest
             }
 
             Regex runPattern = new Regex(
-                "^" + Regex.Escape(safePackageId) + "_(?<stamp>\\d{8}_\\d{6})(?:_(?:Report\\.md|Result\\.json|Screenshots))$",
+                "^" + Regex.Escape(safePackageId) + "_(?<stamp>\\d{8}_\\d{6})(?:_(?:Report\\.md|Result\\.json|Manifest\\.json|Screenshots))$",
                 RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
             Dictionary<string, List<string>> groupedPaths = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);

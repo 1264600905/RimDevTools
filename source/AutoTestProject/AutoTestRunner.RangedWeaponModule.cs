@@ -842,11 +842,11 @@ namespace LogSyncMod.AutoTest
                 CleanupShooter();
                 if (TestMap != null && Find.Maps.Contains(TestMap))
                 {
-                    PocketMapUtility.DestroyPocketMap(TestMap);
+                    owner.DestroyPocketMap(TestMap, Parent);
                 }
                 else if (Parent != null && !Parent.Destroyed)
                 {
-                    Parent.Destroy();
+                    owner.DestroyPocketMap(null, Parent);
                 }
 
                 if (Current.Game != null && owner.map != null && Find.Maps.Contains(owner.map))
@@ -1066,6 +1066,7 @@ namespace LogSyncMod.AutoTest
 
             foreach (ThingDef weaponDef in weaponDefs)
             {
+                RegisterDiscoveredCase(AutoTestCaseType.RangedWeaponPocketMap, "ThingDef", weaponDef.defName, weaponDef.label);
                 pendingRangedWeaponDefs.Enqueue(weaponDef);
             }
 
@@ -1074,7 +1075,7 @@ namespace LogSyncMod.AutoTest
 
         private void StartNewRangedWeaponSession(ThingDef weaponDef)
         {
-            AutoTestResult result = CreateResult("RangedWeapon", "ThingDef", weaponDef.defName, weaponDef.label);
+            AutoTestResult result = CreateResult(AutoTestCaseType.RangedWeaponPocketMap, "ThingDef", weaponDef.defName, weaponDef.label);
             RangedWeaponTestSession session = new RangedWeaponTestSession(this, weaponDef, result);
             LogSyncAutoTestSpecDef spec = ResolveBestMatchingSpec(AutoTestKind.RangedWeaponPocketMap, weaponDef);
             session.AllowScreenshots = ShouldCaptureScreenshots(spec);
@@ -1089,20 +1090,21 @@ namespace LogSyncMod.AutoTest
 
             try
             {
-                MapGeneratorDef mapGenerator = DefDatabase<MapGeneratorDef>.GetNamed("LogSync_AutoTestPocketMap");
-                PocketMapParent pocketMapParent = WorldObjectMaker.MakeWorldObject(WorldObjectDefOf.PocketMap) as PocketMapParent;
-                if (pocketMapParent == null)
+                AutoTestPocketMapHandle handle = CreatePocketMapHandle(
+                    "LogSync_AutoTestPocketMap",
+                    new IntVec3(50, 1, 50),
+                    generatedMap => MapGenerator.PlayerStartSpot = generatedMap.Center,
+                    out string errorMessage);
+                if (handle == null)
                 {
                     result.Status = "failed_map_generation";
-                    result.ErrorMessage = "Failed to create PocketMapParent.";
+                    result.ErrorMessage = errorMessage ?? "Failed to create PocketMapParent.";
                     results.Add(result);
                     return;
                 }
 
-                pocketMapParent.sourceMap = map;
-                pocketMapParent.mapGenerator = mapGenerator;
-                session.Parent = pocketMapParent;
-                session.TestMap = MapGenerator.GenerateMap(new IntVec3(50, 1, 50), pocketMapParent, mapGenerator, null, generatedMap => MapGenerator.PlayerStartSpot = generatedMap.Center, isPocketMap: true);
+                session.Parent = handle.Parent;
+                session.TestMap = handle.Map;
                 if (session.TestMap == null)
                 {
                     result.Status = "failed_map_generation";
@@ -1111,8 +1113,7 @@ namespace LogSyncMod.AutoTest
                     return;
                 }
 
-                Find.World.pocketMaps.Add(pocketMapParent);
-                session.Parent = session.TestMap.Parent as PocketMapParent ?? pocketMapParent;
+                session.Parent = session.TestMap.Parent as PocketMapParent ?? handle.Parent;
                 activeRangedWeaponSessions.Add(session);
                 Log.Message("[LogSyncAutoTest] Starting ranged pocket map for '" + weaponDef.defName + "' in Map " + session.TestMap.uniqueID + ". SourceMap=" + map.uniqueID + ".");
             }
@@ -1121,14 +1122,7 @@ namespace LogSyncMod.AutoTest
                 result.Status = "failed_map_creation";
                 result.ErrorMessage = ex.ToString();
                 results.Add(result);
-                if (session.TestMap != null)
-                {
-                    PocketMapUtility.DestroyPocketMap(session.TestMap);
-                }
-                else if (session.Parent != null && !session.Parent.Destroyed)
-                {
-                    session.Parent.Destroy();
-                }
+                DestroyPocketMap(session.TestMap, session.Parent);
             }
         }
 

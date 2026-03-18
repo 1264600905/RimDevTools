@@ -75,19 +75,7 @@ namespace LogSyncMod.AutoTest
         private const int OpenTimeoutRepaintFrames = 180;
         private const int WaitBeforeCloseRepaintFrames = 12;
         private const int CloseTimeoutRepaintFrames = 180;
-        private const float TurretScreenshotRangeScale = 3.81248f;
-        private const float RangedWeaponScreenshotRangeScale = 2.7232f;
         private const float DefaultTurretScreenshotAspect = 16f / 9f;
-        
-        // 关键修复：将最小 rootSize 统一提升至 11.0f。
-        // 因为 CameraPlus 会对 rootSize 进行插值计算，如果输入低于 11.0 (其内部 minRootInput)，
-        // 会产生负数的 orthographicSize，导致 Unity 相机上下左右完全翻转。
-        private const float TurretScreenshotMinRootSize = 11f;
-        private const float TurretScreenshotMaxRootSize = 26f;
-        private const float TurretScreenshotCellMargin = 3f;
-        private const float TurretScreenshotCameraPlusMinRootSize = 11f;
-        private const float TurretScreenshotCameraPlusMaxRootSize = 21f;
-        private const float TurretScreenshotCameraPlusCellMargin = 1.5f;
 
         private static readonly FieldInfo ProjectileUsedTargetField = typeof(Projectile).GetField("usedTarget", BindingFlags.Instance | BindingFlags.NonPublic);
         private static readonly FieldInfo ProjectileIntendedTargetField = typeof(Projectile).GetField("intendedTarget", BindingFlags.Instance | BindingFlags.NonPublic);
@@ -96,6 +84,10 @@ namespace LogSyncMod.AutoTest
         private readonly Map map; // 主地图，用于UI测试等
         private readonly Queue<AutoTestWorkItem> pendingItems = new Queue<AutoTestWorkItem>();
         private readonly List<AutoTestResult> results = new List<AutoTestResult>();
+        private readonly List<AutoTestManifestEntry> discoveredManifest = new List<AutoTestManifestEntry>();
+        private readonly List<AutoTestManifestEntry> plannedManifest = new List<AutoTestManifestEntry>();
+        private readonly HashSet<string> discoveredCaseIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private readonly HashSet<string> plannedCaseIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<ThingDef, Thing> placedRecipeWorktables = new Dictionary<ThingDef, Thing>();
 
         // 新增炮塔测试相关字段
@@ -118,13 +110,18 @@ namespace LogSyncMod.AutoTest
         private bool completed;
         private ActiveSession activeSession;
         private AutoTestRunArtifacts runArtifacts;
+        private AutoTestRunSummary runSummary;
         private AutoTestScreenshotService screenshotService;
+        private readonly AutoTestPocketMapService pocketMapService;
         private bool? cameraPlusActive;
+        private int nextDiscoverOrder = 1;
+        private int nextPlannedOrder = 1;
 
         public AutoTestRunner(LogSyncSettings settings, Map map)
         {
             this.settings = settings;
             this.map = map;
+            pocketMapService = new AutoTestPocketMapService();
         }
 
         public bool Completed => completed;
@@ -182,6 +179,7 @@ namespace LogSyncMod.AutoTest
             }
 
             ApplyBatchLimit();
+            BuildPlannedManifest();
 
             int totalPending = pendingItems.Count + pendingTurretDefs.Count + pendingRangedWeaponDefs.Count + pendingMeleeWeaponDefs.Count;
             Log.Message(string.Format(
@@ -306,23 +304,6 @@ namespace LogSyncMod.AutoTest
             }
         }
 
-        private AutoTestResult CreateResult(string category, string defType, string defName, string label)
-        {
-            return new AutoTestResult
-            {
-                PackageId = targetPackageId,
-                Category = category,
-                DefType = defType,
-                DefName = defName ?? string.Empty,
-                Label = label ?? string.Empty,
-                Status = "pending",
-                Stage = "collect",
-                ErrorMessage = string.Empty,
-                ScreenshotPath = string.Empty,
-                Notes = string.Empty
-            };
-        }
-
         private void AddImmediateResult(AutoTestResult result, string status, string stage, string errorMessage)
         {
             result.Status = status;
@@ -338,13 +319,17 @@ namespace LogSyncMod.AutoTest
             CleanupSelectionAndWindows();
             CleanupSharedHediffPawn();
 
-            AutoTestReportWriter.Write(runArtifacts, targetPackageId ?? "unknown", results, targetMod?.Name ?? "Unknown");
+            runSummary = BuildRunSummary();
+            AutoTestReportWriter.Write(runArtifacts, targetPackageId ?? "unknown", results, targetMod?.Name ?? "Unknown", discoveredManifest, plannedManifest, runSummary);
             Log.Message(string.Format(
-                "[LogSyncAutoTest] COMPLETED packageId={0} total={1} passed={2} failed={3}",
+                "[LogSyncAutoTest] COMPLETED packageId={0} total={1} passed={2} failed={3} discovered={4} planned={5} missing={6}",
                 targetPackageId ?? "unknown",
                 results.Count,
                 results.Count(result => result.Status == "passed"),
-                results.Count(result => result.Status != "passed" && result.Status != "skipped")));
+                results.Count(result => result.Status != "passed" && result.Status != "skipped"),
+                runSummary?.DiscoveredCount ?? 0,
+                runSummary?.PlannedCount ?? 0,
+                runSummary?.MissingCount ?? 0));
         }
 
         private void CleanupSharedHediffPawn()
@@ -408,6 +393,12 @@ namespace LogSyncMod.AutoTest
 
         private void ApplyBatchLimit()
         {
+            if (IsFullCoverageRun())
+            {
+                Log.Message("[LogSyncAutoTest] Full coverage run detected. Batch limit is ignored.");
+                return;
+            }
+
             int limit = Math.Max(1, settings.autoTestBatchSize);
             int originalTotal = pendingItems.Count + pendingTurretDefs.Count + pendingRangedWeaponDefs.Count + pendingMeleeWeaponDefs.Count;
             if (originalTotal <= limit)
@@ -481,6 +472,277 @@ namespace LogSyncMod.AutoTest
                 keptCount));
         }
 
+        private AutoTestCaseType ResolveCaseType(AutoTestKind kind)
+        {
+            switch (kind)
+            {
+                case AutoTestKind.Building:
+                    return AutoTestCaseType.BuildingInfoCard;
+                case AutoTestKind.Item:
+                    return AutoTestCaseType.ItemInfoCard;
+                case AutoTestKind.Terrain:
+                    return AutoTestCaseType.TerrainInfoCard;
+                case AutoTestKind.Recipe:
+                    return AutoTestCaseType.RecipeInfoCard;
+                case AutoTestKind.Hediff:
+                    return AutoTestCaseType.HediffInfoCard;
+                case AutoTestKind.TurretPocketMap:
+                    return AutoTestCaseType.TurretPocketMap;
+                case AutoTestKind.RangedWeaponPocketMap:
+                    return AutoTestCaseType.RangedWeaponPocketMap;
+                case AutoTestKind.MeleeWeaponPocketMap:
+                    return AutoTestCaseType.MeleeWeaponPocketMap;
+                default:
+                    return AutoTestCaseType.ItemInfoCard;
+            }
+        }
+
+        private string ResolveCategory(AutoTestCaseType caseType)
+        {
+            switch (caseType)
+            {
+                case AutoTestCaseType.BuildingInfoCard:
+                    return "Building";
+                case AutoTestCaseType.ItemInfoCard:
+                    return "Item";
+                case AutoTestCaseType.TerrainInfoCard:
+                    return "Terrain";
+                case AutoTestCaseType.RecipeInfoCard:
+                    return "Recipe";
+                case AutoTestCaseType.HediffInfoCard:
+                    return "Hediff";
+                case AutoTestCaseType.TurretPocketMap:
+                    return "Turret";
+                case AutoTestCaseType.RangedWeaponPocketMap:
+                    return "RangedWeapon";
+                case AutoTestCaseType.MeleeWeaponPocketMap:
+                    return "MeleeWeapon";
+                default:
+                    return caseType.ToString();
+            }
+        }
+
+        private AutoTestScope ResolveScope(AutoTestCaseType caseType)
+        {
+            switch (caseType)
+            {
+                case AutoTestCaseType.RecipeInfoCard:
+                    return AutoTestScope.Recipes;
+                case AutoTestCaseType.HediffInfoCard:
+                    return AutoTestScope.Hediffs;
+                case AutoTestCaseType.TurretPocketMap:
+                    return AutoTestScope.Turrets;
+                case AutoTestCaseType.RangedWeaponPocketMap:
+                    return AutoTestScope.RangedWeapons;
+                case AutoTestCaseType.MeleeWeaponPocketMap:
+                    return AutoTestScope.MeleeWeapons;
+                default:
+                    return AutoTestScope.Content;
+            }
+        }
+
+        private string BuildCaseId(AutoTestCaseType caseType, string defName)
+        {
+            return (targetPackageId ?? "unknown") + "|" + caseType + "|" + (defName ?? string.Empty);
+        }
+
+        private AutoTestManifestEntry RegisterDiscoveredCase(AutoTestCaseType caseType, string defType, string defName, string label)
+        {
+            string caseId = BuildCaseId(caseType, defName);
+            if (!discoveredCaseIds.Add(caseId))
+            {
+                return discoveredManifest.First(manifestEntry => string.Equals(manifestEntry.CaseId, caseId, StringComparison.OrdinalIgnoreCase));
+            }
+
+            AutoTestManifestEntry entry = new AutoTestManifestEntry
+            {
+                CaseId = caseId,
+                CaseType = caseType.ToString(),
+                Category = ResolveCategory(caseType),
+                Scope = ResolveScope(caseType).ToString(),
+                DefType = defType ?? string.Empty,
+                DefName = defName ?? string.Empty,
+                Label = label ?? string.Empty,
+                DiscoverOrder = nextDiscoverOrder++
+            };
+
+            discoveredManifest.Add(entry);
+            return entry;
+        }
+
+        private AutoTestWorkItem CreateWorkItem(
+            AutoTestKind kind,
+            ThingDef thingDef = null,
+            TerrainDef terrainDef = null,
+            RecipeDef recipeDef = null,
+            ThingDef worktableDef = null,
+            HediffDef hediffDef = null,
+            LogSyncAutoTestSpecDef specDef = null)
+        {
+            AutoTestCaseType caseType = ResolveCaseType(kind);
+            Def targetDef = (Def)thingDef ?? terrainDef ?? (Def)recipeDef ?? hediffDef;
+            string defType = targetDef?.GetType().Name ?? string.Empty;
+            AutoTestManifestEntry entry = RegisterDiscoveredCase(caseType, defType, targetDef?.defName, targetDef?.label);
+
+            return new AutoTestWorkItem
+            {
+                Kind = kind,
+                CaseType = caseType,
+                CaseId = entry.CaseId,
+                ThingDef = thingDef,
+                TerrainDef = terrainDef,
+                RecipeDef = recipeDef,
+                WorktableDef = worktableDef,
+                HediffDef = hediffDef,
+                SpecDef = specDef,
+                ManifestEntry = entry
+            };
+        }
+
+        private AutoTestResult CreateResult(AutoTestManifestEntry entry, string defType, string defName, string label)
+        {
+            AutoTestCaseType caseType;
+            if (!Enum.TryParse(entry?.CaseType ?? string.Empty, out caseType))
+            {
+                caseType = AutoTestCaseType.ItemInfoCard;
+            }
+
+            return new AutoTestResult
+            {
+                PackageId = targetPackageId,
+                CaseId = entry?.CaseId ?? BuildCaseId(caseType, defName),
+                CaseType = caseType.ToString(),
+                Scope = entry?.Scope ?? ResolveScope(caseType).ToString(),
+                Category = entry?.Category ?? ResolveCategory(caseType),
+                DefType = defType ?? string.Empty,
+                DefName = defName ?? string.Empty,
+                Label = label ?? string.Empty,
+                Status = "pending",
+                Stage = "collect",
+                ErrorMessage = string.Empty,
+                ScreenshotPath = string.Empty,
+                Notes = string.Empty
+            };
+        }
+
+        private AutoTestResult CreateResult(AutoTestCaseType caseType, string defType, string defName, string label)
+        {
+            AutoTestManifestEntry entry = RegisterDiscoveredCase(caseType, defType, defName, label);
+            return CreateResult(entry, defType, defName, label);
+        }
+
+        private bool IsFullCoverageRun()
+        {
+            return !settings.UseXmlDrivenAutoTest() && settings.autoTestScope == AutoTestScope.All;
+        }
+
+        private AutoTestPocketMapHandle CreatePocketMapHandle(string mapGeneratorDefName, IntVec3 mapSize, Action<Map> onGenerated, out string errorMessage)
+        {
+            return pocketMapService.Create(new AutoTestPocketMapRequest
+            {
+                SourceMap = map,
+                MapGeneratorDefName = mapGeneratorDefName,
+                MapSize = mapSize,
+                OnGenerated = onGenerated
+            }, out errorMessage);
+        }
+
+        private void DestroyPocketMap(Map pocketMap, MapParent parent)
+        {
+            pocketMapService.Destroy(pocketMap, parent);
+        }
+
+        private string ResolveRunMode()
+        {
+            return IsFullCoverageRun() ? "Full" : "Targeted";
+        }
+
+        private void BuildPlannedManifest()
+        {
+            plannedManifest.Clear();
+            plannedCaseIds.Clear();
+            nextPlannedOrder = 1;
+
+            foreach (AutoTestWorkItem item in pendingItems)
+            {
+                AddPlannedManifestEntry(item.ManifestEntry);
+            }
+
+            foreach (ThingDef def in pendingTurretDefs)
+            {
+                AddPlannedManifestEntry(RegisterDiscoveredCase(AutoTestCaseType.TurretPocketMap, nameof(ThingDef), def?.defName, def?.label));
+            }
+
+            foreach (ThingDef def in pendingRangedWeaponDefs)
+            {
+                AddPlannedManifestEntry(RegisterDiscoveredCase(AutoTestCaseType.RangedWeaponPocketMap, nameof(ThingDef), def?.defName, def?.label));
+            }
+
+            foreach (ThingDef def in pendingMeleeWeaponDefs)
+            {
+                AddPlannedManifestEntry(RegisterDiscoveredCase(AutoTestCaseType.MeleeWeaponPocketMap, nameof(ThingDef), def?.defName, def?.label));
+            }
+
+            foreach (AutoTestResult result in results)
+            {
+                AddPlannedManifestEntry(RegisterDiscoveredCase(
+                    ParseCaseType(result.CaseType),
+                    result.DefType,
+                    result.DefName,
+                    result.Label));
+            }
+        }
+
+        private void AddPlannedManifestEntry(AutoTestManifestEntry entry)
+        {
+            if (entry == null || !plannedCaseIds.Add(entry.CaseId))
+            {
+                return;
+            }
+
+            entry.Planned = true;
+            entry.PlannedOrder = nextPlannedOrder++;
+            plannedManifest.Add(entry);
+        }
+
+        private AutoTestCaseType ParseCaseType(string text)
+        {
+            AutoTestCaseType caseType;
+            return Enum.TryParse(text ?? string.Empty, out caseType)
+                ? caseType
+                : AutoTestCaseType.ItemInfoCard;
+        }
+
+        private AutoTestRunSummary BuildRunSummary()
+        {
+            AutoTestRunSummary summary = new AutoTestRunSummary();
+            summary.RunMode = ResolveRunMode();
+            summary.DiscoveredCount = discoveredManifest.Count;
+            summary.PlannedCount = plannedManifest.Count;
+            summary.ExecutedCount = results.Count;
+            summary.PassedCount = results.Count(result => result.Status == "passed");
+            summary.SkippedCount = results.Count(result => result.Status == "skipped");
+            summary.FailedCount = results.Count(result => result.Status != "passed" && result.Status != "skipped");
+
+            HashSet<string> executedCaseIds = new HashSet<string>(
+                results
+                    .Where(result => !string.IsNullOrWhiteSpace(result.CaseId))
+                    .Select(result => result.CaseId),
+                StringComparer.OrdinalIgnoreCase);
+
+            foreach (AutoTestManifestEntry entry in plannedManifest)
+            {
+                if (!executedCaseIds.Contains(entry.CaseId))
+                {
+                    summary.MissingCaseIds.Add(entry.CaseId);
+                }
+            }
+
+            summary.MissingCount = summary.MissingCaseIds.Count;
+            summary.Complete = summary.MissingCount == 0 && summary.ExecutedCount >= summary.PlannedCount;
+            return summary;
+        }
+
         private bool TryCaptureTurretScreenshot(TurretTestSession session, bool force)
         {
             if (session == null)
@@ -508,13 +770,19 @@ namespace LogSyncMod.AutoTest
                 return false;
             }
 
-            return screenshotService.TryCaptureMap(
-                session.Result,
-                allowCapture,
-                force,
-                screenshotService.ResolveTurretResultIndex(results, activeTurretSessions.IndexOf(session)),
-                stageSuffix,
-                () => FocusTurretScreenshotMap(session));
+            return screenshotService.TryCapture(new AutoTestScreenshotRequest
+            {
+                Result = session.Result,
+                AllowCapture = allowCapture,
+                Force = force,
+                ResultIndex = screenshotService.ResolveTurretResultIndex(results, activeTurretSessions.IndexOf(session)),
+                StageSuffix = stageSuffix,
+                Prepare = () => FocusTurretScreenshotMap(session),
+                Guard = () => session.TestMap != null && Find.Maps.Contains(session.TestMap),
+                Profile = AutoTestScreenshotProfiles.TurretPrimary,
+                SuccessNoteKey = "TurretScreenshotCaptured=True",
+                FailureNoteKey = "TurretFailureScreenshotCaptured=True"
+            });
         }
 
         private bool TryCaptureTurretFailureScreenshot(TurretTestSession session)
@@ -524,14 +792,20 @@ namespace LogSyncMod.AutoTest
                 return false;
             }
 
-            return screenshotService.TryCaptureMap(
-                session.Result,
-                allowCapture: true,
-                force: true,
-                resultIndex: screenshotService.ResolveTurretResultIndex(results, activeTurretSessions.IndexOf(session)),
-                stageSuffix: session.Result?.Status ?? "failed",
-                prepare: () => FocusTurretScreenshotMap(session),
-                relativeSubdirectory: "fail");
+            return screenshotService.TryCapture(new AutoTestScreenshotRequest
+            {
+                Result = session.Result,
+                AllowCapture = true,
+                Force = true,
+                ResultIndex = screenshotService.ResolveTurretResultIndex(results, activeTurretSessions.IndexOf(session)),
+                StageSuffix = session.Result?.Status ?? "failed",
+                RelativeSubdirectory = "fail",
+                Prepare = () => FocusTurretScreenshotMap(session),
+                Guard = () => session.TestMap != null && Find.Maps.Contains(session.TestMap),
+                Profile = AutoTestScreenshotProfiles.TurretPrimary,
+                SuccessNoteKey = "TurretScreenshotCaptured=True",
+                FailureNoteKey = "TurretFailureScreenshotCaptured=True"
+            });
         }
 
         private bool TryCaptureRangedWeaponScreenshot(RangedWeaponTestSession session, bool force)
@@ -544,26 +818,38 @@ namespace LogSyncMod.AutoTest
         private bool TryCaptureRangedWeaponStageScreenshot(RangedWeaponTestSession session, string stageSuffix, bool force, bool allowCapture)
         {
             if (session == null || screenshotService == null || session.TestMap == null || !Find.Maps.Contains(session.TestMap)) return false;
-            return screenshotService.TryCaptureMap(
-                session.Result,
-                allowCapture,
-                force,
-                screenshotService.ResolveTurretResultIndex(results, activeRangedWeaponSessions.IndexOf(session)),
-                stageSuffix,
-                () => FocusRangedWeaponScreenshotMap(session));
+            return screenshotService.TryCapture(new AutoTestScreenshotRequest
+            {
+                Result = session.Result,
+                AllowCapture = allowCapture,
+                Force = force,
+                ResultIndex = screenshotService.ResolveTurretResultIndex(results, activeRangedWeaponSessions.IndexOf(session)),
+                StageSuffix = stageSuffix,
+                Prepare = () => FocusRangedWeaponScreenshotMap(session),
+                Guard = () => session.TestMap != null && Find.Maps.Contains(session.TestMap),
+                Profile = AutoTestScreenshotProfiles.RangedPrimary,
+                SuccessNoteKey = "TurretScreenshotCaptured=True",
+                FailureNoteKey = "TurretFailureScreenshotCaptured=True"
+            });
         }
 
         private bool TryCaptureRangedWeaponFailureScreenshot(RangedWeaponTestSession session)
         {
             if (session == null || screenshotService == null || session.TestMap == null || !Find.Maps.Contains(session.TestMap)) return false;
-            return screenshotService.TryCaptureMap(
-                session.Result,
-                allowCapture: true,
-                force: true,
-                resultIndex: screenshotService.ResolveTurretResultIndex(results, activeRangedWeaponSessions.IndexOf(session)),
-                stageSuffix: session.Result?.Status ?? "failed",
-                prepare: () => FocusPocketMapOverview(session.TestMap),
-                relativeSubdirectory: "fail");
+            return screenshotService.TryCapture(new AutoTestScreenshotRequest
+            {
+                Result = session.Result,
+                AllowCapture = true,
+                Force = true,
+                ResultIndex = screenshotService.ResolveTurretResultIndex(results, activeRangedWeaponSessions.IndexOf(session)),
+                StageSuffix = session.Result?.Status ?? "failed",
+                RelativeSubdirectory = "fail",
+                Prepare = () => FocusPocketMapOverview(session.TestMap),
+                Guard = () => session.TestMap != null && Find.Maps.Contains(session.TestMap),
+                Profile = AutoTestScreenshotProfiles.PocketMapOverview,
+                SuccessNoteKey = "TurretScreenshotCaptured=True",
+                FailureNoteKey = "TurretFailureScreenshotCaptured=True"
+            });
         }
 
         private bool TryCaptureMeleeWeaponScreenshot(MeleeWeaponTestSession session, bool force)
@@ -576,39 +862,57 @@ namespace LogSyncMod.AutoTest
         private bool TryCaptureMeleeWeaponStageScreenshot(MeleeWeaponTestSession session, string stageSuffix, bool force, bool allowCapture)
         {
             if (session == null || screenshotService == null || session.TestMap == null || !Find.Maps.Contains(session.TestMap)) return false;
-            return screenshotService.TryCaptureMap(
-                session.Result,
-                allowCapture,
-                force,
-                screenshotService.ResolveTurretResultIndex(results, activeMeleeWeaponSessions.IndexOf(session)),
-                stageSuffix,
-                () => FocusMeleeWeaponScreenshotMap(session));
+            return screenshotService.TryCapture(new AutoTestScreenshotRequest
+            {
+                Result = session.Result,
+                AllowCapture = allowCapture,
+                Force = force,
+                ResultIndex = screenshotService.ResolveTurretResultIndex(results, activeMeleeWeaponSessions.IndexOf(session)),
+                StageSuffix = stageSuffix,
+                Prepare = () => FocusMeleeWeaponScreenshotMap(session),
+                Guard = () => session.TestMap != null && Find.Maps.Contains(session.TestMap),
+                Profile = AutoTestScreenshotProfiles.MeleePrimary,
+                SuccessNoteKey = "TurretScreenshotCaptured=True",
+                FailureNoteKey = "TurretFailureScreenshotCaptured=True"
+            });
         }
 
         private bool TryCaptureMeleeWeaponFailureScreenshot(MeleeWeaponTestSession session)
         {
             if (session == null || screenshotService == null || session.TestMap == null || !Find.Maps.Contains(session.TestMap)) return false;
-            return screenshotService.TryCaptureMap(
-                session.Result,
-                allowCapture: true,
-                force: true,
-                resultIndex: screenshotService.ResolveTurretResultIndex(results, activeMeleeWeaponSessions.IndexOf(session)),
-                stageSuffix: session.Result?.Status ?? "failed",
-                prepare: () => FocusPocketMapOverview(session.TestMap),
-                relativeSubdirectory: "fail");
+            return screenshotService.TryCapture(new AutoTestScreenshotRequest
+            {
+                Result = session.Result,
+                AllowCapture = true,
+                Force = true,
+                ResultIndex = screenshotService.ResolveTurretResultIndex(results, activeMeleeWeaponSessions.IndexOf(session)),
+                StageSuffix = session.Result?.Status ?? "failed",
+                RelativeSubdirectory = "fail",
+                Prepare = () => FocusPocketMapOverview(session.TestMap),
+                Guard = () => session.TestMap != null && Find.Maps.Contains(session.TestMap),
+                Profile = AutoTestScreenshotProfiles.PocketMapOverview,
+                SuccessNoteKey = "TurretScreenshotCaptured=True",
+                FailureNoteKey = "TurretFailureScreenshotCaptured=True"
+            });
         }
 
         private bool TryCaptureMeleeActionScreenshot(MeleeWeaponTestSession session)
         {
             if (session == null || screenshotService == null) return false;
 
-            return screenshotService.TryCaptureMap(
-                session.Result,
-                allowCapture: true,
-                force: true,
-                resultIndex: screenshotService.ResolveTurretResultIndex(results, activeMeleeWeaponSessions.IndexOf(session)),
-                stageSuffix: "action_t15",
-                prepare: () => FocusMeleeAction(session));
+            return screenshotService.TryCapture(new AutoTestScreenshotRequest
+            {
+                Result = session.Result,
+                AllowCapture = true,
+                Force = true,
+                ResultIndex = screenshotService.ResolveTurretResultIndex(results, activeMeleeWeaponSessions.IndexOf(session)),
+                StageSuffix = "action_t15",
+                Prepare = () => FocusMeleeAction(session),
+                Guard = () => session.TestMap != null && Find.Maps.Contains(session.TestMap),
+                Profile = AutoTestScreenshotProfiles.MeleeAction,
+                SuccessNoteKey = "TurretScreenshotCaptured=True",
+                FailureNoteKey = "TurretFailureScreenshotCaptured=True"
+            });
         }
 
         private bool FocusTurretScreenshotMap(TurretTestSession session)
@@ -625,12 +929,12 @@ namespace LogSyncMod.AutoTest
                 if (TryResolveTurretScreenshotView(session, aspect, out Vector3 targetPos, out float rootSize))
                 {
                     // 显式重置 Y 轴高度并使用 SetRootPosAndSize，确保相机位于地图上方并重新计算正确的 Y 轴。
-                    cameraDriver.SetRootPosAndSize(new Vector3(targetPos.x, 65f, targetPos.z), rootSize);
+                    cameraDriver.SetRootPosAndSize(new Vector3(targetPos.x, AutoTestScreenshotProfiles.TurretPrimary.CameraHeight, targetPos.z), rootSize);
                 }
                 else
                 {
                     Vector3 center = ToMapWorldCenter(session.SpawnedTurret?.Position ?? session.TestMap.Center);
-                    cameraDriver.SetRootPosAndSize(new Vector3(center.x, 65f, center.z), TurretScreenshotMinRootSize);
+                    cameraDriver.SetRootPosAndSize(new Vector3(center.x, AutoTestScreenshotProfiles.TurretPrimary.CameraHeight, center.z), AutoTestScreenshotProfiles.TurretPrimary.MinRootSize);
                 }
 
                 return true;
@@ -657,12 +961,12 @@ namespace LogSyncMod.AutoTest
                 float aspect = ResolveTurretScreenshotAspect(cameraDriver);
                 if (TryResolveRangedWeaponScreenshotView(session, aspect, out Vector3 targetPos, out float rootSize))
                 {
-                    cameraDriver.SetRootPosAndSize(new Vector3(targetPos.x, 65f, targetPos.z), rootSize);
+                    cameraDriver.SetRootPosAndSize(new Vector3(targetPos.x, AutoTestScreenshotProfiles.RangedPrimary.CameraHeight, targetPos.z), rootSize);
                 }
                 else
                 {
                     Vector3 center = ToMapWorldCenter(session.ShooterPawn?.Position ?? session.TestMap.Center);
-                    cameraDriver.SetRootPosAndSize(new Vector3(center.x, 65f, center.z), TurretScreenshotMinRootSize);
+                    cameraDriver.SetRootPosAndSize(new Vector3(center.x, AutoTestScreenshotProfiles.RangedPrimary.CameraHeight, center.z), AutoTestScreenshotProfiles.RangedPrimary.MinRootSize);
                 }
 
                 return true;
@@ -688,12 +992,12 @@ namespace LogSyncMod.AutoTest
 
                 if (TryResolveMeleeWeaponScreenshotView(session, out Vector3 targetPos, out float rootSize))
                 {
-                    cameraDriver.SetRootPosAndSize(new Vector3(targetPos.x, 65f, targetPos.z), rootSize);
+                    cameraDriver.SetRootPosAndSize(new Vector3(targetPos.x, AutoTestScreenshotProfiles.MeleePrimary.CameraHeight, targetPos.z), rootSize);
                 }
                 else
                 {
                     Vector3 center = ToMapWorldCenter(session.ShooterPawn?.Position ?? session.TestMap.Center);
-                    cameraDriver.SetRootPosAndSize(new Vector3(center.x, 65f, center.z), 11f);
+                    cameraDriver.SetRootPosAndSize(new Vector3(center.x, AutoTestScreenshotProfiles.MeleePrimary.CameraHeight, center.z), AutoTestScreenshotProfiles.MeleePrimary.FixedRootSize ?? 11f);
                 }
 
                 return true;
@@ -718,7 +1022,7 @@ namespace LogSyncMod.AutoTest
                 if (cameraDriver == null) return;
 
                 Vector3 center = session.ShooterPawn.DrawPos;
-                cameraDriver.SetRootPosAndSize(new Vector3(center.x, 65f, center.z), 11f);
+                cameraDriver.SetRootPosAndSize(new Vector3(center.x, AutoTestScreenshotProfiles.MeleeAction.CameraHeight, center.z), AutoTestScreenshotProfiles.MeleeAction.FixedRootSize ?? 11f);
             }
             catch (Exception ex)
             {
@@ -738,10 +1042,12 @@ namespace LogSyncMod.AutoTest
 
                 float aspect = ResolveTurretScreenshotAspect(cameraDriver);
                 float normalizedAspect = aspect > 0.01f ? aspect : DefaultTurretScreenshotAspect;
-                float rootSize = Mathf.Max(targetMap.Size.z * 0.58f, (targetMap.Size.x / normalizedAspect) * 0.58f);
-                rootSize = Mathf.Max(rootSize, TurretScreenshotMaxRootSize);
+                float rootSize = Mathf.Max(
+                    targetMap.Size.z * AutoTestScreenshotProfiles.PocketMapOverview.OverviewScale,
+                    (targetMap.Size.x / normalizedAspect) * AutoTestScreenshotProfiles.PocketMapOverview.OverviewScale);
+                rootSize = Mathf.Max(rootSize, AutoTestScreenshotProfiles.PocketMapOverview.MinRootSize);
 
-                cameraDriver.SetRootPosAndSize(new Vector3(targetMap.Center.x, 65f, targetMap.Center.z), rootSize);
+                cameraDriver.SetRootPosAndSize(new Vector3(targetMap.Center.x, AutoTestScreenshotProfiles.PocketMapOverview.CameraHeight, targetMap.Center.z), rootSize);
                 return true;
             }
             catch (Exception ex)
@@ -760,9 +1066,7 @@ namespace LogSyncMod.AutoTest
 
             rootPos = default;
             bool useCameraPlusZoom = IsCameraPlusActive();
-            float minRootSize = useCameraPlusZoom ? TurretScreenshotCameraPlusMinRootSize : TurretScreenshotMinRootSize;
-            float maxRootSize = useCameraPlusZoom ? TurretScreenshotCameraPlusMaxRootSize : TurretScreenshotMaxRootSize;
-            float cellMargin = useCameraPlusZoom ? TurretScreenshotCameraPlusCellMargin : TurretScreenshotCellMargin;
+            ResolveScreenshotBounds(AutoTestScreenshotProfiles.TurretPrimary, useCameraPlusZoom, out float minRootSize, out float maxRootSize, out float cellMargin);
             rootSize = minRootSize;
 
             if (session?.SpawnedTurret == null || session.SpawnedTurret.Destroyed)
@@ -786,7 +1090,7 @@ namespace LogSyncMod.AutoTest
             float halfHeight = Mathf.Abs(turretPos.z - targetPos.z) * 0.5f + cellMargin;
 
             float normalizedAspect = aspect > 0.01f ? aspect : DefaultTurretScreenshotAspect;
-            float requiredRootSize = Mathf.Max(halfHeight, halfWidth / normalizedAspect) * TurretScreenshotRangeScale;
+            float requiredRootSize = Mathf.Max(halfHeight, halfWidth / normalizedAspect) * AutoTestScreenshotProfiles.TurretPrimary.RangeScale;
             rootSize = Mathf.Clamp(requiredRootSize, minRootSize, maxRootSize);
             return true;
         }
@@ -794,7 +1098,7 @@ namespace LogSyncMod.AutoTest
         private bool TryResolveProjectileFocusView(TurretTestSession session, Thing projectileThing, float aspect, out Vector3 rootPos, out float rootSize)
         {
             rootPos = default;
-            rootSize = TurretScreenshotMinRootSize;
+            rootSize = AutoTestScreenshotProfiles.TurretPrimary.MinRootSize;
             if (session?.SpawnedTurret == null || projectileThing == null)
             {
                 return false;
@@ -812,15 +1116,13 @@ namespace LogSyncMod.AutoTest
                 : ToMapWorldCenter(target.Cell);
 
             bool useCameraPlusZoom = IsCameraPlusActive();
-            float minRootSize = useCameraPlusZoom ? TurretScreenshotCameraPlusMinRootSize : TurretScreenshotMinRootSize;
-            float maxRootSize = useCameraPlusZoom ? TurretScreenshotCameraPlusMaxRootSize : TurretScreenshotMaxRootSize;
-            float cellMargin = useCameraPlusZoom ? TurretScreenshotCameraPlusCellMargin : TurretScreenshotCellMargin;
+            ResolveScreenshotBounds(AutoTestScreenshotProfiles.TurretPrimary, useCameraPlusZoom, out float minRootSize, out float maxRootSize, out float cellMargin);
 
             rootPos = (turretPos + targetPos) * 0.5f;
             float normalizedAspect = aspect > 0.01f ? aspect : DefaultTurretScreenshotAspect;
             float halfWidth = Mathf.Abs(turretPos.x - targetPos.x) * 0.5f + cellMargin;
             float halfHeight = Mathf.Abs(turretPos.z - targetPos.z) * 0.5f + cellMargin;
-            float requiredRootSize = Mathf.Max(halfHeight, halfWidth / normalizedAspect) * TurretScreenshotRangeScale;
+            float requiredRootSize = Mathf.Max(halfHeight, halfWidth / normalizedAspect) * AutoTestScreenshotProfiles.TurretPrimary.RangeScale;
             rootSize = Mathf.Clamp(requiredRootSize, minRootSize, maxRootSize);
             return true;
         }
@@ -828,7 +1130,7 @@ namespace LogSyncMod.AutoTest
         private bool TryResolveMeleeWeaponScreenshotView(MeleeWeaponTestSession session, out Vector3 rootPos, out float rootSize)
         {
             rootPos = default;
-            rootSize = 11f; // 固定 11.0 缩放防止 CameraPlus 翻转
+            rootSize = AutoTestScreenshotProfiles.MeleePrimary.FixedRootSize ?? 11f;
 
             if (session?.ShooterPawn == null || session.ShooterPawn.Destroyed)
             {
@@ -990,9 +1292,7 @@ namespace LogSyncMod.AutoTest
 
             rootPos = default;
             bool useCameraPlusZoom = IsCameraPlusActive();
-            float minRootSize = useCameraPlusZoom ? TurretScreenshotCameraPlusMinRootSize : TurretScreenshotMinRootSize;
-            float maxRootSize = useCameraPlusZoom ? TurretScreenshotCameraPlusMaxRootSize : TurretScreenshotMaxRootSize;
-            float cellMargin = useCameraPlusZoom ? TurretScreenshotCameraPlusCellMargin : TurretScreenshotCellMargin;
+            ResolveScreenshotBounds(AutoTestScreenshotProfiles.RangedPrimary, useCameraPlusZoom, out float minRootSize, out float maxRootSize, out float cellMargin);
             if (session?.ShooterPawn == null || session.ShooterPawn.Destroyed)
             {
                 rootSize = minRootSize;
@@ -1014,14 +1314,14 @@ namespace LogSyncMod.AutoTest
             float normalizedAspect = aspect > 0.01f ? aspect : DefaultTurretScreenshotAspect;
             float halfWidth = Mathf.Abs(shooterPos.x - targetPos.x) * 0.5f + cellMargin;
             float halfHeight = Mathf.Abs(shooterPos.z - targetPos.z) * 0.5f + cellMargin;
-            rootSize = Mathf.Clamp(Mathf.Max(halfHeight, halfWidth / normalizedAspect) * RangedWeaponScreenshotRangeScale, minRootSize, maxRootSize);
+            rootSize = Mathf.Clamp(Mathf.Max(halfHeight, halfWidth / normalizedAspect) * AutoTestScreenshotProfiles.RangedPrimary.RangeScale, minRootSize, maxRootSize);
             return true;
         }
 
         private bool TryResolveRangedWeaponProjectileFocusView(RangedWeaponTestSession session, Thing projectileThing, float aspect, out Vector3 rootPos, out float rootSize)
         {
             rootPos = default;
-            rootSize = TurretScreenshotMinRootSize;
+            rootSize = AutoTestScreenshotProfiles.RangedPrimary.MinRootSize;
             if (session?.ShooterPawn == null || projectileThing == null)
             {
                 return false;
@@ -1036,16 +1336,14 @@ namespace LogSyncMod.AutoTest
             Vector3 shooterPos = ToMapWorldCenter(session.ShooterPawn.Position);
             Vector3 targetPos = target.Thing != null ? target.Thing.DrawPos : ToMapWorldCenter(target.Cell);
             bool useCameraPlusZoom = IsCameraPlusActive();
-            float minRootSize = useCameraPlusZoom ? TurretScreenshotCameraPlusMinRootSize : TurretScreenshotMinRootSize;
-            float maxRootSize = useCameraPlusZoom ? TurretScreenshotCameraPlusMaxRootSize : TurretScreenshotMaxRootSize;
-            float cellMargin = useCameraPlusZoom ? TurretScreenshotCameraPlusCellMargin : TurretScreenshotCellMargin;
+            ResolveScreenshotBounds(AutoTestScreenshotProfiles.RangedPrimary, useCameraPlusZoom, out float minRootSize, out float maxRootSize, out float cellMargin);
             float normalizedAspect = aspect > 0.01f ? aspect : DefaultTurretScreenshotAspect;
 
             rootPos = (shooterPos + targetPos) * 0.5f;
 
             float halfWidth = Mathf.Abs(shooterPos.x - targetPos.x) * 0.5f + cellMargin;
             float halfHeight = Mathf.Abs(shooterPos.z - targetPos.z) * 0.5f + cellMargin;
-            rootSize = Mathf.Clamp(Mathf.Max(halfHeight, halfWidth / normalizedAspect) * RangedWeaponScreenshotRangeScale, minRootSize, maxRootSize);
+            rootSize = Mathf.Clamp(Mathf.Max(halfHeight, halfWidth / normalizedAspect) * AutoTestScreenshotProfiles.RangedPrimary.RangeScale, minRootSize, maxRootSize);
             return true;
         }
 
@@ -1077,6 +1375,20 @@ namespace LogSyncMod.AutoTest
             rootPos = session.ActiveStageScreenshot.FocusRootPos.Value;
             rootSize = session.ActiveStageScreenshot.FocusRootSize.Value;
             return true;
+        }
+
+        private static void ResolveScreenshotBounds(AutoTestScreenshotProfile profile, bool useCameraPlusZoom, out float minRootSize, out float maxRootSize, out float cellMargin)
+        {
+            profile = profile ?? AutoTestScreenshotProfiles.TurretPrimary;
+            minRootSize = useCameraPlusZoom && profile.CameraPlusMinRootSize > 0f
+                ? profile.CameraPlusMinRootSize
+                : profile.MinRootSize;
+            maxRootSize = useCameraPlusZoom && profile.CameraPlusMaxRootSize > 0f
+                ? profile.CameraPlusMaxRootSize
+                : profile.MaxRootSize;
+            cellMargin = useCameraPlusZoom && profile.CameraPlusCellMargin > 0f
+                ? profile.CameraPlusCellMargin
+                : profile.CellMargin;
         }
 
         private static float ResolveTurretScreenshotAspect(CameraDriver cameraDriver)

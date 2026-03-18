@@ -328,12 +328,12 @@ namespace LogSyncMod.AutoTest
                             if (TestMap != null && Find.Maps.Contains(TestMap))
                             {
                                 int mapId = TestMap.uniqueID;
-                                PocketMapUtility.DestroyPocketMap(TestMap);
+                                owner.DestroyPocketMap(TestMap, Parent);
                                 Log.Message($"[LogSyncAutoTest] [MapCleanup] Successfully destroyed official PocketMap {mapId}.");
                             }
                             else if (Parent != null && !Parent.Destroyed)
                             {
-                                Parent.Destroy();
+                                owner.DestroyPocketMap(null, Parent);
                                 Log.Message($"[LogSyncAutoTest] [MapCleanup] Successfully destroyed MapParent.");
                             }
 
@@ -1383,6 +1383,7 @@ namespace LogSyncMod.AutoTest
 
             foreach (ThingDef turretDef in turretDefs)
             {
+                RegisterDiscoveredCase(AutoTestCaseType.TurretPocketMap, "ThingDef", turretDef.defName, turretDef.label);
                 pendingTurretDefs.Enqueue(turretDef);
             }
 
@@ -1391,7 +1392,7 @@ namespace LogSyncMod.AutoTest
 
         private void StartNewTurretSession(ThingDef turretDef)
         {
-            var result = CreateResult("Turret", "ThingDef", turretDef.defName, turretDef.label);
+            var result = CreateResult(AutoTestCaseType.TurretPocketMap, "ThingDef", turretDef.defName, turretDef.label);
             var session = new TurretTestSession(this, turretDef, result);
             LogSyncAutoTestSpecDef spec = ResolveBestMatchingSpec(AutoTestKind.TurretPocketMap, turretDef);
             session.AllowScreenshots = ShouldCaptureScreenshots(spec);
@@ -1405,33 +1406,26 @@ namespace LogSyncMod.AutoTest
 
             try
             {
-                var mapGenerator = DefDatabase<MapGeneratorDef>.GetNamed("LogSync_AutoTestPocketMap");
                 var mapSize = new IntVec3(50, 1, 50);
-                var pocketMapParent = WorldObjectMaker.MakeWorldObject(WorldObjectDefOf.PocketMap) as PocketMapParent;
-                if (pocketMapParent == null)
+                AutoTestPocketMapHandle handle = CreatePocketMapHandle(
+                    "LogSync_AutoTestPocketMap",
+                    mapSize,
+                    generatedMap => MapGenerator.PlayerStartSpot = generatedMap.Center,
+                    out string errorMessage);
+                if (handle == null)
                 {
                     result.Status = "failed_map_generation";
-                    result.ErrorMessage = "Failed to create PocketMapParent.";
+                    result.ErrorMessage = errorMessage ?? "Failed to create PocketMapParent.";
                     results.Add(result);
                     return;
                 }
 
-                pocketMapParent.sourceMap = this.map;
-                pocketMapParent.mapGenerator = mapGenerator;
-                session.Parent = pocketMapParent;
-
-                session.TestMap = MapGenerator.GenerateMap(
-                    mapSize,
-                    pocketMapParent,
-                    mapGenerator,
-                    null,
-                    generatedMap => MapGenerator.PlayerStartSpot = generatedMap.Center,
-                    isPocketMap: true);
+                session.Parent = handle.Parent;
+                session.TestMap = handle.Map;
 
                 if (session.TestMap != null)
                 {
-                    Find.World.pocketMaps.Add(pocketMapParent);
-                    session.Parent = session.TestMap.Parent as PocketMapParent ?? pocketMapParent;
+                    session.Parent = session.TestMap.Parent as PocketMapParent ?? handle.Parent;
                     activeTurretSessions.Add(session);
                     Log.Message("[LogSyncAutoTest] Starting managed POCKET MAP for '" + turretDef.defName + "' in Map " + session.TestMap.uniqueID + ". SourceMap=" + this.map.uniqueID + ".");
                 }
@@ -1447,14 +1441,7 @@ namespace LogSyncMod.AutoTest
                 result.Status = "failed_map_creation";
                 result.ErrorMessage = ex.ToString();
                 results.Add(result);
-                if (session.TestMap != null)
-                {
-                    PocketMapUtility.DestroyPocketMap(session.TestMap);
-                }
-                else if (session.Parent != null && !session.Parent.Destroyed)
-                {
-                    session.Parent.Destroy();
-                }
+                DestroyPocketMap(session.TestMap, session.Parent);
             }
         }
 

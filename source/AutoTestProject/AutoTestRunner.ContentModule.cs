@@ -32,7 +32,7 @@ namespace LogSyncMod.AutoTest
 
         private void StartThingSession(AutoTestWorkItem item)
         {
-            AutoTestResult result = CreateResult(item.Kind.ToString(), "ThingDef", item.ThingDef.defName, item.ThingDef.label);
+            AutoTestResult result = CreateResult(item.ManifestEntry, "ThingDef", item.ThingDef.defName, item.ThingDef.label);
             results.Add(result);
 
             try
@@ -101,7 +101,7 @@ namespace LogSyncMod.AutoTest
 
         private void StartTerrainSession(AutoTestWorkItem item)
         {
-            AutoTestResult result = CreateResult("Terrain", "TerrainDef", item.TerrainDef.defName, item.TerrainDef.label);
+            AutoTestResult result = CreateResult(item.ManifestEntry, "TerrainDef", item.TerrainDef.defName, item.TerrainDef.label);
             results.Add(result);
 
             try
@@ -142,7 +142,7 @@ namespace LogSyncMod.AutoTest
 
         private void StartRecipeSession(AutoTestWorkItem item)
         {
-            AutoTestResult result = CreateResult("Recipe", "RecipeDef", item.RecipeDef.defName, item.RecipeDef.label);
+            AutoTestResult result = CreateResult(item.ManifestEntry, "RecipeDef", item.RecipeDef.defName, item.RecipeDef.label);
             results.Add(result);
 
             Thing worktableThing = GetPlacedRecipeWorktable(item.WorktableDef);
@@ -182,7 +182,7 @@ namespace LogSyncMod.AutoTest
 
         private void StartHediffSession(AutoTestWorkItem item)
         {
-            AutoTestResult result = CreateResult("Hediff", "HediffDef", item.HediffDef.defName, item.HediffDef.label);
+            AutoTestResult result = CreateResult(item.ManifestEntry, "HediffDef", item.HediffDef.defName, item.HediffDef.label);
             results.Add(result);
 
             try
@@ -249,24 +249,20 @@ namespace LogSyncMod.AutoTest
                 .Where(IsTargetBuildingDef)
                 .OrderBy(def => def.defName))
             {
-                pendingItems.Enqueue(new AutoTestWorkItem
-                {
-                    Kind = AutoTestKind.Building,
-                    ThingDef = def,
-                    SpecDef = ResolveBestMatchingSpec(AutoTestKind.Building, def)
-                });
+                pendingItems.Enqueue(CreateWorkItem(
+                    AutoTestKind.Building,
+                    thingDef: def,
+                    specDef: ResolveBestMatchingSpec(AutoTestKind.Building, def)));
             }
 
             foreach (ThingDef def in DefDatabase<ThingDef>.AllDefsListForReading
                 .Where(IsTargetItemDef)
                 .OrderBy(def => def.defName))
             {
-                pendingItems.Enqueue(new AutoTestWorkItem
-                {
-                    Kind = AutoTestKind.Item,
-                    ThingDef = def,
-                    SpecDef = ResolveBestMatchingSpec(AutoTestKind.Item, def)
-                });
+                pendingItems.Enqueue(CreateWorkItem(
+                    AutoTestKind.Item,
+                    thingDef: def,
+                    specDef: ResolveBestMatchingSpec(AutoTestKind.Item, def)));
             }
         }
 
@@ -276,12 +272,10 @@ namespace LogSyncMod.AutoTest
                 .Where(IsTargetTerrainDef)
                 .OrderBy(def => def.defName))
             {
-                pendingItems.Enqueue(new AutoTestWorkItem
-                {
-                    Kind = AutoTestKind.Terrain,
-                    TerrainDef = def,
-                    SpecDef = ResolveBestMatchingSpec(AutoTestKind.Terrain, def)
-                });
+                pendingItems.Enqueue(CreateWorkItem(
+                    AutoTestKind.Terrain,
+                    terrainDef: def,
+                    specDef: ResolveBestMatchingSpec(AutoTestKind.Terrain, def)));
             }
         }
 
@@ -291,12 +285,10 @@ namespace LogSyncMod.AutoTest
                 .Where(IsTargetHediffDef)
                 .OrderBy(def => def.defName))
             {
-                pendingItems.Enqueue(new AutoTestWorkItem
-                {
-                    Kind = AutoTestKind.Hediff,
-                    HediffDef = def,
-                    SpecDef = ResolveBestMatchingSpec(AutoTestKind.Hediff, def)
-                });
+                pendingItems.Enqueue(CreateWorkItem(
+                    AutoTestKind.Hediff,
+                    hediffDef: def,
+                    specDef: ResolveBestMatchingSpec(AutoTestKind.Hediff, def)));
             }
         }
 
@@ -313,7 +305,11 @@ namespace LogSyncMod.AutoTest
                 if (productDef == null)
                 {
                     AddImmediateResult(
-                        CreateResult("Recipe", "RecipeDef", recipe.defName, recipe.label),
+                        CreateResult(
+                            RegisterDiscoveredCase(AutoTestCaseType.RecipeInfoCard, "RecipeDef", recipe.defName, recipe.label),
+                            "RecipeDef",
+                            recipe.defName,
+                            recipe.label),
                         "skipped",
                         "collect",
                         "No supported product ThingDef was found for this recipe.");
@@ -323,7 +319,11 @@ namespace LogSyncMod.AutoTest
                 ThingDef worktableDef = ResolveRecipeWorktable(recipe);
                 if (worktableDef == null)
                 {
-                    AutoTestResult result = CreateResult("Recipe", "RecipeDef", recipe.defName, recipe.label);
+                    AutoTestResult result = CreateResult(
+                        RegisterDiscoveredCase(AutoTestCaseType.RecipeInfoCard, "RecipeDef", recipe.defName, recipe.label),
+                        "RecipeDef",
+                        recipe.defName,
+                        recipe.label);
                     result.Label = productDef.label ?? recipe.label ?? string.Empty;
                     result.Notes = AppendNote(result.Notes, "Product=" + SafeDefName(productDef));
                     AddImmediateResult(
@@ -335,14 +335,12 @@ namespace LogSyncMod.AutoTest
                 }
 
                 requiredWorktables.Add(worktableDef);
-                recipeItems.Add(new AutoTestWorkItem
-                {
-                    Kind = AutoTestKind.Recipe,
-                    RecipeDef = recipe,
-                    ThingDef = productDef,
-                    WorktableDef = worktableDef,
-                    SpecDef = ResolveBestMatchingSpec(AutoTestKind.Recipe, recipe)
-                });
+                recipeItems.Add(CreateWorkItem(
+                    AutoTestKind.Recipe,
+                    thingDef: productDef,
+                    recipeDef: recipe,
+                    worktableDef: worktableDef,
+                    specDef: ResolveBestMatchingSpec(AutoTestKind.Recipe, recipe)));
             }
 
             PlaceRecipeWorktables(requiredWorktables);
@@ -355,7 +353,7 @@ namespace LogSyncMod.AutoTest
                     continue;
                 }
 
-                AutoTestResult result = CreateResult("Recipe", "RecipeDef", item.RecipeDef.defName, item.RecipeDef.label);
+                AutoTestResult result = CreateResult(item.ManifestEntry, "RecipeDef", item.RecipeDef.defName, item.RecipeDef.label);
                 result.Label = item.ThingDef?.label ?? item.RecipeDef.label ?? string.Empty;
                 result.Notes = AppendNote(result.Notes, "Product=" + SafeDefName(item.ThingDef));
                 result.Notes = AppendNote(result.Notes, "Worktable=" + SafeDefName(item.WorktableDef));

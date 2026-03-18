@@ -47,35 +47,20 @@ namespace LogSyncMod.AutoTest
 
             try
             {
-                Directory.CreateDirectory(runArtifacts.ScreenshotDirectory);
-                string fileName = string.Format(
-                    "{0:D4}_{1}.png",
-                    resultIndex,
-                    SanitizeFileName(result.DefName));
-                string screenshotPath = Path.Combine(runArtifacts.ScreenshotDirectory, fileName);
-
-                AutoTestScreenshotOverlay.Request(result);
-                ScreenCapture.CaptureScreenshot(screenshotPath);
-                result.ScreenshotPath = screenshotPath;
-                if (result.ScreenshotPaths == null)
+                bool captured = TryCapture(new AutoTestScreenshotRequest
                 {
-                    result.ScreenshotPaths = new List<string>();
-                }
-                result.ScreenshotPaths.Add(screenshotPath);
-                result.Notes = appendNote(
-                    result.Notes,
-                    force ? "FailureScreenshotCaptured=True" : "ScreenshotCaptured=True");
-                screenshotCaptured = true;
-
-                Log.Message(
-                    "[LogSyncAutoTest] Screenshot requested for " +
-                    result.DefName +
-                    " force=" +
-                    force +
-                    " -> " +
-                    screenshotPath);
-
-                return true;
+                    Result = result,
+                    AllowCapture = allowCapture,
+                    Force = force,
+                    ResultIndex = resultIndex,
+                    StageSuffix = null,
+                    Profile = AutoTestScreenshotProfiles.InfoCard,
+                    SuccessNoteKey = "ScreenshotCaptured=True",
+                    FailureNoteKey = "FailureScreenshotCaptured=True",
+                    Guard = isInfoCardPresent
+                });
+                screenshotCaptured = screenshotCaptured || captured;
+                return captured;
             }
             catch (Exception ex)
             {
@@ -94,12 +79,30 @@ namespace LogSyncMod.AutoTest
             Action prepare,
             string relativeSubdirectory = null)
         {
+            return TryCapture(new AutoTestScreenshotRequest
+            {
+                Result = result,
+                AllowCapture = allowCapture,
+                Force = force,
+                ResultIndex = resultIndex,
+                StageSuffix = stageSuffix,
+                RelativeSubdirectory = relativeSubdirectory,
+                Prepare = prepare,
+                Profile = AutoTestScreenshotProfiles.PocketMapOverview,
+                SuccessNoteKey = "TurretScreenshotCaptured=True",
+                FailureNoteKey = "TurretFailureScreenshotCaptured=True"
+            });
+        }
+
+        public bool TryCapture(AutoTestScreenshotRequest request)
+        {
+            AutoTestResult result = request?.Result;
             if (result == null)
             {
                 return false;
             }
 
-            if (!force && !allowCapture)
+            if (!request.Force && !request.AllowCapture)
             {
                 return false;
             }
@@ -109,20 +112,26 @@ namespace LogSyncMod.AutoTest
                 return false;
             }
 
+            if (request.Guard != null && !request.Guard())
+            {
+                return false;
+            }
+
             try
             {
-                prepare?.Invoke();
+                request.Prepare?.Invoke();
 
-                string screenshotDirectory = string.IsNullOrWhiteSpace(relativeSubdirectory)
+                string screenshotDirectory = string.IsNullOrWhiteSpace(request.RelativeSubdirectory)
                     ? runArtifacts.ScreenshotDirectory
-                    : Path.Combine(runArtifacts.ScreenshotDirectory, relativeSubdirectory);
+                    : Path.Combine(runArtifacts.ScreenshotDirectory, request.RelativeSubdirectory);
                 Directory.CreateDirectory(screenshotDirectory);
 
-                string fileName = string.Format(
-                    "{0:D4}_{1}_{2}.png",
-                    resultIndex,
-                    SanitizeFileName(result.DefName),
-                    SanitizeFileName(stageSuffix));
+                string suffix = string.IsNullOrWhiteSpace(request.StageSuffix)
+                    ? null
+                    : SanitizeFileName(request.StageSuffix);
+                string fileName = string.IsNullOrWhiteSpace(suffix)
+                    ? string.Format("{0:D4}_{1}.png", request.ResultIndex, SanitizeFileName(result.DefName))
+                    : string.Format("{0:D4}_{1}_{2}.png", request.ResultIndex, SanitizeFileName(result.DefName), suffix);
                 string screenshotPath = Path.Combine(screenshotDirectory, fileName);
 
                 AutoTestScreenshotOverlay.Request(result);
@@ -132,16 +141,24 @@ namespace LogSyncMod.AutoTest
                 {
                     result.ScreenshotPaths = new List<string>();
                 }
+
                 result.ScreenshotPaths.Add(screenshotPath);
-                result.Notes = appendNote(
-                    result.Notes,
-                    force ? "TurretFailureScreenshotCaptured=True" : "TurretScreenshotCaptured=True");
+                string noteKey = request.Force
+                    ? (request.FailureNoteKey ?? "FailureScreenshotCaptured=True")
+                    : (request.SuccessNoteKey ?? "ScreenshotCaptured=True");
+                result.Notes = appendNote(result.Notes, noteKey);
+                if (request.Profile != null && !string.IsNullOrWhiteSpace(request.Profile.ProfileId))
+                {
+                    result.Notes = appendNote(result.Notes, "ScreenshotProfile=" + request.Profile.ProfileId);
+                }
 
                 Log.Message(
-                    "[LogSyncAutoTest] Turret screenshot requested for " +
+                    "[LogSyncAutoTest] Screenshot requested for " +
                     result.DefName +
                     " force=" +
-                    force +
+                    request.Force +
+                    " profile=" +
+                    (request.Profile?.ProfileId ?? "None") +
                     " -> " +
                     screenshotPath);
 
@@ -149,8 +166,8 @@ namespace LogSyncMod.AutoTest
             }
             catch (Exception ex)
             {
-                result.Notes = appendNote(result.Notes, "TurretScreenshotError=" + trimForNote(ex.Message));
-                Log.Warning("[LogSyncAutoTest] Turret screenshot capture failed for " + result.DefName + ": " + ex.Message);
+                result.Notes = appendNote(result.Notes, "ScreenshotError=" + trimForNote(ex.Message));
+                Log.Warning("[LogSyncAutoTest] Screenshot capture failed for " + result.DefName + ": " + ex.Message);
                 return false;
             }
         }
