@@ -696,6 +696,9 @@ namespace LogSyncMod.AutoTest
 
                 Thing bestProjectile = null;
                 float bestDistance = float.MaxValue;
+                float bestScore = float.MaxValue;
+                Vector3? bestFocusRootPos = null;
+                float? bestFocusRootSize = null;
                 foreach (Thing projectile in activeProjectiles)
                 {
                     if (!ProjectileLastPositions.TryGetValue(projectile.thingIDNumber, out Vector3 previousPos) ||
@@ -706,22 +709,34 @@ namespace LogSyncMod.AutoTest
 
                     int deltaTicks = Math.Max(1, currentTick - previousTick);
                     Vector3 currentPos = projectile.DrawPos;
-                    Vector3 closestPoint = ClosestPointOnHorizontalSegment(previousPos, currentPos, screenshotCenter, out float segmentProgress);
-                    float closestDistance = HorizontalDistance(closestPoint, screenshotCenter);
-                    float captureRadius = Mathf.Max(0.35f, rootSize * 0.035f);
+                    Vector3 candidateCenter = screenshotCenter;
+                    float candidateRootSize = rootSize;
+                    if (owner.TryResolveRangedWeaponProjectileFocusView(this, projectile, aspect, out Vector3 resolvedRootPos, out float resolvedRootSize))
+                    {
+                        candidateCenter = resolvedRootPos;
+                        candidateRootSize = resolvedRootSize;
+                    }
+
+                    Vector3 closestPoint = ClosestPointOnHorizontalSegment(previousPos, currentPos, candidateCenter, out float segmentProgress);
+                    float closestDistance = HorizontalDistance(closestPoint, candidateCenter);
+                    float captureRadius = Mathf.Max(0.35f, candidateRootSize * 0.035f);
                     if (closestDistance > captureRadius || segmentProgress <= 0f || segmentProgress > 1f)
                     {
                         continue;
                     }
 
                     float speed = HorizontalMagnitude((currentPos - previousPos) / deltaTicks);
-                    if (speed <= 0.001f || closestDistance >= bestDistance)
+                    float score = closestDistance / Mathf.Max(0.001f, captureRadius);
+                    if (speed <= 0.001f || score > bestScore || (Mathf.Approximately(score, bestScore) && closestDistance >= bestDistance))
                     {
                         continue;
                     }
 
                     bestProjectile = projectile;
                     bestDistance = closestDistance;
+                    bestScore = score;
+                    bestFocusRootPos = candidateCenter;
+                    bestFocusRootSize = candidateRootSize;
                 }
 
                 if (bestProjectile == null)
@@ -729,15 +744,7 @@ namespace LogSyncMod.AutoTest
                     return false;
                 }
 
-                Vector3? focusRootPos = null;
-                float? focusRootSize = null;
-                if (owner.TryResolveRangedWeaponProjectileFocusView(this, bestProjectile, aspect, out Vector3 resolvedRootPos, out float resolvedRootSize))
-                {
-                    focusRootPos = resolvedRootPos;
-                    focusRootSize = resolvedRootSize;
-                }
-
-                QueueStageScreenshot("projectile_center_t" + offset, force: true, allowCapture: true, focusRootPos, focusRootSize);
+                QueueStageScreenshot("projectile_center_t" + offset, force: true, allowCapture: true, bestFocusRootPos, bestFocusRootSize);
                 return true;
             }
 
@@ -1133,6 +1140,7 @@ namespace LogSyncMod.AutoTest
                 def.category == ThingCategory.Item &&
                 def.IsWeapon &&
                 def.IsRangedWeapon &&
+                !IsTurretMountedGunDef(def) &&
                 MatchesSpecFilters(AutoTestKind.RangedWeaponPocketMap, def);
         }
     }

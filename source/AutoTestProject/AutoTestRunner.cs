@@ -75,6 +75,7 @@ namespace LogSyncMod.AutoTest
         private const int OpenTimeoutRepaintFrames = 180;
         private const int WaitBeforeCloseRepaintFrames = 12;
         private const int CloseTimeoutRepaintFrames = 180;
+        private const int PocketMapSharedCooldownTicks = 120;
         private const float DefaultTurretScreenshotAspect = 16f / 9f;
 
         private static readonly FieldInfo ProjectileUsedTargetField = typeof(Projectile).GetField("usedTarget", BindingFlags.Instance | BindingFlags.NonPublic);
@@ -88,6 +89,7 @@ namespace LogSyncMod.AutoTest
         private readonly List<AutoTestManifestEntry> plannedManifest = new List<AutoTestManifestEntry>();
         private readonly HashSet<string> discoveredCaseIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private readonly HashSet<string> plannedCaseIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private readonly HashSet<ThingDef> turretMountedGunDefs = new HashSet<ThingDef>();
         private readonly Dictionary<ThingDef, Thing> placedRecipeWorktables = new Dictionary<ThingDef, Thing>();
 
         // 新增炮塔测试相关字段
@@ -143,6 +145,7 @@ namespace LogSyncMod.AutoTest
             }
 
             LoadActiveSpecs();
+            RebuildTurretMountedGunDefs();
 
             nextTerrainX = Math.Max(map.Size.x / 2, 10);
 
@@ -196,6 +199,24 @@ namespace LogSyncMod.AutoTest
             }
         }
 
+        private void RebuildTurretMountedGunDefs()
+        {
+            turretMountedGunDefs.Clear();
+            foreach (ThingDef def in DefDatabase<ThingDef>.AllDefsListForReading)
+            {
+                ThingDef gunDef = def?.building?.turretGunDef;
+                if (gunDef != null)
+                {
+                    turretMountedGunDefs.Add(gunDef);
+                }
+            }
+        }
+
+        private bool IsTurretMountedGunDef(ThingDef def)
+        {
+            return def != null && turretMountedGunDefs.Contains(def);
+        }
+
         public void Tick()
         {
             if (completed) return;
@@ -210,25 +231,9 @@ namespace LogSyncMod.AutoTest
                 return;
             }
 
-            if (Find.TickManager.TicksGame > pocketMapCooldownUntilTick)
+            if (!IsPocketMapCooldownActive())
             {
-                while (activeTurretSessions.Count < MaxConcurrentTurretTests && pendingTurretDefs.Count > 0)
-                {
-                    ThingDef turretDef = pendingTurretDefs.Dequeue();
-                    StartNewTurretSession(turretDef);
-                }
-
-                while (activeRangedWeaponSessions.Count < MaxConcurrentTurretTests && pendingRangedWeaponDefs.Count > 0)
-                {
-                    ThingDef weaponDef = pendingRangedWeaponDefs.Dequeue();
-                    StartNewRangedWeaponSession(weaponDef);
-                }
-
-                while (activeMeleeWeaponSessions.Count < MaxConcurrentTurretTests && pendingMeleeWeaponDefs.Count > 0)
-                {
-                    ThingDef weaponDef = pendingMeleeWeaponDefs.Dequeue();
-                    StartNewMeleeWeaponSession(weaponDef);
-                }
+                TryStartNextPocketMapSession();
             }
 
             if (Find.TickManager.TicksGame % 500 == 0 && activeTurretSessions.Count > 0)
@@ -267,7 +272,6 @@ namespace LogSyncMod.AutoTest
             activeTurretSessions.RemoveAll(session => {
                 if (session.Phase == TurretTestPhase.Done) {
                     results.Add(session.Result);
-                    pocketMapCooldownUntilTick = Find.TickManager.TicksGame + 120;
                     return true;
                 }
                 return false;
@@ -276,7 +280,6 @@ namespace LogSyncMod.AutoTest
             activeRangedWeaponSessions.RemoveAll(session => {
                 if (session.Phase == RangedWeaponTestPhase.Done) {
                     results.Add(session.Result);
-                    pocketMapCooldownUntilTick = Find.TickManager.TicksGame + 120;
                     return true;
                 }
                 return false;
@@ -285,7 +288,6 @@ namespace LogSyncMod.AutoTest
             activeMeleeWeaponSessions.RemoveAll(session => {
                 if (session.Phase == MeleeWeaponTestPhase.Done) {
                     results.Add(session.Result);
-                    pocketMapCooldownUntilTick = Find.TickManager.TicksGame + 120;
                     return true;
                 }
                 return false;
@@ -302,6 +304,46 @@ namespace LogSyncMod.AutoTest
             {
                 Finish();
             }
+        }
+
+        private bool TryStartNextPocketMapSession()
+        {
+            if (activeTurretSessions.Count < MaxConcurrentTurretTests && pendingTurretDefs.Count > 0)
+            {
+                StartNewTurretSession(pendingTurretDefs.Dequeue());
+                return true;
+            }
+
+            if (activeRangedWeaponSessions.Count < MaxConcurrentTurretTests && pendingRangedWeaponDefs.Count > 0)
+            {
+                StartNewRangedWeaponSession(pendingRangedWeaponDefs.Dequeue());
+                return true;
+            }
+
+            if (activeMeleeWeaponSessions.Count < MaxConcurrentTurretTests && pendingMeleeWeaponDefs.Count > 0)
+            {
+                StartNewMeleeWeaponSession(pendingMeleeWeaponDefs.Dequeue());
+                return true;
+            }
+
+            return false;
+        }
+
+        private bool IsPocketMapCooldownActive()
+        {
+            return Find.TickManager != null && Find.TickManager.TicksGame <= pocketMapCooldownUntilTick;
+        }
+
+        private void RefreshPocketMapCooldown(string reason)
+        {
+            int currentTick = Find.TickManager?.TicksGame ?? 0;
+            int nextTick = currentTick + PocketMapSharedCooldownTicks;
+            if (nextTick > pocketMapCooldownUntilTick)
+            {
+                pocketMapCooldownUntilTick = nextTick;
+            }
+
+            Log.Message("[LogSyncAutoTest] Pocket map shared cooldown refreshed: reason=" + reason + " untilTick=" + pocketMapCooldownUntilTick);
         }
 
         private void AddImmediateResult(AutoTestResult result, string status, string stage, string errorMessage)
@@ -638,18 +680,26 @@ namespace LogSyncMod.AutoTest
 
         private AutoTestPocketMapHandle CreatePocketMapHandle(string mapGeneratorDefName, IntVec3 mapSize, Action<Map> onGenerated, out string errorMessage)
         {
-            return pocketMapService.Create(new AutoTestPocketMapRequest
+            AutoTestPocketMapHandle handle = pocketMapService.Create(new AutoTestPocketMapRequest
             {
                 SourceMap = map,
                 MapGeneratorDefName = mapGeneratorDefName,
                 MapSize = mapSize,
                 OnGenerated = onGenerated
             }, out errorMessage);
+
+            if (handle != null)
+            {
+                RefreshPocketMapCooldown("create");
+            }
+
+            return handle;
         }
 
         private void DestroyPocketMap(Map pocketMap, MapParent parent)
         {
             pocketMapService.Destroy(pocketMap, parent);
+            RefreshPocketMapCooldown("destroy");
         }
 
         private string ResolveRunMode()
@@ -1328,21 +1378,47 @@ namespace LogSyncMod.AutoTest
             }
 
             LocalTargetInfo target = ResolveProjectileTargetInfo(projectileThing as Projectile);
-            if (!target.IsValid)
+            Vector3 shooterPos = ToMapWorldCenter(session.ShooterPawn.Position);
+            Vector3 projectilePos = projectileThing.DrawPos;
+            Pawn primaryTarget = session.ResolvePrimaryTarget();
+            Vector3? primaryTargetPos = primaryTarget != null && !primaryTarget.Destroyed
+                ? primaryTarget.DrawPos
+                : (Vector3?)null;
+            Vector3 targetPos;
+            if (target.IsValid)
+            {
+                targetPos = target.Thing != null ? target.Thing.DrawPos : ToMapWorldCenter(target.Cell);
+            }
+            else if (primaryTargetPos.HasValue)
+            {
+                targetPos = primaryTargetPos.Value;
+            }
+            else
             {
                 return false;
             }
 
-            Vector3 shooterPos = ToMapWorldCenter(session.ShooterPawn.Position);
-            Vector3 targetPos = target.Thing != null ? target.Thing.DrawPos : ToMapWorldCenter(target.Cell);
             bool useCameraPlusZoom = IsCameraPlusActive();
             ResolveScreenshotBounds(AutoTestScreenshotProfiles.RangedPrimary, useCameraPlusZoom, out float minRootSize, out float maxRootSize, out float cellMargin);
             float normalizedAspect = aspect > 0.01f ? aspect : DefaultTurretScreenshotAspect;
 
-            rootPos = (shooterPos + targetPos) * 0.5f;
+            float minX = Mathf.Min(shooterPos.x, projectilePos.x, targetPos.x);
+            float maxX = Mathf.Max(shooterPos.x, projectilePos.x, targetPos.x);
+            float minZ = Mathf.Min(shooterPos.z, projectilePos.z, targetPos.z);
+            float maxZ = Mathf.Max(shooterPos.z, projectilePos.z, targetPos.z);
+            if (primaryTargetPos.HasValue)
+            {
+                Vector3 primary = primaryTargetPos.Value;
+                minX = Mathf.Min(minX, primary.x);
+                maxX = Mathf.Max(maxX, primary.x);
+                minZ = Mathf.Min(minZ, primary.z);
+                maxZ = Mathf.Max(maxZ, primary.z);
+            }
 
-            float halfWidth = Mathf.Abs(shooterPos.x - targetPos.x) * 0.5f + cellMargin;
-            float halfHeight = Mathf.Abs(shooterPos.z - targetPos.z) * 0.5f + cellMargin;
+            rootPos = new Vector3((minX + maxX) * 0.5f, 0f, (minZ + maxZ) * 0.5f);
+
+            float halfWidth = ((maxX - minX) * 0.5f) + cellMargin;
+            float halfHeight = ((maxZ - minZ) * 0.5f) + cellMargin;
             rootSize = Mathf.Clamp(Mathf.Max(halfHeight, halfWidth / normalizedAspect) * AutoTestScreenshotProfiles.RangedPrimary.RangeScale, minRootSize, maxRootSize);
             return true;
         }
