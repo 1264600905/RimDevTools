@@ -56,6 +56,17 @@ namespace LogSyncMod.AutoTest
         Done
     }
 
+    internal enum ThreeViewTestPhase
+    {
+        Initializing,
+        WaitingForMap,
+        SpawningTargets,
+        WaitingForSettle,
+        CapturingScreenshot,
+        CleaningUp,
+        Done
+    }
+
     internal sealed class StageScreenshotRequest
     {
         public string StageSuffix;
@@ -79,6 +90,7 @@ namespace LogSyncMod.AutoTest
         private const int CloseTimeoutRepaintFrames = 180;
         private const int PocketMapSharedCooldownTicks = 120;
         private const float DefaultTurretScreenshotAspect = 16f / 9f;
+        private const int MaxConcurrentThreeViewTests = 1;
 
         private static readonly FieldInfo ProjectileUsedTargetField = typeof(Projectile).GetField("usedTarget", BindingFlags.Instance | BindingFlags.NonPublic);
         private static readonly FieldInfo ProjectileIntendedTargetField = typeof(Projectile).GetField("intendedTarget", BindingFlags.Instance | BindingFlags.NonPublic);
@@ -101,6 +113,8 @@ namespace LogSyncMod.AutoTest
         private readonly Queue<ThingDef> pendingRangedWeaponDefs = new Queue<ThingDef>();
         private readonly List<MeleeWeaponTestSession> activeMeleeWeaponSessions = new List<MeleeWeaponTestSession>();
         private readonly Queue<ThingDef> pendingMeleeWeaponDefs = new Queue<ThingDef>();
+        private readonly List<ThreeViewTestSession> activeThreeViewSessions = new List<ThreeViewTestSession>();
+        private readonly Queue<AutoTestThreeViewTargetSpec> pendingThreeViewTargets = new Queue<AutoTestThreeViewTargetSpec>();
         private int pocketMapCooldownUntilTick = -1;
         private ModContentPack targetMod;
         private Pawn sharedHediffPawn;
@@ -117,6 +131,7 @@ namespace LogSyncMod.AutoTest
         private AutoTestRunSummary runSummary;
         private AutoTestScreenshotService screenshotService;
         private readonly AutoTestPocketMapService pocketMapService;
+        private readonly AutoTestThreeViewService threeViewService;
         private bool? cameraPlusActive;
         private int nextDiscoverOrder = 1;
         private int nextPlannedOrder = 1;
@@ -126,6 +141,7 @@ namespace LogSyncMod.AutoTest
             this.settings = settings;
             this.map = map;
             pocketMapService = new AutoTestPocketMapService();
+            threeViewService = new AutoTestThreeViewService();
         }
 
         public bool Completed => completed;
@@ -183,10 +199,15 @@ namespace LogSyncMod.AutoTest
                 BeginMeleeWeaponTestSession();
             }
 
+            if (settings.ShouldTestThreeViews())
+            {
+                BeginThreeViewTestSession();
+            }
+
             ApplyBatchLimit();
             BuildPlannedManifest();
 
-            int totalPending = pendingItems.Count + pendingTurretDefs.Count + pendingRangedWeaponDefs.Count + pendingMeleeWeaponDefs.Count;
+            int totalPending = pendingItems.Count + pendingTurretDefs.Count + pendingRangedWeaponDefs.Count + pendingMeleeWeaponDefs.Count + pendingThreeViewTargets.Count;
             Log.Message(string.Format(
                 "[LogSyncAutoTest] START packageId={0} map={1} scope={2} pending={3}",
                 targetPackageId,
@@ -256,6 +277,12 @@ namespace LogSyncMod.AutoTest
                 Log.Message($"[LogSyncAutoTest] Melee heartbeat: {activeMeleeWeaponSessions.Count} active sessions. Details: {statusReport}");
             }
 
+            if (Find.TickManager.TicksGame % 500 == 0 && activeThreeViewSessions.Count > 0)
+            {
+                string statusReport = string.Join(", ", activeThreeViewSessions.Select(s => $"{s.Spec.DefName}({s.Phase})"));
+                Log.Message($"[LogSyncAutoTest] ThreeView heartbeat: {activeThreeViewSessions.Count} active sessions. Details: {statusReport}");
+            }
+
             foreach (var session in activeTurretSessions)
             {
                 session.Update();
@@ -267,6 +294,11 @@ namespace LogSyncMod.AutoTest
             }
 
             foreach (var session in activeMeleeWeaponSessions)
+            {
+                session.Update();
+            }
+
+            foreach (var session in activeThreeViewSessions)
             {
                 session.Update();
             }
@@ -295,14 +327,24 @@ namespace LogSyncMod.AutoTest
                 return false;
             });
 
+            activeThreeViewSessions.RemoveAll(session => {
+                if (session.Phase == ThreeViewTestPhase.Done) {
+                    results.Add(session.Result);
+                    return true;
+                }
+                return false;
+            });
+
             if (pendingItems.Count == 0 &&
                 activeSession == null &&
                 pendingTurretDefs.Count == 0 &&
                 pendingRangedWeaponDefs.Count == 0 &&
                 pendingMeleeWeaponDefs.Count == 0 &&
+                pendingThreeViewTargets.Count == 0 &&
                 activeTurretSessions.Count == 0 &&
                 activeRangedWeaponSessions.Count == 0 &&
-                activeMeleeWeaponSessions.Count == 0)
+                activeMeleeWeaponSessions.Count == 0 &&
+                activeThreeViewSessions.Count == 0)
             {
                 Finish();
             }
@@ -325,6 +367,12 @@ namespace LogSyncMod.AutoTest
             if (activeMeleeWeaponSessions.Count < MaxConcurrentTurretTests && pendingMeleeWeaponDefs.Count > 0)
             {
                 StartNewMeleeWeaponSession(pendingMeleeWeaponDefs.Dequeue());
+                return true;
+            }
+
+            if (activeThreeViewSessions.Count < MaxConcurrentThreeViewTests && pendingThreeViewTargets.Count > 0)
+            {
+                StartNewThreeViewSession(pendingThreeViewTargets.Dequeue());
                 return true;
             }
 
@@ -444,7 +492,7 @@ namespace LogSyncMod.AutoTest
             }
 
             int limit = Math.Max(1, settings.autoTestBatchSize);
-            int originalTotal = pendingItems.Count + pendingTurretDefs.Count + pendingRangedWeaponDefs.Count + pendingMeleeWeaponDefs.Count;
+            int originalTotal = pendingItems.Count + pendingTurretDefs.Count + pendingRangedWeaponDefs.Count + pendingMeleeWeaponDefs.Count + pendingThreeViewTargets.Count;
             if (originalTotal <= limit)
             {
                 return;
@@ -454,6 +502,7 @@ namespace LogSyncMod.AutoTest
             var limitedTurrets = new Queue<ThingDef>();
             var limitedRangedWeapons = new Queue<ThingDef>();
             var limitedMeleeWeapons = new Queue<ThingDef>();
+            var limitedThreeViews = new Queue<AutoTestThreeViewTargetSpec>();
             int keptCount = 0;
 
             while (keptCount < limit)
@@ -492,6 +541,14 @@ namespace LogSyncMod.AutoTest
                     if (keptCount >= limit) break;
                 }
 
+                if (pendingThreeViewTargets.Count > 0)
+                {
+                    limitedThreeViews.Enqueue(pendingThreeViewTargets.Dequeue());
+                    keptCount++;
+                    itemAddedInRound = true;
+                    if (keptCount >= limit) break;
+                }
+
                 if (!itemAddedInRound)
                 {
                     break; // All queues are empty
@@ -503,12 +560,14 @@ namespace LogSyncMod.AutoTest
             pendingTurretDefs.Clear();
             pendingRangedWeaponDefs.Clear();
             pendingMeleeWeaponDefs.Clear();
+            pendingThreeViewTargets.Clear();
 
             // Repopulate with the limited items
             foreach (var item in limitedItems) pendingItems.Enqueue(item);
             foreach (var item in limitedTurrets) pendingTurretDefs.Enqueue(item);
             foreach (var item in limitedRangedWeapons) pendingRangedWeaponDefs.Enqueue(item);
             foreach (var item in limitedMeleeWeapons) pendingMeleeWeaponDefs.Enqueue(item);
+            foreach (var item in limitedThreeViews) pendingThreeViewTargets.Enqueue(item);
 
             Log.Message(string.Format(
                 "[LogSyncAutoTest] Batch limit applied. Original={0}, Kept={1}",
@@ -536,6 +595,14 @@ namespace LogSyncMod.AutoTest
                     return AutoTestCaseType.RangedWeaponPocketMap;
                 case AutoTestKind.MeleeWeaponPocketMap:
                     return AutoTestCaseType.MeleeWeaponPocketMap;
+                case AutoTestKind.HumanoidThreeView:
+                    return AutoTestCaseType.HumanoidThreeView;
+                case AutoTestKind.AnimalThreeView:
+                    return AutoTestCaseType.AnimalThreeView;
+                case AutoTestKind.MechanoidThreeView:
+                    return AutoTestCaseType.MechanoidThreeView;
+                case AutoTestKind.AlienThreeView:
+                    return AutoTestCaseType.AlienThreeView;
                 default:
                     return AutoTestCaseType.ItemInfoCard;
             }
@@ -561,6 +628,14 @@ namespace LogSyncMod.AutoTest
                     return "RangedWeapon";
                 case AutoTestCaseType.MeleeWeaponPocketMap:
                     return "MeleeWeapon";
+                case AutoTestCaseType.HumanoidThreeView:
+                    return "HumanoidThreeView";
+                case AutoTestCaseType.AnimalThreeView:
+                    return "AnimalThreeView";
+                case AutoTestCaseType.MechanoidThreeView:
+                    return "MechanoidThreeView";
+                case AutoTestCaseType.AlienThreeView:
+                    return "AlienThreeView";
                 default:
                     return caseType.ToString();
             }
@@ -580,6 +655,11 @@ namespace LogSyncMod.AutoTest
                     return AutoTestScope.RangedWeapons;
                 case AutoTestCaseType.MeleeWeaponPocketMap:
                     return AutoTestScope.MeleeWeapons;
+                case AutoTestCaseType.HumanoidThreeView:
+                case AutoTestCaseType.AnimalThreeView:
+                case AutoTestCaseType.MechanoidThreeView:
+                case AutoTestCaseType.AlienThreeView:
+                    return AutoTestScope.ThreeViews;
                 default:
                     return AutoTestScope.Content;
             }
@@ -733,6 +813,11 @@ namespace LogSyncMod.AutoTest
             foreach (ThingDef def in pendingMeleeWeaponDefs)
             {
                 AddPlannedManifestEntry(RegisterDiscoveredCase(AutoTestCaseType.MeleeWeaponPocketMap, nameof(ThingDef), def?.defName, def?.label));
+            }
+
+            foreach (AutoTestThreeViewTargetSpec spec in pendingThreeViewTargets)
+            {
+                AddPlannedManifestEntry(spec?.ManifestEntry);
             }
 
             foreach (AutoTestResult result in results)

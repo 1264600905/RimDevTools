@@ -14,7 +14,11 @@ namespace LogSyncMod.AutoTest
         Hediff,
         TurretPocketMap,
         RangedWeaponPocketMap,
-        MeleeWeaponPocketMap
+        MeleeWeaponPocketMap,
+        HumanoidThreeView,
+        AnimalThreeView,
+        MechanoidThreeView,
+        AlienThreeView
     }
 
     internal enum AutoTestCaseType
@@ -26,7 +30,11 @@ namespace LogSyncMod.AutoTest
         HediffInfoCard,
         TurretPocketMap,
         RangedWeaponPocketMap,
-        MeleeWeaponPocketMap
+        MeleeWeaponPocketMap,
+        HumanoidThreeView,
+        AnimalThreeView,
+        MechanoidThreeView,
+        AlienThreeView
     }
 
     internal sealed class AutoTestWorkItem

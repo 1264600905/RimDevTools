@@ -131,7 +131,8 @@ namespace LogSyncMod
                     new FloatMenuOption("LogSyncMod.AutoTestScopeHediffs".Translate(), () => settings.autoTestScope = AutoTestScope.Hediffs),
                     new FloatMenuOption("LogSyncMod.AutoTestScopeTurrets".Translate(), () => settings.autoTestScope = AutoTestScope.Turrets),
                     new FloatMenuOption("LogSyncMod.AutoTestScopeRangedWeapons".Translate(), () => settings.autoTestScope = AutoTestScope.RangedWeapons),
-                    new FloatMenuOption("LogSyncMod.AutoTestScopeMeleeWeapons".Translate(), () => settings.autoTestScope = AutoTestScope.MeleeWeapons)
+                    new FloatMenuOption("LogSyncMod.AutoTestScopeMeleeWeapons".Translate(), () => settings.autoTestScope = AutoTestScope.MeleeWeapons),
+                    new FloatMenuOption("LogSyncMod.AutoTestScopeThreeViews".Translate(), () => settings.autoTestScope = AutoTestScope.ThreeViews)
                 };
                 Find.WindowStack.Add(new FloatMenu(options));
             }
@@ -230,6 +231,8 @@ namespace LogSyncMod
                     return "LogSyncMod.AutoTestScopeRangedWeapons".Translate();
                 case AutoTestScope.MeleeWeapons:
                     return "LogSyncMod.AutoTestScopeMeleeWeapons".Translate();
+                case AutoTestScope.ThreeViews:
+                    return "LogSyncMod.AutoTestScopeThreeViews".Translate();
                 default:
                     return "LogSyncMod.AutoTestScopeAll".Translate();
             }

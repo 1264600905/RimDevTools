@@ -28,6 +28,7 @@
   <LogSyncMod.AutoTestScopeTurrets>炮塔口袋地图</LogSyncMod.AutoTestScopeTurrets>
   <LogSyncMod.AutoTestScopeRangedWeapons>远程武器口袋地图</LogSyncMod.AutoTestScopeRangedWeapons>
   <LogSyncMod.AutoTestScopeMeleeWeapons>近战武器口袋地图</LogSyncMod.AutoTestScopeMeleeWeapons>
+  <LogSyncMod.AutoTestScopeThreeViews>三视图静态摄影棚</LogSyncMod.AutoTestScopeThreeViews>
   <LogSyncMod.AutoTestCaptureScreenshots>为已打开的 InfoCard 自动截图</LogSyncMod.AutoTestCaptureScreenshots>
   <LogSyncMod.AutoTestBatchSize>每批测试数量：{0}</LogSyncMod.AutoTestBatchSize>
   <LogSyncMod.AutoTestRunNow>立即启动自动测试</LogSyncMod.AutoTestRunNow>

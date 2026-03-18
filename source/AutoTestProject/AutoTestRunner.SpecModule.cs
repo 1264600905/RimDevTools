@@ -130,6 +130,11 @@ namespace LogSyncMod.AutoTest
                     return AutoTestScope.RangedWeapons;
                 case AutoTestKind.MeleeWeaponPocketMap:
                     return AutoTestScope.MeleeWeapons;
+                case AutoTestKind.HumanoidThreeView:
+                case AutoTestKind.AnimalThreeView:
+                case AutoTestKind.MechanoidThreeView:
+                case AutoTestKind.AlienThreeView:
+                    return AutoTestScope.ThreeViews;
                 default:
                     return AutoTestScope.Content;
             }
@@ -155,6 +160,14 @@ namespace LogSyncMod.AutoTest
                     return "RangedWeapon";
                 case AutoTestKind.MeleeWeaponPocketMap:
                     return "MeleeWeapon";
+                case AutoTestKind.HumanoidThreeView:
+                    return "HumanoidThreeView";
+                case AutoTestKind.AnimalThreeView:
+                    return "AnimalThreeView";
+                case AutoTestKind.MechanoidThreeView:
+                    return "MechanoidThreeView";
+                case AutoTestKind.AlienThreeView:
+                    return "AlienThreeView";
                 default:
                     return kind.ToString();
             }
