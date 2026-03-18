@@ -62,6 +62,7 @@ namespace LogSyncMod.AutoTest
         WaitingForMap,
         SpawningTargets,
         WaitingForSettle,
+        WaitingForMotionPrime,
         CapturingScreenshot,
         CleaningUp,
         Done

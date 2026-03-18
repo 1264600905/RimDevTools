@@ -10,6 +10,7 @@ namespace LogSyncMod.AutoTest
         private sealed class ThreeViewTestSession
         {
             private const int SettleTicks = 45;
+            private const int MotionPrimeTimeoutTicks = 30;
             private const int StudioWidth = 21;
             private const int StudioHeight = 21;
 
@@ -40,6 +41,9 @@ namespace LogSyncMod.AutoTest
                             break;
                         case ThreeViewTestPhase.WaitingForSettle:
                             UpdateWaitingForSettle();
+                            break;
+                        case ThreeViewTestPhase.WaitingForMotionPrime:
+                            UpdateWaitingForMotionPrime();
                             break;
                         case ThreeViewTestPhase.CapturingScreenshot:
                             CaptureScreenshot();
@@ -83,13 +87,41 @@ namespace LogSyncMod.AutoTest
             {
                 if (WaitTicks > 0)
                 {
-                    owner.threeViewService.PrepareForCapture(Context);
+                    owner.threeViewService.PrepareForSettle(Context);
                     owner.threeViewService.Focus(TestMap, Context);
                     WaitTicks--;
                     return;
                 }
 
-                Phase = ThreeViewTestPhase.CapturingScreenshot;
+                if (!owner.threeViewService.TryPrimeDirectionalWalk(Context, out string errorMessage))
+                {
+                    Fail("motion_prime_failed", errorMessage ?? "ThreeView directional walk could not be primed.");
+                    return;
+                }
+
+                WaitTicks = MotionPrimeTimeoutTicks;
+                Phase = ThreeViewTestPhase.WaitingForMotionPrime;
+            }
+
+            private void UpdateWaitingForMotionPrime()
+            {
+                owner.threeViewService.PrepareForCapture(Context);
+                owner.threeViewService.Focus(TestMap, Context);
+
+                if (owner.threeViewService.IsReadyForCapture(Context, out string readinessDetails))
+                {
+                    Result.Notes = AppendNote(Result.Notes, "ThreeViewMotionReady=" + readinessDetails);
+                    Phase = ThreeViewTestPhase.CapturingScreenshot;
+                    return;
+                }
+
+                if (WaitTicks > 0)
+                {
+                    WaitTicks--;
+                    return;
+                }
+
+                Fail("motion_timeout", "ThreeView targets did not reach capture walk state in time.");
             }
 
             private void CaptureScreenshot()

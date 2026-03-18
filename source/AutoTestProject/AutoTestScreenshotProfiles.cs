@@ -107,17 +107,19 @@ namespace LogSyncMod.AutoTest
         public static readonly AutoTestScreenshotProfile ThreeViewAnimal = new AutoTestScreenshotProfile
         {
             ProfileId = "ThreeViewAnimal",
-            FixedRootSize = 13f,
-            MinRootSize = 13f,
-            MaxRootSize = 13f
+            FixedRootSize = 11f,
+            MinRootSize = 11f,
+            MaxRootSize = 11f,
+            CameraHeight = 60f
         };
 
         public static readonly AutoTestScreenshotProfile ThreeViewMechanoid = new AutoTestScreenshotProfile
         {
             ProfileId = "ThreeViewMechanoid",
-            FixedRootSize = 13f,
-            MinRootSize = 13f,
-            MaxRootSize = 13f
+            FixedRootSize = 11f,
+            MinRootSize = 11f,
+            MaxRootSize = 11f,
+            CameraHeight = 60f
         };
 
         public static readonly AutoTestScreenshotProfile ThreeViewAlien = new AutoTestScreenshotProfile

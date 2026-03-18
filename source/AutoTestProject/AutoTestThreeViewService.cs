@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using RimWorld;
 using UnityEngine;
 using Verse;
@@ -27,18 +28,35 @@ namespace LogSyncMod.AutoTest
         public readonly List<Pawn> Pawns = new List<Pawn>();
         public readonly List<IntVec3> Cells = new List<IntVec3>();
         public readonly List<Rot4> Rotations = new List<Rot4>();
+        public readonly List<IntVec3> WalkTargets = new List<IntVec3>();
+        public bool DirectionalWalkPrimed;
     }
 
     internal sealed class AutoTestThreeViewAppearanceTemplate
     {
+        public Gender Gender;
+        public long BiologicalAgeTicks;
+        public long ChronologicalAgeTicks;
         public BodyTypeDef BodyType;
+        public HeadTypeDef HeadType;
         public HairDef HairDef;
-        public string NameText;
+        public Color HairColor;
+        public float Melanin;
+        public Color? SkinColorBase;
+        public Color? SkinColorOverride;
+        public BeardDef BeardDef;
+        public TattooDef FaceTattoo;
+        public TattooDef BodyTattoo;
+        public XenotypeDef Xenotype;
+        public readonly List<GeneDef> Endogenes = new List<GeneDef>();
+        public readonly List<GeneDef> Xenogenes = new List<GeneDef>();
+        public Name Name;
     }
 
     internal sealed class AutoTestThreeViewService
     {
         private static readonly Rot4[] DefaultRotations = { Rot4.West, Rot4.South, Rot4.North };
+        private static readonly FieldInfo StoryMelaninField = typeof(Pawn_StoryTracker).GetField("melanin", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
 
         public bool PrepareStudioArea(Map map, IntVec3 rootCell, int width, int height)
         {
@@ -61,6 +79,11 @@ namespace LogSyncMod.AutoTest
                     foreach (Thing thing in cell.GetThingList(map).ToList())
                     {
                         if (thing == null || thing.Destroyed)
+                        {
+                            continue;
+                        }
+
+                        if (!(thing.def?.destroyable ?? false))
                         {
                             continue;
                         }
@@ -159,12 +182,23 @@ namespace LogSyncMod.AutoTest
                 anchorCell,
                 anchorCell + new IntVec3(2, 0, 0)
             };
-            AutoTestThreeViewAppearanceTemplate appearanceTemplate = null;
+            Pawn sourcePawn = null;
 
             for (int i = 0; i < cells.Length; i++)
             {
                 Pawn pawn;
-                if (!TryGeneratePawn(spec, map.Tile, out pawn, out string pawnError))
+                if (sourcePawn == null)
+                {
+                    if (!TryGeneratePawn(spec, map.Tile, out pawn, out string pawnError))
+                    {
+                        Cleanup(createdContext);
+                        errorMessage = pawnError;
+                        return false;
+                    }
+
+                    sourcePawn = pawn;
+                }
+                else if (!TryCreateReplicaPawn(spec, map.Tile, sourcePawn, out pawn, out string pawnError))
                 {
                     Cleanup(createdContext);
                     errorMessage = pawnError;
@@ -173,23 +207,15 @@ namespace LogSyncMod.AutoTest
 
                 IntVec3 cell = cells[i];
                 Rot4 rotation = DefaultRotations[i];
+                IntVec3 walkTarget = ResolveWalkTarget(cell, rotation);
                 try
                 {
-                    if (appearanceTemplate == null)
-                    {
-                        appearanceTemplate = CaptureAppearanceTemplate(pawn, spec);
-                        ApplyAppearanceTemplate(pawn, appearanceTemplate);
-                    }
-                    else
-                    {
-                        ApplyAppearanceTemplate(pawn, appearanceTemplate);
-                    }
-
                     GenSpawn.Spawn(pawn, cell, map, rotation, WipeMode.Vanish, false, false);
-                    StabilizePawn(pawn, cell, rotation);
+                    StabilizePawnForSettle(pawn, cell, rotation);
                     createdContext.Pawns.Add(pawn);
                     createdContext.Cells.Add(cell);
                     createdContext.Rotations.Add(rotation);
+                    createdContext.WalkTargets.Add(walkTarget);
                 }
                 catch (Exception ex)
                 {
@@ -211,6 +237,77 @@ namespace LogSyncMod.AutoTest
             return true;
         }
 
+        public void PrepareForSettle(AutoTestThreeViewTargetContext context)
+        {
+            if (context == null)
+            {
+                return;
+            }
+
+            for (int i = 0; i < context.Pawns.Count; i++)
+            {
+                Pawn pawn = context.Pawns[i];
+                if (pawn == null || pawn.Destroyed || !pawn.Spawned)
+                {
+                    continue;
+                }
+
+                StabilizePawnForSettle(pawn, context.Cells[i], context.Rotations[i]);
+            }
+        }
+
+        public bool TryPrimeDirectionalWalk(AutoTestThreeViewTargetContext context, out string errorMessage)
+        {
+            errorMessage = null;
+            if (context == null)
+            {
+                errorMessage = "ThreeView context was null.";
+                return false;
+            }
+
+            try
+            {
+                for (int i = 0; i < context.Pawns.Count; i++)
+                {
+                    Pawn pawn = context.Pawns[i];
+                    if (pawn == null || pawn.Destroyed || !pawn.Spawned)
+                    {
+                        errorMessage = "ThreeView pawn was missing before movement prime.";
+                        return false;
+                    }
+
+                    IntVec3 origin = context.Cells[i];
+                    IntVec3 walkTarget = i < context.WalkTargets.Count ? context.WalkTargets[i] : origin;
+                    if (pawn.Position != origin)
+                    {
+                        pawn.Position = origin;
+                    }
+
+                    pawn.jobs?.StopAll();
+                    pawn.pather?.StopDead();
+                    pawn.rotationTracker?.FaceCell(walkTarget);
+                    pawn.Rotation = context.Rotations[i];
+                    if (pawn.drafter != null)
+                    {
+                        pawn.drafter.Drafted = true;
+                    }
+
+                    if (walkTarget != origin)
+                    {
+                        pawn.pather?.StartPath(walkTarget, Verse.AI.PathEndMode.OnCell);
+                    }
+                }
+
+                context.DirectionalWalkPrimed = true;
+                return true;
+            }
+            catch (Exception ex)
+            {
+                errorMessage = ex.Message;
+                return false;
+            }
+        }
+
         public void PrepareForCapture(AutoTestThreeViewTargetContext context)
         {
             if (context == null)
@@ -226,8 +323,64 @@ namespace LogSyncMod.AutoTest
                     continue;
                 }
 
-                StabilizePawn(pawn, context.Cells[i], context.Rotations[i]);
+                IntVec3 walkTarget = i < context.WalkTargets.Count ? context.WalkTargets[i] : context.Cells[i];
+                try
+                {
+                    pawn.rotationTracker?.FaceCell(walkTarget);
+                    if (context.DirectionalWalkPrimed && walkTarget != pawn.Position && !(pawn.pather?.Moving ?? false))
+                    {
+                        pawn.pather?.StartPath(walkTarget, Verse.AI.PathEndMode.OnCell);
+                    }
+
+                    pawn.Drawer?.renderer?.SetAllGraphicsDirty();
+                }
+                catch
+                {
+                }
             }
+        }
+
+        public bool IsReadyForCapture(AutoTestThreeViewTargetContext context, out string details)
+        {
+            details = "ContextMissing";
+            if (context == null || !context.DirectionalWalkPrimed)
+            {
+                return false;
+            }
+
+            int readyCount = 0;
+            List<string> states = new List<string>();
+            for (int i = 0; i < context.Pawns.Count; i++)
+            {
+                Pawn pawn = context.Pawns[i];
+                if (pawn == null || pawn.Destroyed || !pawn.Spawned)
+                {
+                    states.Add("pawn" + i + "=missing");
+                    continue;
+                }
+
+                IntVec3 walkTarget = i < context.WalkTargets.Count ? context.WalkTargets[i] : context.Cells[i];
+                Rot4 desiredRotation = context.Rotations[i];
+                try
+                {
+                    pawn.rotationTracker?.FaceCell(walkTarget);
+                }
+                catch
+                {
+                }
+
+                bool rotationReady = pawn.Rotation == desiredRotation;
+                bool movementReady = walkTarget == pawn.Position || (pawn.pather?.Moving ?? false) || (pawn.pather?.MovingNow ?? false);
+                if (rotationReady && movementReady)
+                {
+                    readyCount++;
+                }
+
+                states.Add("pawn" + i + "=" + pawn.Rotation + "/" + (movementReady ? "moving" : "idle"));
+            }
+
+            details = string.Join(",", states);
+            return readyCount == context.Pawns.Count;
         }
 
         public bool Focus(Map map, AutoTestThreeViewTargetContext context)
@@ -283,6 +436,8 @@ namespace LogSyncMod.AutoTest
             context.Pawns.Clear();
             context.Cells.Clear();
             context.Rotations.Clear();
+            context.WalkTargets.Clear();
+            context.DirectionalWalkPrimed = false;
         }
 
         private static void AddIfResolved(
@@ -409,7 +564,45 @@ namespace LogSyncMod.AutoTest
             return null;
         }
 
-        private static void StabilizePawn(Pawn pawn, IntVec3 cell, Rot4 rotation)
+        private static bool TryCreateReplicaPawn(AutoTestThreeViewTargetSpec spec, int tile, Pawn sourcePawn, out Pawn pawn, out string errorMessage)
+        {
+            pawn = null;
+            errorMessage = null;
+            if (sourcePawn == null)
+            {
+                errorMessage = "Source pawn was null.";
+                return false;
+            }
+
+            if (!TryGeneratePawn(spec, tile, out pawn, out errorMessage))
+            {
+                return false;
+            }
+
+            try
+            {
+                AutoTestThreeViewAppearanceTemplate template = CaptureAppearanceTemplate(sourcePawn);
+                ApplyAppearanceTemplate(pawn, template);
+                RefreshPawnGraphics(pawn);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                try
+                {
+                    pawn?.Destroy(DestroyMode.Vanish);
+                }
+                catch
+                {
+                }
+
+                pawn = null;
+                errorMessage = ex.Message;
+                return false;
+            }
+        }
+
+        private static void StabilizePawnForSettle(Pawn pawn, IntVec3 cell, Rot4 rotation)
         {
             if (pawn == null || pawn.Destroyed)
             {
@@ -425,6 +618,7 @@ namespace LogSyncMod.AutoTest
 
                 pawn.jobs?.StopAll();
                 pawn.pather?.StopDead();
+                pawn.rotationTracker?.FaceCell(cell + rotation.FacingCell);
                 pawn.Rotation = rotation;
                 if (pawn.drafter != null)
                 {
@@ -462,17 +656,39 @@ namespace LogSyncMod.AutoTest
             return true;
         }
 
-        private static AutoTestThreeViewAppearanceTemplate CaptureAppearanceTemplate(Pawn pawn, AutoTestThreeViewTargetSpec spec)
+        private static AutoTestThreeViewAppearanceTemplate CaptureAppearanceTemplate(Pawn pawn)
         {
             AutoTestThreeViewAppearanceTemplate template = new AutoTestThreeViewAppearanceTemplate
             {
-                NameText = spec?.DefName ?? "ThreeView"
+                Gender = pawn.gender,
+                BiologicalAgeTicks = pawn.ageTracker?.AgeBiologicalTicks ?? 0L,
+                ChronologicalAgeTicks = pawn.ageTracker?.AgeChronologicalTicks ?? 0L,
+                Name = CloneName(pawn?.Name)
             };
 
             if (pawn?.story != null)
             {
                 template.BodyType = pawn.story.bodyType;
-                template.HairDef = DefDatabase<HairDef>.GetNamedSilentFail("Shaved") ?? pawn.story.hairDef;
+                template.HeadType = pawn.story.headType;
+                template.HairDef = pawn.story.hairDef;
+                template.HairColor = pawn.story.HairColor;
+                template.Melanin = ReadStoryMelanin(pawn.story);
+                template.SkinColorBase = pawn.story.SkinColorBase;
+                template.SkinColorOverride = pawn.story.skinColorOverride;
+            }
+
+            if (pawn?.style != null)
+            {
+                template.BeardDef = pawn.style.beardDef;
+                template.FaceTattoo = pawn.style.FaceTattoo;
+                template.BodyTattoo = pawn.style.BodyTattoo;
+            }
+
+            if (pawn?.genes != null)
+            {
+                template.Xenotype = pawn.genes.Xenotype;
+                template.Endogenes.AddRange(pawn.genes.Endogenes.Select(gene => gene?.def).Where(def => def != null));
+                template.Xenogenes.AddRange(pawn.genes.Xenogenes.Select(gene => gene?.def).Where(def => def != null));
             }
 
             return template;
@@ -487,6 +703,13 @@ namespace LogSyncMod.AutoTest
 
             try
             {
+                pawn.gender = template.Gender;
+                if (pawn.ageTracker != null)
+                {
+                    pawn.ageTracker.AgeBiologicalTicks = template.BiologicalAgeTicks;
+                    pawn.ageTracker.AgeChronologicalTicks = template.ChronologicalAgeTicks;
+                }
+
                 if (pawn.story != null)
                 {
                     if (template.BodyType != null)
@@ -499,12 +722,152 @@ namespace LogSyncMod.AutoTest
                         pawn.story.hairDef = template.HairDef;
                     }
 
+                    if (template.HeadType != null)
+                    {
+                        pawn.story.headType = template.HeadType;
+                    }
+
+                    pawn.story.HairColor = template.HairColor;
+                    WriteStoryMelanin(pawn.story, template.Melanin);
+                    if (template.SkinColorBase.HasValue)
+                    {
+                        pawn.story.SkinColorBase = template.SkinColorBase.Value;
+                    }
+
+                    pawn.story.skinColorOverride = template.SkinColorOverride;
                 }
 
-                if (!string.IsNullOrWhiteSpace(template.NameText))
+                if (pawn.style != null)
                 {
-                    pawn.Name = new NameSingle(template.NameText);
+                    pawn.style.beardDef = template.BeardDef;
+                    pawn.style.FaceTattoo = template.FaceTattoo;
+                    pawn.style.BodyTattoo = template.BodyTattoo;
+                    pawn.style.Notify_StyleItemChanged();
                 }
+
+                if (pawn.genes != null)
+                {
+                    SyncGenes(pawn, template);
+                }
+
+                if (template.Name != null)
+                {
+                    pawn.Name = template.Name;
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        private static void SyncGenes(Pawn pawn, AutoTestThreeViewAppearanceTemplate template)
+        {
+            if (pawn?.genes == null || template == null)
+            {
+                return;
+            }
+
+            if (template.Xenotype != null)
+            {
+                pawn.genes.SetXenotypeDirect(template.Xenotype);
+            }
+
+            foreach (Gene gene in pawn.genes.Xenogenes.ToList())
+            {
+                pawn.genes.RemoveGene(gene);
+            }
+
+            foreach (GeneDef geneDef in template.Xenogenes)
+            {
+                if (pawn.genes.GetGene(geneDef) == null)
+                {
+                    pawn.genes.AddGene(geneDef, xenogene: true);
+                }
+            }
+
+            foreach (Gene gene in pawn.genes.Endogenes.ToList())
+            {
+                if (!template.Endogenes.Contains(gene.def))
+                {
+                    pawn.genes.RemoveGene(gene);
+                }
+            }
+
+            foreach (GeneDef geneDef in template.Endogenes)
+            {
+                if (pawn.genes.GetGene(geneDef) == null)
+                {
+                    pawn.genes.AddGene(geneDef, xenogene: false);
+                }
+            }
+        }
+
+        private static Name CloneName(Name sourceName)
+        {
+            if (sourceName is NameSingle single)
+            {
+                return new NameSingle(single.Name);
+            }
+
+            if (sourceName is NameTriple triple)
+            {
+                return new NameTriple(triple.First, triple.Nick, triple.Last);
+            }
+
+            return sourceName;
+        }
+
+        private static void RefreshPawnGraphics(Pawn pawn)
+        {
+            try
+            {
+                pawn?.style?.Notify_StyleItemChanged();
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                pawn?.Drawer?.renderer?.SetAllGraphicsDirty();
+            }
+            catch
+            {
+            }
+        }
+
+        private static IntVec3 ResolveWalkTarget(IntVec3 cell, Rot4 rotation)
+        {
+            return cell + rotation.FacingCell;
+        }
+
+        private static float ReadStoryMelanin(Pawn_StoryTracker story)
+        {
+            if (story == null || StoryMelaninField == null)
+            {
+                return 0f;
+            }
+
+            try
+            {
+                return (float)StoryMelaninField.GetValue(story);
+            }
+            catch
+            {
+                return 0f;
+            }
+        }
+
+        private static void WriteStoryMelanin(Pawn_StoryTracker story, float melanin)
+        {
+            if (story == null || StoryMelaninField == null)
+            {
+                return;
+            }
+
+            try
+            {
+                StoryMelaninField.SetValue(story, melanin);
             }
             catch
             {
