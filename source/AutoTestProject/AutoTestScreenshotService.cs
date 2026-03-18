@@ -121,6 +121,29 @@ namespace LogSyncMod.AutoTest
             {
                 request.Prepare?.Invoke();
 
+                if (request.CaptureProbe != null)
+                {
+                    AutoTestCaptureProbeResult probeResult = request.CaptureProbe();
+                    if (probeResult != null)
+                    {
+                        Log.Message(
+                            "[LogSyncAutoTest] CaptureProbe " +
+                            result.DefName +
+                            " stage=" +
+                            (request.StageSuffix ?? "default") +
+                            " ready=" +
+                            probeResult.Ready +
+                            " details=" +
+                            (probeResult.Details ?? string.Empty));
+
+                        if (request.RequireCaptureProbePass && !probeResult.Ready)
+                        {
+                            result.Notes = appendNote(result.Notes, "CaptureProbeFailed=" + trimForNote(probeResult.Details));
+                            return false;
+                        }
+                    }
+                }
+
                 string screenshotDirectory = ResolveScreenshotDirectory(request);
                 Directory.CreateDirectory(screenshotDirectory);
 

@@ -31,6 +31,14 @@ namespace LogSyncMod.AutoTest
         public AutoTestScreenshotProfile Profile;
         public System.Action Prepare;
         public System.Func<bool> Guard;
+        public System.Func<AutoTestCaptureProbeResult> CaptureProbe;
+        public bool RequireCaptureProbePass;
+    }
+
+    internal sealed class AutoTestCaptureProbeResult
+    {
+        public bool Ready;
+        public string Details;
     }
 
     internal static class AutoTestScreenshotProfiles
@@ -55,11 +63,11 @@ namespace LogSyncMod.AutoTest
         public static readonly AutoTestScreenshotProfile RangedPrimary = new AutoTestScreenshotProfile
         {
             ProfileId = "RangedPrimary",
-            RangeScale = 2.7232f,
-            MinRootSize = 11f,
+            RangeScale = 3.15f,
+            MinRootSize = 13f,
             MaxRootSize = 26f,
             CellMargin = 3f,
-            CameraPlusMinRootSize = 11f,
+            CameraPlusMinRootSize = 13f,
             CameraPlusMaxRootSize = 21f,
             CameraPlusCellMargin = 1.5f
         };

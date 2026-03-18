@@ -824,7 +824,7 @@ namespace LogSyncMod.AutoTest
                 Result.Notes = AppendNote(
                     Result.Notes,
                     $"ProjectileCenteredCapture=tick:{currentTick},offset:{offset},dist:{bestDistance:0.00},speed:{bestSpeed:0.00}");
-                QueueStageScreenshot("projectile_center_t" + offset, force: true, allowCapture: true, focusRootPos, focusRootSize);
+                QueueStageScreenshot("projectile_center_t" + offset, force: true, allowCapture: true, focusRootPos, focusRootSize, retryAttempts: 10);
                 return true;
             }
 
@@ -860,11 +860,18 @@ namespace LogSyncMod.AutoTest
                     return true;
                 }
 
-                owner.TryCaptureTurretStageScreenshot(
+                bool captured = owner.TryCaptureTurretStageScreenshot(
                     this,
                     ActiveStageScreenshot.StageSuffix,
                     ActiveStageScreenshot.Force,
                     ActiveStageScreenshot.AllowCapture);
+                if (!captured && ActiveStageScreenshot.RetryAttemptsRemaining > 0)
+                {
+                    ActiveStageScreenshot.RetryAttemptsRemaining--;
+                    PendingStageScreenshotDelayTicks = 1;
+                    return true;
+                }
+
                 ActiveStageScreenshot = null;
                 return true;
             }
@@ -876,7 +883,8 @@ namespace LogSyncMod.AutoTest
                 Vector3? focusRootPos = null,
                 float? focusRootSize = null,
                 int focusDelayTicks = 0,
-                bool primeOnly = false)
+                bool primeOnly = false,
+                int retryAttempts = 0)
             {
                 PendingStageScreenshots.Enqueue(new StageScreenshotRequest
                 {
@@ -886,7 +894,8 @@ namespace LogSyncMod.AutoTest
                     FocusRootPos = focusRootPos,
                     FocusRootSize = focusRootSize,
                     FocusDelayTicks = focusDelayTicks,
-                    PrimeOnly = primeOnly
+                    PrimeOnly = primeOnly,
+                    RetryAttemptsRemaining = retryAttempts
                 });
             }
 

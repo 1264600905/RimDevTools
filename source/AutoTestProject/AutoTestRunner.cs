@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Text;
 using RimWorld;
 using RimWorld.Planet;
 using UnityEngine;
@@ -64,6 +65,7 @@ namespace LogSyncMod.AutoTest
         public float? FocusRootSize;
         public int FocusDelayTicks;
         public bool PrimeOnly;
+        public int RetryAttemptsRemaining;
     }
 
     internal sealed partial class AutoTestRunner
@@ -829,6 +831,8 @@ namespace LogSyncMod.AutoTest
                 StageSuffix = stageSuffix,
                 Prepare = () => FocusTurretScreenshotMap(session),
                 Guard = () => session.TestMap != null && Find.Maps.Contains(session.TestMap),
+                CaptureProbe = () => ProbeTurretCapture(session, stageSuffix),
+                RequireCaptureProbePass = IsProjectileStage(stageSuffix),
                 Profile = AutoTestScreenshotProfiles.TurretPrimary,
                 SuccessNoteKey = "TurretScreenshotCaptured=True",
                 FailureNoteKey = "TurretFailureScreenshotCaptured=True"
@@ -877,6 +881,8 @@ namespace LogSyncMod.AutoTest
                 StageSuffix = stageSuffix,
                 Prepare = () => FocusRangedWeaponScreenshotMap(session),
                 Guard = () => session.TestMap != null && Find.Maps.Contains(session.TestMap),
+                CaptureProbe = () => ProbeRangedWeaponCapture(session, stageSuffix),
+                RequireCaptureProbePass = IsProjectileStage(stageSuffix),
                 Profile = AutoTestScreenshotProfiles.RangedPrimary,
                 SuccessNoteKey = "TurretScreenshotCaptured=True",
                 FailureNoteKey = "TurretFailureScreenshotCaptured=True"
@@ -1398,9 +1404,13 @@ namespace LogSyncMod.AutoTest
                 return false;
             }
 
+            if (!TryResolveRangedWeaponScreenshotView(session, aspect, out Vector3 baseRootPos, out float baseRootSize))
+            {
+                return false;
+            }
+
             bool useCameraPlusZoom = IsCameraPlusActive();
             ResolveScreenshotBounds(AutoTestScreenshotProfiles.RangedPrimary, useCameraPlusZoom, out float minRootSize, out float maxRootSize, out float cellMargin);
-            float normalizedAspect = aspect > 0.01f ? aspect : DefaultTurretScreenshotAspect;
 
             float minX = Mathf.Min(shooterPos.x, projectilePos.x, targetPos.x);
             float maxX = Mathf.Max(shooterPos.x, projectilePos.x, targetPos.x);
@@ -1416,11 +1426,214 @@ namespace LogSyncMod.AutoTest
             }
 
             rootPos = new Vector3((minX + maxX) * 0.5f, 0f, (minZ + maxZ) * 0.5f);
+            rootSize = Mathf.Clamp(Mathf.Max(baseRootSize, minRootSize + cellMargin * 0.5f), minRootSize, maxRootSize);
 
-            float halfWidth = ((maxX - minX) * 0.5f) + cellMargin;
-            float halfHeight = ((maxZ - minZ) * 0.5f) + cellMargin;
-            rootSize = Mathf.Clamp(Mathf.Max(halfHeight, halfWidth / normalizedAspect) * AutoTestScreenshotProfiles.RangedPrimary.RangeScale, minRootSize, maxRootSize);
+            float maxCenterShift = Mathf.Max(0.5f, cellMargin);
+            rootPos.x = Mathf.Clamp(rootPos.x, baseRootPos.x - maxCenterShift, baseRootPos.x + maxCenterShift);
+            rootPos.z = Mathf.Clamp(rootPos.z, baseRootPos.z - maxCenterShift, baseRootPos.z + maxCenterShift);
             return true;
+        }
+
+        private static bool IsProjectileStage(string stageSuffix)
+        {
+            return !string.IsNullOrWhiteSpace(stageSuffix) &&
+                stageSuffix.StartsWith("projectile_center_", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private AutoTestCaptureProbeResult ProbeTurretCapture(TurretTestSession session, string stageSuffix)
+        {
+            if (session?.SpawnedTurret == null || session.TestMap == null)
+            {
+                return new AutoTestCaptureProbeResult { Ready = false, Details = "TurretProbe:MissingSessionState" };
+            }
+
+            CameraDriver cameraDriver = Find.CameraDriver;
+            Camera camera = cameraDriver?.GetComponent<Camera>();
+            Pawn targetPawn = ResolveTurretScreenshotTarget(session);
+            if (camera == null || targetPawn == null)
+            {
+                return new AutoTestCaptureProbeResult
+                {
+                    Ready = false,
+                    Details = "TurretProbe:CameraOrTargetMissing camera=" + (camera != null) + " target=" + (targetPawn != null)
+                };
+            }
+
+            const float margin = 0.06f;
+            Vector3 turretViewport = camera.WorldToViewportPoint(session.SpawnedTurret.DrawPos);
+            Vector3 targetViewport = camera.WorldToViewportPoint(targetPawn.DrawPos);
+            bool turretVisible = IsViewportPointSafe(turretViewport, margin);
+            bool targetVisible = IsViewportPointSafe(targetViewport, margin);
+
+            StringBuilder builder = new StringBuilder();
+            builder.Append(BuildCameraDebugInfo(cameraDriver, camera, stageSuffix));
+            builder.Append(" turret=").Append(FormatViewportPoint(turretViewport));
+            builder.Append(" target=").Append(FormatViewportPoint(targetViewport));
+            if (session.ActiveStageScreenshot?.FocusRootPos != null)
+            {
+                builder.Append(" requestedRootPos=").Append(FormatVector3(session.ActiveStageScreenshot.FocusRootPos.Value));
+            }
+            if (session.ActiveStageScreenshot?.FocusRootSize != null)
+            {
+                builder.Append(" requestedRootSize=").Append(session.ActiveStageScreenshot.FocusRootSize.Value.ToString("0.00"));
+            }
+
+            return new AutoTestCaptureProbeResult
+            {
+                Ready = turretVisible && targetVisible,
+                Details = builder.ToString()
+            };
+        }
+
+        private AutoTestCaptureProbeResult ProbeRangedWeaponCapture(RangedWeaponTestSession session, string stageSuffix)
+        {
+            if (session?.ShooterPawn == null || session.TestMap == null)
+            {
+                return new AutoTestCaptureProbeResult { Ready = false, Details = "RangedProbe:MissingSessionState" };
+            }
+
+            CameraDriver cameraDriver = Find.CameraDriver;
+            Camera camera = cameraDriver?.GetComponent<Camera>();
+            Pawn targetPawn = session.ResolvePrimaryTarget();
+            if (camera == null || targetPawn == null)
+            {
+                return new AutoTestCaptureProbeResult
+                {
+                    Ready = false,
+                    Details = "RangedProbe:CameraOrTargetMissing camera=" + (camera != null) + " target=" + (targetPawn != null)
+                };
+            }
+
+            const float margin = 0.06f;
+            Vector3 shooterViewport = camera.WorldToViewportPoint(session.ShooterPawn.DrawPos);
+            Vector3 targetViewport = camera.WorldToViewportPoint(targetPawn.DrawPos);
+            bool shooterVisible = IsViewportPointSafe(shooterViewport, margin);
+            bool targetVisible = IsViewportPointSafe(targetViewport, margin);
+
+            Thing projectile = null;
+            Vector3 projectileViewport = default;
+            bool projectileVisible = true;
+            if (IsProjectileStage(stageSuffix))
+            {
+                projectile = ResolveViewportClosestProjectile(session.TestMap, camera);
+                if (projectile != null)
+                {
+                    projectileViewport = camera.WorldToViewportPoint(projectile.DrawPos);
+                    projectileVisible = IsViewportPointSafe(projectileViewport, 0.02f);
+                }
+                else
+                {
+                    projectileVisible = false;
+                }
+            }
+
+            StringBuilder builder = new StringBuilder();
+            builder.Append(BuildCameraDebugInfo(cameraDriver, camera, stageSuffix));
+            builder.Append(" shooter=").Append(FormatViewportPoint(shooterViewport));
+            builder.Append(" target=").Append(FormatViewportPoint(targetViewport));
+            builder.Append(" shooterLabel=").Append(session.ShooterPawn.LabelShortCap);
+            builder.Append(" targetLabel=").Append(targetPawn.LabelShortCap);
+            if (projectile != null)
+            {
+                builder.Append(" projectile=").Append(FormatViewportPoint(projectileViewport));
+                builder.Append(" projectileDef=").Append(projectile.def?.defName ?? "null");
+            }
+            else if (IsProjectileStage(stageSuffix))
+            {
+                builder.Append(" projectile=missing");
+            }
+            if (session.ActiveStageScreenshot?.FocusRootPos != null)
+            {
+                builder.Append(" requestedRootPos=").Append(FormatVector3(session.ActiveStageScreenshot.FocusRootPos.Value));
+            }
+            if (session.ActiveStageScreenshot?.FocusRootSize != null)
+            {
+                builder.Append(" requestedRootSize=").Append(session.ActiveStageScreenshot.FocusRootSize.Value.ToString("0.00"));
+            }
+
+            return new AutoTestCaptureProbeResult
+            {
+                Ready = shooterVisible && targetVisible && projectileVisible,
+                Details = builder.ToString()
+            };
+        }
+
+        private static Thing ResolveViewportClosestProjectile(Map map, Camera camera)
+        {
+            if (map == null || camera == null)
+            {
+                return null;
+            }
+
+            IEnumerable<Thing> projectiles = map.listerThings?.ThingsInGroup(ThingRequestGroup.Projectile);
+            if (projectiles == null)
+            {
+                return null;
+            }
+
+            Thing bestProjectile = null;
+            float bestDistance = float.MaxValue;
+            foreach (Thing projectile in projectiles)
+            {
+                if (projectile == null || projectile.Destroyed || !projectile.Spawned)
+                {
+                    continue;
+                }
+
+                Vector3 viewport = camera.WorldToViewportPoint(projectile.DrawPos);
+                if (viewport.z <= 0f)
+                {
+                    continue;
+                }
+
+                float distance = Vector2.Distance(new Vector2(viewport.x, viewport.y), new Vector2(0.5f, 0.5f));
+                if (distance < bestDistance)
+                {
+                    bestDistance = distance;
+                    bestProjectile = projectile;
+                }
+            }
+
+            return bestProjectile;
+        }
+
+        private static bool IsViewportPointSafe(Vector3 viewportPoint, float margin)
+        {
+            return viewportPoint.z > 0f &&
+                viewportPoint.x >= margin &&
+                viewportPoint.x <= 1f - margin &&
+                viewportPoint.y >= margin &&
+                viewportPoint.y <= 1f - margin;
+        }
+
+        private static string BuildCameraDebugInfo(CameraDriver cameraDriver, Camera camera, string stageSuffix)
+        {
+            StringBuilder builder = new StringBuilder();
+            builder.Append("stage=").Append(stageSuffix ?? "default");
+            builder.Append(" map=").Append(Current.Game?.CurrentMap?.uniqueID ?? -1);
+            if (cameraDriver != null)
+            {
+                builder.Append(" cameraDriverPos=").Append(FormatVector3(cameraDriver.transform.position));
+            }
+            if (camera != null)
+            {
+                builder.Append(" cameraPos=").Append(FormatVector3(camera.transform.position));
+                builder.Append(" ortho=").Append(camera.orthographicSize.ToString("0.00"));
+                builder.Append(" aspect=").Append(camera.aspect.ToString("0.000"));
+                builder.Append(" pixel=").Append(camera.pixelWidth).Append("x").Append(camera.pixelHeight);
+            }
+            builder.Append(" screen=").Append(Screen.width).Append("x").Append(Screen.height);
+            return builder.ToString();
+        }
+
+        private static string FormatViewportPoint(Vector3 point)
+        {
+            return string.Format("({0:0.000},{1:0.000},z={2:0.000})", point.x, point.y, point.z);
+        }
+
+        private static string FormatVector3(Vector3 point)
+        {
+            return string.Format("({0:0.00},{1:0.00},{2:0.00})", point.x, point.y, point.z);
         }
 
         private static bool TryGetStageScreenshotOverride(TurretTestSession session, out Vector3 rootPos, out float rootSize)

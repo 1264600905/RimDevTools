@@ -744,7 +744,7 @@ namespace LogSyncMod.AutoTest
                     return false;
                 }
 
-                QueueStageScreenshot("projectile_center_t" + offset, force: true, allowCapture: true, bestFocusRootPos, bestFocusRootSize);
+                QueueStageScreenshot("projectile_center_t" + offset, force: true, allowCapture: true, bestFocusRootPos, bestFocusRootSize, retryAttempts: 10);
                 return true;
             }
 
@@ -780,12 +780,19 @@ namespace LogSyncMod.AutoTest
                     return true;
                 }
 
-                owner.TryCaptureRangedWeaponStageScreenshot(this, ActiveStageScreenshot.StageSuffix, ActiveStageScreenshot.Force, ActiveStageScreenshot.AllowCapture);
+                bool captured = owner.TryCaptureRangedWeaponStageScreenshot(this, ActiveStageScreenshot.StageSuffix, ActiveStageScreenshot.Force, ActiveStageScreenshot.AllowCapture);
+                if (!captured && ActiveStageScreenshot.RetryAttemptsRemaining > 0)
+                {
+                    ActiveStageScreenshot.RetryAttemptsRemaining--;
+                    pendingStageScreenshotDelayTicks = 1;
+                    return true;
+                }
+
                 ActiveStageScreenshot = null;
                 return true;
             }
 
-            private void QueueStageScreenshot(string stageSuffix, bool force, bool allowCapture, Vector3? focusRootPos = null, float? focusRootSize = null, int focusDelayTicks = 0, bool primeOnly = false)
+            private void QueueStageScreenshot(string stageSuffix, bool force, bool allowCapture, Vector3? focusRootPos = null, float? focusRootSize = null, int focusDelayTicks = 0, bool primeOnly = false, int retryAttempts = 0)
             {
                 pendingStageScreenshots.Enqueue(new StageScreenshotRequest
                 {
@@ -795,7 +802,8 @@ namespace LogSyncMod.AutoTest
                     FocusRootPos = focusRootPos,
                     FocusRootSize = focusRootSize,
                     FocusDelayTicks = focusDelayTicks,
-                    PrimeOnly = primeOnly
+                    PrimeOnly = primeOnly,
+                    RetryAttemptsRemaining = retryAttempts
                 });
             }
 
