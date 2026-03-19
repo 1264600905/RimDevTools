@@ -2,6 +2,7 @@
 # - 如果你在 Cursor / 其他受限沙盒中运行：请开启“访问外部文件”权限，否则脚本会因为无法访问
 #   `%USERPROFILE%\\AppData\\LocalLow\\Ludeon Studios\\RimWorld by Ludeon Studios` 而失败。
 # - 这里说的“高权限”是指“允许访问沙盒外文件”，不是指 Windows 管理员权限。
+#  注意绝对禁止并发执行此脚本，因为游戏只有一个player.log文件，如果并发执行会导致日志内容混乱，甚至可能导致游戏崩溃。
 
 import subprocess
 import time
