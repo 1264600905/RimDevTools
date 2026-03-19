@@ -513,7 +513,6 @@ namespace LogSyncMod.AutoTest
         {
             return def != null &&
                 def.modContentPack == targetMod &&
-                def.aiCanUse &&
                 MatchesSpecFilters(AutoTestKind.SkillPocketMap, def);
         }
     }
