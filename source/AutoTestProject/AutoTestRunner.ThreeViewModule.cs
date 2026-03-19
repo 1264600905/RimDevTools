@@ -76,7 +76,9 @@ namespace LogSyncMod.AutoTest
                 Context = context;
                 Result.Stage = "spawn";
                 Result.Label = string.IsNullOrWhiteSpace(Spec.Label) ? Spec.DefName : Spec.Label;
-                Result.OverlayLine3 = string.IsNullOrWhiteSpace(Spec.PawnRaceLabel) ? string.Empty : "PawnRace: " + Spec.PawnRaceLabel;
+                Result.OverlayLine1 = string.IsNullOrWhiteSpace(Spec.DefName) ? Result.DefName : Spec.DefName;
+                Result.OverlayLine2 = string.IsNullOrWhiteSpace(Spec.Label) ? Result.Label : Spec.Label;
+                Result.OverlayLine3 = string.IsNullOrWhiteSpace(Spec.PawnRaceLabel) ? string.Empty : "Race: " + Spec.PawnRaceLabel;
                 Result.OverlayLine4 = string.IsNullOrWhiteSpace(Spec.PawnBodyTypeLabel) ? string.Empty : "BodyType: " + Spec.PawnBodyTypeLabel;
                 Result.Notes = AppendNote(Result.Notes, "ThreeViewTriptych=True");
                 Result.Notes = AppendNote(Result.Notes, "SpawnedPawns=" + Context.Pawns.Count);

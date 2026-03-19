@@ -107,6 +107,8 @@ namespace LogSyncMod.AutoTest
         public string ScreenshotPath;
         public List<string> ScreenshotPaths = new List<string>();
         public string Notes;
+        public string OverlayLine1;
+        public string OverlayLine2;
         public string OverlayLine3;
         public string OverlayLine4;
     }

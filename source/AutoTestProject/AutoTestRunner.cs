@@ -428,6 +428,16 @@ namespace LogSyncMod.AutoTest
 
             if (pendingThreeViewTargets.Count > 0)
             {
+                if (HasPendingOrActivePreThreeViewPocketMapWork())
+                {
+                    if (Find.TickManager != null && Find.TickManager.TicksGame % 300 == 0)
+                    {
+                        Log.Message("[LogSyncAutoTest] ThreeView launch blocked: waiting for pocket map phase to finish. pendingThreeView=" + pendingThreeViewTargets.Count + " activePocketMaps=" + GetActivePocketMapSessionCount());
+                    }
+
+                    return false;
+                }
+
                 if (activeThreeViewSessions.Count > 0)
                 {
                     if (Find.TickManager != null && Find.TickManager.TicksGame % 300 == 0)
@@ -449,6 +459,26 @@ namespace LogSyncMod.AutoTest
 
             if (pendingCombatPawnTargets.Count > 0)
             {
+                if (HasPendingOrActivePreThreeViewPocketMapWork())
+                {
+                    if (Find.TickManager != null && Find.TickManager.TicksGame % 300 == 0)
+                    {
+                        Log.Message("[LogSyncAutoTest] CombatPawn launch blocked: waiting for pocket map phase to finish. pendingCombatPawns=" + pendingCombatPawnTargets.Count + " activePocketMaps=" + GetActivePocketMapSessionCount());
+                    }
+
+                    return false;
+                }
+
+                if (pendingThreeViewTargets.Count > 0 || activeThreeViewSessions.Count > 0)
+                {
+                    if (Find.TickManager != null && Find.TickManager.TicksGame % 300 == 0)
+                    {
+                        Log.Message("[LogSyncAutoTest] CombatPawn launch blocked: waiting for three-view phase to finish. pendingCombatPawns=" + pendingCombatPawnTargets.Count + " pendingThreeView=" + pendingThreeViewTargets.Count + " activeThreeView=" + activeThreeViewSessions.Count);
+                    }
+
+                    return false;
+                }
+
                 StartNewCombatPawnSession(pendingCombatPawnTargets.Dequeue());
                 return true;
             }
@@ -471,8 +501,18 @@ namespace LogSyncMod.AutoTest
             return activeTurretSessions.Count +
                    activeRangedWeaponSessions.Count +
                    activeMeleeWeaponSessions.Count +
-                   activeThreeViewSessions.Count +
                    activeCombatPawnSessions.Count;
+        }
+
+        private bool HasPendingOrActivePreThreeViewPocketMapWork()
+        {
+            return pendingTurretDefs.Count > 0 ||
+                   pendingRangedWeaponDefs.Count > 0 ||
+                   pendingMeleeWeaponDefs.Count > 0 ||
+                   activeTurretSessions.Count > 0 ||
+                   activeRangedWeaponSessions.Count > 0 ||
+                   activeMeleeWeaponSessions.Count > 0 ||
+                   activeCombatPawnSessions.Count > 0;
         }
 
         private void RefreshPocketMapCooldown(string reason)

@@ -195,17 +195,15 @@ namespace LogSyncMod.AutoTest
 
         private string ResolveScreenshotDirectory(AutoTestScreenshotRequest request)
         {
-            string baseDirectory;
-            if (request != null && request.IsFailureArtifact)
+            string caseTypeDirectory = SanitizeFileName(request?.Result?.CaseType);
+            string topLevelGroup = ResolveTopLevelGroup(request);
+            string baseDirectory = string.IsNullOrWhiteSpace(topLevelGroup)
+                ? runArtifacts.ScreenshotDirectory
+                : Path.Combine(runArtifacts.ScreenshotDirectory, topLevelGroup);
+
+            if (!string.IsNullOrWhiteSpace(caseTypeDirectory))
             {
-                baseDirectory = Path.Combine(runArtifacts.ScreenshotDirectory, "fail");
-            }
-            else
-            {
-                string caseTypeDirectory = SanitizeFileName(request?.Result?.CaseType);
-                baseDirectory = string.IsNullOrWhiteSpace(caseTypeDirectory)
-                    ? runArtifacts.ScreenshotDirectory
-                    : Path.Combine(runArtifacts.ScreenshotDirectory, caseTypeDirectory);
+                baseDirectory = Path.Combine(baseDirectory, caseTypeDirectory);
             }
 
             if (string.IsNullOrWhiteSpace(request?.RelativeSubdirectory))
@@ -214,6 +212,44 @@ namespace LogSyncMod.AutoTest
             }
 
             return Path.Combine(baseDirectory, request.RelativeSubdirectory);
+        }
+
+        private static string ResolveTopLevelGroup(AutoTestScreenshotRequest request)
+        {
+            if (request != null && request.IsFailureArtifact)
+            {
+                return "fail";
+            }
+
+            switch ((request?.Result?.CaseType ?? string.Empty).Trim())
+            {
+                case "BuildingInfoCard":
+                case "ItemInfoCard":
+                case "TerrainInfoCard":
+                case "RecipeInfoCard":
+                case "HediffInfoCard":
+                    return "UI";
+
+                case "TurretPocketMap":
+                case "RangedWeaponPocketMap":
+                case "MeleeWeaponPocketMap":
+                case "ApparelCombat":
+                case "AnimalCombat":
+                case "MechanoidCombat":
+                case "AlienCombat":
+                    return "combat";
+
+                case "HumanoidThreeView":
+                case "AnimalThreeView":
+                case "MechanoidThreeView":
+                case "AlienThreeView":
+                case "ApparelThreeView":
+                case "WeaponThreeView":
+                    return "ThreeView";
+
+                default:
+                    return string.Empty;
+            }
         }
 
         public int ResolveTurretResultIndex(IReadOnlyList<AutoTestResult> results, int activeSessionIndex)
@@ -246,8 +282,12 @@ namespace LogSyncMod.AutoTest
 
         public static void Request(AutoTestResult result)
         {
-            line1 = string.IsNullOrWhiteSpace(result?.DefName) ? "UnknownDef" : result.DefName.Trim();
-            line2 = string.IsNullOrWhiteSpace(result?.Label) ? line1 : result.Label.Trim();
+            line1 = string.IsNullOrWhiteSpace(result?.OverlayLine1)
+                ? (string.IsNullOrWhiteSpace(result?.DefName) ? "UnknownDef" : result.DefName.Trim())
+                : result.OverlayLine1.Trim();
+            line2 = string.IsNullOrWhiteSpace(result?.OverlayLine2)
+                ? (string.IsNullOrWhiteSpace(result?.Label) ? line1 : result.Label.Trim())
+                : result.OverlayLine2.Trim();
             line3 = string.IsNullOrWhiteSpace(result?.OverlayLine3) ? string.Empty : result.OverlayLine3.Trim();
             line4 = string.IsNullOrWhiteSpace(result?.OverlayLine4) ? string.Empty : result.OverlayLine4.Trim();
             remainingRepaintFrames = Math.Max(remainingRepaintFrames, OverlayRepaintFrames);
