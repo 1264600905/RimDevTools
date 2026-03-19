@@ -111,6 +111,8 @@ namespace LogSyncMod.AutoTest
         private readonly Queue<ThingDef> pendingRangedWeaponDefs = new Queue<ThingDef>();
         private readonly List<MeleeWeaponTestSession> activeMeleeWeaponSessions = new List<MeleeWeaponTestSession>();
         private readonly Queue<ThingDef> pendingMeleeWeaponDefs = new Queue<ThingDef>();
+        private readonly List<SkillPocketMapTestSession> activeSkillPocketMapSessions = new List<SkillPocketMapTestSession>();
+        private readonly Queue<AbilityDef> pendingSkillAbilityDefs = new Queue<AbilityDef>();
         private readonly List<ThreeViewTestSession> activeThreeViewSessions = new List<ThreeViewTestSession>();
         private readonly Queue<AutoTestThreeViewTargetSpec> pendingThreeViewTargets = new Queue<AutoTestThreeViewTargetSpec>();
         private readonly List<CombatPawnTestSession> activeCombatPawnSessions = new List<CombatPawnTestSession>();
@@ -210,13 +212,14 @@ namespace LogSyncMod.AutoTest
 
             if (settings.ShouldTestCombatPawns())
             {
+                BeginSkillPocketMapTestSession();
                 BeginCombatPawnTestSession();
             }
 
             ApplyBatchLimit();
             BuildPlannedManifest();
 
-            int totalPending = pendingItems.Count + pendingTurretDefs.Count + pendingRangedWeaponDefs.Count + pendingMeleeWeaponDefs.Count + pendingThreeViewTargets.Count + pendingCombatPawnTargets.Count;
+            int totalPending = pendingItems.Count + pendingTurretDefs.Count + pendingRangedWeaponDefs.Count + pendingMeleeWeaponDefs.Count + pendingSkillAbilityDefs.Count + pendingThreeViewTargets.Count + pendingCombatPawnTargets.Count;
             int pocketMapMaxConcurrent = settings.GetPocketMapMaxConcurrent();
             Log.Message(string.Format(
                 "[LogSyncAutoTest] START packageId={0} map={1} scope={2} pending={3} pocketMapMaxConcurrent={4}",
@@ -298,6 +301,12 @@ namespace LogSyncMod.AutoTest
                 Log.Message($"[LogSyncAutoTest] Melee heartbeat: {activeMeleeWeaponSessions.Count} active sessions. TotalPocketMaps={GetActivePocketMapSessionCount()}/{settings.GetPocketMapMaxConcurrent()}. Details: {statusReport}");
             }
 
+            if (Find.TickManager.TicksGame % 500 == 0 && activeSkillPocketMapSessions.Count > 0)
+            {
+                string statusReport = string.Join(", ", activeSkillPocketMapSessions.Select(s => $"{s.AbilityDef?.defName ?? "null"}({s.Phase})"));
+                Log.Message($"[LogSyncAutoTest] SkillPocketMap heartbeat: {activeSkillPocketMapSessions.Count} active sessions. TotalPocketMaps={GetActivePocketMapSessionCount()}/{settings.GetPocketMapMaxConcurrent()}. Details: {statusReport}");
+            }
+
             if (Find.TickManager.TicksGame % 500 == 0 && activeThreeViewSessions.Count > 0)
             {
                 string statusReport = string.Join(", ", activeThreeViewSessions.Select(s => $"{s.Spec.DefName}({s.Phase})"));
@@ -328,6 +337,11 @@ namespace LogSyncMod.AutoTest
             }
 
             foreach (var session in activeMeleeWeaponSessions)
+            {
+                session.Update();
+            }
+
+            foreach (var session in activeSkillPocketMapSessions)
             {
                 session.Update();
             }
@@ -366,6 +380,14 @@ namespace LogSyncMod.AutoTest
                 return false;
             });
 
+            activeSkillPocketMapSessions.RemoveAll(session => {
+                if (session.Phase == SkillPocketMapTestPhase.Done) {
+                    results.Add(session.Result);
+                    return true;
+                }
+                return false;
+            });
+
             activeThreeViewSessions.RemoveAll(session => {
                 if (session.Phase == ThreeViewTestPhase.Done) {
                     results.Add(session.Result);
@@ -387,11 +409,13 @@ namespace LogSyncMod.AutoTest
                 pendingTurretDefs.Count == 0 &&
                 pendingRangedWeaponDefs.Count == 0 &&
                 pendingMeleeWeaponDefs.Count == 0 &&
+                pendingSkillAbilityDefs.Count == 0 &&
                 pendingThreeViewTargets.Count == 0 &&
                 pendingCombatPawnTargets.Count == 0 &&
                 activeTurretSessions.Count == 0 &&
                 activeRangedWeaponSessions.Count == 0 &&
                 activeMeleeWeaponSessions.Count == 0 &&
+                activeSkillPocketMapSessions.Count == 0 &&
                 activeThreeViewSessions.Count == 0 &&
                 activeCombatPawnSessions.Count == 0)
             {
@@ -423,6 +447,12 @@ namespace LogSyncMod.AutoTest
             if (pendingMeleeWeaponDefs.Count > 0)
             {
                 StartNewMeleeWeaponSession(pendingMeleeWeaponDefs.Dequeue());
+                return true;
+            }
+
+            if (pendingSkillAbilityDefs.Count > 0)
+            {
+                StartNewSkillPocketMapSession(pendingSkillAbilityDefs.Dequeue());
                 return true;
             }
 
@@ -501,6 +531,7 @@ namespace LogSyncMod.AutoTest
             return activeTurretSessions.Count +
                    activeRangedWeaponSessions.Count +
                    activeMeleeWeaponSessions.Count +
+                   activeSkillPocketMapSessions.Count +
                    activeCombatPawnSessions.Count;
         }
 
@@ -509,9 +540,11 @@ namespace LogSyncMod.AutoTest
             return pendingTurretDefs.Count > 0 ||
                    pendingRangedWeaponDefs.Count > 0 ||
                    pendingMeleeWeaponDefs.Count > 0 ||
+                   pendingSkillAbilityDefs.Count > 0 ||
                    activeTurretSessions.Count > 0 ||
                    activeRangedWeaponSessions.Count > 0 ||
                    activeMeleeWeaponSessions.Count > 0 ||
+                   activeSkillPocketMapSessions.Count > 0 ||
                    activeCombatPawnSessions.Count > 0;
         }
 
@@ -635,7 +668,7 @@ namespace LogSyncMod.AutoTest
             }
 
             int limit = Math.Max(1, settings.autoTestBatchSize);
-            int originalTotal = pendingItems.Count + pendingTurretDefs.Count + pendingRangedWeaponDefs.Count + pendingMeleeWeaponDefs.Count + pendingThreeViewTargets.Count + pendingCombatPawnTargets.Count;
+            int originalTotal = pendingItems.Count + pendingTurretDefs.Count + pendingRangedWeaponDefs.Count + pendingMeleeWeaponDefs.Count + pendingSkillAbilityDefs.Count + pendingThreeViewTargets.Count + pendingCombatPawnTargets.Count;
             if (originalTotal <= limit)
             {
                 return;
@@ -645,6 +678,7 @@ namespace LogSyncMod.AutoTest
             var limitedTurrets = new Queue<ThingDef>();
             var limitedRangedWeapons = new Queue<ThingDef>();
             var limitedMeleeWeapons = new Queue<ThingDef>();
+            var limitedSkillAbilities = new Queue<AbilityDef>();
             var limitedThreeViews = new Queue<AutoTestThreeViewTargetSpec>();
             var limitedCombatPawns = new Queue<AutoTestCombatPawnTargetSpec>();
             int keptCount = 0;
@@ -685,6 +719,14 @@ namespace LogSyncMod.AutoTest
                     if (keptCount >= limit) break;
                 }
 
+                if (pendingSkillAbilityDefs.Count > 0)
+                {
+                    limitedSkillAbilities.Enqueue(pendingSkillAbilityDefs.Dequeue());
+                    keptCount++;
+                    itemAddedInRound = true;
+                    if (keptCount >= limit) break;
+                }
+
                 if (pendingThreeViewTargets.Count > 0)
                 {
                     limitedThreeViews.Enqueue(pendingThreeViewTargets.Dequeue());
@@ -712,6 +754,7 @@ namespace LogSyncMod.AutoTest
             pendingTurretDefs.Clear();
             pendingRangedWeaponDefs.Clear();
             pendingMeleeWeaponDefs.Clear();
+            pendingSkillAbilityDefs.Clear();
             pendingThreeViewTargets.Clear();
             pendingCombatPawnTargets.Clear();
 
@@ -720,6 +763,7 @@ namespace LogSyncMod.AutoTest
             foreach (var item in limitedTurrets) pendingTurretDefs.Enqueue(item);
             foreach (var item in limitedRangedWeapons) pendingRangedWeaponDefs.Enqueue(item);
             foreach (var item in limitedMeleeWeapons) pendingMeleeWeaponDefs.Enqueue(item);
+            foreach (var item in limitedSkillAbilities) pendingSkillAbilityDefs.Enqueue(item);
             foreach (var item in limitedThreeViews) pendingThreeViewTargets.Enqueue(item);
             foreach (var item in limitedCombatPawns) pendingCombatPawnTargets.Enqueue(item);
 
@@ -1006,6 +1050,11 @@ namespace LogSyncMod.AutoTest
             foreach (ThingDef def in pendingMeleeWeaponDefs)
             {
                 AddPlannedManifestEntry(RegisterDiscoveredCase(AutoTestCaseType.MeleeWeaponPocketMap, nameof(ThingDef), def?.defName, def?.label));
+            }
+
+            foreach (AbilityDef def in pendingSkillAbilityDefs)
+            {
+                AddPlannedManifestEntry(RegisterDiscoveredCase(AutoTestCaseType.SkillPocketMap, nameof(AbilityDef), def?.defName, def?.label));
             }
 
             foreach (AutoTestThreeViewTargetSpec spec in pendingThreeViewTargets)

@@ -130,6 +130,8 @@ namespace LogSyncMod.AutoTest
                     return AutoTestScope.RangedWeapons;
                 case AutoTestKind.MeleeWeaponPocketMap:
                     return AutoTestScope.MeleeWeapons;
+                case AutoTestKind.SkillPocketMap:
+                    return AutoTestScope.CombatPawns;
                 case AutoTestKind.HumanoidThreeView:
                 case AutoTestKind.AnimalThreeView:
                 case AutoTestKind.MechanoidThreeView:
@@ -167,6 +169,8 @@ namespace LogSyncMod.AutoTest
                     return "RangedWeapon";
                 case AutoTestKind.MeleeWeaponPocketMap:
                     return "MeleeWeapon";
+                case AutoTestKind.SkillPocketMap:
+                    return "SkillPocketMap";
                 case AutoTestKind.HumanoidThreeView:
                     return "HumanoidThreeView";
                 case AutoTestKind.AnimalThreeView:
