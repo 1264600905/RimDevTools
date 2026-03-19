@@ -968,7 +968,7 @@ namespace LogSyncMod.AutoTest
                         continue;
                     }
 
-                    if (candidate.RaceProps?.Humanlike == true)
+                    if (ShouldStripGeneratedPawnLoadout(spec, candidate))
                     {
                         try
                         {
@@ -1054,7 +1054,7 @@ namespace LogSyncMod.AutoTest
                     pawn.story.bodyType = spec.ForcedBodyType;
                 }
 
-                if (pawn.RaceProps?.Humanlike == true)
+                if (ShouldStripGeneratedPawnLoadout(spec, pawn))
                 {
                     pawn.apparel?.DestroyAll();
                     pawn.equipment?.DestroyAllEquipment();
@@ -1268,6 +1268,33 @@ namespace LogSyncMod.AutoTest
             {
                 pawn = null;
                 return false;
+            }
+        }
+
+        private static bool ShouldStripGeneratedPawnLoadout(AutoTestThreeViewTargetSpec spec, Pawn pawn)
+        {
+            if (pawn?.RaceProps?.Humanlike != true)
+            {
+                return false;
+            }
+
+            if (spec == null)
+            {
+                return true;
+            }
+
+            if (spec.WearAsApparel || spec.HoldAsWeapon)
+            {
+                return true;
+            }
+
+            switch (spec.Kind)
+            {
+                case AutoTestKind.HumanoidThreeView:
+                case AutoTestKind.AlienThreeView:
+                    return false;
+                default:
+                    return true;
             }
         }
 
