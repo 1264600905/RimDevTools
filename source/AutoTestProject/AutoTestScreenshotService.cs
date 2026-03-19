@@ -227,12 +227,14 @@ namespace LogSyncMod.AutoTest
                 case "ItemInfoCard":
                 case "TerrainInfoCard":
                 case "RecipeInfoCard":
+                case "RecipeBillUi":
                 case "HediffInfoCard":
                     return "UI";
 
                 case "TurretPocketMap":
                 case "RangedWeaponPocketMap":
                 case "MeleeWeaponPocketMap":
+                case "SkillPocketMap":
                 case "ApparelCombat":
                 case "AnimalCombat":
                 case "MechanoidCombat":

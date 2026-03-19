@@ -740,7 +740,7 @@ namespace LogSyncMod.AutoTest
                 case AutoTestKind.Terrain:
                     return AutoTestCaseType.TerrainInfoCard;
                 case AutoTestKind.Recipe:
-                    return AutoTestCaseType.RecipeInfoCard;
+                    return AutoTestCaseType.RecipeBillUi;
                 case AutoTestKind.Hediff:
                     return AutoTestCaseType.HediffInfoCard;
                 case AutoTestKind.TurretPocketMap:
@@ -749,6 +749,8 @@ namespace LogSyncMod.AutoTest
                     return AutoTestCaseType.RangedWeaponPocketMap;
                 case AutoTestKind.MeleeWeaponPocketMap:
                     return AutoTestCaseType.MeleeWeaponPocketMap;
+                case AutoTestKind.SkillPocketMap:
+                    return AutoTestCaseType.SkillPocketMap;
                 case AutoTestKind.HumanoidThreeView:
                     return AutoTestCaseType.HumanoidThreeView;
                 case AutoTestKind.AnimalThreeView:
@@ -785,6 +787,7 @@ namespace LogSyncMod.AutoTest
                 case AutoTestCaseType.TerrainInfoCard:
                     return "Terrain";
                 case AutoTestCaseType.RecipeInfoCard:
+                case AutoTestCaseType.RecipeBillUi:
                     return "Recipe";
                 case AutoTestCaseType.HediffInfoCard:
                     return "Hediff";
@@ -794,6 +797,8 @@ namespace LogSyncMod.AutoTest
                     return "RangedWeapon";
                 case AutoTestCaseType.MeleeWeaponPocketMap:
                     return "MeleeWeapon";
+                case AutoTestCaseType.SkillPocketMap:
+                    return "SkillPocketMap";
                 case AutoTestCaseType.HumanoidThreeView:
                     return "HumanoidThreeView";
                 case AutoTestCaseType.AnimalThreeView:
@@ -824,6 +829,7 @@ namespace LogSyncMod.AutoTest
             switch (caseType)
             {
                 case AutoTestCaseType.RecipeInfoCard:
+                case AutoTestCaseType.RecipeBillUi:
                     return AutoTestScope.Recipes;
                 case AutoTestCaseType.HediffInfoCard:
                     return AutoTestScope.Hediffs;
@@ -833,6 +839,8 @@ namespace LogSyncMod.AutoTest
                     return AutoTestScope.RangedWeapons;
                 case AutoTestCaseType.MeleeWeaponPocketMap:
                     return AutoTestScope.MeleeWeapons;
+                case AutoTestCaseType.SkillPocketMap:
+                    return AutoTestScope.CombatPawns;
                 case AutoTestCaseType.HumanoidThreeView:
                 case AutoTestCaseType.AnimalThreeView:
                 case AutoTestCaseType.MechanoidThreeView:

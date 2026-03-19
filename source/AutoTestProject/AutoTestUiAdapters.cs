@@ -61,6 +61,27 @@ namespace LogSyncMod.AutoTest
         }
     }
 
+    internal sealed class AutoTestBillConfigHandle : AutoTestWindowHandle<Dialog_BillConfig>
+    {
+        public AutoTestBillConfigHandle(Dialog_BillConfig window, Bill_Production bill)
+            : base(window, bill?.recipe?.defName ?? "RecipeBillConfig")
+        {
+            Bill = bill;
+        }
+
+        public Bill_Production Bill { get; }
+
+        public override void RequestClose()
+        {
+            if (!IsOpen) return;
+
+            if (!AutoTestUiClickSimulator.TryClickWindowCloseX(Window))
+            {
+                base.RequestClose();
+            }
+        }
+    }
+
     internal static class AutoTestUiClickSimulator
     {
         private const uint MouseEventLeftDown = 0x0002;
@@ -205,6 +226,26 @@ namespace LogSyncMod.AutoTest
             infoCard.closeOnCancel = false;
             Find.WindowStack.Add(infoCard);
             return new AutoTestInfoCardHandle(infoCard, hediff?.def);
+        }
+    }
+
+    internal static class AutoTestBillConfigUiAdapter
+    {
+        public static AutoTestBillConfigHandle Open(Bill_Production bill, IntVec3 billGiverPos)
+        {
+            if (bill == null)
+            {
+                return null;
+            }
+
+            Find.WindowStack.TryRemoveAssignableFromType(typeof(Dialog_BillConfig), false);
+
+            Dialog_BillConfig dialog = new Dialog_BillConfig(bill, billGiverPos);
+            dialog.closeOnClickedOutside = true;
+            dialog.closeOnAccept = false;
+            dialog.closeOnCancel = false;
+            Find.WindowStack.Add(dialog);
+            return new AutoTestBillConfigHandle(dialog, bill);
         }
     }
 }

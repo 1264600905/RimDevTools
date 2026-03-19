@@ -15,6 +15,7 @@ namespace LogSyncMod.AutoTest
         TurretPocketMap,
         RangedWeaponPocketMap,
         MeleeWeaponPocketMap,
+        SkillPocketMap,
         HumanoidThreeView,
         AnimalThreeView,
         MechanoidThreeView,
@@ -33,10 +34,12 @@ namespace LogSyncMod.AutoTest
         ItemInfoCard,
         TerrainInfoCard,
         RecipeInfoCard,
+        RecipeBillUi,
         HediffInfoCard,
         TurretPocketMap,
         RangedWeaponPocketMap,
         MeleeWeaponPocketMap,
+        SkillPocketMap,
         HumanoidThreeView,
         AnimalThreeView,
         MechanoidThreeView,
@@ -57,6 +60,7 @@ namespace LogSyncMod.AutoTest
         public ThingDef ThingDef;
         public TerrainDef TerrainDef;
         public RecipeDef RecipeDef;
+        public AbilityDef AbilityDef;
         public ThingDef WorktableDef;
         public HediffDef HediffDef;
         public LogSyncAutoTestSpecDef SpecDef;
