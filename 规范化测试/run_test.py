@@ -438,7 +438,7 @@ def remove_child_node(parent, tag: str):
     parent.remove(node)
     return True
 
-def normalize_log_keywords(log_keywords):
+def normalize_log_keywords(log_keywords: list[str] | str | None) -> list[str] | None:
     if log_keywords is None:
         return None
     if isinstance(log_keywords, str):
@@ -462,11 +462,7 @@ def update_mod_settings(
     auto_test_output_path: str | None = None,
     auto_test_mode: str | None = None,
     auto_test_scope: str | None = None,
-    auto_test_capture_screenshots: bool | None = None,
     auto_test_batch_size: int | None = None,
-    auto_test_prevent_pause: bool | None = None,
-    auto_test_use_fast_speed: bool | None = None,
-    auto_test_pocket_map_max_concurrent: int | None = None,
     clear_auto_test_batch_size: bool = False,
 ):
     """
@@ -575,24 +571,6 @@ def update_mod_settings(
                 ensure_text_node(mod_settings, "autoTestScope", desired_scope)
                 changed = True
 
-        if auto_test_capture_screenshots is not None:
-            desired_value = "True" if auto_test_capture_screenshots else "False"
-            if (mod_settings.findtext("autoTestCaptureScreenshots") or "").strip() != desired_value:
-                ensure_text_node(mod_settings, "autoTestCaptureScreenshots", desired_value)
-                changed = True
-
-        if auto_test_prevent_pause is not None:
-            desired_value = "True" if auto_test_prevent_pause else "False"
-            if (mod_settings.findtext("autoTestPreventPause") or "").strip() != desired_value:
-                ensure_text_node(mod_settings, "autoTestPreventPause", desired_value)
-                changed = True
-
-        if auto_test_use_fast_speed is not None:
-            desired_value = "True" if auto_test_use_fast_speed else "False"
-            if (mod_settings.findtext("autoTestUseFastSpeed") or "").strip() != desired_value:
-                ensure_text_node(mod_settings, "autoTestUseFastSpeed", desired_value)
-                changed = True
-
         if clear_auto_test_batch_size:
             if remove_child_node(mod_settings, "autoTestBatchSize"):
                 changed = True
@@ -600,12 +578,6 @@ def update_mod_settings(
             normalized_batch_size = str(max(1, int(auto_test_batch_size)))
             if (mod_settings.findtext("autoTestBatchSize") or "").strip() != normalized_batch_size:
                 ensure_text_node(mod_settings, "autoTestBatchSize", normalized_batch_size)
-                changed = True
-
-        if auto_test_pocket_map_max_concurrent is not None:
-            normalized_limit = str(max(1, int(auto_test_pocket_map_max_concurrent)))
-            if (mod_settings.findtext("autoTestPocketMapMaxConcurrent") or "").strip() != normalized_limit:
-                ensure_text_node(mod_settings, "autoTestPocketMapMaxConcurrent", normalized_limit)
                 changed = True
 
         if changed:
@@ -798,13 +770,15 @@ def set_minimal_mod_list(mod_list_file: Path | None = None, include_package_ids:
         MODS_CONFIG_BACKUP_FILE.write_text(original_text, encoding="utf-8")
         
         # 确定要启用的模组
-        if mod_list_file is None: mod_list_file = pick_default_mods_file()
+        if mod_list_file is None:
+            mod_list_file = pick_default_mods_file()
+        selected_mod_list_name = mod_list_file.name if mod_list_file is not None else "<default>"
         desired_mods = load_mods_from_file(mod_list_file) if mod_list_file else None
         if not desired_mods:
             print("[信息] 未找到有效的模组预设文件，将使用默认最小集。")
             desired_mods = MIN_ACTIVE_MODS
         else:
-            print(f"[信息] 已加载模组预设: {mod_list_file.name} (共 {len(desired_mods)} 个)")
+            print(f"[信息] 已加载模组预设: {selected_mod_list_name} (共 {len(desired_mods)} 个)")
 
         desired_mods = list(desired_mods)
         for package_id, label in include_package_ids or []:
@@ -914,11 +888,7 @@ def monitor(
     auto_test_output_dir: str | None = None,
     auto_test_mode: str | None = "automatic",
     auto_test_scope: str | None = "all",
-    auto_test_capture_screenshots: bool | None = None,
     auto_test_batch_size: int | None = None,
-    auto_test_prevent_pause: bool | None = True,
-    auto_test_use_fast_speed: bool | None = True,
-    auto_test_pocket_map_max_concurrent: int | None = None,
     auto_test_defnames: list[str] | None = None,
     timeout_seconds: int = TIMEOUT,
 ):
@@ -962,7 +932,7 @@ def monitor(
                     auto_test_package_id,
                     normalized_scope,
                     auto_test_defnames,
-                    bool(auto_test_capture_screenshots),
+                    True,
                 )
                 disabled_spec_pairs = disable_existing_autotest_spec_files(
                     auto_test_package_id,
@@ -986,11 +956,7 @@ def monitor(
         auto_test_output_path=resolved_auto_test_output_dir if is_auto_test_mode else None,
         auto_test_mode=effective_auto_test_mode if is_auto_test_mode else "automatic",
         auto_test_scope=auto_test_scope if is_auto_test_mode else "all",
-        auto_test_capture_screenshots=auto_test_capture_screenshots if is_auto_test_mode else False,
         auto_test_batch_size=auto_test_batch_size if is_auto_test_mode else None,
-        auto_test_prevent_pause=auto_test_prevent_pause if is_auto_test_mode else None,
-        auto_test_use_fast_speed=auto_test_use_fast_speed if is_auto_test_mode else None,
-        auto_test_pocket_map_max_concurrent=auto_test_pocket_map_max_concurrent if is_auto_test_mode else None,
         clear_auto_test_batch_size=(is_auto_test_mode and auto_test_batch_size is None) or (not is_auto_test_mode),
     )
     current_package_id = read_current_mod_package_id()
@@ -1072,7 +1038,7 @@ def monitor(
                 if current_size > last_pos:
                     with open(SYSTEM_LOG_PATH, "r", encoding="utf-8", errors="ignore") as f:
                         f.seek(last_pos)
-                        if ready_signal in f.read():
+                        if ready_signal is not None and ready_signal in f.read():
                             print("\n[✔] 检测到就绪信号！")
                             found = True
                             time.sleep(3)
@@ -1088,9 +1054,6 @@ def monitor(
                 auto_test_target_package_id="",
                 auto_test_mode="automatic",
                 auto_test_scope="all",
-                auto_test_capture_screenshots=False,
-                auto_test_prevent_pause=True,
-                auto_test_use_fast_speed=True,
                 clear_auto_test_batch_size=True,
             )
             if resolved_auto_test_output_dir:
@@ -1118,27 +1081,20 @@ if __name__ == "__main__":
     parser.add_argument("--auto-test-output-dir", default=None, help="自动测试报告输出目录")
     parser.add_argument("--auto-test-mode", choices=["automatic", "xml-driven"], default="automatic", help="兼容旧参数；未传 --mode 时用于自动推断 auto/xml")
     parser.add_argument("--auto-test-scope", choices=["standard", "all", "content", "recipes", "hediffs", "turrets", "rangedweapons", "meleeweapons", "threeviews", "combatpawns", "skillpocketmaps"], default="standard", help="auto/xml 模式下的测试范围：standard/all/content/recipes/hediffs/turrets/rangedweapons/meleeweapons/threeviews/combatpawns/skillpocketmaps")
-    parser.add_argument("--auto-test-capture-screenshots", action="store_true", help="auto/xml 模式下允许截图")
     parser.add_argument("--auto-test-batch-size", type=int, default=None, help="auto 模式下按范围限制测试数量；xml 模式下也可作为上限")
-    parser.add_argument("--auto-test-pocket-map-max-concurrent", type=int, default=None, help="auto/xml 模式下口袋地图统一最大并发数")
-    parser.add_argument("--auto-test-prevent-pause", dest="auto_test_prevent_pause", action="store_true", help="auto/xml 模式下阻止游戏暂停")
-    parser.add_argument("--auto-test-no-prevent-pause", dest="auto_test_prevent_pause", action="store_false", help="auto/xml 模式下不阻止游戏暂停")
-    parser.add_argument("--auto-test-use-fast-speed", dest="auto_test_use_fast_speed", action="store_true", help="auto/xml 模式下强制二倍速")
-    parser.add_argument("--auto-test-no-fast-speed", dest="auto_test_use_fast_speed", action="store_false", help="auto/xml 模式下不强制二倍速")
     parser.add_argument("--auto-test-defname", action="append", default=None, help="auto 模式下指定要测试的 defName，可重复传入；脚本会自动生成临时 XML 规则")
     parser.add_argument("--timeout-seconds", type=int, default=TIMEOUT, help="等待测试完成的最长秒数")
     parser.add_argument("--settings-only", action="store_true", help="只更新 LogSyncMod 配置（logPath/keywords），不启动游戏")
-    parser.set_defaults(auto_test_prevent_pause=None, auto_test_use_fast_speed=None)
     args = parser.parse_args()
 
     runner_mode = determine_runner_mode(args.mode, args.auto_test_package_id, args.auto_test_mode)
     is_auto_test_mode = runner_mode in {RUNNER_MODE_AUTO, RUNNER_MODE_XML}
 
-    keywords_to_write = DEFAULT_LOG_KEYWORDS
+    keywords_to_write: list[str] | None = [DEFAULT_LOG_KEYWORDS]
     if args.clear_log_keywords:
         keywords_to_write = []
     elif args.log_keyword is not None:
-        keywords_to_write = args.log_keyword
+        keywords_to_write = [str(keyword) for keyword in args.log_keyword]
 
     if runner_mode in {RUNNER_MODE_AUTO, RUNNER_MODE_XML} and not args.auto_test_package_id:
         raise SystemExit("[错误] auto/xml 模式必须提供 --auto-test-package-id")
@@ -1163,11 +1119,7 @@ if __name__ == "__main__":
             auto_test_output_path=resolved_auto_test_output_dir,
             auto_test_mode=effective_auto_test_mode if is_auto_test_mode else "automatic",
             auto_test_scope=args.auto_test_scope if is_auto_test_mode else "all",
-            auto_test_capture_screenshots=True if args.auto_test_capture_screenshots and is_auto_test_mode else False,
             auto_test_batch_size=args.auto_test_batch_size if is_auto_test_mode else None,
-            auto_test_prevent_pause=(True if is_auto_test_mode and args.auto_test_prevent_pause is None else args.auto_test_prevent_pause),
-            auto_test_use_fast_speed=(True if is_auto_test_mode and args.auto_test_use_fast_speed is None else args.auto_test_use_fast_speed),
-            auto_test_pocket_map_max_concurrent=args.auto_test_pocket_map_max_concurrent if is_auto_test_mode else None,
             clear_auto_test_batch_size=(is_auto_test_mode and args.auto_test_batch_size is None) or (not is_auto_test_mode),
         )
         if resolved_auto_test_output_dir:
@@ -1190,11 +1142,7 @@ if __name__ == "__main__":
         auto_test_output_dir=args.auto_test_output_dir,
         auto_test_mode=args.auto_test_mode,
         auto_test_scope=args.auto_test_scope,
-        auto_test_capture_screenshots=True if args.auto_test_capture_screenshots and is_auto_test_mode else False,
         auto_test_batch_size=args.auto_test_batch_size,
-        auto_test_prevent_pause=(True if is_auto_test_mode and args.auto_test_prevent_pause is None else args.auto_test_prevent_pause),
-        auto_test_use_fast_speed=(True if is_auto_test_mode and args.auto_test_use_fast_speed is None else args.auto_test_use_fast_speed),
-        auto_test_pocket_map_max_concurrent=args.auto_test_pocket_map_max_concurrent,
         auto_test_defnames=args.auto_test_defname,
         timeout_seconds=max(1, int(args.timeout_seconds)),
     )

@@ -34,13 +34,24 @@
 - `autoTestOutputPath`
 - `autoTestMode`
 - `autoTestScope`
-- `autoTestCaptureScreenshots`
 - `autoTestBatchSize`
-- `autoTestPreventPause`
-- `autoTestUseFastSpeed`
-- `autoTestPocketMapMaxConcurrent`
 
 这使它可以把“测试准备”自动化，而不是每次手工进游戏点设置。
+
+补充说明：
+
+- `autoTestPreventPause`
+- `autoTestUseFastSpeed`
+- `autoTestCaptureScreenshots`
+- `autoTestPocketMapMaxConcurrent`
+
+这 4 个字段现在改为完全依赖 LogSyncMod 内部默认值，测试脚本不再写入，也不再提供命令行开关。
+默认语义为：
+
+- `autoTestPreventPause=true`
+- `autoTestUseFastSpeed=true`
+- `autoTestCaptureScreenshots=true`
+- `autoTestPocketMapMaxConcurrent=5`
 
 ### 3. 模组列表切换
 
@@ -74,6 +85,8 @@
 - 临时禁用目标模组原有自动测试 XML
 - 只运行本次指定的目标 Def
 - 结束后恢复原有 XML，并删除临时文件
+
+临时 XML 中的截图开关会直接采用默认开启策略，不再由命令行参数控制。
 
 这对“精确抽测几个目标”非常实用。
 
@@ -173,7 +186,7 @@
 这些功能建议保留，不值得删：
 
 - 模组列表切换与恢复
-- LogSyncMod 设置自动写入
+- LogSyncMod 核心设置自动写入
 - 自动等待游戏退出/启动
 - 完成信号监听
 - 临时 XML 生成与恢复
@@ -245,6 +258,8 @@
 ## 当前结论
 
 `run_test.py` 不是“功能过多到应该砍掉一半”，而是“功能已经形成完整测试闭环，但应该拆分结构”。
+
+现在这轮精简之后，脚本对外已经少了 4 个容易让人迷惑的自动测试参数，入口更接近日常使用习惯。
 
 一句话总结：
 
