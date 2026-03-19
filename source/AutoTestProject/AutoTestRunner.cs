@@ -210,9 +210,13 @@ namespace LogSyncMod.AutoTest
                 BeginThreeViewTestSession();
             }
 
-            if (settings.ShouldTestCombatPawns())
+            if (settings.ShouldTestSkillPocketMaps())
             {
                 BeginSkillPocketMapTestSession();
+            }
+
+            if (settings.ShouldTestCombatPawns())
+            {
                 BeginCombatPawnTestSession();
             }
 
@@ -884,7 +888,7 @@ namespace LogSyncMod.AutoTest
                 case AutoTestCaseType.MeleeWeaponPocketMap:
                     return AutoTestScope.MeleeWeapons;
                 case AutoTestCaseType.SkillPocketMap:
-                    return AutoTestScope.CombatPawns;
+                    return AutoTestScope.SkillPocketMaps;
                 case AutoTestCaseType.HumanoidThreeView:
                 case AutoTestCaseType.AnimalThreeView:
                 case AutoTestCaseType.MechanoidThreeView:

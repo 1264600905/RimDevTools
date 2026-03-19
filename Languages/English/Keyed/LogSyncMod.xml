@@ -30,6 +30,7 @@
   <LogSyncMod.AutoTestScopeMeleeWeapons>Melee weapon pocket maps</LogSyncMod.AutoTestScopeMeleeWeapons>
   <LogSyncMod.AutoTestScopeThreeViews>Three-view studio screenshots</LogSyncMod.AutoTestScopeThreeViews>
   <LogSyncMod.AutoTestScopeCombatPawns>Combat pawn pocket maps</LogSyncMod.AutoTestScopeCombatPawns>
+  <LogSyncMod.AutoTestScopeSkillPocketMaps>Skill pocket maps</LogSyncMod.AutoTestScopeSkillPocketMaps>
   <LogSyncMod.AutoTestCaptureScreenshots>Capture screenshots for opened InfoCards</LogSyncMod.AutoTestCaptureScreenshots>
   <LogSyncMod.AutoTestPreventPause>Prevent game pause during auto tests</LogSyncMod.AutoTestPreventPause>
   <LogSyncMod.AutoTestUseFastSpeed>Force 2x speed during auto tests</LogSyncMod.AutoTestUseFastSpeed>

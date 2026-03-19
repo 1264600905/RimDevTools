@@ -13,7 +13,8 @@ namespace LogSyncMod
         RangedWeapons = 5,
         MeleeWeapons = 6,
         ThreeViews = 7,
-        CombatPawns = 8
+        CombatPawns = 8,
+        SkillPocketMaps = 9
     }
 
     public enum AutoTestMode
@@ -155,6 +156,11 @@ namespace LogSyncMod
         public bool ShouldTestCombatPawns()
         {
             return autoTestScope == AutoTestScope.All || autoTestScope == AutoTestScope.CombatPawns;
+        }
+
+        public bool ShouldTestSkillPocketMaps()
+        {
+            return autoTestScope == AutoTestScope.SkillPocketMaps;
         }
 
         public int GetPocketMapMaxConcurrent()
