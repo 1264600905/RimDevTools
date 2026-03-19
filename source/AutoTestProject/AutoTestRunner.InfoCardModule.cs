@@ -13,7 +13,16 @@ namespace LogSyncMod.AutoTest
             WaitingForInfoCardOpen,
             WaitingForCaptureSettle,
             WaitingBeforeClose,
-            WaitingForInfoCardClose
+            WaitingForInfoCardClose,
+            WaitingForRecipeBillConfigOpen,
+            WaitingForRecipeBillConfigCapture,
+            WaitingForRecipeBillConfigClose
+        }
+
+        private enum ActiveSessionMode
+        {
+            InfoCard,
+            RecipeBill
         }
 
         private sealed class ActiveSession
@@ -25,6 +34,10 @@ namespace LogSyncMod.AutoTest
             public Def InfoCardDef;
             public Pawn TestPawn;
             public Hediff AttachedHediff;
+            public ActiveSessionMode Mode;
+            public Thing RecipeWorktableThing;
+            public Bill_Production RecipeBill;
+            public bool RecipeBillAdded;
             public IAutoTestUiHandle UiHandle;
             public bool CloseIssued;
             public bool ScreenshotCaptured;
@@ -85,19 +98,41 @@ namespace LogSyncMod.AutoTest
                     case SessionPhase.WaitingForInfoCardClose:
                         ProcessWaitingForInfoCardClose();
                         break;
+                    case SessionPhase.WaitingForRecipeBillConfigOpen:
+                        ProcessWaitingForRecipeBillConfigOpen();
+                        break;
+                    case SessionPhase.WaitingForRecipeBillConfigCapture:
+                        ProcessWaitingForRecipeBillConfigCapture();
+                        break;
+                    case SessionPhase.WaitingForRecipeBillConfigClose:
+                        ProcessWaitingForRecipeBillConfigClose();
+                        break;
                 }
             }
             catch (Exception ex)
             {
-                activeSession.Result.Status = activeSession.Phase == SessionPhase.WaitingForInfoCardClose
-                    ? "failed_info_card_close_request"
-                    : "failed_info_card_open_request";
-                activeSession.Result.Stage = activeSession.Phase == SessionPhase.WaitingForInfoCardClose ? "info_close" : "info_open";
+                bool recipeMode = activeSession.Mode == ActiveSessionMode.RecipeBill;
+                activeSession.Result.Status = recipeMode
+                    ? (activeSession.Phase == SessionPhase.WaitingForRecipeBillConfigClose ? "failed_recipe_bill_config_close_request" : "failed_recipe_bill_config_open_request")
+                    : (activeSession.Phase == SessionPhase.WaitingForInfoCardClose ? "failed_info_card_close_request" : "failed_info_card_open_request");
+                activeSession.Result.Stage = recipeMode
+                    ? (activeSession.Phase == SessionPhase.WaitingForRecipeBillConfigClose ? "recipe_close_bill_config" : "recipe_open_bill_config")
+                    : (activeSession.Phase == SessionPhase.WaitingForInfoCardClose ? "info_close" : "info_open");
                 activeSession.Result.ErrorMessage = ex.ToString();
-                TryCaptureInfoCardScreenshot(true);
-                activeSession.Result.Notes = AppendNote(activeSession.Result.Notes, "Trace=" + InfoCardCloseTrace.Describe());
+                if (recipeMode)
+                {
+                    TryCaptureRecipeBillScreenshot(true);
+                }
+                else
+                {
+                    TryCaptureInfoCardScreenshot(true);
+                    activeSession.Result.Notes = AppendNote(activeSession.Result.Notes, "Trace=" + InfoCardCloseTrace.Describe());
+                }
                 CleanupSelectionAndWindows();
-                InfoCardCloseTrace.Stop();
+                if (!recipeMode)
+                {
+                    InfoCardCloseTrace.Stop();
+                }
                 activeSession = null;
             }
         }
@@ -125,8 +160,99 @@ namespace LogSyncMod.AutoTest
 
             activeSession.OpenStableRepaintFrames = 0;
             activeSession.RemainingUiFrames = OpenTimeoutRepaintFrames;
-            activeSession.Phase = SessionPhase.WaitingForInfoCardOpen;
-            Log.Message("[LogSyncAutoTest] InfoCard pre-open settle completed for " + activeSession.Result.DefName);
+            activeSession.Phase = activeSession.Mode == ActiveSessionMode.RecipeBill
+                ? SessionPhase.WaitingForRecipeBillConfigOpen
+                : SessionPhase.WaitingForInfoCardOpen;
+            Log.Message("[LogSyncAutoTest] UI pre-open settle completed for " + activeSession.Result.DefName + " mode=" + activeSession.Mode);
+        }
+
+        private void ProcessWaitingForRecipeBillConfigOpen()
+        {
+            if (activeSession == null) return;
+
+            if (activeSession.UiHandle == null)
+            {
+                OpenRecipeBillConfigOnUiThread();
+                return;
+            }
+
+            if (IsRecipeBillConfigPresent())
+            {
+                activeSession.OpenStableRepaintFrames++;
+                if (activeSession.OpenStableRepaintFrames >= OpenStableFrameRequirement)
+                {
+                    activeSession.Result.Stage = "recipe_capture_bill_config";
+                    activeSession.Phase = SessionPhase.WaitingForRecipeBillConfigCapture;
+                    activeSession.RemainingUiFrames = 2;
+                }
+
+                return;
+            }
+
+            activeSession.OpenStableRepaintFrames = 0;
+            activeSession.RemainingUiFrames--;
+            if (activeSession.RemainingUiFrames > 0) return;
+
+            FailActiveSession(
+                "failed_recipe_bill_config_open",
+                "recipe_open_bill_config",
+                "Recipe bill config did not stay open long enough to confirm opening. " + BuildWindowSummary());
+        }
+
+        private void ProcessWaitingForRecipeBillConfigCapture()
+        {
+            if (activeSession == null) return;
+
+            if (!IsRecipeBillConfigPresent())
+            {
+                FailActiveSession(
+                    "failed_recipe_bill_config_interrupted",
+                    "recipe_open_bill_config",
+                    "Recipe bill config disappeared before screenshot capture.");
+                return;
+            }
+
+            activeSession.RemainingUiFrames--;
+            if (activeSession.RemainingUiFrames > 0) return;
+
+            TryCaptureRecipeBillScreenshot(false);
+            activeSession.Phase = SessionPhase.WaitingForRecipeBillConfigClose;
+            activeSession.CloseIssued = false;
+            activeSession.RemainingUiFrames = CloseTimeoutRepaintFrames;
+            activeSession.Result.Stage = "recipe_close_bill_config";
+        }
+
+        private void ProcessWaitingForRecipeBillConfigClose()
+        {
+            if (activeSession == null) return;
+
+            if (!IsRecipeBillConfigPresent())
+            {
+                CompleteActiveSession();
+                return;
+            }
+
+            if (!activeSession.CloseIssued && activeSession.UiHandle != null && activeSession.UiHandle.IsOpen)
+            {
+                activeSession.UiHandle.RequestClose();
+                activeSession.CloseIssued = true;
+            }
+
+            if (activeSession.CloseIssued &&
+                activeSession.RemainingUiFrames == CloseTimeoutRepaintFrames / 2 &&
+                activeSession.UiHandle != null &&
+                activeSession.UiHandle.IsOpen)
+            {
+                activeSession.UiHandle.ForceClose();
+            }
+
+            activeSession.RemainingUiFrames--;
+            if (activeSession.RemainingUiFrames > 0) return;
+
+            FailActiveSession(
+                "failed_recipe_bill_config_close_timeout",
+                "recipe_close_bill_config",
+                "Recipe bill config remained open after auto-test requested close.");
         }
 
         private void ProcessWaitingForInfoCardOpen()
@@ -274,6 +400,20 @@ namespace LogSyncMod.AutoTest
             return true;
         }
 
+        private bool IsRecipeBillConfigPresent()
+        {
+            if (activeSession?.UiHandle != null && activeSession.UiHandle.IsOpen)
+            {
+                return true;
+            }
+
+            Dialog_BillConfig currentDialog = Find.WindowStack?.WindowOfType<Dialog_BillConfig>();
+            if (currentDialog == null) return false;
+
+            activeSession.UiHandle = new AutoTestBillConfigHandle(currentDialog, activeSession.RecipeBill);
+            return true;
+        }
+
         private void CleanupSelectionAndWindows()
         {
             try
@@ -285,6 +425,7 @@ namespace LogSyncMod.AutoTest
                 else
                 {
                     CloseExistingInfoCards();
+                    CloseExistingRecipeWindows();
                 }
             }
             catch
@@ -297,6 +438,19 @@ namespace LogSyncMod.AutoTest
 
         private void CleanupActiveSessionArtifacts()
         {
+            if (activeSession?.RecipeBillAdded == true &&
+                activeSession.RecipeWorktableThing is IBillGiver billGiver &&
+                activeSession.RecipeBill != null)
+            {
+                try
+                {
+                    billGiver.BillStack?.Delete(activeSession.RecipeBill);
+                }
+                catch
+                {
+                }
+            }
+
             if (activeSession?.AttachedHediff == null || activeSession.TestPawn?.health == null)
             {
                 return;
@@ -371,6 +525,11 @@ namespace LogSyncMod.AutoTest
             Find.WindowStack.TryRemoveAssignableFromType(typeof(Dialog_InfoCard), false);
         }
 
+        private void CloseExistingRecipeWindows()
+        {
+            Find.WindowStack.TryRemoveAssignableFromType(typeof(Dialog_BillConfig), false);
+        }
+
         private void OpenInfoCardOnUiThread()
         {
             if (activeSession == null || activeSession.InfoCardDef == null || activeSession.UiHandle != null) return;
@@ -398,6 +557,34 @@ namespace LogSyncMod.AutoTest
                 BuildWindowSummary()));
         }
 
+        private void OpenRecipeBillConfigOnUiThread()
+        {
+            if (activeSession == null || activeSession.RecipeWorktableThing == null || activeSession.UiHandle != null)
+            {
+                return;
+            }
+
+            if (!(activeSession.RecipeWorktableThing is IBillGiver billGiver))
+            {
+                throw new InvalidOperationException("Recipe worktable does not implement IBillGiver.");
+            }
+
+            Find.Selector.ClearSelection();
+            Find.Selector.Select(activeSession.RecipeWorktableThing, false, false);
+
+            if (activeSession.RecipeBill == null)
+            {
+                Bill_Production bill = BillUtility.MakeNewBill(activeSession.Item.RecipeDef, null) as Bill_Production ?? new Bill_Production(activeSession.Item.RecipeDef, null);
+                billGiver.BillStack.AddBill(bill);
+                activeSession.RecipeBill = bill;
+                activeSession.RecipeBillAdded = true;
+            }
+
+            activeSession.Result.Stage = "recipe_open_bill_config";
+            activeSession.UiHandle = AutoTestBillConfigUiAdapter.Open(activeSession.RecipeBill, activeSession.RecipeWorktableThing.Position);
+            activeSession.Result.Notes = AppendNote(activeSession.Result.Notes, "BillConfigOpened=True");
+        }
+
         private void TryCaptureInfoCardScreenshot(bool force)
         {
             if (activeSession == null || screenshotService == null)
@@ -412,6 +599,27 @@ namespace LogSyncMod.AutoTest
                 force,
                 results.Count,
                 IsInfoCardPresent);
+        }
+
+        private void TryCaptureRecipeBillScreenshot(bool force)
+        {
+            if (activeSession == null || screenshotService == null)
+            {
+                return;
+            }
+
+            screenshotService.TryCapture(new AutoTestScreenshotRequest
+            {
+                Result = activeSession.Result,
+                AllowCapture = activeSession.AllowScreenshots,
+                Force = force,
+                ResultIndex = results.Count,
+                Profile = AutoTestScreenshotProfiles.InfoCard,
+                SuccessNoteKey = "RecipeBillScreenshotCaptured=True",
+                FailureNoteKey = "RecipeBillFailureScreenshotCaptured=True",
+                Guard = IsRecipeBillConfigPresent
+            });
+            activeSession.ScreenshotCaptured = true;
         }
     }
 }

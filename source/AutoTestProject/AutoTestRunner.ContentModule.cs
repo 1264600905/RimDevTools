@@ -167,17 +167,20 @@ namespace LogSyncMod.AutoTest
             result.Label = item.ThingDef?.label ?? item.RecipeDef.label ?? string.Empty;
             result.Notes = AppendNote(result.Notes, "Product=" + SafeDefName(item.ThingDef));
             result.Notes = AppendNote(result.Notes, "Worktable=" + SafeDefName(item.WorktableDef));
+            result.Notes = AppendNote(result.Notes, "BillConfigOpened=False");
 
             activeSession = new ActiveSession
             {
                 Item = item,
                 Result = result,
+                Mode = ActiveSessionMode.RecipeBill,
+                RecipeWorktableThing = worktableThing,
                 InfoCardDef = item.ThingDef ?? (Def)item.RecipeDef,
                 AllowScreenshots = ShouldCaptureScreenshots(item.SpecDef),
                 RemainingUiFrames = PreOpenSettleRepaintFrames,
                 Phase = SessionPhase.WaitingForPreOpenSettle
             };
-            result.Stage = "info_open";
+            result.Stage = "recipe_select_worktable";
         }
 
         private void StartHediffSession(AutoTestWorkItem item)
@@ -306,7 +309,7 @@ namespace LogSyncMod.AutoTest
                 {
                     AddImmediateResult(
                         CreateResult(
-                            RegisterDiscoveredCase(AutoTestCaseType.RecipeInfoCard, "RecipeDef", recipe.defName, recipe.label),
+                            RegisterDiscoveredCase(AutoTestCaseType.RecipeBillUi, "RecipeDef", recipe.defName, recipe.label),
                             "RecipeDef",
                             recipe.defName,
                             recipe.label),
@@ -320,7 +323,7 @@ namespace LogSyncMod.AutoTest
                 if (worktableDef == null)
                 {
                     AutoTestResult result = CreateResult(
-                        RegisterDiscoveredCase(AutoTestCaseType.RecipeInfoCard, "RecipeDef", recipe.defName, recipe.label),
+                        RegisterDiscoveredCase(AutoTestCaseType.RecipeBillUi, "RecipeDef", recipe.defName, recipe.label),
                         "RecipeDef",
                         recipe.defName,
                         recipe.label);
@@ -611,7 +614,7 @@ namespace LogSyncMod.AutoTest
             errorMessage = null;
 
             RecipeDef recipe = session.Item.RecipeDef;
-            Thing worktableThing = GetPlacedRecipeWorktable(session.Item.WorktableDef);
+            Thing worktableThing = session.RecipeWorktableThing ?? GetPlacedRecipeWorktable(session.Item.WorktableDef);
             if (recipe == null)
             {
                 errorMessage = "RecipeDef was missing from the active session.";
@@ -631,7 +634,7 @@ namespace LogSyncMod.AutoTest
                 return false;
             }
 
-            Bill_Production productionBill = BillUtility.MakeNewBill(recipe, null) as Bill_Production ?? new Bill_Production(recipe, null);
+            Bill_Production productionBill = session.RecipeBill ?? (BillUtility.MakeNewBill(recipe, null) as Bill_Production ?? new Bill_Production(recipe, null));
             if (productionBill == null)
             {
                 errorMessage = "Failed to create Bill_Production for recipe.";
@@ -651,8 +654,18 @@ namespace LogSyncMod.AutoTest
 
             try
             {
-                billStack.AddBill(productionBill);
-                billAdded = true;
+                if (session.RecipeBillAdded)
+                {
+                    billAdded = true;
+                }
+                else
+                {
+                    billStack.AddBill(productionBill);
+                    billAdded = true;
+                    session.RecipeBillAdded = true;
+                }
+
+                session.RecipeBill = productionBill;
 
                 if (!TryCreateRecipeIngredients(recipe, productionBill, worktableThing, out ingredients, out string ingredientSummary, out errorMessage))
                 {
@@ -693,7 +706,7 @@ namespace LogSyncMod.AutoTest
                 }
 
                 productionBill.Notify_IterationCompleted(worker, ingredients);
-                session.Result.Notes = AppendNote(session.Result.Notes, "InfoCardOpened=True");
+                session.Result.Notes = AppendNote(session.Result.Notes, "BillConfigOpened=True");
                 session.Result.Notes = AppendNote(session.Result.Notes, "Ingredients=" + ingredientSummary);
                 session.Result.Notes = AppendNote(session.Result.Notes, "Products=" + BuildThingSummary(spawnedProducts));
                 session.Result.Notes = AppendNote(session.Result.Notes, "Worker=" + worker.LabelShortCap);
@@ -725,6 +738,8 @@ namespace LogSyncMod.AutoTest
                     try
                     {
                         billStack.Delete(productionBill);
+                        session.RecipeBillAdded = false;
+                        session.RecipeBill = null;
                     }
                     catch
                     {
