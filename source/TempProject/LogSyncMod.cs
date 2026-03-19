@@ -125,7 +125,7 @@ namespace LogSyncMod
             {
                 List<FloatMenuOption> options = new List<FloatMenuOption>
                 {
-                    new FloatMenuOption("LogSyncMod.AutoTestScopeAll".Translate(), () => settings.autoTestScope = AutoTestScope.All),
+                    new FloatMenuOption("LogSyncMod.AutoTestScopeStandard".Translate(), () => settings.autoTestScope = AutoTestScope.Standard),
                     new FloatMenuOption("LogSyncMod.AutoTestScopeContent".Translate(), () => settings.autoTestScope = AutoTestScope.Content),
                     new FloatMenuOption("LogSyncMod.AutoTestScopeRecipes".Translate(), () => settings.autoTestScope = AutoTestScope.Recipes),
                     new FloatMenuOption("LogSyncMod.AutoTestScopeHediffs".Translate(), () => settings.autoTestScope = AutoTestScope.Hediffs),
@@ -247,8 +247,9 @@ namespace LogSyncMod
                     return "LogSyncMod.AutoTestScopeCombatPawns".Translate();
                 case AutoTestScope.SkillPocketMaps:
                     return "LogSyncMod.AutoTestScopeSkillPocketMaps".Translate();
+                case AutoTestScope.Standard:
                 default:
-                    return "LogSyncMod.AutoTestScopeAll".Translate();
+                    return "LogSyncMod.AutoTestScopeStandard".Translate();
             }
         }
 

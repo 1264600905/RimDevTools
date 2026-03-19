@@ -203,7 +203,7 @@ namespace LogSyncMod.AutoTest
                 return false;
             }
 
-            if (spec.scope != AutoTestScope.All && spec.scope != scope)
+            if (spec.scope != AutoTestScope.Standard && spec.scope != scope)
             {
                 return false;
             }

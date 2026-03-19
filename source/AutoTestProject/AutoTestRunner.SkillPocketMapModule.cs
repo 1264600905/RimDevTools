@@ -55,6 +55,7 @@ namespace LogSyncMod.AutoTest
             public Ability Ability;
             public int FightTicksRemaining;
             public int LastCooldownResetTick;
+            public int LastCombatRefreshTick;
             public int CooldownResetCount;
             public bool CastSucceeded;
             public bool ScreenshotCaptured;
@@ -65,7 +66,10 @@ namespace LogSyncMod.AutoTest
             public int WarmupScreenshotTick = -1;
             public bool AutoCastConfigured;
             public bool AutoCastAvailable;
+            public bool SearchAndDestroyEnabled;
+            public string SearchAndDestroyStatus = string.Empty;
             public string SkillTargetMode = "Unknown";
+            public bool UniversalPrerequisitesApplied;
 
             public SkillPocketMapTestSession(AutoTestRunner owner)
             {
@@ -342,14 +346,22 @@ namespace LogSyncMod.AutoTest
                 GenSpawn.Spawn(pawn, spawnPos, TestMap);
                 CasterPawn = pawn;
 
+                ApplyUniversalSkillTestPrerequisites(CasterPawn);
+
                 if (CasterPawn.drafter != null)
                 {
                     CasterPawn.drafter.Drafted = true;
-                    CasterPawn.drafter.FireAtWill = true;
+                    CasterPawn.drafter.FireAtWill = false;
                 }
 
-                bool searchAndDestroyEnabled = AutoTestRunner.TryEnableSearchAndDestroy(CasterPawn, out string searchAndDestroyStatus);
-                Result.Notes = AutoTestRunner.AppendNote(Result.Notes, "SearchAndDestroy=" + (searchAndDestroyEnabled ? "Enabled" : searchAndDestroyStatus));
+                SearchAndDestroyEnabled = AutoTestRunner.TryEnableSearchAndDestroy(CasterPawn, out string searchAndDestroyStatus);
+                SearchAndDestroyStatus = searchAndDestroyStatus ?? string.Empty;
+                Result.Notes = AutoTestRunner.AppendNote(Result.Notes, "SearchAndDestroy=" + (SearchAndDestroyEnabled ? "Enabled" : SearchAndDestroyStatus));
+                if (SearchAndDestroyEnabled)
+                {
+                    Result.Notes = AutoTestRunner.AppendNote(Result.Notes, "SearchAndDestroyRefresh=InterruptCurrentJob");
+                    CasterPawn.jobs?.EndCurrentJob(JobCondition.InterruptForced, true);
+                }
 
                 Ability = pawn.abilities?.GetAbility(AbilityDef, true);
                 if (Ability == null)
@@ -365,7 +377,98 @@ namespace LogSyncMod.AutoTest
                 Result.Notes = AutoTestRunner.AppendNote(Result.Notes, "CasterSource=" + sourceTag);
                 Result.Notes = AutoTestRunner.AppendNote(Result.Notes, "CasterPawnKind=" + pawnKindDefName);
                 Result.Notes = AutoTestRunner.AppendNote(Result.Notes, "CasterPawn=" + pawn.LabelShortCap);
+                Result.Notes = AutoTestRunner.AppendNote(Result.Notes, "UniversalPrerequisitesApplied=" + UniversalPrerequisitesApplied);
                 return true;
+            }
+
+            private void ApplyUniversalSkillTestPrerequisites(Pawn pawn)
+            {
+                if (pawn == null || pawn.Destroyed)
+                {
+                    UniversalPrerequisitesApplied = false;
+                    return;
+                }
+
+                bool mechlinkApplied = EnsureMechanitorCore(pawn);
+                bool psylinkApplied = EnsurePsylinkLevelSix(pawn);
+                bool hemogenicApplied = EnsureHemogenicGene(pawn);
+
+                UniversalPrerequisitesApplied = mechlinkApplied && psylinkApplied && hemogenicApplied;
+                Result.Notes = AutoTestRunner.AppendNote(Result.Notes, "Prereq_Mechlink=" + mechlinkApplied);
+                Result.Notes = AutoTestRunner.AppendNote(Result.Notes, "Prereq_PsylinkLevel6=" + psylinkApplied);
+                Result.Notes = AutoTestRunner.AppendNote(Result.Notes, "Prereq_Hemogenic=" + hemogenicApplied);
+            }
+
+            private static bool EnsureMechanitorCore(Pawn pawn)
+            {
+                if (pawn?.health?.hediffSet == null)
+                {
+                    return false;
+                }
+
+                if (pawn.health.hediffSet.HasHediff(HediffDefOf.MechlinkImplant))
+                {
+                    return true;
+                }
+
+                HealthUtility.AdjustSeverity(pawn, HediffDefOf.MechlinkImplant, 1f);
+                return pawn.health.hediffSet.HasHediff(HediffDefOf.MechlinkImplant);
+            }
+
+            private static bool EnsurePsylinkLevelSix(Pawn pawn)
+            {
+                if (pawn?.health?.hediffSet == null || !ModsConfig.RoyaltyActive)
+                {
+                    return false;
+                }
+
+                Hediff_Level psylink = pawn.GetMainPsylinkSource();
+                if (psylink == null)
+                {
+                    BodyPartRecord brain = pawn.health.hediffSet.GetBrain();
+                    if (brain == null)
+                    {
+                        return false;
+                    }
+
+                    psylink = HediffMaker.MakeHediff(HediffDefOf.PsychicAmplifier, pawn, brain) as Hediff_Level;
+                    if (psylink == null)
+                    {
+                        return false;
+                    }
+
+                    pawn.health.AddHediff(psylink);
+                }
+
+                int targetLevel = Math.Max(1, Math.Min(6, (int)HediffDefOf.PsychicAmplifier.maxSeverity));
+                psylink.ChangeLevel(targetLevel - psylink.level);
+                return psylink.level >= targetLevel;
+            }
+
+            private static bool EnsureHemogenicGene(Pawn pawn)
+            {
+                if (pawn == null || !ModsConfig.BiotechActive)
+                {
+                    return false;
+                }
+
+                if (pawn.genes == null)
+                {
+                    pawn.genes = new Pawn_GeneTracker(pawn);
+                }
+
+                GeneDef hemogenic = GeneDefOf.Hemogenic ?? DefDatabase<GeneDef>.GetNamedSilentFail("Hemogenic");
+                if (hemogenic == null)
+                {
+                    return false;
+                }
+
+                if (pawn.genes.GetGene(hemogenic) == null)
+                {
+                    pawn.genes.AddGene(hemogenic, xenogene: false);
+                }
+
+                return pawn.genes.GetGene(hemogenic) != null;
             }
 
             private void EnsureFallbackAbility(Pawn pawn)
@@ -611,6 +714,8 @@ namespace LogSyncMod.AutoTest
                 }
 
                 int currentTick = Find.TickManager.TicksGame;
+                EnsureCasterAutoCombatState(currentTick);
+
                 if (currentTick - LastCooldownResetTick >= CooldownResetIntervalTicks)
                 {
                     Ability.ResetCooldown();
@@ -718,6 +823,7 @@ namespace LogSyncMod.AutoTest
                     bool canTargetAlly = CanTargetAlly();
                     bool canTargetSelf = CanTargetSelf();
 
+                    SetFieldOrProperty(settingType, setting, "stopIfHasWindow", true);
                     SetFieldOrProperty(settingType, setting, "useWhenDrafted", true);
                     SetFieldOrProperty(settingType, setting, "useWhenDaily", true);
                     SetFieldOrProperty(settingType, setting, "useWhenReact", true);
@@ -725,14 +831,19 @@ namespace LogSyncMod.AutoTest
                     SetFieldOrProperty(settingType, setting, "priority", 999);
                     SetFieldOrProperty(settingType, setting, "minUseDis", 0);
                     SetFieldOrProperty(settingType, setting, "maxUseDis", 9999);
-                    SetFieldOrProperty(settingType, setting, "applyToEnemy", canTargetEnemy);
-                    SetFieldOrProperty(settingType, setting, "applyToDownedEnemy", false);
-                    SetFieldOrProperty(settingType, setting, "applyToWildAnimal", false);
-                    SetFieldOrProperty(settingType, setting, "applyToAlly", !canTargetEnemy && canTargetAlly);
-                    SetFieldOrProperty(settingType, setting, "applyToFriendMech", false);
-                    SetFieldOrProperty(settingType, setting, "applyToPrisoner", false);
-                    SetFieldOrProperty(settingType, setting, "applyToSelf", !canTargetEnemy && !canTargetAlly && canTargetSelf);
-                    SetEnumFieldOrProperty(settingType, setting, "autoType", 1);
+                    SetFieldOrProperty(settingType, setting, "applyToEnemy", true);
+                    SetFieldOrProperty(settingType, setting, "applyToDownedEnemy", true);
+                    SetFieldOrProperty(settingType, setting, "applyToWildAnimal", true);
+                    SetFieldOrProperty(settingType, setting, "applyToAlly", true);
+                    SetFieldOrProperty(settingType, setting, "applyToFriendMech", true);
+                    SetFieldOrProperty(settingType, setting, "applyToPrisoner", true);
+                    SetFieldOrProperty(settingType, setting, "applyToSelf", true);
+                    SetFieldOrProperty(settingType, setting, "autoPreventAlly", false);
+                    SetFieldOrProperty(settingType, setting, "onlyApplyToNoHediff", false);
+                    SetFieldOrProperty(settingType, setting, "notUseToIneffective", false);
+                    SetFieldOrProperty(settingType, setting, "onlyApplyToAllowedArea", false);
+                    SetFieldOrProperty(settingType, setting, "fixStuck", true);
+                    SetEnumFieldOrPropertyByName(settingType, setting, "autoType", "UseAfterCooldown", 1);
 
                     AutoCastAvailable = true;
                     if (canTargetEnemy)
@@ -748,7 +859,7 @@ namespace LogSyncMod.AutoTest
                         SkillTargetMode = "SelfOnly";
                     }
 
-                    summary = "AutoCastTargets=Enemy:" + canTargetEnemy + ",Ally:" + canTargetAlly + ",Self:" + canTargetSelf;
+                    summary = "AutoCastMode=UseAfterCooldown,AllFlagsChecked=True,CanTargetEnemy:" + canTargetEnemy + ",CanTargetAlly:" + canTargetAlly + ",CanTargetSelf:" + canTargetSelf;
                     return true;
                 }
                 catch (Exception ex)
@@ -784,6 +895,68 @@ namespace LogSyncMod.AutoTest
                 if (property != null)
                 {
                     property.SetValue(instance, Enum.ToObject(property.PropertyType, enumValue), null);
+                }
+            }
+
+            private static void SetEnumFieldOrPropertyByName(Type targetType, object instance, string memberName, string enumName, int fallbackEnumValue)
+            {
+                FieldInfo field = AccessTools.Field(targetType, memberName);
+                if (field != null)
+                {
+                    object parsed = ParseEnumValue(field.FieldType, enumName, fallbackEnumValue);
+                    field.SetValue(instance, parsed);
+                    return;
+                }
+
+                PropertyInfo property = AccessTools.Property(targetType, memberName);
+                if (property != null)
+                {
+                    object parsed = ParseEnumValue(property.PropertyType, enumName, fallbackEnumValue);
+                    property.SetValue(instance, parsed, null);
+                }
+            }
+
+            private static object ParseEnumValue(Type enumType, string enumName, int fallbackEnumValue)
+            {
+                if (enumType != null && enumType.IsEnum)
+                {
+                    try
+                    {
+                        return Enum.Parse(enumType, enumName, true);
+                    }
+                    catch
+                    {
+                        return Enum.ToObject(enumType, fallbackEnumValue);
+                    }
+                }
+
+                return fallbackEnumValue;
+            }
+
+            private void EnsureCasterAutoCombatState(int currentTick)
+            {
+                if (CasterPawn == null || CasterPawn.Destroyed || !CasterPawn.Spawned || CasterPawn.Map != TestMap)
+                {
+                    return;
+                }
+
+                if (CasterPawn.drafter != null)
+                {
+                    CasterPawn.drafter.Drafted = true;
+                    CasterPawn.drafter.FireAtWill = false;
+                }
+
+                if (!SearchAndDestroyEnabled)
+                {
+                    return;
+                }
+
+                bool alreadyCasting = CasterPawn.CurJob != null && CasterPawn.CurJob.ability == Ability;
+                if (!alreadyCasting && currentTick - LastCombatRefreshTick >= 90)
+                {
+                    LastCombatRefreshTick = currentTick;
+                    Result.Notes = AutoTestRunner.AppendNote(Result.Notes, "SearchAndDestroyRefreshTick=" + currentTick);
+                    CasterPawn.jobs?.EndCurrentJob(JobCondition.InterruptForced, true);
                 }
             }
 
@@ -1061,6 +1234,30 @@ namespace LogSyncMod.AutoTest
             return def != null &&
                 def.modContentPack == targetMod &&
                 MatchesSpecFilters(AutoTestKind.SkillPocketMap, def);
+        }
+
+        internal bool ShouldForceAbilityForSkillTest(Ability ability)
+        {
+            if (ability?.def == null || ability.pawn == null)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < activeSkillPocketMapSessions.Count; i++)
+            {
+                SkillPocketMapTestSession session = activeSkillPocketMapSessions[i];
+                if (session == null || session.AbilityDef == null || session.CasterPawn == null)
+                {
+                    continue;
+                }
+
+                if (session.CasterPawn == ability.pawn && session.AbilityDef == ability.def)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
     }
 }

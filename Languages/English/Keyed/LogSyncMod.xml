@@ -21,7 +21,7 @@
   <LogSyncMod.AutoTestModeXmlDriven>XML-driven spec</LogSyncMod.AutoTestModeXmlDriven>
   <LogSyncMod.AutoTestScope>Test scope: {0}</LogSyncMod.AutoTestScope>
   <LogSyncMod.AutoTestScopeSelect>Select test scope (current: {0})</LogSyncMod.AutoTestScopeSelect>
-  <LogSyncMod.AutoTestScopeAll>All</LogSyncMod.AutoTestScopeAll>
+  <LogSyncMod.AutoTestScopeStandard>Standard</LogSyncMod.AutoTestScopeStandard>
   <LogSyncMod.AutoTestScopeContent>Buildings and items</LogSyncMod.AutoTestScopeContent>
   <LogSyncMod.AutoTestScopeRecipes>Workbench recipes</LogSyncMod.AutoTestScopeRecipes>
   <LogSyncMod.AutoTestScopeHediffs>Pawn hediffs</LogSyncMod.AutoTestScopeHediffs>

@@ -187,7 +187,8 @@ def resolve_auto_test_output_dir(auto_test_output_dir: str | None, auto_test_pac
 def normalize_scope_value(scope: str | None):
     normalized_scope = (scope or "").strip().lower()
     scope_map = {
-        "all": "All",
+        "standard": "Standard",
+        "all": "Standard",
         "content": "Content",
         "recipes": "Recipes",
         "hediffs": "Hediffs",
@@ -204,8 +205,11 @@ def normalize_scope_value(scope: str | None):
         "combatpawns": "CombatPawns",
         "combat-pawns": "CombatPawns",
         "combat_pawns": "CombatPawns",
+        "skillpocketmaps": "SkillPocketMaps",
+        "skill-pocket-maps": "SkillPocketMaps",
+        "skill_pocket_maps": "SkillPocketMaps",
     }
-    return scope_map.get(normalized_scope, "All")
+    return scope_map.get(normalized_scope, "Standard")
 
 def determine_runner_mode(explicit_mode: str | None, auto_test_package_id: str | None, auto_test_mode: str | None):
     if explicit_mode:
@@ -544,7 +548,8 @@ def update_mod_settings(
         if auto_test_scope is not None:
             normalized_scope = (auto_test_scope or "").strip().lower()
             scope_map = {
-                "all": "All",
+                "standard": "Standard",
+                "all": "Standard",
                 "content": "Content",
                 "recipes": "Recipes",
                 "hediffs": "Hediffs",
@@ -561,8 +566,11 @@ def update_mod_settings(
                 "combatpawns": "CombatPawns",
                 "combat-pawns": "CombatPawns",
                 "combat_pawns": "CombatPawns",
+                "skillpocketmaps": "SkillPocketMaps",
+                "skill-pocket-maps": "SkillPocketMaps",
+                "skill_pocket_maps": "SkillPocketMaps",
             }
-            desired_scope = scope_map.get(normalized_scope, "All")
+            desired_scope = scope_map.get(normalized_scope, "Standard")
             if (mod_settings.findtext("autoTestScope") or "").strip() != desired_scope:
                 ensure_text_node(mod_settings, "autoTestScope", desired_scope)
                 changed = True
@@ -1109,7 +1117,7 @@ if __name__ == "__main__":
     parser.add_argument("--auto-test-package-id", default=None, help="auto/xml 模式下的目标模组 packageId")
     parser.add_argument("--auto-test-output-dir", default=None, help="自动测试报告输出目录")
     parser.add_argument("--auto-test-mode", choices=["automatic", "xml-driven"], default="automatic", help="兼容旧参数；未传 --mode 时用于自动推断 auto/xml")
-    parser.add_argument("--auto-test-scope", choices=["all", "content", "recipes", "hediffs", "turrets", "rangedweapons", "meleeweapons", "threeviews", "combatpawns"], default="all", help="auto/xml 模式下的测试范围：all/content/recipes/hediffs/turrets/rangedweapons/meleeweapons/threeviews/combatpawns")
+    parser.add_argument("--auto-test-scope", choices=["standard", "all", "content", "recipes", "hediffs", "turrets", "rangedweapons", "meleeweapons", "threeviews", "combatpawns", "skillpocketmaps"], default="standard", help="auto/xml 模式下的测试范围：standard/all/content/recipes/hediffs/turrets/rangedweapons/meleeweapons/threeviews/combatpawns/skillpocketmaps")
     parser.add_argument("--auto-test-capture-screenshots", action="store_true", help="auto/xml 模式下允许截图")
     parser.add_argument("--auto-test-batch-size", type=int, default=None, help="auto 模式下按范围限制测试数量；xml 模式下也可作为上限")
     parser.add_argument("--auto-test-pocket-map-max-concurrent", type=int, default=None, help="auto/xml 模式下口袋地图统一最大并发数")

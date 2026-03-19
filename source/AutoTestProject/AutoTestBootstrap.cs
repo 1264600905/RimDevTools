@@ -124,6 +124,24 @@ namespace LogSyncMod.AutoTest
             runner?.ProcessUi();
         }
 
+        public static bool ShouldForceAbilityForAutoTest(RimWorld.Ability ability)
+        {
+            if (runner == null || ability == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                return runner.ShouldForceAbilityForSkillTest(ability);
+            }
+            catch (Exception ex)
+            {
+                Log.Warning("[LogSyncAutoTest] Failed to evaluate force-ability state: " + ex.Message);
+                return false;
+            }
+        }
+
         private static void EnsureDeveloperMode()
         {
             if (!Prefs.DevMode)
@@ -484,6 +502,55 @@ namespace LogSyncMod.AutoTest
             {
                 InfoCardCloseTrace.AddReason("WindowStack.RemoveWindowsOfType(Dialog_InfoCard)");
             }
+        }
+    }
+
+    [HarmonyPatch(typeof(RimWorld.Ability), nameof(RimWorld.Ability.GizmoDisabled))]
+    public static class Ability_GizmoDisabled_AutoTestForcePatch
+    {
+        [HarmonyPrefix]
+        public static bool Prefix(RimWorld.Ability __instance, ref bool __result, ref string reason)
+        {
+            if (!AutoTestBootstrap.ShouldForceAbilityForAutoTest(__instance))
+            {
+                return true;
+            }
+
+            __result = false;
+            reason = string.Empty;
+            return false;
+        }
+    }
+
+    [HarmonyPatch(typeof(RimWorld.Ability), "get_CanCast")]
+    public static class Ability_CanCast_AutoTestForcePatch
+    {
+        [HarmonyPrefix]
+        public static bool Prefix(RimWorld.Ability __instance, ref AcceptanceReport __result)
+        {
+            if (!AutoTestBootstrap.ShouldForceAbilityForAutoTest(__instance))
+            {
+                return true;
+            }
+
+            __result = true;
+            return false;
+        }
+    }
+
+    [HarmonyPatch(typeof(RimWorld.Ability), "get_CanQueueCast")]
+    public static class Ability_CanQueueCast_AutoTestForcePatch
+    {
+        [HarmonyPrefix]
+        public static bool Prefix(RimWorld.Ability __instance, ref bool __result)
+        {
+            if (!AutoTestBootstrap.ShouldForceAbilityForAutoTest(__instance))
+            {
+                return true;
+            }
+
+            __result = __instance.pawn?.jobs != null;
+            return false;
         }
     }
 }

@@ -21,7 +21,7 @@
   <LogSyncMod.AutoTestModeXmlDriven>XML 规范驱动</LogSyncMod.AutoTestModeXmlDriven>
   <LogSyncMod.AutoTestScope>测试范围：{0}</LogSyncMod.AutoTestScope>
   <LogSyncMod.AutoTestScopeSelect>选择测试范围（当前：{0}）</LogSyncMod.AutoTestScopeSelect>
-  <LogSyncMod.AutoTestScopeAll>全量</LogSyncMod.AutoTestScopeAll>
+  <LogSyncMod.AutoTestScopeStandard>标准测试</LogSyncMod.AutoTestScopeStandard>
   <LogSyncMod.AutoTestScopeContent>建筑物品</LogSyncMod.AutoTestScopeContent>
   <LogSyncMod.AutoTestScopeRecipes>工作台配方</LogSyncMod.AutoTestScopeRecipes>
   <LogSyncMod.AutoTestScopeHediffs>小人 Hediff</LogSyncMod.AutoTestScopeHediffs>

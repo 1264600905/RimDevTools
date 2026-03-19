@@ -5,7 +5,7 @@ namespace LogSyncMod
 {
     public enum AutoTestScope
     {
-        All = 0,
+        Standard = 0,
         Content = 1,
         Recipes = 2,
         Hediffs = 3,
@@ -41,7 +41,7 @@ namespace LogSyncMod
         public string autoTestTargetPackageId = "";
         public string autoTestOutputPath = "D:/RimWorldAutoTest";
         public AutoTestMode autoTestMode = AutoTestMode.Automatic;
-        public AutoTestScope autoTestScope = AutoTestScope.All;
+        public AutoTestScope autoTestScope = AutoTestScope.Standard;
         public bool autoTestBuildings = true;
         public bool autoTestItems = true;
         public bool autoTestTerrains = true;
@@ -67,7 +67,7 @@ namespace LogSyncMod
             Scribe_Values.Look(ref autoTestTargetPackageId, "autoTestTargetPackageId", "");
             Scribe_Values.Look(ref autoTestOutputPath, "autoTestOutputPath", "D:/RimWorldAutoTest");
             Scribe_Values.Look(ref autoTestMode, "autoTestMode", AutoTestMode.Automatic);
-            Scribe_Values.Look(ref autoTestScope, "autoTestScope", AutoTestScope.All);
+            Scribe_Values.Look(ref autoTestScope, "autoTestScope", AutoTestScope.Standard);
             Scribe_Values.Look(ref autoTestBuildings, "autoTestBuildings", true);
             Scribe_Values.Look(ref autoTestItems, "autoTestItems", true);
             Scribe_Values.Look(ref autoTestTerrains, "autoTestTerrains", true);
@@ -82,7 +82,7 @@ namespace LogSyncMod
             if (autoTestTargetPackageId == null) autoTestTargetPackageId = "";
             if (autoTestOutputPath == null) autoTestOutputPath = "D:/RimWorldAutoTest";
             if (!System.Enum.IsDefined(typeof(AutoTestMode), autoTestMode)) autoTestMode = AutoTestMode.Automatic;
-            if (!System.Enum.IsDefined(typeof(AutoTestScope), autoTestScope)) autoTestScope = AutoTestScope.All;
+            if (!System.Enum.IsDefined(typeof(AutoTestScope), autoTestScope)) autoTestScope = AutoTestScope.Standard;
             
             if (Scribe.mode == LoadSaveMode.PostLoadInit)
             {
@@ -113,9 +113,14 @@ namespace LogSyncMod
             if (autoTestPocketMapMaxConcurrent < 1) autoTestPocketMapMaxConcurrent = 1;
         }
 
+        public bool ShouldRunStandardSuite()
+        {
+            return autoTestScope == AutoTestScope.Standard;
+        }
+
         public bool ShouldTestContent()
         {
-            return autoTestScope == AutoTestScope.All || autoTestScope == AutoTestScope.Content;
+            return ShouldRunStandardSuite() || autoTestScope == AutoTestScope.Content;
         }
 
         public bool UseXmlDrivenAutoTest()
@@ -125,37 +130,37 @@ namespace LogSyncMod
 
         public bool ShouldTestRecipes()
         {
-            return autoTestScope == AutoTestScope.All || autoTestScope == AutoTestScope.Recipes;
+            return ShouldRunStandardSuite() || autoTestScope == AutoTestScope.Recipes;
         }
 
         public bool ShouldTestHediffs()
         {
-            return autoTestScope == AutoTestScope.All || autoTestScope == AutoTestScope.Hediffs;
+            return ShouldRunStandardSuite() || autoTestScope == AutoTestScope.Hediffs;
         }
 
         public bool ShouldTestTurrets()
         {
-            return autoTestScope == AutoTestScope.All || autoTestScope == AutoTestScope.Turrets;
+            return ShouldRunStandardSuite() || autoTestScope == AutoTestScope.Turrets;
         }
 
         public bool ShouldTestRangedWeapons()
         {
-            return autoTestScope == AutoTestScope.All || autoTestScope == AutoTestScope.RangedWeapons;
+            return ShouldRunStandardSuite() || autoTestScope == AutoTestScope.RangedWeapons;
         }
 
         public bool ShouldTestMeleeWeapons()
         {
-            return autoTestScope == AutoTestScope.All || autoTestScope == AutoTestScope.MeleeWeapons;
+            return ShouldRunStandardSuite() || autoTestScope == AutoTestScope.MeleeWeapons;
         }
 
         public bool ShouldTestThreeViews()
         {
-            return autoTestScope == AutoTestScope.All || autoTestScope == AutoTestScope.ThreeViews;
+            return ShouldRunStandardSuite() || autoTestScope == AutoTestScope.ThreeViews;
         }
 
         public bool ShouldTestCombatPawns()
         {
-            return autoTestScope == AutoTestScope.All || autoTestScope == AutoTestScope.CombatPawns;
+            return autoTestScope == AutoTestScope.CombatPawns;
         }
 
         public bool ShouldTestSkillPocketMaps()

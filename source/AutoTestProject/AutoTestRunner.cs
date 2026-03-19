@@ -173,6 +173,11 @@ namespace LogSyncMod.AutoTest
 
             nextTerrainX = Math.Max(map.Size.x / 2, 10);
 
+            if (settings.ShouldRunStandardSuite())
+            {
+                Log.Message("[LogSyncAutoTest] Standard suite enabled.");
+            }
+
             if (settings.ShouldTestContent())
             {
                 EnqueueThingDefs();
@@ -667,7 +672,7 @@ namespace LogSyncMod.AutoTest
         {
             if (IsFullCoverageRun())
             {
-                Log.Message("[LogSyncAutoTest] Full coverage run detected. Batch limit is ignored.");
+                Log.Message("[LogSyncAutoTest] Standard suite detected. Batch limit is ignored.");
                 return;
             }
 
@@ -998,7 +1003,7 @@ namespace LogSyncMod.AutoTest
 
         private bool IsFullCoverageRun()
         {
-            return !settings.UseXmlDrivenAutoTest() && settings.autoTestScope == AutoTestScope.All;
+            return !settings.UseXmlDrivenAutoTest() && settings.autoTestScope == AutoTestScope.Standard;
         }
 
         private AutoTestPocketMapHandle CreatePocketMapHandle(string mapGeneratorDefName, IntVec3 mapSize, Action<Map> onGenerated, out string errorMessage)
@@ -1027,7 +1032,7 @@ namespace LogSyncMod.AutoTest
 
         private string ResolveRunMode()
         {
-            return IsFullCoverageRun() ? "Full" : "Targeted";
+            return IsFullCoverageRun() ? "Standard" : "Targeted";
         }
 
         private void BuildPlannedManifest()

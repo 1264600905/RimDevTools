@@ -7,7 +7,7 @@ namespace LogSyncMod
     public class LogSyncAutoTestSpecDef : Def
     {
         public bool enabled = true;
-        public AutoTestScope scope = AutoTestScope.All;
+        public AutoTestScope scope = AutoTestScope.Standard;
         public List<string> categories = new List<string>();
         public List<string> defNames = new List<string>();
         public bool captureScreenshots = false;
