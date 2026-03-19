@@ -1,5 +1,8 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
+using HarmonyLib;
 using RimWorld;
 using RimWorld.Planet;
 using UnityEngine;
@@ -21,6 +24,13 @@ namespace LogSyncMod.AutoTest
         Done
     }
 
+    internal enum SkillCasterTestPath
+    {
+        NativeHolder,
+        FallbackTester,
+        MechanitorControlledMech
+    }
+
     internal sealed partial class AutoTestRunner
     {
         private sealed class SkillPocketMapTestSession
@@ -28,11 +38,13 @@ namespace LogSyncMod.AutoTest
             private const int MapReadyWaitTicks = 180;
             private const int FightDurationTicks = 3600;
             private const int CooldownResetIntervalTicks = 600;
+            private const int PostCastInstantScreenshotDelayTicks = 2;
             private readonly AutoTestRunner owner;
 
             public Map TestMap;
             public AbilityDef AbilityDef;
             public Pawn CasterPawn;
+            public Pawn MechanitorPawn;
             public Pawn AllyPawn;
             public readonly List<Pawn> EnemyPawns = new List<Pawn>();
             public SkillPocketMapTestPhase Phase;
@@ -43,9 +55,17 @@ namespace LogSyncMod.AutoTest
             public Ability Ability;
             public int FightTicksRemaining;
             public int LastCooldownResetTick;
-            public int LastCastOrderTick;
+            public int CooldownResetCount;
             public bool CastSucceeded;
             public bool ScreenshotCaptured;
+            public SkillCasterTestPath CasterTestPath;
+            public int FirstCastTick = -1;
+            public int WarmupStartTick = -1;
+            public int WarmupEndTick = -1;
+            public int WarmupScreenshotTick = -1;
+            public bool AutoCastConfigured;
+            public bool AutoCastAvailable;
+            public string SkillTargetMode = "Unknown";
 
             public SkillPocketMapTestSession(AutoTestRunner owner)
             {
@@ -95,11 +115,15 @@ namespace LogSyncMod.AutoTest
                         Phase = SkillPocketMapTestPhase.SpawningTargets;
                         break;
                     case SkillPocketMapTestPhase.SpawningTargets:
-                        if (!TrySpawnEnemyTargets(5))
+                        if (!TrySpawnTargets())
                         {
                             Phase = SkillPocketMapTestPhase.Done;
                             break;
                         }
+                        Phase = SkillPocketMapTestPhase.ConfiguringAbilities;
+                        break;
+                    case SkillPocketMapTestPhase.ConfiguringAbilities:
+                        ConfigureAutoCastForTest();
                         FightTicksRemaining = FightDurationTicks;
                         LastCooldownResetTick = Find.TickManager.TicksGame;
                         Result.Stage = "fighting_60s";
@@ -107,6 +131,9 @@ namespace LogSyncMod.AutoTest
                         break;
                     case SkillPocketMapTestPhase.Fighting:
                         UpdateFighting();
+                        break;
+                    case SkillPocketMapTestPhase.CapturingScreenshot:
+                        CapturePendingSuccessScreenshot();
                         break;
                     default:
                         Result.Status = "skipped";
@@ -129,19 +156,52 @@ namespace LogSyncMod.AutoTest
                     return false;
                 }
 
-                PawnKindDef pawnKind = DefDatabase<PawnKindDef>.AllDefsListForReading
+                PawnKindDef nativeHolder = ResolveNativeHolderPawnKind();
+                if (nativeHolder != null)
+                {
+                    if (nativeHolder.RaceProps != null && nativeHolder.RaceProps.IsMechanoid)
+                    {
+                        CasterTestPath = SkillCasterTestPath.MechanitorControlledMech;
+                        Result.Notes = AutoTestRunner.AppendNote(Result.Notes, "SkillPath=MechanitorControlledMech");
+                        if (TrySpawnMechanitorControlledMech(nativeHolder))
+                        {
+                            return true;
+                        }
+                    }
+
+                    CasterTestPath = SkillCasterTestPath.NativeHolder;
+                    Result.Notes = AutoTestRunner.AppendNote(Result.Notes, "SkillPath=NativeHolder");
+                    if (TrySpawnNativeCaster(nativeHolder))
+                    {
+                        return true;
+                    }
+                }
+
+                CasterTestPath = SkillCasterTestPath.FallbackTester;
+                Result.Notes = AutoTestRunner.AppendNote(Result.Notes, "SkillPath=FallbackTester");
+                Result.Notes = AutoTestRunner.AppendNote(Result.Notes, "NativeHolderFound=" + (nativeHolder != null));
+                if (TrySpawnFallbackCaster())
+                {
+                    return true;
+                }
+
+                Result.Status = "failed_caster_kind_missing";
+                Result.Stage = "spawn_caster";
+                Result.ErrorMessage = "No PawnKindDef with the target ability was found, and fallback tester setup also failed.";
+                TryCaptureSkillScreenshot(true, "failed_caster_kind_missing");
+                return false;
+            }
+
+            private PawnKindDef ResolveNativeHolderPawnKind()
+            {
+                return DefDatabase<PawnKindDef>.AllDefsListForReading
                     .Where(def => def != null && def.modContentPack == owner.targetMod && def.abilities != null && def.abilities.Contains(AbilityDef))
                     .OrderBy(def => def.defName)
                     .FirstOrDefault();
-                if (pawnKind == null)
-                {
-                    Result.Status = "failed_caster_kind_missing";
-                    Result.Stage = "spawn_caster";
-                    Result.ErrorMessage = "No PawnKindDef with the target ability was found.";
-                    TryCaptureSkillScreenshot(true, "failed_caster_kind_missing");
-                    return false;
-                }
+            }
 
+            private bool TrySpawnNativeCaster(PawnKindDef pawnKind)
+            {
                 PawnGenerationRequest request = new PawnGenerationRequest(
                     pawnKind,
                     Faction.OfPlayer,
@@ -155,16 +215,143 @@ namespace LogSyncMod.AutoTest
                 {
                     Result.Status = "failed_caster_spawn";
                     Result.Stage = "spawn_caster";
-                    Result.ErrorMessage = "Failed to generate caster pawn.";
+                    Result.ErrorMessage = "Failed to generate native holder pawn.";
                     TryCaptureSkillScreenshot(true, "failed_caster_spawn");
                     return false;
                 }
 
+                if (!FinalizeCasterPawn(pawn, pawnKind.defName, "NativeHolder"))
+                {
+                    return false;
+                }
+
+                Result.Notes = AutoTestRunner.AppendNote(Result.Notes, "NativeHolderPawnKind=" + pawnKind.defName);
+                return true;
+            }
+
+            private bool TrySpawnMechanitorControlledMech(PawnKindDef pawnKind)
+            {
+                Pawn mechanitor = PawnGenerator.GeneratePawn(
+                    new PawnGenerationRequest(
+                        PawnKindDefOf.Colonist,
+                        Faction.OfPlayer,
+                        PawnGenerationContext.NonPlayer,
+                        TestMap.Tile,
+                        forceGenerateNewPawn: true,
+                        canGeneratePawnRelations: false,
+                        mustBeCapableOfViolence: true));
+                if (mechanitor == null)
+                {
+                    Result.Status = "failed_mechanitor_spawn";
+                    Result.Stage = "spawn_caster";
+                    Result.ErrorMessage = "Failed to generate mechanitor controller pawn.";
+                    TryCaptureSkillScreenshot(true, "failed_mechanitor_spawn");
+                    return false;
+                }
+
+                HealthUtility.AdjustSeverity(mechanitor, HediffDefOf.MechlinkImplant, 1f);
+                HediffDef extraBandwidthDef = DefDatabase<HediffDef>.GetNamedSilentFail("LogSync_TestMechanitorBandwidth");
+                if (extraBandwidthDef != null)
+                {
+                    HealthUtility.AdjustSeverity(mechanitor, extraBandwidthDef, 1f);
+                }
+
+                IntVec3 mechanitorPos = new IntVec3(Mathf.RoundToInt(TestMap.Size.x * 0.28f), 0, TestMap.Size.z / 2);
+                GenSpawn.Spawn(mechanitor, mechanitorPos, TestMap);
+                MechanitorPawn = mechanitor;
+
+                Pawn mech = PawnGenerator.GeneratePawn(
+                    new PawnGenerationRequest(
+                        pawnKind,
+                        Faction.OfPlayer,
+                        PawnGenerationContext.NonPlayer,
+                        TestMap.Tile,
+                        forceGenerateNewPawn: true,
+                        canGeneratePawnRelations: false,
+                        mustBeCapableOfViolence: false));
+                if (mech == null)
+                {
+                    Result.Status = "failed_mech_spawn";
+                    Result.Stage = "spawn_caster";
+                    Result.ErrorMessage = "Failed to generate mechanitor-controlled mech pawn.";
+                    TryCaptureSkillScreenshot(true, "failed_mech_spawn");
+                    return false;
+                }
+
+                if (!FinalizeCasterPawn(mech, pawnKind.defName, "MechanitorControlledMech"))
+                {
+                    return false;
+                }
+
+                mechanitor.relations?.RemoveDirectRelation(PawnRelationDefOf.Overseer, mech);
+                mechanitor.relations?.AddDirectRelation(PawnRelationDefOf.Overseer, mech);
+                mechanitor.mechanitor?.Notify_BandwidthChanged();
+
+                Result.Notes = AutoTestRunner.AppendNote(Result.Notes, "MechanitorPawn=" + mechanitor.LabelShortCap);
+                Result.Notes = AutoTestRunner.AppendNote(Result.Notes, "MechanitorBound=True");
+                Result.Notes = AutoTestRunner.AppendNote(Result.Notes, "NativeHolderPawnKind=" + pawnKind.defName);
+                return true;
+            }
+
+            private bool TrySpawnFallbackCaster()
+            {
+                PawnGenerationRequest request = new PawnGenerationRequest(
+                    PawnKindDefOf.Colonist,
+                    Faction.OfPlayer,
+                    PawnGenerationContext.NonPlayer,
+                    TestMap.Tile,
+                    forceGenerateNewPawn: true,
+                    canGeneratePawnRelations: false,
+                    mustBeCapableOfViolence: true);
+                Pawn pawn = PawnGenerator.GeneratePawn(request);
+                if (pawn == null)
+                {
+                    Result.Status = "failed_fallback_caster_spawn";
+                    Result.Stage = "spawn_caster";
+                    Result.ErrorMessage = "Failed to generate fallback tester pawn.";
+                    TryCaptureSkillScreenshot(true, "failed_fallback_caster_spawn");
+                    return false;
+                }
+
+                try
+                {
+                    EquipFallbackTesterLoadout(pawn);
+                    EnsureFallbackAbility(pawn);
+                }
+                catch (System.Exception ex)
+                {
+                    Result.Status = "failed_fallback_caster_prepare";
+                    Result.Stage = "spawn_caster";
+                    Result.ErrorMessage = ex.ToString();
+                    TryCaptureSkillScreenshot(true, "failed_fallback_caster_prepare");
+                    return false;
+                }
+
+                if (!FinalizeCasterPawn(pawn, pawn.kindDef?.defName ?? "Colonist", "FallbackTester"))
+                {
+                    return false;
+                }
+
+                Result.Notes = AutoTestRunner.AppendNote(Result.Notes, "FallbackTesterPawnKind=" + (pawn.kindDef?.defName ?? "Colonist"));
+                return true;
+            }
+
+            private bool FinalizeCasterPawn(Pawn pawn, string pawnKindDefName, string sourceTag)
+            {
                 IntVec3 spawnPos = new IntVec3(Mathf.RoundToInt(TestMap.Size.x * 0.375f), 0, TestMap.Size.z / 2);
                 GenSpawn.Spawn(pawn, spawnPos, TestMap);
                 CasterPawn = pawn;
 
-                Ability = pawn.abilities?.GetAbility(AbilityDef);
+                if (CasterPawn.drafter != null)
+                {
+                    CasterPawn.drafter.Drafted = true;
+                    CasterPawn.drafter.FireAtWill = true;
+                }
+
+                bool searchAndDestroyEnabled = AutoTestRunner.TryEnableSearchAndDestroy(CasterPawn, out string searchAndDestroyStatus);
+                Result.Notes = AutoTestRunner.AppendNote(Result.Notes, "SearchAndDestroy=" + (searchAndDestroyEnabled ? "Enabled" : searchAndDestroyStatus));
+
+                Ability = pawn.abilities?.GetAbility(AbilityDef, true);
                 if (Ability == null)
                 {
                     Result.Status = "failed_ability_missing";
@@ -175,8 +362,89 @@ namespace LogSyncMod.AutoTest
                 }
 
                 Result.Stage = "spawn_caster";
-                Result.Notes = AutoTestRunner.AppendNote(Result.Notes, "CasterPawnKind=" + pawnKind.defName);
+                Result.Notes = AutoTestRunner.AppendNote(Result.Notes, "CasterSource=" + sourceTag);
+                Result.Notes = AutoTestRunner.AppendNote(Result.Notes, "CasterPawnKind=" + pawnKindDefName);
                 Result.Notes = AutoTestRunner.AppendNote(Result.Notes, "CasterPawn=" + pawn.LabelShortCap);
+                return true;
+            }
+
+            private void EnsureFallbackAbility(Pawn pawn)
+            {
+                if (pawn.abilities == null)
+                {
+                    pawn.abilities = new Pawn_AbilityTracker(pawn);
+                }
+
+                if (pawn.abilities.GetAbility(AbilityDef, true) == null)
+                {
+                    pawn.abilities.GainAbility(AbilityDef);
+                }
+            }
+
+            private void EquipFallbackTesterLoadout(Pawn pawn)
+            {
+                pawn.apparel?.DestroyAll();
+                pawn.equipment?.DestroyAllEquipment();
+
+                ThingDef armorDef = DefDatabase<ThingDef>.GetNamedSilentFail("Apparel_PowerArmor");
+                ThingDef helmetDef = DefDatabase<ThingDef>.GetNamedSilentFail("Apparel_PowerArmorHelmet");
+                ThingDef knifeDef = DefDatabase<ThingDef>.GetNamedSilentFail("MeleeWeapon_Knife");
+                ThingDef goldDef = DefDatabase<ThingDef>.GetNamedSilentFail("Gold");
+
+                if (armorDef != null)
+                {
+                    Apparel armor = ThingMaker.MakeThing(armorDef) as Apparel;
+                    armor?.TryGetComp<CompQuality>()?.SetQuality(QualityCategory.Legendary, ArtGenerationContext.Colony);
+                    if (armor != null)
+                    {
+                        pawn.apparel?.Wear(armor);
+                    }
+                }
+
+                if (helmetDef != null)
+                {
+                    Apparel helmet = ThingMaker.MakeThing(helmetDef) as Apparel;
+                    helmet?.TryGetComp<CompQuality>()?.SetQuality(QualityCategory.Legendary, ArtGenerationContext.Colony);
+                    if (helmet != null)
+                    {
+                        pawn.apparel?.Wear(helmet);
+                    }
+                }
+
+                if (knifeDef != null)
+                {
+                    ThingWithComps knife = ThingMaker.MakeThing(knifeDef, goldDef) as ThingWithComps;
+                    knife?.TryGetComp<CompQuality>()?.SetQuality(QualityCategory.Awful, ArtGenerationContext.Colony);
+                    if (knife != null)
+                    {
+                        pawn.equipment?.MakeRoomFor(knife);
+                        pawn.equipment?.AddEquipment(knife);
+                    }
+                }
+            }
+
+            private bool TrySpawnTargets()
+            {
+                bool needsAlly = ShouldSpawnAllyTarget();
+                bool needsEnemy = ShouldSpawnEnemyTargets();
+
+                if (needsAlly && !TrySpawnAllyTarget())
+                {
+                    return false;
+                }
+
+                if (needsEnemy && !TrySpawnEnemyTargets(5))
+                {
+                    return false;
+                }
+
+                if (!needsAlly && !needsEnemy)
+                {
+                    Result.Stage = "spawn_targets";
+                    SkillTargetMode = "SelfOnly";
+                    Result.Notes = AutoTestRunner.AppendNote(Result.Notes, "SkillTargetMode=SelfOnly");
+                }
+
                 return true;
             }
 
@@ -244,7 +512,80 @@ namespace LogSyncMod.AutoTest
 
                 Result.Stage = "spawn_targets";
                 Result.Notes = AutoTestRunner.AppendNote(Result.Notes, "EnemyCount=" + EnemyPawns.Count);
+                SkillTargetMode = "Enemy";
+                Result.Notes = AutoTestRunner.AppendNote(Result.Notes, "SkillTargetMode=Enemy");
                 return true;
+            }
+
+            private bool TrySpawnAllyTarget()
+            {
+                if (TestMap == null || CasterPawn == null)
+                {
+                    Result.Status = "failed_ally_spawn";
+                    Result.Stage = "spawn_targets";
+                    Result.ErrorMessage = "Skill pocket map ally target prerequisites were missing.";
+                    TryCaptureSkillScreenshot(true, "failed_ally_spawn");
+                    return false;
+                }
+
+                Pawn pawn = PawnGenerator.GeneratePawn(
+                    new PawnGenerationRequest(
+                        PawnKindDefOf.Colonist,
+                        Faction.OfPlayer,
+                        PawnGenerationContext.NonPlayer,
+                        TestMap.Tile,
+                        forceGenerateNewPawn: true,
+                        canGeneratePawnRelations: false,
+                        mustBeCapableOfViolence: false));
+                if (pawn == null)
+                {
+                    Result.Status = "failed_ally_spawn";
+                    Result.Stage = "spawn_targets";
+                    Result.ErrorMessage = "Failed to generate ally target pawn.";
+                    TryCaptureSkillScreenshot(true, "failed_ally_spawn");
+                    return false;
+                }
+
+                IntVec3 allyPos = new IntVec3(Mathf.RoundToInt(TestMap.Size.x * 0.47f), 0, TestMap.Size.z / 2);
+                GenSpawn.Spawn(pawn, allyPos, TestMap);
+                AllyPawn = pawn;
+                if (AllyPawn.drafter != null)
+                {
+                    AllyPawn.drafter.Drafted = true;
+                    AllyPawn.drafter.FireAtWill = false;
+                }
+
+                Result.Notes = AutoTestRunner.AppendNote(Result.Notes, "AllyTarget=" + AllyPawn.LabelShortCap);
+                Result.Notes = AutoTestRunner.AppendNote(Result.Notes, "AllyTargetSpawned=True");
+                SkillTargetMode = EnemyPawns.Count > 0 ? "EnemyAndAlly" : "AllyOrSelf";
+                Result.Notes = AutoTestRunner.AppendNote(Result.Notes, "SkillTargetMode=AllyOrSelf");
+                return true;
+            }
+
+            private bool ShouldSpawnEnemyTargets()
+            {
+                if (Ability == null)
+                {
+                    return true;
+                }
+
+                LocalTargetInfo enemyProbe = new LocalTargetInfo(new IntVec3(Mathf.RoundToInt(TestMap.Size.x * 0.625f), 0, TestMap.Size.z / 2));
+                if (Ability.CanApplyOn(enemyProbe))
+                {
+                    return true;
+                }
+
+                return Ability.def.hostile;
+            }
+
+            private bool ShouldSpawnAllyTarget()
+            {
+                if (Ability?.verb?.targetParams == null)
+                {
+                    return false;
+                }
+
+                return Ability.verb.targetParams.canTargetPawns && !Ability.def.hostile;
             }
 
             private void UpdateFighting()
@@ -274,24 +615,28 @@ namespace LogSyncMod.AutoTest
                 {
                     Ability.ResetCooldown();
                     LastCooldownResetTick = currentTick;
+                    CooldownResetCount++;
                     Result.Notes = AutoTestRunner.AppendNote(Result.Notes, "CooldownResetTick=" + currentTick);
+                    Result.Notes = AutoTestRunner.AppendNote(Result.Notes, "CooldownResetCount=" + CooldownResetCount);
                 }
 
-                if (!CastSucceeded)
+                ObserveAbilityExecution(currentTick);
+
+                if (CastSucceeded && WarmupScreenshotTick >= 0)
                 {
-                    if (Ability.OnCooldown || (CasterPawn.CurJob != null && CasterPawn.CurJob.ability == Ability))
+                    Result.Stage = "waiting_warmup_screenshot";
+                    if (currentTick >= WarmupScreenshotTick)
                     {
-                        CastSucceeded = true;
-                        Result.Status = "passed";
-                        Result.Stage = "skill_casted";
-                        Result.ErrorMessage = string.Empty;
-                        Result.Notes = AutoTestRunner.AppendNote(Result.Notes, "CastTick=" + currentTick);
-                        TryCaptureSkillScreenshot(false, "skill_casted");
-                        Phase = SkillPocketMapTestPhase.Done;
-                        return;
+                        Phase = SkillPocketMapTestPhase.CapturingScreenshot;
                     }
 
-                    TryIssueCastOrder(currentTick);
+                    return;
+                }
+
+                if (CastSucceeded)
+                {
+                    Phase = SkillPocketMapTestPhase.CapturingScreenshot;
+                    return;
                 }
 
                 FightTicksRemaining--;
@@ -307,45 +652,236 @@ namespace LogSyncMod.AutoTest
                 Phase = SkillPocketMapTestPhase.Done;
             }
 
-            private void TryIssueCastOrder(int currentTick)
+            private void ConfigureAutoCastForTest()
             {
-                if (currentTick - LastCastOrderTick < 90)
+                AutoCastConfigured = TryConfigureAutoCastForCaster(out string autoCastSummary);
+                Result.Notes = AutoTestRunner.AppendNote(Result.Notes, "AutoCastConfigured=" + AutoCastConfigured);
+                if (!string.IsNullOrWhiteSpace(autoCastSummary))
                 {
+                    Result.Notes = AutoTestRunner.AppendNote(Result.Notes, autoCastSummary);
+                }
+            }
+
+            private bool TryConfigureAutoCastForCaster(out string summary)
+            {
+                summary = string.Empty;
+                AutoCastAvailable = false;
+
+                if (CasterPawn == null || AbilityDef == null || Current.Game == null)
+                {
+                    summary = "AutoCastState=PrerequisiteMissing";
+                    return false;
+                }
+
+                try
+                {
+                    Assembly autoAbilityAssembly = AppDomain.CurrentDomain.GetAssemblies()
+                        .FirstOrDefault(assembly => string.Equals(assembly.GetName().Name, "AutoAbility", StringComparison.OrdinalIgnoreCase));
+                    if (autoAbilityAssembly == null)
+                    {
+                        summary = "AutoCastState=AssemblyMissing";
+                        return false;
+                    }
+
+                    Type managerType = autoAbilityAssembly.GetType("AutoAbility.AutoCastManager");
+                    Type settingType = autoAbilityAssembly.GetType("AutoAbility.AutoCastSetting");
+                    if (managerType == null || settingType == null)
+                    {
+                        summary = "AutoCastState=TypeMissing";
+                        return false;
+                    }
+
+                    FieldInfo componentsField = AccessTools.Field(typeof(Game), "components");
+                    IEnumerable<GameComponent> components = componentsField?.GetValue(Current.Game) as IEnumerable<GameComponent>;
+                    object manager = components?.FirstOrDefault(component => component != null && managerType.IsInstanceOfType(component));
+                    if (manager == null)
+                    {
+                        summary = "AutoCastState=ManagerMissing";
+                        return false;
+                    }
+
+                    MethodInfo getOrCreateSettingMethod = managerType.GetMethod("GetOrCreateSetting", BindingFlags.Public | BindingFlags.Instance);
+                    if (getOrCreateSettingMethod == null)
+                    {
+                        summary = "AutoCastState=MethodMissing";
+                        return false;
+                    }
+
+                    object setting = getOrCreateSettingMethod.Invoke(manager, new object[] { CasterPawn.GetUniqueLoadID() + "_ability_" + AbilityDef.defName });
+                    if (setting == null)
+                    {
+                        summary = "AutoCastState=SettingMissing";
+                        return false;
+                    }
+
+                    bool canTargetEnemy = CanTargetAnyEnemy();
+                    bool canTargetAlly = CanTargetAlly();
+                    bool canTargetSelf = CanTargetSelf();
+
+                    SetFieldOrProperty(settingType, setting, "useWhenDrafted", true);
+                    SetFieldOrProperty(settingType, setting, "useWhenDaily", true);
+                    SetFieldOrProperty(settingType, setting, "useWhenReact", true);
+                    SetFieldOrProperty(settingType, setting, "timelyUseInterval", 600L);
+                    SetFieldOrProperty(settingType, setting, "priority", 999);
+                    SetFieldOrProperty(settingType, setting, "minUseDis", 0);
+                    SetFieldOrProperty(settingType, setting, "maxUseDis", 9999);
+                    SetFieldOrProperty(settingType, setting, "applyToEnemy", canTargetEnemy);
+                    SetFieldOrProperty(settingType, setting, "applyToDownedEnemy", false);
+                    SetFieldOrProperty(settingType, setting, "applyToWildAnimal", false);
+                    SetFieldOrProperty(settingType, setting, "applyToAlly", !canTargetEnemy && canTargetAlly);
+                    SetFieldOrProperty(settingType, setting, "applyToFriendMech", false);
+                    SetFieldOrProperty(settingType, setting, "applyToPrisoner", false);
+                    SetFieldOrProperty(settingType, setting, "applyToSelf", !canTargetEnemy && !canTargetAlly && canTargetSelf);
+                    SetEnumFieldOrProperty(settingType, setting, "autoType", 1);
+
+                    AutoCastAvailable = true;
+                    if (canTargetEnemy)
+                    {
+                        SkillTargetMode = canTargetAlly ? "EnemyPreferred" : "Enemy";
+                    }
+                    else if (canTargetAlly)
+                    {
+                        SkillTargetMode = canTargetSelf ? "AllyPreferred" : "Ally";
+                    }
+                    else if (canTargetSelf)
+                    {
+                        SkillTargetMode = "SelfOnly";
+                    }
+
+                    summary = "AutoCastTargets=Enemy:" + canTargetEnemy + ",Ally:" + canTargetAlly + ",Self:" + canTargetSelf;
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    summary = "AutoCastState=Error:" + AutoTestRunner.TrimForNote(ex.Message);
+                    return false;
+                }
+            }
+
+            private static void SetFieldOrProperty(Type targetType, object instance, string memberName, object value)
+            {
+                FieldInfo field = AccessTools.Field(targetType, memberName);
+                if (field != null)
+                {
+                    field.SetValue(instance, value);
                     return;
                 }
 
-                LocalTargetInfo target = ResolveCastTarget();
-                if (!target.IsValid)
+                PropertyInfo property = AccessTools.Property(targetType, memberName);
+                property?.SetValue(instance, value, null);
+            }
+
+            private static void SetEnumFieldOrProperty(Type targetType, object instance, string memberName, int enumValue)
+            {
+                FieldInfo field = AccessTools.Field(targetType, memberName);
+                if (field != null)
                 {
+                    field.SetValue(instance, Enum.ToObject(field.FieldType, enumValue));
                     return;
                 }
 
-                if (!Ability.CanCast || !Ability.CanApplyOn(target))
+                PropertyInfo property = AccessTools.Property(targetType, memberName);
+                if (property != null)
                 {
-                    return;
+                    property.SetValue(instance, Enum.ToObject(property.PropertyType, enumValue), null);
+                }
+            }
+
+            private void ObserveAbilityExecution(int currentTick)
+            {
+                Job currentJob = CasterPawn.CurJob;
+                if (currentJob != null && currentJob.ability == Ability)
+                {
+                    if (FirstCastTick < 0)
+                    {
+                        FirstCastTick = currentTick;
+                        Result.Notes = AutoTestRunner.AppendNote(Result.Notes, "FirstCastTick=" + FirstCastTick);
+                    }
+
+                    MarkCastSucceeded(currentTick, "job_started");
                 }
 
-                if (Ability.verb != null && !Ability.verb.ValidateTarget(target, false))
+                Stance_Warmup warmup = CasterPawn.stances?.curStance as Stance_Warmup;
+                if (warmup != null)
                 {
-                    return;
+                    if (WarmupStartTick < 0)
+                    {
+                        WarmupStartTick = currentTick;
+                        WarmupEndTick = currentTick + Math.Max(0, warmup.ticksLeft);
+                        WarmupScreenshotTick = WarmupEndTick + 2;
+                        Result.Notes = AutoTestRunner.AppendNote(Result.Notes, "WarmupStartTick=" + WarmupStartTick);
+                        Result.Notes = AutoTestRunner.AppendNote(Result.Notes, "WarmupEndTick=" + WarmupEndTick);
+                        Result.Notes = AutoTestRunner.AppendNote(Result.Notes, "WarmupScreenshotTick=" + WarmupScreenshotTick);
+                    }
+
+                    MarkCastSucceeded(currentTick, "warmup_started");
+                }
+            }
+
+            private void MarkCastSucceeded(int currentTick, string reason)
+            {
+                if (!CastSucceeded)
+                {
+                    CastSucceeded = true;
+                    Result.Status = "passed";
+                    Result.ErrorMessage = string.Empty;
                 }
 
-                string disabledReason;
-                if (Ability.GizmoDisabled(out disabledReason) && disabledReason.Translate() != "AbilityDisabledUndrafted".Translate())
+                Result.Stage = WarmupScreenshotTick >= 0 ? "waiting_warmup_screenshot" : "skill_casted";
+                Result.Notes = AutoTestRunner.AppendNote(Result.Notes, "CastObserved=" + reason + "@" + currentTick);
+                if (WarmupScreenshotTick < 0 && FirstCastTick >= 0)
                 {
-                    return;
+                    WarmupScreenshotTick = currentTick + PostCastInstantScreenshotDelayTicks;
+                    Result.Notes = AutoTestRunner.AppendNote(Result.Notes, "WarmupScreenshotTick=" + WarmupScreenshotTick);
+                }
+            }
+
+            private void CapturePendingSuccessScreenshot()
+            {
+                Result.Stage = WarmupStartTick >= 0 ? "warmup_end_plus_2" : "skill_casted";
+                TryCaptureSkillScreenshot(false, WarmupStartTick >= 0 ? "warmup_end_p2" : "skill_casted");
+                Phase = SkillPocketMapTestPhase.Done;
+            }
+
+            private bool CanTargetAnyEnemy()
+            {
+                foreach (Pawn enemy in EnemyPawns)
+                {
+                    if (enemy == null || enemy.Destroyed || !enemy.Spawned || enemy.Map != TestMap || enemy.Dead)
+                    {
+                        continue;
+                    }
+
+                    LocalTargetInfo target = new LocalTargetInfo(enemy);
+                    if (Ability.CanApplyOn(target) && (Ability.verb == null || Ability.verb.ValidateTarget(target, false)))
+                    {
+                        return true;
+                    }
                 }
 
-                if (CasterPawn.drafter != null)
+                return false;
+            }
+
+            private bool CanTargetAlly()
+            {
+                if (AllyPawn == null || AllyPawn.Destroyed || !AllyPawn.Spawned || AllyPawn.Map != TestMap || AllyPawn.Dead)
                 {
-                    CasterPawn.drafter.Drafted = true;
-                    CasterPawn.drafter.FireAtWill = true;
+                    return false;
                 }
 
-                Job job = Ability.GetJob(target, target);
-                CasterPawn.jobs?.TryTakeOrderedJob(job, JobTag.Misc, false);
-                LastCastOrderTick = currentTick;
-                Result.Notes = AutoTestRunner.AppendNote(Result.Notes, "LastCastTarget=" + DescribeTarget(target));
+                LocalTargetInfo target = new LocalTargetInfo(AllyPawn);
+                return Ability.CanApplyOn(target) && (Ability.verb == null || Ability.verb.ValidateTarget(target, false));
+            }
+
+            private bool CanTargetSelf()
+            {
+                if (CasterPawn == null || CasterPawn.Destroyed || !CasterPawn.Spawned || CasterPawn.Map != TestMap || CasterPawn.Dead)
+                {
+                    return false;
+                }
+
+                LocalTargetInfo target = new LocalTargetInfo(CasterPawn);
+                return Ability.CanApplyOn(target) && (Ability.verb == null || Ability.verb.ValidateTarget(target, false));
             }
 
             private LocalTargetInfo ResolveCastTarget()
@@ -357,6 +893,15 @@ namespace LogSyncMod.AutoTest
                     if (Ability.CanApplyOn(enemyTarget) && (Ability.verb == null || Ability.verb.ValidateTarget(enemyTarget, false)))
                     {
                         return enemyTarget;
+                    }
+                }
+
+                if (AllyPawn != null && !AllyPawn.Destroyed && AllyPawn.Spawned && AllyPawn.Map == TestMap && !AllyPawn.Dead)
+                {
+                    LocalTargetInfo allyTarget = new LocalTargetInfo(AllyPawn);
+                    if (Ability.CanApplyOn(allyTarget) && (Ability.verb == null || Ability.verb.ValidateTarget(allyTarget, false)))
+                    {
+                        return allyTarget;
                     }
                 }
 
@@ -396,10 +941,12 @@ namespace LogSyncMod.AutoTest
                     return;
                 }
 
-                Result.OverlayLine1 = string.IsNullOrWhiteSpace(Result.Label) ? Result.DefName : Result.Label;
-                Result.OverlayLine2 = Result.DefName;
-                Result.OverlayLine3 = "Caster: " + (CasterPawn?.LabelShortCap ?? "Unknown");
-                Result.OverlayLine4 = "Enemies: " + EnemyPawns.Count(pawn => pawn != null && !pawn.Destroyed && pawn.Spawned && !pawn.Dead);
+                Result.OverlayLine1 = Result.DefName;
+                Result.OverlayLine2 = string.IsNullOrWhiteSpace(Result.Label) ? Result.DefName : Result.Label;
+                Result.OverlayLine3 = "TargetMode: " + SkillTargetMode;
+                Result.OverlayLine4 = WarmupScreenshotTick >= 0
+                    ? "WarmupEnd+2: " + WarmupScreenshotTick
+                    : "CastTick: " + (FirstCastTick >= 0 ? FirstCastTick.ToString() : "NA");
 
                 bool captured = owner.screenshotService.TryCapture(new AutoTestScreenshotRequest
                 {

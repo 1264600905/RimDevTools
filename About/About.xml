@@ -10,6 +10,10 @@
   <li>ceteam.combatextended</li>
   </loadAfter>
   <modDependencies>
+		<li>
+			<packageId>mjcg.AutoAbility</packageId>
+			<displayName>Auto Ability</displayName>
+		</li>
 	</modDependencies>
 <description>
 	[h1]环世界日志同步模组[/h1]

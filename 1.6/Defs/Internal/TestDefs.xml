@@ -134,4 +134,19 @@
     </stages>
   </HediffDef>
 
+  <HediffDef>
+    <defName>LogSync_TestMechanitorBandwidth</defName>
+    <label>Auto-Test Mechanitor Bandwidth</label>
+    <description>Test-only hediff that grants massive mechanitor bandwidth for controlled mech skill tests.</description>
+    <hediffClass>HediffWithComps</hediffClass>
+    <isBad>false</isBad>
+    <stages>
+      <li>
+        <statOffsets>
+          <MechBandwidth>999</MechBandwidth>
+        </statOffsets>
+      </li>
+    </stages>
+  </HediffDef>
+
 </Defs>
