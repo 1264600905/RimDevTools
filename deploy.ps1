@@ -55,6 +55,15 @@ function Wait-ForRimWorldToClose {
 
     Write-Host ">>> 步骤 0: 检查 RimWorld 运行状态..." -ForegroundColor Gray
 
+    $initialProcesses = @(Get-RimWorldProcesses)
+    if ($initialProcesses.Count -eq 0) {
+        Write-Host "  未检测到 RimWorld，直接开始部署。" -ForegroundColor Green
+        return
+    }
+
+    $initialProcessInfo = ($initialProcesses | Select-Object -ExpandProperty Id) -join ", "
+    Write-Host "  检测到 RimWorld 正在运行，PID: $initialProcessInfo。将等待其关闭并稳定 ${StableClosedSeconds}s 后再部署。" -ForegroundColor Yellow
+
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
     while ((Get-Date) -lt $deadline) {
         $remainingSeconds = [Math]::Max(0, [int][Math]::Floor(($deadline - (Get-Date)).TotalSeconds))
@@ -66,7 +75,7 @@ function Wait-ForRimWorldToClose {
             continue
         }
 
-        Write-Host "  未检测到 RimWorld，开始等待 ${StableClosedSeconds}s 稳定窗口..." -ForegroundColor DarkGray
+        Write-Host "  RimWorld 已关闭，开始等待 ${StableClosedSeconds}s 稳定窗口..." -ForegroundColor DarkGray
         $closedStable = $true
         for ($i = 0; $i -lt $StableClosedSeconds; $i++) {
             if ((Get-Date) -ge $deadline) {
