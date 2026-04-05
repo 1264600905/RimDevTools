@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using HarmonyLib;
 using UnityEngine;
 using Verse;
 
@@ -11,6 +12,7 @@ namespace LogSyncMod.AutoTest
         private readonly AutoTestRunArtifacts runArtifacts;
         private readonly Func<string, string, string> appendNote;
         private readonly Func<string, string> trimForNote;
+        private static readonly System.Type EditWindowLogType = AccessTools.TypeByName("LudeonTK.EditWindow_Log");
 
         public AutoTestScreenshotService(
             AutoTestRunArtifacts runArtifacts,
@@ -156,6 +158,7 @@ namespace LogSyncMod.AutoTest
                 string screenshotPath = Path.Combine(screenshotDirectory, fileName);
 
                 AutoTestScreenshotOverlay.Request(result);
+                DismissDebugLogWindow();
                 ScreenCapture.CaptureScreenshot(screenshotPath);
                 result.ScreenshotPath = screenshotPath;
                 if (result.ScreenshotPaths == null)
@@ -259,6 +262,32 @@ namespace LogSyncMod.AutoTest
             int completedCount = results?.Count ?? 0;
             int offset = activeSessionIndex < 0 ? 0 : activeSessionIndex;
             return completedCount + offset + 1;
+        }
+
+        private static void DismissDebugLogWindow()
+        {
+            try
+            {
+                if (EditWindowLogType == null || Current.ProgramState != ProgramState.Playing)
+                {
+                    return;
+                }
+
+                WindowStack windowStack = Find.WindowStack;
+                if (windowStack == null)
+                {
+                    return;
+                }
+
+                if (windowStack.TryRemove(EditWindowLogType, doCloseSound: false))
+                {
+                    Log.Message("[LogSyncAutoTest] Dismissed debug log window before screenshot capture.");
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Warning("[LogSyncAutoTest] Failed to dismiss debug log window: " + ex.Message);
+            }
         }
 
         private static string SanitizeFileName(string text)
