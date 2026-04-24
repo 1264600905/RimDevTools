@@ -3,6 +3,7 @@ using Verse;
 using RimWorld;
 using System;
 using System.Collections.Generic;
+using System.Text;
 using HarmonyLib;
 
 namespace LogSyncMod
@@ -11,12 +12,16 @@ namespace LogSyncMod
     public class LogSyncMod : Mod
     {
         public static LogSyncSettings settings;
+        private static bool hasLoggedLoadedMods;
 
         static LogSyncMod()
         {
             // 在所有加载完成（进入主菜单）时执行
             LongEventHandler.ExecuteWhenFinished(() =>
             {
+                Log.Message("[LogSyncMod] INITIALIZATION COMPLETED.");
+                LogLoadedMods();
+
                 // 创建一个 10 秒的定时器
                 var timer = new System.Timers.Timer(10000);
                 timer.Elapsed += (s, e) =>
@@ -38,7 +43,35 @@ namespace LogSyncMod
             LogPatches.InitializeFile();
             // 内置冒烟测试默认停用，保留代码仅用于后续手动调试。
             // LogSyncSmokeTest.Schedule();
-            Log.Message("[LogSyncMod] INITIALIZATION COMPLETED.");
+        }
+
+        private static void LogLoadedMods()
+        {
+            if (hasLoggedLoadedMods)
+            {
+                return;
+            }
+
+            hasLoggedLoadedMods = true;
+
+            StringBuilder builder = new StringBuilder();
+            builder.Append("Loaded mods:");
+
+            int index = 1;
+            foreach (ModContentPack mod in LoadedModManager.RunningMods)
+            {
+                string modName = string.IsNullOrWhiteSpace(mod?.Name) ? "<unnamed mod>" : mod.Name;
+                string packageId = string.IsNullOrWhiteSpace(mod?.PackageIdPlayerFacing) ? "<unknown packageId>" : mod.PackageIdPlayerFacing;
+                builder.AppendLine();
+                builder.Append(index);
+                builder.Append(". ");
+                builder.Append(modName);
+                builder.Append(" | ");
+                builder.Append(packageId);
+                index++;
+            }
+
+            LogUtils.Message(builder.ToString());
         }
 
         public override string SettingsCategory()
