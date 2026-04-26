@@ -457,6 +457,7 @@ def normalize_log_keywords(log_keywords: list[str] | str | None) -> list[str] | 
 def update_mod_settings(
     log_keywords: list[str] | None = None,
     clear_log_keywords: bool = False,
+    log_max_lines: int | None = None,
     auto_test_enabled: bool | None = None,
     auto_test_target_package_id: str | None = None,
     auto_test_output_path: str | None = None,
@@ -491,6 +492,12 @@ def update_mod_settings(
         elif path_node.text != TARGET_SYNC_LOG:
             path_node.text = TARGET_SYNC_LOG
             changed = True
+
+        if log_max_lines is not None:
+            normalized_log_max_lines = str(max(1, int(log_max_lines)))
+            if (mod_settings.findtext("logMaxLines") or "").strip() != normalized_log_max_lines:
+                ensure_text_node(mod_settings, "logMaxLines", normalized_log_max_lines)
+                changed = True
 
         if clear_log_keywords or log_keywords is not None:
             keywords_node = mod_settings.find("keywords")
@@ -884,6 +891,7 @@ def monitor(
     mod_list_file: Path | None = None,
     log_keywords: list[str] | None = None,
     clear_log_keywords: bool = False,
+    log_max_lines: int | None = None,
     auto_test_package_id: str | None = None,
     auto_test_output_dir: str | None = None,
     auto_test_mode: str | None = "automatic",
@@ -951,6 +959,7 @@ def monitor(
     update_mod_settings(
         log_keywords=log_keywords,
         clear_log_keywords=clear_log_keywords,
+        log_max_lines=log_max_lines,
         auto_test_enabled=True if is_auto_test_mode else False,
         auto_test_target_package_id=auto_test_package_id if is_auto_test_mode else "",
         auto_test_output_path=resolved_auto_test_output_dir if is_auto_test_mode else None,
@@ -1077,6 +1086,7 @@ if __name__ == "__main__":
     parser.add_argument("--mods-file", default=None, help="自定义模组预设路径")
     parser.add_argument("--log-keyword", action="append", default=None, help="写入 LogSyncMod 配置 <keywords> 的条目，可重复传入")
     parser.add_argument("--clear-log-keywords", action="store_true", help="清空 LogSyncMod 配置中的 <keywords> 列表")
+    parser.add_argument("--log-max-lines", type=int, default=None, help="写入 LogSyncMod 配置 <logMaxLines>；普通日志达到上限后仅继续保留 Error")
     parser.add_argument("--auto-test-package-id", default=None, help="auto/xml 模式下的目标模组 packageId")
     parser.add_argument("--auto-test-output-dir", default=None, help="自动测试报告输出目录")
     parser.add_argument("--auto-test-mode", choices=["automatic", "xml-driven"], default="automatic", help="兼容旧参数；未传 --mode 时用于自动推断 auto/xml")
@@ -1114,6 +1124,7 @@ if __name__ == "__main__":
         update_mod_settings(
             log_keywords=keywords_to_write,
             clear_log_keywords=args.clear_log_keywords,
+            log_max_lines=args.log_max_lines,
             auto_test_enabled=True if is_auto_test_mode else False,
             auto_test_target_package_id=args.auto_test_package_id if is_auto_test_mode else "",
             auto_test_output_path=resolved_auto_test_output_dir,
@@ -1138,6 +1149,7 @@ if __name__ == "__main__":
         mod_list_file=Path(args.mods_file) if args.mods_file else None,
         log_keywords=keywords_to_write,
         clear_log_keywords=args.clear_log_keywords,
+        log_max_lines=args.log_max_lines,
         auto_test_package_id=args.auto_test_package_id,
         auto_test_output_dir=args.auto_test_output_dir,
         auto_test_mode=args.auto_test_mode,

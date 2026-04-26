@@ -46,6 +46,8 @@ namespace LogSyncMod
 
         private static readonly Queue<QueuedLogEntry> recentLogs = new Queue<QueuedLogEntry>();
         private static readonly HashSet<string> processedLogs = new HashSet<string>();
+        private static readonly List<QueuedLogEntry> overflowErrorLogs = new List<QueuedLogEntry>();
+        private static readonly HashSet<string> overflowErrorKeys = new HashSet<string>();
         private static readonly object fileLock = new object();
         private static readonly object xmlIndexLock = new object();
         private static readonly object assemblyLookupLock = new object();
@@ -56,7 +58,7 @@ namespace LogSyncMod
         private static readonly Dictionary<string, Type> resolvedTypeCache = new Dictionary<string, Type>(StringComparer.Ordinal);
         private static PendingSourceReference pendingSourceReference;
         private static bool xmlIndexBuilt;
-        private const int MaxLogLines = 500;
+        private static bool hasWrittenOverflowMarker;
 
         private static readonly Regex ExceptionLoadingDefRegex = new Regex(@"Exception loading def from file\s+(?<path>[^:\r\n]+?\.xml)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private static readonly Regex DllLoadRegex = new Regex(@"could not load library\s+(?<path>\S+?\.dll)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -137,7 +139,10 @@ namespace LogSyncMod
                 {
                     recentLogs.Clear();
                     processedLogs.Clear();
+                    overflowErrorLogs.Clear();
+                    overflowErrorKeys.Clear();
                     pendingSourceReference = null;
+                    hasWrittenOverflowMarker = false;
                     xmlIndexBuilt = false;
                     defNameToXmlPath.Clear();
                     ambiguousDefNames.Clear();
@@ -718,8 +723,22 @@ namespace LogSyncMod
 
         private static void EnqueueResolvedLog(string idTag, string type, string dedupeKey, string text, string timestampText, string sourceMarker)
         {
-            if (processedLogs.Contains(dedupeKey)) return;
-            EnqueueLine(dedupeKey, BuildOutputLine(idTag, type, text, timestampText, sourceMarker));
+            if (processedLogs.Contains(dedupeKey) || overflowErrorKeys.Contains(dedupeKey)) return;
+
+            string outputLine = BuildOutputLine(idTag, type, text, timestampText, sourceMarker);
+            if (recentLogs.Count < GetLogMaxLines())
+            {
+                EnqueueLine(dedupeKey, outputLine);
+                return;
+            }
+
+            if (type == "Error")
+            {
+                AppendOverflowErrorLine(dedupeKey, outputLine);
+                return;
+            }
+
+            EmitDebug("-> Log limit reached. Dropping non-error line.");
         }
 
         private static bool TryResolveModLabelFromPath(string path, out string modLabel)
@@ -803,17 +822,31 @@ namespace LogSyncMod
         {
             recentLogs.Enqueue(new QueuedLogEntry(dedupeKey, outputLine));
             processedLogs.Add(dedupeKey);
+        }
 
-            while (recentLogs.Count > MaxLogLines)
+        private static void AppendOverflowErrorLine(string dedupeKey, string outputLine)
+        {
+            if (!hasWrittenOverflowMarker)
             {
-                QueuedLogEntry removed = recentLogs.Dequeue();
-                processedLogs.Remove(removed.DedupeKey);
+                string marker = string.Format(
+                    "--- Log line limit reached ({0}). Further Message/Warning logs are suppressed; Error logs continue below. ---",
+                    GetLogMaxLines());
+                overflowErrorLogs.Add(new QueuedLogEntry("__overflow_marker__", marker));
+                hasWrittenOverflowMarker = true;
             }
+
+            overflowErrorLogs.Add(new QueuedLogEntry(dedupeKey, outputLine));
+            overflowErrorKeys.Add(dedupeKey);
+        }
+
+        private static int GetLogMaxLines()
+        {
+            return LogSyncMod.settings?.GetLogMaxLines() ?? 500;
         }
 
         private static void PersistLogFile(string path)
         {
-            File.WriteAllLines(path, recentLogs.Select(entry => entry.OutputLine).ToArray());
+            File.WriteAllLines(path, recentLogs.Concat(overflowErrorLogs).Select(entry => entry.OutputLine).ToArray());
         }
 
         private static void EmitDebug(string message)

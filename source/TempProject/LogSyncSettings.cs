@@ -35,6 +35,7 @@ namespace LogSyncMod
         public bool syncMessage = false;
         public bool syncWarning = true;
         public bool syncError = true;
+        public int logMaxLines = 500;
         public bool enableVerboseDebug = false;
         public bool enableSmokeTest = false;
         public bool autoTestEnabled = false;
@@ -61,6 +62,7 @@ namespace LogSyncMod
             Scribe_Values.Look(ref syncMessage, "syncMessage", false);
             Scribe_Values.Look(ref syncWarning, "syncWarning", true);
             Scribe_Values.Look(ref syncError, "syncError", true);
+            Scribe_Values.Look(ref logMaxLines, "logMaxLines", 500);
             Scribe_Values.Look(ref enableVerboseDebug, "enableVerboseDebug", false);
             Scribe_Values.Look(ref enableSmokeTest, "enableSmokeTest", false);
             Scribe_Values.Look(ref autoTestEnabled, "autoTestEnabled", false);
@@ -81,6 +83,7 @@ namespace LogSyncMod
             if (keywords == null) keywords = new List<string>();
             if (autoTestTargetPackageId == null) autoTestTargetPackageId = "";
             if (autoTestOutputPath == null) autoTestOutputPath = "D:/RimWorldAutoTest";
+            if (logMaxLines < 1) logMaxLines = 1;
             if (!System.Enum.IsDefined(typeof(AutoTestMode), autoTestMode)) autoTestMode = AutoTestMode.Automatic;
             if (!System.Enum.IsDefined(typeof(AutoTestScope), autoTestScope)) autoTestScope = AutoTestScope.Standard;
             
@@ -109,8 +112,14 @@ namespace LogSyncMod
 
             autoTestTargetPackageId = (autoTestTargetPackageId ?? "").Trim().ToLowerInvariant();
             autoTestOutputPath = (autoTestOutputPath ?? "").Trim();
+            if (logMaxLines < 1) logMaxLines = 1;
             if (autoTestBatchSize < 1) autoTestBatchSize = 1;
             if (autoTestPocketMapMaxConcurrent < 1) autoTestPocketMapMaxConcurrent = 1;
+        }
+
+        public int GetLogMaxLines()
+        {
+            return logMaxLines < 1 ? 1 : logMaxLines;
         }
 
         public bool ShouldRunStandardSuite()
