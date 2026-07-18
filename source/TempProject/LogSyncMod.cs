@@ -3,6 +3,8 @@ using Verse;
 using RimWorld;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Text;
 using HarmonyLib;
 
@@ -13,6 +15,13 @@ namespace LogSyncMod
     {
         public static LogSyncSettings settings;
         private static bool hasLoggedLoadedMods;
+        private static System.Timers.Timer windowModeTimer;
+        private const int GwlStyle = -16;
+        private const long WsCaption = 0x00C00000L;
+        private const long WsThickFrame = 0x00040000L;
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern IntPtr GetWindowLongPtr(IntPtr hWnd, int nIndex);
 
         static LogSyncMod()
         {
@@ -21,6 +30,7 @@ namespace LogSyncMod
             {
                 Log.Message("[LogSyncMod] INITIALIZATION COMPLETED.");
                 LogLoadedMods();
+                ScheduleWindowModeLog();
 
                 // 创建一个 10 秒的定时器
                 var timer = new System.Timers.Timer(10000);
@@ -43,6 +53,47 @@ namespace LogSyncMod
             LogPatches.InitializeFile();
             // 内置冒烟测试默认停用，保留代码仅用于后续手动调试。
             // LogSyncSmokeTest.Schedule();
+        }
+
+        private static void ScheduleWindowModeLog()
+        {
+            windowModeTimer = new System.Timers.Timer(3000) { AutoReset = false };
+            windowModeTimer.Elapsed += (sender, args) =>
+            {
+                try
+                {
+                    LogWindowMode();
+                }
+                finally
+                {
+                    windowModeTimer.Dispose();
+                    windowModeTimer = null;
+                }
+            };
+            windowModeTimer.Start();
+        }
+
+        private static void LogWindowMode()
+        {
+            IntPtr windowHandle = Process.GetCurrentProcess().MainWindowHandle;
+            if (windowHandle == IntPtr.Zero)
+            {
+                Log.Warning("[LogSyncMod] WindowMode: unable to resolve the RimWorld main window handle.");
+                return;
+            }
+
+            long style = GetWindowLongPtr(windowHandle, GwlStyle).ToInt64();
+            bool hasCaption = (style & WsCaption) != 0;
+            bool hasThickFrame = (style & WsThickFrame) != 0;
+            bool borderless = !hasCaption && !hasThickFrame;
+            Log.Message(
+                "[LogSyncMod] WindowMode: " +
+                "resolution=" + Screen.width + "x" + Screen.height +
+                " fullscreen=" + Screen.fullScreen +
+                " fullscreenMode=" + Screen.fullScreenMode +
+                " caption=" + hasCaption +
+                " thickFrame=" + hasThickFrame +
+                " borderless=" + borderless + ".");
         }
 
         private static void LogLoadedMods()

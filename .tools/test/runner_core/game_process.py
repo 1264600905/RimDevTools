@@ -1,6 +1,7 @@
 # RimWorld 进程的启动、关闭、检测与等待
 # 负责所有与游戏进程生命周期相关的操作。
 
+import os
 import subprocess
 import sys
 import time
@@ -13,6 +14,51 @@ from .config import (
     STEAM_URL,
     WAIT_FOR_EXISTING_GAME_EXIT_TIMEOUT,
 )
+
+
+BORDERLESS_WINDOW_ARGUMENT = "-popupwindow"
+
+
+def is_steam_running():
+    if sys.platform != "win32":
+        return False
+    result = subprocess.run(
+        ["tasklist", "/FI", "IMAGENAME eq steam.exe"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return "steam.exe" in (result.stdout or "").lower()
+
+
+def ensure_steam_running():
+    """在直接启动 RimWorld 前尽力启动 Steam，但不阻断本地 exe 启动。"""
+    if is_steam_running():
+        return True
+
+    candidates = [
+        Path(os.environ.get("PROGRAMFILES(X86)", "")) / "Steam" / "steam.exe",
+        Path(os.environ.get("PROGRAMFILES", "")) / "Steam" / "steam.exe",
+        Path(os.environ.get("LOCALAPPDATA", "")) / "Steam" / "steam.exe",
+    ]
+    for steam_path in candidates:
+        if not steam_path.is_file():
+            continue
+        try:
+            subprocess.Popen([str(steam_path), "-silent"], shell=False)
+            print(f"[信息] Steam 未运行，已尝试启动: {steam_path}")
+            return True
+        except OSError as e:
+            print(f"[警告] 启动 Steam 失败: {e}")
+            return False
+
+    try:
+        os.startfile("steam://open/main")
+        print("[信息] Steam 未运行，已通过协议尝试启动。")
+        return True
+    except OSError as e:
+        print(f"[警告] 未找到 Steam 客户端，继续直接启动 RimWorld: {e}")
+        return False
 
 
 def kill_rimworld():
@@ -48,7 +94,8 @@ def is_rimworld_running():
 def launch_rimworld(use_quicktest: bool):
     game_path = Path(GAME_PATH)
     if game_path.exists():
-        command = [str(game_path), "-popupwindow"]
+        ensure_steam_running()
+        command = [str(game_path), BORDERLESS_WINDOW_ARGUMENT]
         if use_quicktest:
             command.append("quicktest")
         return subprocess.Popen(command, shell=False)

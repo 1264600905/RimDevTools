@@ -46,8 +46,8 @@ namespace LogSyncMod
 
         private static readonly Queue<QueuedLogEntry> recentLogs = new Queue<QueuedLogEntry>();
         private static readonly HashSet<string> processedLogs = new HashSet<string>();
-        private static readonly List<QueuedLogEntry> overflowErrorLogs = new List<QueuedLogEntry>();
-        private static readonly HashSet<string> overflowErrorKeys = new HashSet<string>();
+        private static readonly List<QueuedLogEntry> overflowLogs = new List<QueuedLogEntry>();
+        private static readonly HashSet<string> overflowLogKeys = new HashSet<string>();
         private static readonly object fileLock = new object();
         private static readonly object xmlIndexLock = new object();
         private static readonly object assemblyLookupLock = new object();
@@ -139,8 +139,8 @@ namespace LogSyncMod
                 {
                     recentLogs.Clear();
                     processedLogs.Clear();
-                    overflowErrorLogs.Clear();
-                    overflowErrorKeys.Clear();
+                    overflowLogs.Clear();
+                    overflowLogKeys.Clear();
                     pendingSourceReference = null;
                     hasWrittenOverflowMarker = false;
                     xmlIndexBuilt = false;
@@ -723,7 +723,7 @@ namespace LogSyncMod
 
         private static void EnqueueResolvedLog(string idTag, string type, string dedupeKey, string text, string timestampText, string sourceMarker)
         {
-            if (processedLogs.Contains(dedupeKey) || overflowErrorKeys.Contains(dedupeKey)) return;
+            if (processedLogs.Contains(dedupeKey) || overflowLogKeys.Contains(dedupeKey)) return;
 
             string outputLine = BuildOutputLine(idTag, type, text, timestampText, sourceMarker);
             if (recentLogs.Count < GetLogMaxLines())
@@ -732,9 +732,9 @@ namespace LogSyncMod
                 return;
             }
 
-            if (type == "Error")
+            if (type == "Error" || IsControlSignal(text))
             {
-                AppendOverflowErrorLine(dedupeKey, outputLine);
+                AppendOverflowLine(dedupeKey, outputLine);
                 return;
             }
 
@@ -824,19 +824,24 @@ namespace LogSyncMod
             processedLogs.Add(dedupeKey);
         }
 
-        private static void AppendOverflowErrorLine(string dedupeKey, string outputLine)
+        private static bool IsControlSignal(string text)
+        {
+            return text.StartsWith("[LogSyncAutoTest] COMPLETED", StringComparison.Ordinal);
+        }
+
+        private static void AppendOverflowLine(string dedupeKey, string outputLine)
         {
             if (!hasWrittenOverflowMarker)
             {
                 string marker = string.Format(
-                    "--- Log line limit reached ({0}). Further Message/Warning logs are suppressed; Error logs continue below. ---",
+                    "--- Log line limit reached ({0}). Further Message/Warning logs are suppressed; Error and control logs continue below. ---",
                     GetLogMaxLines());
-                overflowErrorLogs.Add(new QueuedLogEntry("__overflow_marker__", marker));
+                overflowLogs.Add(new QueuedLogEntry("__overflow_marker__", marker));
                 hasWrittenOverflowMarker = true;
             }
 
-            overflowErrorLogs.Add(new QueuedLogEntry(dedupeKey, outputLine));
-            overflowErrorKeys.Add(dedupeKey);
+            overflowLogs.Add(new QueuedLogEntry(dedupeKey, outputLine));
+            overflowLogKeys.Add(dedupeKey);
         }
 
         private static int GetLogMaxLines()
@@ -846,7 +851,7 @@ namespace LogSyncMod
 
         private static void PersistLogFile(string path)
         {
-            File.WriteAllLines(path, recentLogs.Concat(overflowErrorLogs).Select(entry => entry.OutputLine).ToArray());
+            File.WriteAllLines(path, recentLogs.Concat(overflowLogs).Select(entry => entry.OutputLine).ToArray());
         }
 
         private static void EmitDebug(string message)

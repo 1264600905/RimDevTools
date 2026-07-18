@@ -4,6 +4,7 @@
 # - 这里说的"高权限"是指"允许访问沙盒外文件"，不是指 Windows 管理员权限。
 #  注意绝对禁止并发执行此脚本，因为游戏只有一个player.log文件，如果并发执行会导致日志内容混乱，甚至可能导致游戏崩溃。
 
+import json
 import subprocess
 import time
 import argparse
@@ -100,6 +101,64 @@ def determine_runner_mode(explicit_mode: str | None, auto_test_package_id: str |
         return RUNNER_MODE_XML if normalized_auto_test_mode in {"xml", "xml-driven", "xmldriven"} else RUNNER_MODE_AUTO
 
     return RUNNER_MODE_QUICK
+
+
+def snapshot_result_files(output_dir: str | None):
+    if not output_dir:
+        return set()
+    path = Path(output_dir)
+    if not path.is_dir():
+        return set()
+    return {item.resolve() for item in path.glob("*_Result.json") if item.is_file()}
+
+
+def find_successful_auto_test_result(output_dir: str | None, package_id: str | None, existing_files: set[Path]):
+    if not output_dir or not package_id:
+        return None
+
+    output_path = Path(output_dir)
+    if not output_path.is_dir():
+        return None
+
+    candidates = sorted(
+        (item for item in output_path.glob("*_Result.json") if item.is_file() and item.resolve() not in existing_files),
+        key=lambda item: item.stat().st_mtime_ns,
+        reverse=True,
+    )
+    for result_path in candidates:
+        try:
+            result = json.loads(result_path.read_text(encoding="utf-8-sig"))
+        except (OSError, json.JSONDecodeError):
+            continue
+
+        results = result.get("results")
+        if (
+            str(result.get("packageId", "")).lower() != package_id.lower()
+            or result.get("completeness") != "Complete"
+            or result.get("manifestMissing") != 0
+            or result.get("manifestExecuted", -1) < result.get("manifestPlanned", 0)
+            or not isinstance(results, list)
+            or any(not isinstance(item, dict) or item.get("status") != "passed" for item in results)
+        ):
+            continue
+        return result_path, result
+    return None
+
+
+def read_new_system_log(last_pos: int, ready_signal: str | None):
+    if not SYSTEM_LOG_PATH.exists():
+        return False, last_pos
+
+    current_size = SYSTEM_LOG_PATH.stat().st_size
+    if current_size < last_pos:
+        last_pos = 0
+    if current_size <= last_pos:
+        return False, last_pos
+
+    with open(SYSTEM_LOG_PATH, "r", encoding="utf-8", errors="ignore") as log_file:
+        log_file.seek(last_pos)
+        new_content = log_file.read()
+    return bool(ready_signal and ready_signal in new_content), current_size
 
 
 # ==========================================
@@ -217,6 +276,7 @@ def monitor(
     rotate_target_log(target_log)
     if resolved_auto_test_output_dir:
         prune_auto_test_output_runs(Path(resolved_auto_test_output_dir))
+    existing_result_files = snapshot_result_files(resolved_auto_test_output_dir)
 
     # 启动
     try:
@@ -253,36 +313,55 @@ def monitor(
         last_pos = SYSTEM_LOG_PATH.stat().st_size
 
     found = False
+    completion_source = None
     try:
         while time.time() - start_time < timeout_seconds:
-            if runner_mode in {RUNNER_MODE_AUTO, RUNNER_MODE_XML} and game_process is not None:
-                exit_code = game_process.poll()
-                if exit_code is not None:
-                    print(f"\n[错误] RimWorld 进程已提前退出，退出码: {exit_code}")
-                    break
-
             if runner_mode == RUNNER_MODE_MANUAL:
                 process_exited = game_process.poll() is not None if game_process is not None else not is_rimworld_running()
                 if process_exited:
                     print("\n[OK] 检测到用户已关闭 RimWorld。")
                     found = True
+                    completion_source = "manual"
                     break
                 print(f"\r耗时: {int(time.time() - start_time)}s", end="", flush=True)
                 time.sleep(2)
                 continue
 
-            if SYSTEM_LOG_PATH.exists():
-                current_size = SYSTEM_LOG_PATH.stat().st_size
-                if current_size < last_pos:
-                    last_pos = 0
-                if current_size > last_pos:
-                    with open(SYSTEM_LOG_PATH, "r", encoding="utf-8", errors="ignore") as f:
-                        f.seek(last_pos)
-                        if ready_signal and ready_signal in f.read():
-                            print("\n[OK] 检测到就绪信号！")
-                            found = True
-                            time.sleep(3)
+            found, last_pos = read_new_system_log(last_pos, ready_signal)
+            if found:
+                completion_source = "signal"
+                print("\n[OK] 检测到就绪信号！")
+                time.sleep(3)
+                break
+
+            if runner_mode in {RUNNER_MODE_AUTO, RUNNER_MODE_XML} and game_process is not None:
+                exit_code = game_process.poll()
+                if exit_code is not None:
+                    for _ in range(3):
+                        time.sleep(1)
+                        found, last_pos = read_new_system_log(last_pos, ready_signal)
+                        if found:
+                            completion_source = "signal"
+                            print("\n[OK] 游戏退出后检测到就绪信号！")
                             break
+
+                    if not found and exit_code == 0:
+                        result_match = find_successful_auto_test_result(
+                            resolved_auto_test_output_dir,
+                            auto_test_package_id,
+                            existing_result_files,
+                        )
+                        if result_match:
+                            result_path, result = result_match
+                            found = True
+                            completion_source = "result"
+                            print(
+                                "\n[OK] 完成信号缺失，但已验证本轮结果文件: "
+                                f"{result_path.name} (passed={len(result['results'])})"
+                            )
+                    if not found:
+                        print(f"\n[错误] RimWorld 进程已提前退出，退出码: {exit_code}")
+                    break
             print(f"\r耗时: {int(time.time() - start_time)}s", end="", flush=True)
             time.sleep(2)
     except KeyboardInterrupt:
@@ -309,11 +388,12 @@ def monitor(
 
     if found:
         if summarize_sync_log():
-            print("[结果] 检测到就绪信号，日志摘要已输出。")
+            print(f"[结果] 测试成功（{completion_source}），日志摘要已输出。")
         else:
-            print("[结果] 检测到就绪信号，但未找到同步日志。")
+            print(f"[结果] 测试成功（{completion_source}），但未找到同步日志。")
     else:
         print("[结果] 未检测到就绪信号，测试失败。")
+    return found
 
 
 # ==========================================
@@ -406,7 +486,7 @@ if __name__ == "__main__":
                 print(f"- {kw}")
         raise SystemExit(0)
 
-    monitor(
+    success = monitor(
         runner_mode=runner_mode,
         mod_list_file=Path(args.mods_file) if args.mods_file else None,
         log_keywords=keywords_to_write,
@@ -424,3 +504,4 @@ if __name__ == "__main__":
         auto_test_defnames=args.auto_test_defname,
         timeout_seconds=max(1, int(args.timeout_seconds)),
     )
+    raise SystemExit(0 if success else 1)

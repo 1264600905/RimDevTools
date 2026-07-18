@@ -21,6 +21,8 @@ __pycache__/
 *.pyc
 *.vscode/
 .claude/
+.external/
+.tools/ilspy/
 # 配置文件
 *.config
 appSettings.json
