@@ -1,0 +1,92 @@
+# RimWorld 进程的启动、关闭、检测与等待
+# 负责所有与游戏进程生命周期相关的操作。
+
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+from .config import (
+    GAME_PATH,
+    POST_EXISTING_GAME_EXIT_DELAY,
+    STEAM_LAUNCH_DETECT_TIMEOUT,
+    STEAM_URL,
+    WAIT_FOR_EXISTING_GAME_EXIT_TIMEOUT,
+)
+
+
+def kill_rimworld():
+    if sys.platform == "win32":
+        try:
+            subprocess.run(["taskkill", "/F", "/IM", "RimWorldWin64.exe", "/T"], capture_output=True, check=False)
+            subprocess.run(["taskkill", "/F", "/IM", "RimWorld.exe", "/T"], capture_output=True, check=False)
+        except:
+            pass
+
+
+def is_rimworld_running():
+    if sys.platform != "win32":
+        return False
+    result = subprocess.run(
+        ["tasklist", "/FI", "IMAGENAME eq RimWorldWin64.exe"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if "RimWorldWin64.exe" in (result.stdout or ""):
+        return True
+
+    result = subprocess.run(
+        ["tasklist", "/FI", "IMAGENAME eq RimWorld.exe"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return "RimWorld.exe" in (result.stdout or "")
+
+
+def launch_rimworld(use_quicktest: bool):
+    game_path = Path(GAME_PATH)
+    if game_path.exists():
+        command = [str(game_path), "-popupwindow"]
+        if use_quicktest:
+            command.append("quicktest")
+        return subprocess.Popen(command, shell=False)
+
+    if use_quicktest:
+        raise RuntimeError(f"找不到游戏 exe，无法以 quicktest 模式启动: {GAME_PATH}")
+
+    try:
+        subprocess.Popen(["start", STEAM_URL], shell=True)
+    except Exception:
+        pass
+
+    steam_start = time.time()
+    while time.time() - steam_start < STEAM_LAUNCH_DETECT_TIMEOUT:
+        if is_rimworld_running():
+            return None
+        time.sleep(2)
+
+    raise RuntimeError(f"Steam 启动失败且找不到游戏 exe 路径: {GAME_PATH}")
+
+
+def wait_for_existing_rimworld_to_exit(timeout_seconds: int = WAIT_FOR_EXISTING_GAME_EXIT_TIMEOUT):
+    """若检测到已有 RimWorld 进程正在运行，则等待其退出。等待期间不改模组配置。"""
+    if not is_rimworld_running():
+        return True
+
+    print(f"[信息] 检测到 RimWorld 已在运行，最多等待 {timeout_seconds}s 让其自行关闭。")
+    start_time = time.time()
+    while time.time() - start_time < timeout_seconds:
+        elapsed = int(time.time() - start_time)
+        print(f"\r等待现有游戏退出: {elapsed}s/{timeout_seconds}s", end="", flush=True)
+        time.sleep(2)
+        if not is_rimworld_running():
+            print("")
+            print(f"[信息] 检测到现有 RimWorld 已关闭，额外等待 {POST_EXISTING_GAME_EXIT_DELAY}s 后开始测试。")
+            time.sleep(POST_EXISTING_GAME_EXIT_DELAY)
+            return True
+
+    print("")
+    print(f"[错误] 超过 {timeout_seconds}s，现有 RimWorld 仍未关闭，已取消本次测试。")
+    return False

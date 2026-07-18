@@ -1,0 +1,143 @@
+{
+    // ============================================================
+    // 项目信息 — 每个模组项目必须修改的核心字段
+    // init_mod.py 运行后会自动更新这些值
+    // ============================================================
+
+    // 模组名称（英文，不含空格）
+    // 用途: deploy.ps1 的部署目标文件夹名、日志关键词前缀、csproj 文件名推导
+    "mod_name": "LogSyncMod",
+
+    // 目标 RimWorld 版本号
+    // 用途: pull_ref.py 反编译时定位版本化 Assemblies 文件夹、deploy.ps1 同步项的版本目录
+    "game_version": "1.6",
+
+    // ============================================================
+    // 本机环境 — 需要根据开发者本机的 Steam 安装位置修改
+    // 同一台电脑上的所有项目应该填相同的值
+    // ============================================================
+
+    // RimWorld 安装根目录（不含 Mods 后缀）
+    // 脚本会自动推导:
+    //   - {rimworld_dir}/Mods/{mod_name} -> 部署目标
+    //   - {rimworld_dir}/RimWorldWin64.exe -> 游戏启动路径
+    //   - {rimworld_dir}/Mods -> pull 搜索路径之一
+    "rimworld_dir": "H:\\SteamLibrary\\steamapps\\common\\RimWorld",
+
+    // 额外的 Steam Workshop 模组搜索路径
+    // pull_ref.py 和测试脚本会在这些目录下搜索模组
+    // 注意: {rimworld_dir}/Mods 会被自动包含，无需重复添加
+    "workshop_paths": [
+        "C:\\Program Files (x86)\\Steam\\steamapps\\workshop\\content\\294100",
+        "D:\\SteamLibrary\\steamapps\\workshop\\content\\294100",
+        "E:\\SteamLibrary\\steamapps\\workshop\\content\\294100",
+        "F:\\SteamLibrary\\steamapps\\workshop\\content\\294100",
+        "G:\\SteamLibrary\\steamapps\\workshop\\content\\294100",
+        "H:\\SteamLibrary\\steamapps\\workshop\\content\\294100"
+    ],
+
+    // ============================================================
+    // 部署配置 — deploy.ps1 专用
+    // ============================================================
+
+    // C# 项目文件路径（相对于项目根目录），按编译顺序排列
+    // 如果是单 csproj 项目，格式为: source/{mod_name}/{mod_name}.csproj
+    "csproj_paths": [
+        "source\\TempProject\\TempProject.csproj",
+        "source\\AutoTestProject\\AutoTestProject.csproj"
+    ],
+
+    // 需要同步到游戏 Mods 目录的文件和文件夹（相对于项目根目录）
+    // 不在此列表中的内容（如 .gemini, 参考文档, 规范化测试 等）不会被部署
+    "sync_items": [
+        "1.6\\Assemblies",
+        "AssetBundles",
+        "1.6\\Defs",
+        "Languages",
+        "About",
+        "LoadFolders.xml"
+    ],
+
+    // 部署时清空目标目录需要保留的文件（正则表达式）
+    // PublishedFileId.txt 是 Steam 识别已发布模组的关键文件，删除会导致无法更新
+    "protected_files_regex": "^(PublishedFileId\\.txt)$",
+
+    // ============================================================
+    // Pull 引用配置 — pull_ref.py 专用
+    // ============================================================
+
+    // 拉取参考模组时忽略的文件夹（节省空间和复制时间）
+    "pull_ignore_folders": ["Textures", "Sounds", "News", ".git", ".vs", "obj", "bin"],
+
+    // ILSpy 命令行反编译器路径（相对于 .tools 目录）
+    "ilspycmd_path": "ilspy\\ilspycmd.exe",
+
+    // ============================================================
+    // 测试配置 — run_test.py / runner_core 专用
+    // ============================================================
+
+    // 日志同步关键词，格式通常为 [模组名称]
+    // 测试启动时会写入 LogSyncMod 的配置文件，用于过滤日志
+    "log_keywords": ["LogSyncAutoTest"],
+
+    // 默认的最小测试模组集（无预设文件时使用）
+    // 每个模组用 packageId 表示，按加载顺序排列
+    "min_active_mods": [
+        "brrainz.harmony",
+        "sarg.smartspeed",
+        "brrainz.visualexceptions",
+        "ludeon.rimworld",
+        "automatic.autolinks",
+        "brrainz.cameraplus",
+        "rwzh.chinesepack.cameraplus",
+        "ludeon.rimworld.royalty",
+        "ludeon.rimworld.ideology",
+        "ludeon.rimworld.biotech",
+        "ludeon.rimworld.anomaly",
+        "ludeon.rimworld.odyssey",
+        "void.charactereditor",
+        "hailuan.translate",
+        "erdelf.humanoidalienraces",
+        "rwzh.chinesepack.humanoidalienraces",
+        "hentailoliteam.axolotl",
+        "mlie.logafterdeferror",
+        "jaxe.rimhud",
+        "shouer.chinesepack.rimhud",
+        "arandomkiwi.rimsaves",
+        "memegoddess.searchanddestroy",
+        "rwzh.chinesepack.rimsaves",
+        "trigger.universalblueprints",
+        "trigger.logsyncmod"
+    ],
+
+    // 超时参数（单位: 秒）
+    "timeouts": {
+        // Steam 协议启动后等待游戏进程出现的最大时间
+        "steam_launch_detect": 120,
+        // 测试运行的最大等待时间
+        "max_wait": 600,
+        // 等待已有游戏进程退出的最大时间
+        "existing_game_exit": 600,
+        // 游戏退出后额外稳定等待时间
+        "post_exit_delay": 10
+    },
+
+    // 日志和测试输出的保留策略
+    "retention": {
+        // 同步日志最多保留几份（含当前文件）
+        "max_log_files": 3,
+        // 自动测试输出最多保留几次运行
+        "max_auto_test_runs": 2
+    },
+
+    // ============================================================
+    // Shader Bundle 配置 — .tools/shader/build_shader_bundle.ps1 专用
+    // ============================================================
+    "shader_bundle": {
+        "enabled": false,
+        "unity_project_path": "UnityProjects\\ShaderBundleBuilder",
+        "unity_exe_path": "D:\\UnityEditor\\2023.2.20f1c1\\Editor\\Unity.exe",
+        "build_method": "MyCustomMod.ShaderBundleBuilder.Build",
+        "bundle_name": "mycustommod_shaders"
+    }
+}

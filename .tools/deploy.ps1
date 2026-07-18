@@ -1,44 +1,49 @@
-﻿# 自动化编译部署脚本,注意在第一次执行部署脚本之前先改名称，别再用TempProject去部署了好嘛？
+# 自动化编译部署脚本
+# 所有可变配置统一从项目根目录的 mod_config.jsonc 读取，无需修改此脚本。
+# 使用须知:
+#   1. 别再用 TempProject 去部署了好嘛？dll 必须不能叫 TempProject，在第一次部署时必须改成模组相关名称。
+#      此脚本可能会在很多模组使用，如果 dll 都一样了必定报错。
+#   2. 任何修改后执行部署脚本是标准的执行流程，不需要专门问，修改完毕必须执行部署。
 
-# ==========================================
-# 1. 配置部分 (需要修改的部分写在这里)
-# ==========================================
-
-# 模组名称（用于游戏 Mods 文件夹下的子文件夹名）
-$ModName = "LogSyncMod"
-
-# 你的 RimWorld Mods 目录路径
-$RimWorldModDir = "H:\SteamLibrary\steamapps\common\RimWorld\Mods"
-
-# C# 项目文件路径（按顺序编译，AutoTest 依赖主 DLL）
-$CsprojPaths = @(
-    "$PSScriptRoot\source\TempProject\TempProject.csproj",
-    "$PSScriptRoot\source\AutoTestProject\AutoTestProject.csproj"
+param(
+    [switch]$SyncSource  # 是否同步 source 文件夹到部署目录
 )
 
-# 需要同步到游戏目录的项目 (文件夹或文件)
-# 注意：这些路径是相对于项目根目录的，不在列表中的文件（如 .gemini, .cursor, 参考文档等）将不会被部署
-$SyncItems = @(
-    "1.6\Assemblies",
-    "1.6\Defs",
-    "1.6\Patches",
-    "Languages",
-    "About",
-    "Textures",
-    "MuzzleFlash",
-    "CE_Patches",
-    "LoadFolders.xml"
-)
+# ==========================================
+# 1. 从 mod_config.jsonc 加载配置
+# ==========================================
 
-# 清空目标目录时需要保留的文件或文件夹 (正则表达式)
-# PublishedFileId.txt 是 Steam 识别模组的关键，必须保留，否则会导致无法更新模组
-$ProtectedFilesRegex = "^(PublishedFileId\.txt)$"
+$ConfigFile = Join-Path $PSScriptRoot "..\mod_config.jsonc"
+if (-not (Test-Path $ConfigFile)) {
+    Write-Host "[错误] 未找到配置文件: $ConfigFile" -ForegroundColor Red
+    exit 1
+}
+$raw = Get-Content $ConfigFile -Raw -Encoding UTF8
+$cleaned = $raw -replace '(?m)//.*$', ''
+$Config = $cleaned | ConvertFrom-Json
+
+# 项目根目录（mod_config.jsonc 所在目录）
+$ProjectRoot = [System.IO.Path]::GetFullPath((Split-Path $ConfigFile -Parent))
+
+# 从配置读取各项参数
+$ModName = $Config.mod_name
+$RimWorldModDir = Join-Path $Config.rimworld_dir "Mods"
+$CsprojPaths = @($Config.csproj_paths | ForEach-Object { Join-Path $ProjectRoot $_ })
+$SyncItems = @($Config.sync_items)
+$ProtectedFilesRegex = $Config.protected_files_regex
+$ShaderBundleConfig = $Config.shader_bundle
+
+# 如果指定了 -SyncSource 参数，则将 source 文件夹加入同步列表
+if ($SyncSource) {
+    Write-Host "已启用 source 同步模式，source 文件夹将被部署到目标目录。" -ForegroundColor Magenta
+    $SyncItems += "source"
+}
 
 # ==========================================
 # 2. 内部逻辑部分 (通常不需要修改)
 # ==========================================
 
-$devPath = "$PSScriptRoot"
+$devPath = $ProjectRoot
 $modPath = Join-Path $RimWorldModDir $ModName
 
 function Get-RimWorldProcesses {
@@ -104,6 +109,16 @@ function Wait-ForRimWorldToClose {
 Write-Host "======= 开始构建项目: $ModName =======" -ForegroundColor Cyan
 Wait-ForRimWorldToClose
 
+# 0.5. 构建 shader bundle
+if ($null -ne $ShaderBundleConfig -and $ShaderBundleConfig.enabled) {
+    Write-Host ">>> 步骤 0.5: 构建 Shader Bundle..." -ForegroundColor Gray
+    powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "shader\build_shader_bundle.ps1")
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Shader bundle 构建失败，请检查 Unity 构建日志！" -ForegroundColor Red
+        exit 1
+    }
+}
+
 # 1. 执行编译
 Write-Host ">>> 步骤 1: 编译 C# 项目..." -ForegroundColor Gray
 foreach ($csprojPath in $CsprojPaths) {
@@ -112,11 +127,11 @@ foreach ($csprojPath in $CsprojPaths) {
         dotnet build "$csprojPath"
         if ($LASTEXITCODE -ne 0) {
             Write-Host "编译失败，请检查代码错误！" -ForegroundColor Red
-            exit
+            exit 1
         }
     } else {
         Write-Host "未发现 .csproj 文件: $csprojPath" -ForegroundColor Red
-        exit
+        exit 1
     }
 }
 Write-Host "编译成功！" -ForegroundColor Green
@@ -141,7 +156,7 @@ if (Test-Path $modPath) {
 # 3. 同步文件
 Write-Host "`n>>> 步骤 3: 开始同步文件..." -ForegroundColor Cyan
 foreach ($item in $SyncItems) {
-    $src = Join-Path $devPath $item
+    $src = [System.IO.Path]::GetFullPath((Join-Path $devPath $item))
     $dest = Join-Path $modPath $item
 
     if (Test-Path $src) {
@@ -152,7 +167,22 @@ foreach ($item in $SyncItems) {
             if (-not (Test-Path $dest)) {
                 New-Item -ItemType Directory -Path $dest -Force | Out-Null
             }
-            Copy-Item -Path "$src\*" -Destination $dest -Recurse -Force
+
+            if ($item -eq "About") {
+                Get-ChildItem -Path $src -File -Recurse | Where-Object {
+                    $_.Extension -notin ".svg", ".html"
+                } | ForEach-Object {
+                    $relativePath = $_.FullName.Substring($src.Length).TrimStart([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar)
+                    $targetPath = Join-Path $dest $relativePath
+                    $targetDir = Split-Path $targetPath -Parent
+                    if (-not (Test-Path $targetDir)) {
+                        New-Item -ItemType Directory -Path $targetDir -Force | Out-Null
+                    }
+                    Copy-Item -LiteralPath $_.FullName -Destination $targetPath -Force
+                }
+            } else {
+                Copy-Item -Path "$src\*" -Destination $dest -Recurse -Force
+            }
             
             # 针对 Languages 的特殊显示
             if ($item -eq "Languages") {
