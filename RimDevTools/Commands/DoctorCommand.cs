@@ -74,7 +74,7 @@ public static class DoctorCommand
         checks.Add(new DoctorCheck("test.autotest_extension", autoTestAssembly is null ? "missing" : "available", true, autoTestAssembly, autoTestAssembly is null ? "LogSync 模组中未发现 AutoTest 程序集" : null));
 
         AddModCheck(checks, "data.rimsearcher_datamod", modRoots, "kearril.RimSearcherDataMod", false);
-        var rimSearcher = Path.Combine(AppContext.BaseDirectory, "rimsearcher.exe");
+        var rimSearcher = ComponentLocator.RimSearcherPath();
         AddPathCheck(checks, "data.rimsearcher_cli", rimSearcher, false, PathKind.File);
         var rimSearcherVersion = File.Exists(rimSearcher) ? FileVersionInfo.GetVersionInfo(rimSearcher).FileVersion : null;
 
@@ -89,9 +89,14 @@ public static class DoctorCommand
         }
         else
         {
-            var info = new FileInfo(databasePath);
-            var headerValid = HasSqliteHeader(databasePath);
-            checks.Add(new DoctorCheck("data.database", headerValid && info.Length > 0 ? "available" : "invalid", false, databasePath, headerValid ? null : "文件不是有效的 SQLite 数据库头", new { info.Length, info.LastWriteTimeUtc }));
+            var status = DatabaseInspector.Inspect(databasePath, "project_config", config.GameVersion, config.CurrentPackageId(context.Root));
+            checks.Add(new DoctorCheck(
+                "data.database",
+                !status.CanOpen || status.Integrity != "ok" ? "invalid" : status.RefreshRecommended ? "stale" : "available",
+                false,
+                databasePath,
+                status.RefreshRecommended ? "数据库需要重新导出" : null,
+                status));
         }
 
         var lockPath = Path.Combine(GameEnvironment.ConfigDirectory(), "RimDevTools.lock.json");
@@ -173,17 +178,6 @@ public static class DoctorCommand
         var full = string.IsNullOrWhiteSpace(path) ? null : Path.GetFullPath(path);
         var available = full is not null && (kind == PathKind.File ? File.Exists(full) : Directory.Exists(full));
         checks.Add(new DoctorCheck(id, available ? "available" : required ? "missing" : "not_applicable", required, full, available ? null : required ? "路径不存在" : "未配置或未发现"));
-    }
-
-    private static bool HasSqliteHeader(string path)
-    {
-        try
-        {
-            Span<byte> header = stackalloc byte[16];
-            using var stream = File.OpenRead(path);
-            return stream.Read(header) == header.Length && Encoding.ASCII.GetString(header) == "SQLite format 3\0";
-        }
-        catch { return false; }
     }
 
     private static string? FindSteamExecutable()

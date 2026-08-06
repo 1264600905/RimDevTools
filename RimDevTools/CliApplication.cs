@@ -43,6 +43,8 @@ public static class CliApplication
                 "ref related" => await RefCommand.RelatedAsync(args),
                 "test run" => await TestCommand.RunAsync(args, cancellation.Token),
                 "test settings" => await TestCommand.SettingsAsync(args, cancellation.Token),
+                "data refresh" => await DataCommand.RefreshAsync(args, cancellation.Token),
+                "data status" => await DataCommand.StatusAsync(args),
                 _ => CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "UNKNOWN_COMMAND", $"未知命令: {command}")
             };
         }
@@ -115,7 +117,9 @@ public static class CliArgs
             ["ref deps"] = (2, 1, [new("--version", true), new("--fuzzy", false)]),
             ["ref related"] = (2, 1, [new("--version", true), new("--fuzzy", false)]),
             ["test run"] = (2, 0, [new("--deploy", false), new("--sync-source", false), new("--mode", true), new("--mods-file", true), new("--timeout-seconds", true)]),
-            ["test settings"] = (2, 0, [])
+            ["test settings"] = (2, 0, []),
+            ["data refresh"] = (2, 0, [new("--mods-file", true), new("--output", true), new("--timeout-seconds", true)]),
+            ["data status"] = (2, 0, [])
         };
 
     public static string? Validate(string command, string[] args)

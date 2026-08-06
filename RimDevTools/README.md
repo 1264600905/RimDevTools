@@ -19,6 +19,8 @@ RimDevTools.exe ref search <keyword>
 RimDevTools.exe ref pull <query> --deps
 RimDevTools.exe test settings
 RimDevTools.exe test run --mode quick
+RimDevTools.exe data refresh
+RimDevTools.exe data status
 ```
 
 项目命令从当前目录或直接父目录发现 `mod_config.jsonc`。正常结果写入 stdout 的单个 JSON 对象，诊断信息写入 stderr。

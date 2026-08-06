@@ -246,6 +246,12 @@ public sealed record ModListResolution(IReadOnlyList<string> Mods, IReadOnlyList
 public static class ModListParser
 {
     public static ModListResolution? Resolve(ProjectContext context, string? path, out CliError? error)
+        => ResolveCore(context, path, "trigger.logsyncmod", "logsync_tooling", out error);
+
+    public static ModListResolution? ResolveData(ProjectContext context, string? path, out CliError? error)
+        => ResolveCore(context, path, "kearril.rimsearcherdatamod", "rimsearcher_tooling", out error);
+
+    private static ModListResolution? ResolveCore(ProjectContext context, string? path, string toolingPackageId, string toolingReason, out CliError? error)
     {
         error = null;
         List<string> mods;
@@ -287,8 +293,8 @@ public static class ModListParser
         }
 
         var additions = new List<ModListAddition>();
-        AddBeforeLogSync(mods, context.Config.CurrentPackageId(context.Root), "current_project", additions);
-        AddBeforeLogSync(mods, "trigger.logsyncmod", "logsync_tooling", additions);
+        AddBeforeTooling(mods, context.Config.CurrentPackageId(context.Root), toolingPackageId, "current_project", additions);
+        AddBeforeTooling(mods, toolingPackageId, toolingPackageId, toolingReason, additions);
 
         var missing = mods.Where(x => !IsResolvable(context, x)).ToArray();
         if (missing.Length > 0)
@@ -319,10 +325,10 @@ public static class ModListParser
         return Task.CompletedTask;
     }
 
-    private static void AddBeforeLogSync(List<string> mods, string? packageId, string reason, List<ModListAddition> additions)
+    private static void AddBeforeTooling(List<string> mods, string? packageId, string toolingPackageId, string reason, List<ModListAddition> additions)
     {
         if (string.IsNullOrWhiteSpace(packageId) || mods.Contains(packageId, StringComparer.OrdinalIgnoreCase)) return;
-        var index = mods.FindIndex(x => x.Equals("trigger.logsyncmod", StringComparison.OrdinalIgnoreCase));
+        var index = mods.FindIndex(x => x.Equals(toolingPackageId, StringComparison.OrdinalIgnoreCase));
         if (index < 0) index = mods.Count;
         mods.Insert(index, packageId);
         additions.Add(new ModListAddition(packageId, index, reason));
