@@ -70,11 +70,13 @@ internal static class FakeRimWorld
 
         var outputPath = values["autoTestOutputPath"];
         var packageId = values["autoTestTargetPackageId"];
+        var runId = values["autoTestRunId"];
         Directory.CreateDirectory(outputPath);
         var status = mode == "auto-fail" ? "failed" : "passed";
         var result = new
         {
             packageId,
+            runId,
             completeness = "Complete",
             manifestDiscovered = 1,
             manifestPlanned = 1,
@@ -83,7 +85,7 @@ internal static class FakeRimWorld
             results = new[] { new { caseId = "case-1", status } }
         };
         File.WriteAllText(Path.Combine(outputPath, $"{packageId}_20260806_120000_Result.json"), JsonSerializer.Serialize(result));
-        File.AppendAllText(playerLog, $"[LogSyncAutoTest] COMPLETED packageId={packageId}\n");
+        File.AppendAllText(playerLog, $"[LogSyncAutoTest] COMPLETED runId={runId} packageId={packageId}\n");
 
         // The real AutoTest extension persists autoTestEnabled=false after completion.
         settings.Descendants("autoTestEnabled").First().Value = "False";
@@ -154,10 +156,11 @@ internal sealed class TestSuite
         File.WriteAllText(environment.ConfigPath, Config(environment, extra: "\"log_keywords\":[\"Ready\"]"));
         using var scope = UseEnvironment(environment);
         var context = ProjectDiscovery.Find(environment.Root, out _)!;
-        var changed = await SettingsEditor.UpdateAsync(context, "auto");
+        var changed = await SettingsEditor.UpdateAsync(context, "auto", runId: "settings-run");
         var document = XDocument.Load(environment.SettingsPath);
         var settings = document.Descendants("ModSettings").First();
         Assert(changed && settings.Element("autoTestTargetPackageId")?.Value == "demo.current", "auto settings include current packageId");
+        Assert(settings.Element("autoTestRunId")?.Value == "settings-run", "auto settings bind the requested runId");
         Assert(settings.Element("autoTestOutputPath")?.Value == SettingsEditor.AutoTestOutputPath(context) && settings.Element("autoTestEnabled")?.Value == "True", "auto settings include output path and enabled state");
         Assert(settings.Element("keywords")?.Elements("li").Single().Value == "Ready", "settings writer updates keywords");
     }
@@ -197,12 +200,14 @@ internal sealed class TestSuite
         using (var first = EnvironmentLock.TryAcquire(directory, "first", _temp, "one", out _))
         {
             Assert(first is not null, "first environment lock is acquired");
+            Assert(EnvironmentLock.IsBusy(directory), "lock diagnostics probe the named mutex");
             await Task.Delay(100);
             using var second = EnvironmentLock.TryAcquire(directory, "second", _temp, "two", out _);
             Assert(second is null, "environment lock remains exclusive across await");
         }
         using (var third = EnvironmentLock.TryAcquire(directory, "third", _temp, "three", out _))
             Assert(third is not null, "environment lock releases cleanly");
+        Assert(!EnvironmentLock.IsBusy(directory), "named mutex probe reports released environment");
 
         var child = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Path.Combine(AppContext.BaseDirectory, "RimDevTools.Tests.exe"))
         {
@@ -254,6 +259,33 @@ internal sealed class TestSuite
         var pulled = await CaptureAsync(() => RefCommand.PullAsync(["ref", "pull", "demo.reference"]));
         Assert(pulled.ExitCode == 0 && File.ReadAllText(Path.Combine(environment.Root, "参考文档", "demo.reference", "content.txt")) == "v1", "ref pull installs staged mod");
 
+        var unsafeEnvironment = CreateProjectEnvironment("ref-reparse");
+        CreateMod(unsafeEnvironment.Game, "Reference", "demo.reference", content: "safe");
+        var referenceRoot = Path.Combine(unsafeEnvironment.Root, "参考文档");
+        var externalTarget = NewDirectory(Path.Combine("ref-reparse", "external-target"));
+        File.WriteAllText(Path.Combine(externalTarget, "sentinel.txt"), "outside");
+        var junction = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("cmd.exe")
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            ArgumentList = { "/c", "mklink", "/J", referenceRoot, externalTarget }
+        })!;
+        await junction.WaitForExitAsync();
+        var junctionCreated = junction.ExitCode == 0;
+        junction.Dispose();
+        Assert(junctionCreated, "test fixture creates reference target junction");
+        try
+        {
+            using var unsafeScope = UseEnvironment(unsafeEnvironment);
+            var unsafePull = await CaptureAsync(() => RefCommand.PullAsync(["ref", "pull", "demo.reference"]));
+            Assert(unsafePull.ExitCode == ExitCodes.InvalidArguments && JsonErrorCode(unsafePull.Output) == "REFERENCE_TARGET_UNSAFE", "ref pull rejects reparse points in the target path");
+            Assert(File.ReadAllText(Path.Combine(externalTarget, "sentinel.txt")) == "outside", "unsafe ref target remains untouched");
+        }
+        finally
+        {
+            if (Directory.Exists(referenceRoot)) Directory.Delete(referenceRoot);
+        }
+
         var batch = NewDirectory(Path.Combine("ref", "batch"));
         var target1 = NewDirectory(Path.Combine("ref", "batch", "target1"));
         var target2 = NewDirectory(Path.Combine("ref", "batch", "target2"));
@@ -286,6 +318,9 @@ internal sealed class TestSuite
         var dryResult = (DeployResult)dryRun.Result!;
         Assert(dryRun.Ok && dryResult.Plan.TargetActions.Any(x => x.Action == "protect") && dryResult.Plan.TargetActions.Any(x => x.Action == "replace"), "deploy dry-run reports protected and replaced targets");
 
+        var unknownArgument = await CaptureAsync(() => CliApplication.RunAsync(["deploy", "--dry-run", "--definitely-unknown"]));
+        Assert(unknownArgument.ExitCode == ExitCodes.InvalidArguments && JsonErrorCode(unknownArgument.Output) == "INVALID_ARGUMENT", "unknown deploy options fail before execution");
+
         var pending = await ConfigTransaction.CreateAsync(environment.ConfigDirectory, "before-deploy", [environment.SettingsPath]);
         await pending.WriteAllTextAsync(environment.SettingsPath, "temporary");
         var deployed = await DeployCommand.ExecuteAsync(["deploy"]);
@@ -296,6 +331,10 @@ internal sealed class TestSuite
         File.WriteAllText(environment.ConfigPath, Config(environment, modName: "Demo", extra: "\"sync_items\":[\"..\\\\outside\"]"));
         var traversal = await DeployCommand.ExecuteAsync(["deploy", "--dry-run"]);
         Assert(!traversal.Ok && traversal.Error?.Code == "SYNC_PATH_INVALID", "deploy rejects sync path traversal");
+
+        File.WriteAllText(environment.ConfigPath, Config(environment, modName: "Demo", extra: "\"sync_items\":[\"About\",\"RequiredMissing\"]"));
+        var missingRequired = await DeployCommand.ExecuteAsync(["deploy"]);
+        Assert(!missingRequired.Ok && missingRequired.Error?.Code == "SYNC_ITEM_NOT_FOUND" && File.Exists(Path.Combine(target, "PublishedFileId.txt")), "missing required sync items fail before replacing deployment");
 
         var invalidProject = Path.Combine(environment.Root, "bad.csproj");
         File.WriteAllText(invalidProject, "not a project");
@@ -309,16 +348,21 @@ internal sealed class TestSuite
     {
         var output = NewDirectory("results");
         var snapshot = AutoResultValidator.Snapshot(output);
-        WriteResult(output, "demo.current", "failed");
-        var failed = AutoResultValidator.Validate(output, "demo.current", snapshot);
+        WriteResult(output, "demo.current", "run-one", "failed");
+        var failed = AutoResultValidator.Validate(output, "demo.current", "run-one", snapshot);
         Assert(!failed.Ok && failed.Code == "AUTO_RESULT_FAILED", "auto result validator rejects failed cases");
 
         var freshSnapshot = AutoResultValidator.Snapshot(output);
-        WriteResult(output, "demo.current", "passed", "second_Result.json");
-        var passed = AutoResultValidator.Validate(output, "demo.current", freshSnapshot);
+        WriteResult(output, "demo.current", "run-two", "passed", "second_Result.json");
+        var passed = AutoResultValidator.Validate(output, "demo.current", "run-two", freshSnapshot);
         Assert(passed.Ok, "auto result validator accepts complete passing run");
-        var stale = AutoResultValidator.Validate(output, "demo.current", AutoResultValidator.Snapshot(output));
+        var stale = AutoResultValidator.Validate(output, "demo.current", "run-three", AutoResultValidator.Snapshot(output));
         Assert(!stale.Ok && stale.Code == "AUTO_RESULT_MISSING", "old result files cannot satisfy a new run");
+
+        var mismatchedSnapshot = AutoResultValidator.Snapshot(output);
+        WriteResult(output, "demo.current", "old-run", "passed", "mismatch_Result.json");
+        var mismatched = AutoResultValidator.Validate(output, "demo.current", "new-run", mismatchedSnapshot);
+        Assert(!mismatched.Ok && mismatched.Code == "AUTO_RESULT_MISMATCH", "modified results with a stale runId cannot satisfy a new run");
     }
 
     private void TestLogArchive()
@@ -466,9 +510,9 @@ internal sealed class TestSuite
         return directory;
     }
 
-    private static void WriteResult(string output, string packageId, string status, string name = "first_Result.json")
+    private static void WriteResult(string output, string packageId, string runId, string status, string name = "first_Result.json")
     {
-        var value = new { packageId, completeness = "Complete", manifestPlanned = 1, manifestExecuted = 1, manifestMissing = 0, results = new[] { new { caseId = "case", status } } };
+        var value = new { packageId, runId, completeness = "Complete", manifestPlanned = 1, manifestExecuted = 1, manifestMissing = 0, results = new[] { new { caseId = "case", status } } };
         File.WriteAllText(Path.Combine(output, name), JsonSerializer.Serialize(value));
     }
 

@@ -17,7 +17,7 @@ public static class DeployCommand
         return CliResult.WriteSuccess("deploy", projectRoot, execution.Result, execution.Warnings);
     }
 
-    public static async Task<DeployExecution> ExecuteAsync(string[] args, CancellationToken cancellationToken = default)
+    public static async Task<DeployExecution> ExecuteAsync(string[] args, CancellationToken cancellationToken = default, bool environmentPrepared = false)
     {
         var context = ProjectDiscovery.Find(Environment.CurrentDirectory, out var discoveryError);
         if (context is null)
@@ -70,7 +70,8 @@ public static class DeployCommand
                 var destination = Path.GetFullPath(Path.Combine(target, item));
                 if (!PathSafety.IsWithin(destination, target)) throw new InvalidDataException($"同步目标越出部署目录: {item}");
                 var exists = File.Exists(source) || Directory.Exists(source);
-                plan.Add(new DeploySyncPlan(item, source, destination, exists, exists ? "info" : "warning"));
+                var severity = exists ? "info" : IsOptionalBuildOutput(item) ? "warning" : "error";
+                plan.Add(new DeploySyncPlan(item, source, destination, exists, severity));
                 if (!exists) warnings.Add($"同步项不存在: {item}");
             }
         }
@@ -107,17 +108,26 @@ public static class DeployCommand
         if (CliArgs.Has(args, "--dry-run"))
             return new DeployExecution(true, ExitCodes.Success, new DeployResult(context.Root, true, null, target, [], preview, false), null, warnings);
 
+        var missingRequired = plan.Where(x => !x.Exists && x.Severity == "error").Select(x => x.Item).ToArray();
+        if (missingRequired.Length > 0)
+            return Failure(ExitCodes.MissingDependency, new CliError("SYNC_ITEM_NOT_FOUND", "必需同步项不存在", new { missing = missingRequired }), context.Root);
+
         var runId = Guid.NewGuid().ToString("N");
         Directory.CreateDirectory(targetRoot);
-        using var gate = EnvironmentLock.TryAcquire(GameEnvironment.ConfigDirectory(), "deploy", context.Root, runId, out var busyInfo);
-        if (gate is null)
+        string? busyInfo = null;
+        using var gate = environmentPrepared ? null : EnvironmentLock.TryAcquire(GameEnvironment.ConfigDirectory(), "deploy", context.Root, runId, out busyInfo);
+        if (!environmentPrepared && gate is null)
             return Failure(ExitCodes.Busy, new CliError("ENVIRONMENT_BUSY", "RimWorld 环境正被另一个 RimDevTools 进程占用", new { busyInfo }), context.Root);
-        if (!await ProcessUtil.WaitForRimWorldExitAsync(config.Timeouts.ExistingGameExit, config.Timeouts.PostExitDelay, cancellationToken))
-            return Failure(ExitCodes.Timeout, new CliError("GAME_EXIT_TIMEOUT", "等待 RimWorld 退出超时"), context.Root);
+        var recovery = new TransactionRecoveryResult(true, false);
+        if (!environmentPrepared)
+        {
+            if (!await ProcessUtil.WaitForRimWorldExitAsync(config.Timeouts.ExistingGameExit, config.Timeouts.PostExitDelay, cancellationToken))
+                return Failure(ExitCodes.Timeout, new CliError("GAME_EXIT_TIMEOUT", "等待 RimWorld 退出超时"), context.Root);
 
-        var recovery = await TransactionRecovery.RecoverAsync(GameEnvironment.ConfigDirectory());
-        if (!recovery.Ok)
-            return Failure(ExitCodes.TaskFailed, recovery.Error!, context.Root);
+            recovery = await TransactionRecovery.RecoverAsync(GameEnvironment.ConfigDirectory());
+            if (!recovery.Ok)
+                return Failure(ExitCodes.TaskFailed, recovery.Error!, context.Root);
+        }
 
         if (config.ShaderBundle.Enabled)
         {
@@ -156,6 +166,9 @@ public static class DeployCommand
 
     private static DeployExecution Failure(int exitCode, CliError error, string? projectRoot = null)
         => new(false, exitCode, projectRoot is null ? null : new DeployContextDetails(projectRoot), error);
+
+    private static bool IsOptionalBuildOutput(string item)
+        => item.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar).Equals("AssetBundles", StringComparison.OrdinalIgnoreCase);
 
     private static async Task<(bool Ok, string Message)> BuildShaderAsync(ProjectContext context, ProjectConfig config, CancellationToken cancellationToken)
     {

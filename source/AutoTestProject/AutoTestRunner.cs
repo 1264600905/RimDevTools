@@ -134,6 +134,7 @@ namespace LogSyncMod.AutoTest
         private AutoTestRunArtifacts runArtifacts;
         private AutoTestRunSummary runSummary;
         private AutoTestScreenshotService screenshotService;
+        private string runId;
         private readonly AutoTestPocketMapService pocketMapService;
         private readonly AutoTestThreeViewService threeViewService;
         private readonly AutoTestCombatPawnService combatPawnService;
@@ -155,8 +156,10 @@ namespace LogSyncMod.AutoTest
         public void Initialize()
         {
             targetPackageId = (settings.autoTestTargetPackageId ?? string.Empty).Trim().ToLowerInvariant();
+            runId = (settings.autoTestRunId ?? string.Empty).Trim();
+            if (string.IsNullOrEmpty(runId)) runId = Guid.NewGuid().ToString("N");
             outputDirectory = ResolveOutputDirectory(settings);
-            runArtifacts = AutoTestReportWriter.CreateRunArtifacts(outputDirectory, targetPackageId);
+            runArtifacts = AutoTestReportWriter.CreateRunArtifacts(outputDirectory, targetPackageId, runId);
             screenshotService = new AutoTestScreenshotService(runArtifacts, AppendNote, TrimForNote);
             targetMod = LoadedModManager.RunningMods.FirstOrDefault(mod =>
                 string.Equals(mod.PackageIdPlayerFacing, targetPackageId, StringComparison.OrdinalIgnoreCase));
@@ -597,9 +600,10 @@ namespace LogSyncMod.AutoTest
             CleanupSharedHediffPawn();
 
             runSummary = BuildRunSummary();
-            AutoTestReportWriter.Write(runArtifacts, targetPackageId ?? "unknown", results, targetMod?.Name ?? "Unknown", discoveredManifest, plannedManifest, runSummary);
+            AutoTestReportWriter.Write(runArtifacts, targetPackageId ?? "unknown", runId, results, targetMod?.Name ?? "Unknown", discoveredManifest, plannedManifest, runSummary);
             Log.Message(string.Format(
-                "[LogSyncAutoTest] COMPLETED packageId={0} total={1} passed={2} failed={3} discovered={4} planned={5} missing={6}",
+                "[LogSyncAutoTest] COMPLETED runId={0} packageId={1} total={2} passed={3} failed={4} discovered={5} planned={6} missing={7}",
+                runId,
                 targetPackageId ?? "unknown",
                 results.Count,
                 results.Count(result => result.Status == "passed"),

@@ -20,6 +20,10 @@ public static class CliApplication
         }
 
         var command = CommandPath(args);
+        var argumentError = CliArgs.Validate(command, args);
+        if (argumentError is not null)
+            return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "INVALID_ARGUMENT", argumentError);
+
         using var cancellation = new CancellationTokenSource();
         ConsoleCancelEventHandler cancelHandler = (_, eventArgs) =>
         {
@@ -99,6 +103,48 @@ public static class CliApplication
 
 public static class CliArgs
 {
+    private sealed record Option(string Name, bool TakesValue);
+
+    private static readonly IReadOnlyDictionary<string, (int PrefixLength, int Positionals, Option[] Options)> Contracts
+        = new Dictionary<string, (int, int, Option[])>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["doctor"] = (1, 0, []),
+            ["deploy"] = (1, 0, [new("--sync-source", false), new("--dry-run", false)]),
+            ["ref search"] = (2, 1, [new("--fuzzy", false)]),
+            ["ref pull"] = (2, 1, [new("--version", true), new("--deps", false), new("--all", false), new("--fuzzy", false), new("--force", false)]),
+            ["ref deps"] = (2, 1, [new("--version", true), new("--fuzzy", false)]),
+            ["ref related"] = (2, 1, [new("--version", true), new("--fuzzy", false)]),
+            ["test run"] = (2, 0, [new("--deploy", false), new("--sync-source", false), new("--mode", true), new("--mods-file", true), new("--timeout-seconds", true)]),
+            ["test settings"] = (2, 0, [])
+        };
+
+    public static string? Validate(string command, string[] args)
+    {
+        if (!Contracts.TryGetValue(command, out var contract)) return null;
+
+        var allowed = contract.Options.ToDictionary(x => x.Name, StringComparer.OrdinalIgnoreCase);
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var positionals = 0;
+        for (var index = contract.PrefixLength; index < args.Length; index++)
+        {
+            var argument = args[index];
+            if (!argument.StartsWith('-'))
+            {
+                positionals++;
+                continue;
+            }
+
+            if (!allowed.TryGetValue(argument, out var option)) return $"未知参数: {argument}";
+            if (!seen.Add(option.Name)) return $"参数重复: {option.Name}";
+            if (!option.TakesValue) continue;
+            if (++index >= args.Length || args[index].StartsWith('-')) return $"缺少参数值: {option.Name}";
+        }
+
+        return positionals == contract.Positionals
+            ? null
+            : $"命令 {command} 需要 {contract.Positionals} 个位置参数，实际为 {positionals}";
+    }
+
     public static bool Has(string[] args, string name) => args.Any(x => x.Equals(name, StringComparison.OrdinalIgnoreCase));
 
     public static string? Value(string[] args, string name)

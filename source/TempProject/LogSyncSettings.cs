@@ -40,6 +40,7 @@ namespace LogSyncMod
         public bool enableSmokeTest = false;
         public bool autoTestEnabled = false;
         public string autoTestTargetPackageId = "";
+        public string autoTestRunId = "";
         public string autoTestOutputPath = "D:/RimWorldAutoTest";
         public AutoTestMode autoTestMode = AutoTestMode.Automatic;
         public AutoTestScope autoTestScope = AutoTestScope.Standard;
@@ -67,6 +68,7 @@ namespace LogSyncMod
             Scribe_Values.Look(ref enableSmokeTest, "enableSmokeTest", false);
             Scribe_Values.Look(ref autoTestEnabled, "autoTestEnabled", false);
             Scribe_Values.Look(ref autoTestTargetPackageId, "autoTestTargetPackageId", "");
+            Scribe_Values.Look(ref autoTestRunId, "autoTestRunId", "");
             Scribe_Values.Look(ref autoTestOutputPath, "autoTestOutputPath", "D:/RimWorldAutoTest");
             Scribe_Values.Look(ref autoTestMode, "autoTestMode", AutoTestMode.Automatic);
             Scribe_Values.Look(ref autoTestScope, "autoTestScope", AutoTestScope.Standard);
@@ -82,6 +84,7 @@ namespace LogSyncMod
             if (targetModIds == null) targetModIds = new List<string>();
             if (keywords == null) keywords = new List<string>();
             if (autoTestTargetPackageId == null) autoTestTargetPackageId = "";
+            if (autoTestRunId == null) autoTestRunId = "";
             if (autoTestOutputPath == null) autoTestOutputPath = "D:/RimWorldAutoTest";
             if (logMaxLines < 1) logMaxLines = 1;
             if (!System.Enum.IsDefined(typeof(AutoTestMode), autoTestMode)) autoTestMode = AutoTestMode.Automatic;
@@ -111,6 +114,7 @@ namespace LogSyncMod
             }
 
             autoTestTargetPackageId = (autoTestTargetPackageId ?? "").Trim().ToLowerInvariant();
+            autoTestRunId = (autoTestRunId ?? "").Trim();
             autoTestOutputPath = (autoTestOutputPath ?? "").Trim();
             if (logMaxLines < 1) logMaxLines = 1;
             if (autoTestBatchSize < 1) autoTestBatchSize = 1;

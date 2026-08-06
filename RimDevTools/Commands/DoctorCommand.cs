@@ -95,7 +95,14 @@ public static class DoctorCommand
         }
 
         var lockPath = Path.Combine(GameEnvironment.ConfigDirectory(), "RimDevTools.lock.json");
-        checks.Add(new DoctorCheck("environment.lock", File.Exists(lockPath) ? "busy" : "available", false, lockPath, File.Exists(lockPath) ? "存在 RimDevTools 锁诊断文件" : null));
+        var lockBusy = EnvironmentLock.IsBusy(GameEnvironment.ConfigDirectory());
+        var lockInfoExists = File.Exists(lockPath);
+        checks.Add(new DoctorCheck(
+            "environment.lock",
+            lockBusy ? "busy" : lockInfoExists ? "stale" : "available",
+            false,
+            lockPath,
+            lockBusy ? "RimWorld 环境互斥锁正被占用" : lockInfoExists ? "互斥锁未占用，但存在遗留诊断文件" : null));
         var pendingTransactions = TransactionRecovery.PendingDirectories(GameEnvironment.ConfigDirectory());
         checks.Add(new DoctorCheck("environment.transactions", pendingTransactions.Count > 0 ? "stale" : "available", false, null, pendingTransactions.Count > 0 ? "存在未完成事务" : null, new { directories = pendingTransactions }));
 

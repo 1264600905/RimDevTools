@@ -69,15 +69,6 @@ public static class TestCommand
         if (!File.Exists(GameEnvironment.LogSyncSettingsPath()))
             return CliResult.WriteFailure(command, ExitCodes.MissingDependency, "LOGSYNC_SETTINGS_NOT_FOUND", $"找不到 LogSyncMod 设置文件: {GameEnvironment.LogSyncSettingsPath()}", context.Root);
 
-        if (CliArgs.Has(args, "--deploy"))
-        {
-            var deployArgs = new List<string> { "deploy" };
-            if (CliArgs.Has(args, "--sync-source")) deployArgs.Add("--sync-source");
-            var deploy = await DeployCommand.ExecuteAsync(deployArgs.ToArray(), cancellationToken);
-            if (!deploy.Ok)
-                return CliResult.WriteFailure(command, deploy.ExitCode, "DEPLOY_FAILED", "测试前部署失败", context.Root, deploy.Error);
-        }
-
         var runId = Guid.NewGuid().ToString("N");
         using var gate = EnvironmentLock.TryAcquire(GameEnvironment.ConfigDirectory(), command, context.Root, runId, out var busyInfo);
         if (gate is null)
@@ -89,6 +80,15 @@ public static class TestCommand
         var recovery = await TransactionRecovery.RecoverAsync(GameEnvironment.ConfigDirectory());
         if (!recovery.Ok)
             return CliResult.WriteFailure(command, ExitCodes.TaskFailed, recovery.Error!.Code, recovery.Error.Message, context.Root, recovery.Error.Details);
+
+        if (CliArgs.Has(args, "--deploy"))
+        {
+            var deployArgs = new List<string> { "deploy" };
+            if (CliArgs.Has(args, "--sync-source")) deployArgs.Add("--sync-source");
+            var deploy = await DeployCommand.ExecuteAsync(deployArgs.ToArray(), cancellationToken, environmentPrepared: true);
+            if (!deploy.Ok)
+                return CliResult.WriteFailure(command, deploy.ExitCode, "DEPLOY_FAILED", "测试前部署失败", context.Root, deploy.Error);
+        }
 
         ConfigTransaction? transaction = null;
         Process? game = null;
@@ -103,7 +103,7 @@ public static class TestCommand
                 runId,
                 [GameEnvironment.ModsConfigPath(), GameEnvironment.LogSyncSettingsPath()]);
             await transaction.WriteAllTextAsync(GameEnvironment.ModsConfigPath(), ModListParser.Render(GameEnvironment.ModsConfigPath(), modList.Mods));
-            await SettingsEditor.UpdateAsync(context, mode, transaction);
+            await SettingsEditor.UpdateAsync(context, mode, transaction, runId);
 
             LogArchive.Rotate(SettingsEditor.SyncLogPath(context), context.Config.Retention.MaxLogFiles);
             if (mode is "auto" or "xml") LogArchive.PruneAutoTestRuns(outputPath, context.Config.Retention.MaxAutoTestRuns);
@@ -129,7 +129,7 @@ public static class TestCommand
             {
                 game.BeginOutputReadLine();
                 game.BeginErrorReadLine();
-                outcome = await WaitForModeAsync(mode, game, timeout, logOffset, outputPath, context.Config.CurrentPackageId(context.Root), resultSnapshot, cancellationToken);
+                outcome = await WaitForModeAsync(mode, game, timeout, logOffset, outputPath, context.Config.CurrentPackageId(context.Root), runId, resultSnapshot, cancellationToken);
             }
         }
         catch (OperationCanceledException)
@@ -185,6 +185,7 @@ public static class TestCommand
         long logOffset,
         string outputPath,
         string? packageId,
+        string runId,
         IReadOnlyDictionary<string, AutoResultFingerprint> resultSnapshot,
         CancellationToken cancellationToken)
     {
@@ -205,10 +206,10 @@ public static class TestCommand
 
                 if (mode is "auto" or "xml")
                 {
-                    var completed = read.Text.Contains("[LogSyncAutoTest] COMPLETED", StringComparison.Ordinal);
+                    var completed = read.Text.Contains($"[LogSyncAutoTest] COMPLETED runId={runId}", StringComparison.Ordinal);
                     if (completed || game.HasExited)
                     {
-                        var validation = AutoResultValidator.Validate(outputPath, packageId, resultSnapshot);
+                        var validation = AutoResultValidator.Validate(outputPath, packageId, runId, resultSnapshot);
                         if (validation.Ok) return TestOutcome.Success(completed ? $"{mode} completed signal" : $"{mode} result after game exit", validation.Details);
                         if (completed) return TestOutcome.Failure(ExitCodes.GameFailed, validation.Code, validation.Message, validation.Details);
                     }
@@ -360,7 +361,7 @@ public static class SettingsEditor
     public static string SyncLogPath(ProjectContext context) => Path.Combine(context.Root, ".tools", "test", "精选日志.log");
     public static string AutoTestOutputPath(ProjectContext context) => Path.Combine(context.Root, ".tools", "test", "AutoTestOutput");
 
-    public static async Task<bool> UpdateAsync(ProjectContext context, string mode, ConfigTransaction? transaction = null)
+    public static async Task<bool> UpdateAsync(ProjectContext context, string mode, ConfigTransaction? transaction = null, string? runId = null)
     {
         var path = GameEnvironment.LogSyncSettingsPath();
         if (!File.Exists(path)) throw new FileNotFoundException("找不到 LogSyncMod 设置文件", path);
@@ -375,6 +376,7 @@ public static class SettingsEditor
         var auto = mode is "auto" or "xml";
         changed |= Set(settings, "autoTestEnabled", auto ? "True" : "False");
         changed |= Set(settings, "autoTestTargetPackageId", auto ? context.Config.CurrentPackageId(context.Root)?.ToLowerInvariant() ?? "" : "");
+        changed |= Set(settings, "autoTestRunId", auto ? runId ?? "" : "");
         changed |= Set(settings, "autoTestOutputPath", AutoTestOutputPath(context));
         changed |= Set(settings, "autoTestMode", mode == "xml" ? "XmlDriven" : "Automatic");
         changed |= Set(settings, "autoTestScope", "Standard");
@@ -427,7 +429,7 @@ public static class AutoResultValidator
             : Directory.EnumerateFiles(outputPath, "*_Result.json", SearchOption.TopDirectoryOnly)
                 .ToDictionary(Path.GetFullPath, Fingerprint, StringComparer.OrdinalIgnoreCase);
 
-    public static AutoResultValidation Validate(string outputPath, string? expectedPackageId, IReadOnlyDictionary<string, AutoResultFingerprint> snapshot)
+    public static AutoResultValidation Validate(string outputPath, string? expectedPackageId, string expectedRunId, IReadOnlyDictionary<string, AutoResultFingerprint> snapshot)
     {
         if (!Directory.Exists(outputPath)) return Failure("AUTO_RESULT_MISSING", "未找到自动测试输出目录");
         var candidates = Directory.EnumerateFiles(outputPath, "*_Result.json", SearchOption.TopDirectoryOnly)
@@ -444,6 +446,8 @@ public static class AutoResultValidator
                 var root = document.RootElement;
                 var packageId = root.TryGetProperty("packageId", out var packageNode) ? packageNode.GetString() : null;
                 if (!string.Equals(packageId, expectedPackageId, StringComparison.OrdinalIgnoreCase)) continue;
+                var runId = root.TryGetProperty("runId", out var runIdNode) ? runIdNode.GetString() : null;
+                if (!string.Equals(runId, expectedRunId, StringComparison.Ordinal)) continue;
                 if (!root.TryGetProperty("completeness", out var completeness) || completeness.GetString() != "Complete")
                     return Failure("AUTO_RESULT_INCOMPLETE", "自动测试结果不完整", new { path });
                 if (!ReadInt(root, "manifestMissing", out var missing) || missing != 0)
@@ -460,7 +464,7 @@ public static class AutoResultValidator
                     .Select(item => item.TryGetProperty("caseId", out var caseId) ? caseId.GetString() : null)
                     .ToArray();
                 if (failed.Length > 0) return Failure("AUTO_RESULT_FAILED", "自动测试结果包含失败或跳过用例", new { path, failed });
-                return new AutoResultValidation(true, "", "", new { path, packageId, executed, planned });
+                return new AutoResultValidation(true, "", "", new { path, packageId, runId, executed, planned });
             }
             catch (JsonException ex)
             {
@@ -471,7 +475,7 @@ public static class AutoResultValidator
                 return Failure("AUTO_RESULT_INVALID", $"无法读取自动测试结果: {ex.Message}", new { path });
             }
         }
-        return Failure("AUTO_RESULT_MISMATCH", "本轮结果不属于当前项目", new { expectedPackageId });
+        return Failure("AUTO_RESULT_MISMATCH", "本轮结果不属于当前项目或 runId 不匹配", new { expectedPackageId, expectedRunId });
     }
 
     private static AutoResultFingerprint Fingerprint(string path)

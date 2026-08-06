@@ -75,7 +75,16 @@ public static class RefCommand
             return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, error!.Code, error.Message, context.Root, error.Details);
 
         var targetRoot = Path.GetFullPath(Path.Combine(context.Root, "参考文档"));
-        Directory.CreateDirectory(targetRoot);
+        try
+        {
+            PathSafety.EnsureNoReparsePoints(context.Root, targetRoot);
+            Directory.CreateDirectory(targetRoot);
+            PathSafety.EnsureNoReparsePoints(context.Root, targetRoot);
+        }
+        catch (Exception ex)
+        {
+            return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "REFERENCE_TARGET_UNSAFE", ex.Message, context.Root, new { targetRoot });
+        }
         var runId = Guid.NewGuid().ToString("N");
         var stagingRoot = Path.Combine(targetRoot, ".rimdev-staging", runId);
         var backupRoot = Path.Combine(targetRoot, ".rimdev-backup", runId);
@@ -157,7 +166,12 @@ public static class RefCommand
         var folder = SafeFolderName(mod.PackageId);
         var target = Path.GetFullPath(Path.Combine(targetRoot, folder));
         if (!PathSafety.IsWithin(target, targetRoot)) throw new InvalidDataException($"参考模组目标越界: {target}");
-        return new PullTarget(mod, target, Path.Combine(stagingRoot, folder), Path.Combine(backupRoot, folder));
+        var staging = Path.Combine(stagingRoot, folder);
+        var backup = Path.Combine(backupRoot, folder);
+        PathSafety.EnsureNoReparsePoints(targetRoot, target);
+        PathSafety.EnsureNoReparsePoints(targetRoot, staging);
+        PathSafety.EnsureNoReparsePoints(targetRoot, backup);
+        return new PullTarget(mod, target, staging, backup);
     }
 
     private static List<ModCandidate>? ResolveDependencyClosure(ProjectContext context, ModCandidate selected, bool includeDependencies, string version, out CliError? error)

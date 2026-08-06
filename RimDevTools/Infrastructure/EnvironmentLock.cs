@@ -21,11 +21,7 @@ public sealed class EnvironmentLock : IDisposable
     public static EnvironmentLock? TryAcquire(string rimWorldConfigDirectory, string command, string projectRoot, string runId, out string? busyInfo)
     {
         Directory.CreateDirectory(rimWorldConfigDirectory);
-        var normalized = Path.GetFullPath(rimWorldConfigDirectory)
-            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
-            .ToUpperInvariant();
-        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(normalized))).ToLowerInvariant();
-        var mutexName = $"Global\\RimDevTools.RimWorld.{hash}";
+        var mutexName = MutexName(rimWorldConfigDirectory);
         var infoPath = Path.Combine(rimWorldConfigDirectory, "RimDevTools.lock.json");
         var acquiredSignal = new ManualResetEventSlim();
         var releaseSignal = new ManualResetEventSlim();
@@ -93,6 +89,32 @@ public sealed class EnvironmentLock : IDisposable
             handle.Dispose();
             throw;
         }
+    }
+
+    public static bool IsBusy(string rimWorldConfigDirectory)
+    {
+        try
+        {
+            if (!Mutex.TryOpenExisting(MutexName(rimWorldConfigDirectory), out var mutex)) return false;
+            using (mutex)
+            {
+                var acquired = false;
+                try { acquired = mutex.WaitOne(0); }
+                catch (AbandonedMutexException) { acquired = true; }
+                if (acquired) mutex.ReleaseMutex();
+                return !acquired;
+            }
+        }
+        catch (WaitHandleCannotBeOpenedException) { return false; }
+    }
+
+    private static string MutexName(string rimWorldConfigDirectory)
+    {
+        var normalized = Path.GetFullPath(rimWorldConfigDirectory)
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            .ToUpperInvariant();
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(normalized))).ToLowerInvariant();
+        return $"Global\\RimDevTools.RimWorld.{hash}";
     }
 
     public void Dispose()

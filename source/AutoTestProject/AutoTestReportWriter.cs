@@ -23,13 +23,13 @@ namespace LogSyncMod.AutoTest
     {
         private const int MaxArchivedRuns = 2;
 
-        public static AutoTestRunArtifacts CreateRunArtifacts(string outputDirectory, string packageId)
+        public static AutoTestRunArtifacts CreateRunArtifacts(string outputDirectory, string packageId, string runId)
         {
             Directory.CreateDirectory(outputDirectory);
 
             string safePackageId = Sanitize(packageId);
             string stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-            string basePath = Path.Combine(outputDirectory, safePackageId + "_" + stamp);
+            string basePath = Path.Combine(outputDirectory, safePackageId + "_" + Sanitize(runId));
 
             return new AutoTestRunArtifacts
             {
@@ -47,6 +47,7 @@ namespace LogSyncMod.AutoTest
         public static void Write(
             AutoTestRunArtifacts artifacts,
             string packageId,
+            string runId,
             List<AutoTestResult> results,
             string modName,
             List<AutoTestManifestEntry> discoveredManifest,
@@ -62,7 +63,7 @@ namespace LogSyncMod.AutoTest
 
                 Directory.CreateDirectory(artifacts.OutputDirectory);
                 File.WriteAllText(artifacts.ReportPath, BuildMarkdown(artifacts, packageId, modName, results, runSummary), Encoding.UTF8);
-                File.WriteAllText(artifacts.ResultPath, BuildJson(packageId, modName, results, runSummary), Encoding.UTF8);
+                File.WriteAllText(artifacts.ResultPath, BuildJson(packageId, runId, modName, results, runSummary), Encoding.UTF8);
                 File.WriteAllText(artifacts.ManifestPath, BuildManifestJson(packageId, modName, discoveredManifest, plannedManifest, runSummary), Encoding.UTF8);
                 PruneArchives(artifacts.OutputDirectory, artifacts.SafePackageId);
             }
@@ -188,11 +189,12 @@ namespace LogSyncMod.AutoTest
             return builder.ToString();
         }
 
-        private static string BuildJson(string packageId, string modName, List<AutoTestResult> results, AutoTestRunSummary runSummary)
+        private static string BuildJson(string packageId, string runId, string modName, List<AutoTestResult> results, AutoTestRunSummary runSummary)
         {
             StringBuilder builder = new StringBuilder();
             builder.AppendLine("{");
             builder.AppendLine("  \"packageId\": \"" + EscapeJson(packageId) + "\",");
+            builder.AppendLine("  \"runId\": \"" + EscapeJson(runId) + "\",");
             builder.AppendLine("  \"modName\": \"" + EscapeJson(modName) + "\",");
             builder.AppendLine("  \"generatedAt\": \"" + DateTime.Now.ToString("o") + "\",");
             if (runSummary != null)
