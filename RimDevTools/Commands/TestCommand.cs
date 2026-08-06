@@ -26,6 +26,19 @@ public static class TestCommand
         var context = CliApplication.RequireProject("test run", out var code); if (context is null) return code;
         var mode = CliArgs.Value(args, "--mode")?.ToLowerInvariant() ?? "quick";
         if (mode is not ("quick" or "manual" or "auto" or "xml")) return CliResult.WriteFailure("test run", ExitCodes.InvalidArguments, "MODE_INVALID", $"不支持的测试模式: {mode}", context.Root);
+        if (CliArgs.Has(args, "--deploy"))
+        {
+            var deployArgs = new List<string> { "deploy" };
+            if (CliArgs.Has(args, "--sync-source")) deployArgs.Add("--sync-source");
+            var previousSuppression = CliResult.SuppressOutput; CliResult.SuppressOutput = true;
+            var deployCode = ExitCodes.Success;
+            try
+            {
+                deployCode = await DeployCommand.RunAsync(deployArgs.ToArray());
+            }
+            finally { CliResult.SuppressOutput = previousSuppression; }
+            if (deployCode != ExitCodes.Success) return CliResult.WriteFailure("test run", deployCode, "DEPLOY_FAILED", "测试前部署失败", context.Root);
+        }
         var modsFileValue = CliArgs.Value(args, "--mods-file");
         var modsFile = modsFileValue is null ? null : Path.GetFullPath(Path.Combine(context.Root, modsFileValue));
         var mods = ModListParser.Load(context, modsFile, out var modError);
@@ -33,6 +46,7 @@ public static class TestCommand
         var gamePath = Path.Combine(context.Config.RimWorldDir ?? "", "RimWorldWin64.exe");
         if (!File.Exists(gamePath)) return CliResult.WriteFailure("test run", ExitCodes.MissingDependency, "GAME_NOT_FOUND", $"找不到游戏可执行文件: {gamePath}", context.Root);
         var runId = Guid.NewGuid().ToString("N");
+        var testStartedUtc = DateTime.UtcNow;
         using var gate = EnvironmentLock.TryAcquire(GameEnvironment.ConfigDirectory(), "test run", context.Root, runId, out var busyInfo);
         if (gate is null) return CliResult.WriteFailure("test run", ExitCodes.Busy, "ENVIRONMENT_BUSY", "RimWorld 环境正被占用", context.Root, new { busyInfo });
         if (!await ProcessUtil.WaitForRimWorldExitAsync(context.Config.Timeouts.ExistingGameExit, context.Config.Timeouts.PostExitDelay)) return CliResult.WriteFailure("test run", ExitCodes.Timeout, "GAME_EXIT_TIMEOUT", "等待已有 RimWorld 退出超时", context.Root);
@@ -47,7 +61,7 @@ public static class TestCommand
             await transaction.MarkWrittenAsync(GameEnvironment.LogSyncSettingsPath());
             game = Process.Start(new ProcessStartInfo(gamePath, mode == "quick" ? "-popupwindow quicktest" : "-popupwindow") { WorkingDirectory = context.Config.RimWorldDir, UseShellExecute = false, CreateNoWindow = false });
             if (game is null) return CliResult.WriteFailure("test run", ExitCodes.GameFailed, "GAME_START_FAILED", "无法启动 RimWorld", context.Root);
-            var signal = await WaitForModeAsync(mode, game, context.Config.Timeouts.MaxWait);
+            var signal = await WaitForModeAsync(mode, game, CliArgs.IntValue(args, "--timeout-seconds", context.Config.Timeouts.MaxWait), testStartedUtc, context.Root);
             if (!signal.ok) return CliResult.WriteFailure("test run", signal.exitCode, signal.code, signal.message, context.Root, new { runId, mode, mods });
             return CliResult.WriteSuccess("test run", context.Root, new { runId, mode, mods, signal = signal.message });
         }
@@ -58,7 +72,7 @@ public static class TestCommand
         }
     }
 
-    private static async Task<(bool ok, int exitCode, string code, string message)> WaitForModeAsync(string mode, Process game, int timeout)
+    private static async Task<(bool ok, int exitCode, string code, string message)> WaitForModeAsync(string mode, Process game, int timeout, DateTime startedUtc, string projectRoot)
     {
         if (mode == "manual") { await game.WaitForExitAsync(); return (true, 0, "", "manual game exit"); }
         var log = GameEnvironment.PlayerLogPath(); var deadline = DateTime.UtcNow.AddSeconds(Math.Max(1, timeout)); var offset = File.Exists(log) ? new FileInfo(log).Length : 0;
@@ -72,11 +86,30 @@ public static class TestCommand
                 using var reader = new StreamReader(stream, Encoding.UTF8, true);
                 var text = await reader.ReadToEndAsync(); offset = stream.Position;
                 if (mode == "quick" && text.Contains("[LogSyncMod] RUNTIME_READY_TO_CLOSE", StringComparison.Ordinal)) return (true, 0, "", "quick ready signal");
-                if ((mode is "auto" or "xml") && text.Contains("[LogSyncAutoTest] COMPLETED", StringComparison.Ordinal)) return (true, 0, "", $"{mode} completed signal");
+                if ((mode is "auto" or "xml") && text.Contains("[LogSyncAutoTest] COMPLETED", StringComparison.Ordinal))
+                {
+                    var validation = ValidateAutoResult(projectRoot, startedUtc);
+                    return validation.ok ? (true, 0, "", $"{mode} completed signal") : (false, ExitCodes.GameFailed, validation.code, validation.message);
+                }
             }
             await Task.Delay(500);
         }
         return (false, ExitCodes.Timeout, "TEST_TIMEOUT", $"{mode} 模式等待超时");
+    }
+
+    private static (bool ok, string code, string message) ValidateAutoResult(string projectRoot, DateTime startedUtc)
+    {
+        var outputRoot = Path.Combine(projectRoot, ".tools", "test", "AutoTestOutput");
+        if (!Directory.Exists(outputRoot)) return (false, "AUTO_RESULT_MISSING", "未找到自动测试输出目录");
+        var candidates = Directory.EnumerateFiles(outputRoot, "*_Result.json", SearchOption.TopDirectoryOnly).Where(x => File.GetLastWriteTimeUtc(x) >= startedUtc).OrderByDescending(File.GetLastWriteTimeUtc).ToArray();
+        if (candidates.Length == 0) return (false, "AUTO_RESULT_MISSING", "未找到本轮自动测试结果 JSON");
+        try
+        {
+            using var document = System.Text.Json.JsonDocument.Parse(File.ReadAllText(candidates[0]));
+            if (document.RootElement.TryGetProperty("ok", out var ok) && ok.ValueKind == System.Text.Json.JsonValueKind.False) return (false, "AUTO_RESULT_FAILED", "自动测试结果报告失败");
+            return (true, "", "");
+        }
+        catch (Exception ex) { return (false, "AUTO_RESULT_INVALID", $"自动测试结果 JSON 无法解析: {ex.Message}"); }
     }
 }
 
@@ -155,7 +188,7 @@ public sealed class ConfigTransaction : IAsyncDisposable
         foreach (var path in paths)
         {
             var exists = File.Exists(path); var original = exists ? File.ReadAllBytes(path) : []; var backup = Path.Combine(dir, Path.GetFileName(path) + ".original"); if (exists) File.WriteAllBytes(backup, original);
-            entries.Add(new BackupEntry { Path = path, Backup = backup, Exists = exists, OriginalHash = Convert.ToHexString(SHA256.HashData(original)) });
+            entries.Add(new BackupEntry { Path = path, Backup = backup, Exists = exists, OriginalHash = exists ? Convert.ToHexString(SHA256.HashData(original)) : "" });
         }
         File.WriteAllText(Path.Combine(dir, "transaction.json"), System.Text.Json.JsonSerializer.Serialize(entries));
         return Task.FromResult(new ConfigTransaction(dir, entries));

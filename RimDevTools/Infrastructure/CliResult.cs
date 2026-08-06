@@ -7,6 +7,7 @@ public sealed record CliError(string Code, string Message, object? Details = nul
 
 public sealed class CliResult
 {
+    public static bool SuppressOutput { get; set; }
     public bool Ok { get; init; }
     public string Command { get; init; } = "";
     public string? ProjectRoot { get; init; }
@@ -33,5 +34,8 @@ public sealed class CliResult
         return exitCode;
     }
 
-    public static void Write(object value) => Console.WriteLine(JsonSerializer.Serialize(value, JsonOptions));
+    public static void Write(object value)
+    {
+        if (!SuppressOutput) Console.WriteLine(JsonSerializer.Serialize(value, JsonOptions));
+    }
 }

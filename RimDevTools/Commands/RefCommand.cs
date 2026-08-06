@@ -80,7 +80,7 @@ public static class RefCommand
                         if (ilspy is null || !File.Exists(ilspy)) throw new FileNotFoundException("找不到 ilspycmd，请运行 doctor", ilspy);
                         foreach (var assembly in assemblies)
                         {
-                            var output = Path.Combine(Path.GetDirectoryName(assembly)!, " Decompiled");
+                            var output = Path.Combine(Path.GetDirectoryName(assembly)!, "Decompiled");
                             Directory.CreateDirectory(output);
                             if (!await ProcessUtil.RunAsync(ilspy, $"-p -o \"{output}\" \"{assembly}\"", context.Root)) throw new InvalidOperationException($"反编译失败: {assembly}");
                             decompiled++;

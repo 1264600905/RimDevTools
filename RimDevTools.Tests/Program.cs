@@ -17,6 +17,7 @@ internal sealed class TestSuite
             TestModListParser();
             await TestSettingsAndTransactionAsync();
             await TestDeployAndRefAsync();
+            await TestRunPreflightAsync();
             Console.WriteLine($"PASS {_passed} tests");
         }
         finally { if (Directory.Exists(_temp)) Directory.Delete(_temp, true); }
@@ -104,6 +105,24 @@ internal sealed class TestSuite
             Assert(pullExit == 0 && File.Exists(Path.Combine(refRoot, "demo.reference", "readme.txt")), "ref pull stages and atomically installs a reference mod");
         }
         finally { Environment.CurrentDirectory = previousCurrent; Environment.SetEnvironmentVariable("RIMDEVTOOLS_CONFIG_DIR", previous); }
+    }
+
+    private async Task TestRunPreflightAsync()
+    {
+        var root = Path.Combine(_temp, "test-project"); var game = Path.Combine(_temp, "test-game"); var cfg = Path.Combine(_temp, "test-config");
+        Directory.CreateDirectory(Path.Combine(root, "About")); Directory.CreateDirectory(Path.Combine(game, "Mods", "LogSync", "About")); Directory.CreateDirectory(cfg);
+        File.WriteAllText(Path.Combine(root, "About", "About.xml"), "<ModMetaData><packageId>demo.test</packageId></ModMetaData>"); File.WriteAllText(Path.Combine(game, "Mods", "LogSync", "About", "About.xml"), "<ModMetaData><packageId>trigger.logsyncmod</packageId></ModMetaData>");
+        File.WriteAllText(Path.Combine(root, "mod_config.jsonc"), $"{{ \"mod_name\": \"Demo\", \"rimworld_dir\": \"{Escape(game)}\", \"min_active_mods\": [] }}");
+        var oldDirectory = Environment.CurrentDirectory; var previous = Environment.GetEnvironmentVariable("RIMDEVTOOLS_CONFIG_DIR"); Environment.CurrentDirectory = root; Environment.SetEnvironmentVariable("RIMDEVTOOLS_CONFIG_DIR", cfg);
+        try
+        {
+            var exit = await TestCommand.RunAsync(["test", "run", "--mode", "auto", "--timeout-seconds", "1"]);
+            Assert(exit == ExitCodes.MissingDependency, "test run rejects missing game before mutating global configuration");
+            var invalid = Path.Combine(root, "invalid.xml"); File.WriteAllText(invalid, "<ModsConfigData><other><li>demo.test</li></other></ModsConfigData>");
+            var parsed = ModListParser.Load(ProjectDiscovery.Find(root, out _)!, invalid, out var error);
+            Assert(parsed is null && error?.Code == "ACTIVE_MODS_MISSING", "test run rejects ModList without activeMods before launch");
+        }
+        finally { Environment.CurrentDirectory = oldDirectory; Environment.SetEnvironmentVariable("RIMDEVTOOLS_CONFIG_DIR", previous); }
     }
 
     private static string Escape(string path) => path.Replace("\\", "\\\\");
