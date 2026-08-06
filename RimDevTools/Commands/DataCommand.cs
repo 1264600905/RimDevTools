@@ -87,6 +87,7 @@ public static class DataCommand
 
         try
         {
+            if (Directory.Exists(outputPath)) throw new IOException($"数据库输出路径指向目录: {outputPath}");
             var outputDirectory = Path.GetDirectoryName(outputPath)!;
             PathSafety.EnsureNoReparsePoints(outputDirectory, outputPath);
         }

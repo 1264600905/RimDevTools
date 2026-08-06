@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Security.Cryptography;
+using System.Text;
 using Microsoft.Data.Sqlite;
 
 namespace RimDevTools;
@@ -121,6 +123,7 @@ public static class DatabaseInspector
         if (metadata is not null && !string.IsNullOrWhiteSpace(expectedProjectPackageId) && !metadata.ProjectPackageId.Equals(expectedProjectPackageId, StringComparison.OrdinalIgnoreCase)) reasons.Add("PROJECT_PACKAGE_ID_MISMATCH");
         if (metadata is not null && !string.IsNullOrWhiteSpace(expectedRequestedModsHash) && metadata.RequestedModsHash != expectedRequestedModsHash) reasons.Add("REQUESTED_MODS_HASH_MISMATCH");
         if (metadata is not null && loadedMods.Count == 0) reasons.Add("LOADED_MODS_EMPTY");
+        if (metadata is not null && loadedMods.Count > 0 && metadata.EffectiveModsHash != HashPackages(loadedMods.Select(x => x.PackageId))) reasons.Add("EFFECTIVE_MODS_HASH_MISMATCH");
         return new DatabaseStatus(
             fullPath,
             pathSource,
@@ -165,5 +168,11 @@ public static class DatabaseInspector
         using var reader = command.ExecuteReader();
         while (reader.Read())
             yield return new LoadedModInfo(reader.GetInt32(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetString(4), reader.GetInt32(5) != 0, reader.GetInt32(6) != 0);
+    }
+
+    private static string HashPackages(IEnumerable<string> packageIds)
+    {
+        var bytes = Encoding.UTF8.GetBytes(string.Join("\n", packageIds));
+        return "sha256:" + Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
     }
 }
