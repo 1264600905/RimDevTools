@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Data.Sqlite;
@@ -43,17 +44,39 @@ public static class ComponentLocator
     {
         var overridePath = Environment.GetEnvironmentVariable("RIMDEVTOOLS_RIMSEARCHER_PATH");
         return string.IsNullOrWhiteSpace(overridePath)
-            ? Path.Combine(AppContext.BaseDirectory, "rimsearcher.exe")
+            ? Path.Combine(ExecutableDirectory(), "rimsearcher.exe")
+            : Path.GetFullPath(overridePath);
+    }
+
+    public static string DataModPath()
+    {
+        var overridePath = Environment.GetEnvironmentVariable("RIMDEVTOOLS_DATAMOD_PATH");
+        return string.IsNullOrWhiteSpace(overridePath)
+            ? Path.Combine(ExecutableDirectory(), "components", "RimSearcher_DataMod", "Assemblies", "RimSearcher.DataMod.dll")
             : Path.GetFullPath(overridePath);
     }
 
     public static string? FileVersion(string path)
         => File.Exists(path) ? FileVersionInfo.GetVersionInfo(path).FileVersion : null;
 
+    public static string? AssemblyVersion(string path)
+    {
+        try { return File.Exists(path) ? AssemblyName.GetAssemblyName(path).Version?.ToString() : null; }
+        catch { return null; }
+    }
+
     public static int? EncodedVersion(string? value)
     {
         if (!Version.TryParse(value, out var version) || version.Build is < 0 or > 99) return null;
         return version.Major * 10000 + version.Minor * 100 + version.Build;
+    }
+
+    private static string ExecutableDirectory()
+    {
+        var processPath = Environment.ProcessPath;
+        return processPath is not null && Path.GetFileNameWithoutExtension(processPath).Equals("RimDevTools", StringComparison.OrdinalIgnoreCase)
+            ? Path.GetDirectoryName(processPath)!
+            : AppContext.BaseDirectory;
     }
 }
 

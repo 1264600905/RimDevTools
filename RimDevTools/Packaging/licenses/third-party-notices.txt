@@ -1,0 +1,27 @@
+RimDevTools third-party notices
+
+Microsoft.Data.Sqlite and related Microsoft .NET components
+Copyright (c) .NET Foundation and Contributors
+Licensed under the MIT License.
+https://github.com/dotnet/efcore
+
+SQLitePCLRaw
+Copyright (c) Eric Sink
+Licensed under the Apache License 2.0.
+https://github.com/ericsink/SQLitePCL.raw
+
+SQLite
+SQLite is in the public domain.
+https://sqlite.org/copyright.html
+
+ILSpy / ICSharpCode.Decompiler
+Copyright (c) AlphaSierraPapa for the ILSpy team
+Licensed under the MIT License. See ILSpy-LICENSE.txt.
+
+ConsoleAppFramework (used by rimsearcher)
+Copyright (c) Cysharp, Inc.
+Licensed under the MIT License.
+https://github.com/Cysharp/ConsoleAppFramework
+
+RimSearcher
+Licensed under the MIT License. See RimSearcher-LICENSE.txt.

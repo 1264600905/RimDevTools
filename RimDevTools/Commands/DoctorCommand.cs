@@ -74,9 +74,19 @@ public static class DoctorCommand
         checks.Add(new DoctorCheck("test.autotest_extension", autoTestAssembly is null ? "missing" : "available", true, autoTestAssembly, autoTestAssembly is null ? "LogSync 模组中未发现 AutoTest 程序集" : null));
 
         AddModCheck(checks, "data.rimsearcher_datamod", modRoots, "kearril.RimSearcherDataMod", false);
+        var installedDataMod = FindModDirectory(modRoots, "kearril.RimSearcherDataMod");
         var rimSearcher = ComponentLocator.RimSearcherPath();
         AddPathCheck(checks, "data.rimsearcher_cli", rimSearcher, false, PathKind.File);
         var rimSearcherVersion = File.Exists(rimSearcher) ? FileVersionInfo.GetVersionInfo(rimSearcher).FileVersion : null;
+        var dataModAssembly = installedDataMod is null ? null : Path.Combine(installedDataMod, "Assemblies", "RimSearcher.DataMod.dll");
+        var dataModVersion = dataModAssembly is null ? null : ComponentLocator.AssemblyVersion(dataModAssembly);
+        checks.Add(new DoctorCheck(
+            "data.component_version",
+            dataModVersion is null ? "missing" : CliApplication.VersionsEqual(rimSearcherVersion, dataModVersion) ? "available" : "stale",
+            false,
+            dataModAssembly,
+            dataModVersion is null ? "未发现 DataMod 程序集版本" : CliApplication.VersionsEqual(rimSearcherVersion, dataModVersion) ? null : "RimSearcher CLI 与 DataMod 版本不一致",
+            new { rimSearcherVersion, dataModVersion }));
 
         var databasePath = ResolveDbPath(context);
         if (databasePath is null)
@@ -117,6 +127,7 @@ public static class DoctorCommand
             configVersion = config.ConfigVersion,
             rimDevToolsVersion = typeof(DoctorCommand).Assembly.GetName().Version?.ToString(),
             rimSearcherVersion,
+            dataModVersion,
             checks
         };
         return Task.FromResult(CliResult.WriteSuccess("doctor", context.Root, result));

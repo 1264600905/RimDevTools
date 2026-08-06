@@ -15,7 +15,17 @@ public static class CliApplication
 
         if (args.Length == 1 && args[0].Equals("--version", StringComparison.OrdinalIgnoreCase))
         {
-            CliResult.Write(new { ok = true, command = "version", rimDevToolsVersion = typeof(CliApplication).Assembly.GetName().Version?.ToString() ?? "1.0.0", rimSearcherVersion = FindSiblingVersion() });
+            var rimSearcherVersion = ComponentLocator.FileVersion(ComponentLocator.RimSearcherPath());
+            var dataModVersion = ComponentLocator.AssemblyVersion(ComponentLocator.DataModPath());
+            CliResult.Write(new
+            {
+                ok = true,
+                command = "version",
+                rimDevToolsVersion = typeof(CliApplication).Assembly.GetName().Version?.ToString() ?? "1.0.0",
+                rimSearcherVersion,
+                dataModVersion,
+                componentsCompatible = VersionsEqual(rimSearcherVersion, dataModVersion)
+            });
             return ExitCodes.Success;
         }
 
@@ -89,11 +99,11 @@ public static class CliApplication
         return null;
     }
 
-    private static string? FindSiblingVersion()
-    {
-        var path = Path.Combine(AppContext.BaseDirectory, "rimsearcher.exe");
-        return File.Exists(path) ? FileVersionInfo.GetVersionInfo(path).FileVersion : null;
-    }
+    internal static bool VersionsEqual(string? left, string? right)
+        => Version.TryParse(left, out var leftVersion) && Version.TryParse(right, out var rightVersion)
+            && leftVersion.Major == rightVersion.Major
+            && leftVersion.Minor == rightVersion.Minor
+            && leftVersion.Build == rightVersion.Build;
 
     private static void WriteHelp()
     {

@@ -6,7 +6,8 @@ RimDevTools 是本仓库内的 .NET 10 Windows CLI，统一承载模组部署、
 
 ```powershell
 dotnet build RimDevTools\RimDevTools.csproj -c Release
-dotnet publish RimDevTools\RimDevTools.csproj -c Release -r win-x64 --self-contained false
+dotnet publish RimDevTools\RimDevTools.csproj -c Release -r win-x64 --self-contained true
+.\.tools\publish-rimdevtools.ps1
 ```
 
 ## 命令
