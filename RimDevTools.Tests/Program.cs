@@ -433,6 +433,10 @@ internal sealed class TestSuite
         File.WriteAllText(environment.ConfigPath, Config(environment, modName: "Demo", extra: "\"sync_items\":[\"About\"],\"csproj_paths\":[\"bad.csproj\"]"));
         var failedBuild = await DeployCommand.ExecuteAsync(["deploy"]);
         Assert(!failedBuild.Ok && failedBuild.Error?.Code == "BUILD_FAILED" && File.Exists(Path.Combine(target, "still-here.txt")), "build failure preserves deployed directory");
+
+        File.WriteAllText(environment.ConfigPath, Config(environment, modName: "Demo", extra: "\"sync_items\":[\"About\"],\"shader_bundle\":{\"enabled\":true,\"unity_exe_path\":\"missing-unity.exe\",\"unity_project_path\":\"missing-project\",\"build_method\":\"Build.Run\"}"));
+        var failedShader = await DeployCommand.ExecuteAsync(["deploy"]);
+        Assert(!failedShader.Ok && failedShader.Error?.Code == "SHADER_BUILD_FAILED" && File.Exists(Path.Combine(target, "still-here.txt")), "enabled shader failure prevents deployment and preserves the existing target");
     }
 
     private void TestAutoResultValidator()

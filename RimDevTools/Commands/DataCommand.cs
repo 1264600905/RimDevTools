@@ -51,13 +51,21 @@ public static class DataCommand
         var resolved = ResolveOutputPath(context, null, out var error);
         if (resolved is null)
             return Task.FromResult(CliResult.WriteFailure(command, ExitCodes.InvalidArguments, error!.Code, error.Message, context.Root));
-        var modList = ModListParser.ResolveData(context, null, out _);
+        var modList = ModListParser.ResolveData(context, null, out var modListError);
         var status = DatabaseInspector.Inspect(
             resolved,
             "project_config",
             context.Config.GameVersion,
             context.Config.CurrentPackageId(context.Root),
             modList is null ? null : HashLines(modList.Mods));
+        if (modListError is not null)
+        {
+            status = status with
+            {
+                RefreshRecommended = true,
+                ReasonCodes = status.ReasonCodes.Append(modListError.Code).Distinct(StringComparer.Ordinal).ToArray()
+            };
+        }
         return Task.FromResult(CliResult.WriteSuccess(command, context.Root, status));
     }
 
