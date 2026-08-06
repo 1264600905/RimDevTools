@@ -42,7 +42,9 @@ public static class TestCommand
         try
         {
             await ModListParser.WriteAsync(GameEnvironment.ModsConfigPath(), mods);
+            await transaction.MarkWrittenAsync(GameEnvironment.ModsConfigPath());
             await SettingsEditor.UpdateAsync(context, mode, persistent: false);
+            await transaction.MarkWrittenAsync(GameEnvironment.LogSyncSettingsPath());
             game = Process.Start(new ProcessStartInfo(gamePath, mode == "quick" ? "-popupwindow quicktest" : "-popupwindow") { WorkingDirectory = context.Config.RimWorldDir, UseShellExecute = false, CreateNoWindow = false });
             if (game is null) return CliResult.WriteFailure("test run", ExitCodes.GameFailed, "GAME_START_FAILED", "无法启动 RimWorld", context.Root);
             var signal = await WaitForModeAsync(mode, game, context.Config.Timeouts.MaxWait);
@@ -153,13 +155,20 @@ public sealed class ConfigTransaction : IAsyncDisposable
         foreach (var path in paths)
         {
             var exists = File.Exists(path); var original = exists ? File.ReadAllBytes(path) : []; var backup = Path.Combine(dir, Path.GetFileName(path) + ".original"); if (exists) File.WriteAllBytes(backup, original);
-            entries.Add(new BackupEntry(path, backup, exists, Convert.ToHexString(SHA256.HashData(original))));
+            entries.Add(new BackupEntry { Path = path, Backup = backup, Exists = exists, OriginalHash = Convert.ToHexString(SHA256.HashData(original)) });
         }
         File.WriteAllText(Path.Combine(dir, "transaction.json"), System.Text.Json.JsonSerializer.Serialize(entries));
         return Task.FromResult(new ConfigTransaction(dir, entries));
     }
+    public Task MarkWrittenAsync(string path)
+    {
+        var entry = _entries.SingleOrDefault(x => x.Path.Equals(path, StringComparison.OrdinalIgnoreCase)) ?? throw new ArgumentException($"路径不属于当前事务: {path}");
+        entry.AppliedHash = File.Exists(path) ? Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path))) : "";
+        File.WriteAllText(Path.Combine(_dir, "transaction.json"), System.Text.Json.JsonSerializer.Serialize(_entries));
+        return Task.CompletedTask;
+    }
     public ValueTask DisposeAsync() { foreach (var entry in _entries) { if (entry.Exists) File.Copy(entry.Backup, entry.Path, true); else if (File.Exists(entry.Path)) File.Delete(entry.Path); } if (Directory.Exists(_dir)) Directory.Delete(_dir, true); return ValueTask.CompletedTask; }
-    private sealed record BackupEntry(string Path, string Backup, bool Exists, string OriginalHash);
+    private sealed class BackupEntry { public string Path { get; set; } = ""; public string Backup { get; set; } = ""; public bool Exists { get; set; } public string OriginalHash { get; set; } = ""; public string? AppliedHash { get; set; } }
 }
 
 public static class TransactionRecovery
@@ -176,7 +185,8 @@ public static class TransactionRecovery
                 foreach (var entry in entries)
                 {
                     var currentHash = File.Exists(entry.Path) ? Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(entry.Path))) : "";
-                    if (currentHash != entry.OriginalHash && (entry.Exists || File.Exists(entry.Path))) throw new IOException($"检测到用户修改，拒绝自动恢复: {entry.Path}");
+                    var expectedHash = entry.AppliedHash ?? entry.OriginalHash;
+                    if (currentHash != expectedHash) throw new IOException($"检测到用户修改，拒绝自动恢复: {entry.Path}");
                     if (entry.Exists) File.Copy(entry.Backup, entry.Path, true); else if (File.Exists(entry.Path)) File.Delete(entry.Path);
                 }
                 Directory.Delete(dir, true);
@@ -185,5 +195,5 @@ public static class TransactionRecovery
         }
         return Task.CompletedTask;
     }
-    private sealed record RecoveryEntry(string Path, string Backup, bool Exists, string OriginalHash);
+    private sealed class RecoveryEntry { public string Path { get; set; } = ""; public string Backup { get; set; } = ""; public bool Exists { get; set; } public string OriginalHash { get; set; } = ""; public string? AppliedHash { get; set; } }
 }

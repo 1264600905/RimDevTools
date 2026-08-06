@@ -16,6 +16,7 @@ internal sealed class TestSuite
             TestJsoncAndDiscovery();
             TestModListParser();
             await TestSettingsAndTransactionAsync();
+            await TestDeployAndRefAsync();
             Console.WriteLine($"PASS {_passed} tests");
         }
         finally { if (Directory.Exists(_temp)) Directory.Delete(_temp, true); }
@@ -64,8 +65,45 @@ internal sealed class TestSuite
             File.WriteAllText(settings, "changed"); File.Delete(mods);
             await transaction.DisposeAsync();
             Assert(File.ReadAllText(settings) == changed && File.Exists(mods), "transaction restores exact original files");
+            var recovery = await ConfigTransaction.CreateAsync(configDir, "recovery", [settings]);
+            File.WriteAllText(settings, "tool-change"); await recovery.MarkWrittenAsync(settings);
+            await TransactionRecovery.RecoverAsync(configDir);
+            Assert(File.ReadAllText(settings) == changed, "interrupted transaction restores known tool-written state");
         }
         finally { Environment.SetEnvironmentVariable("RIMDEVTOOLS_CONFIG_DIR", previous); }
+    }
+
+    private async Task TestDeployAndRefAsync()
+    {
+        var root = Path.Combine(_temp, "deploy-project"); var game = Path.Combine(_temp, "deploy-game"); var cfg = Path.Combine(_temp, "deploy-config");
+        Directory.CreateDirectory(Path.Combine(root, "About")); Directory.CreateDirectory(Path.Combine(root, "source")); Directory.CreateDirectory(Path.Combine(game, "Mods", "Demo"));
+        File.WriteAllText(Path.Combine(root, "About", "About.xml"), "<ModMetaData><packageId>demo.deploy</packageId></ModMetaData>");
+        File.WriteAllText(Path.Combine(root, "About", "About.html"), "filtered"); File.WriteAllText(Path.Combine(root, "About", "About.txt"), "kept");
+        File.WriteAllText(Path.Combine(root, "source", "Demo.csproj"), "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup></Project>");
+        File.WriteAllText(Path.Combine(game, "Mods", "Demo", "PublishedFileId.txt"), "123"); File.WriteAllText(Path.Combine(game, "Mods", "Demo", "stale.txt"), "stale");
+        File.WriteAllText(Path.Combine(root, "mod_config.jsonc"), $"{{ \"mod_name\": \"Demo\", \"rimworld_dir\": \"{Escape(game)}\", \"csproj_paths\": [\"source/Demo.csproj\"], \"sync_items\": [\"About\"], \"protected_files_regex\": \"^(PublishedFileId\\\\.txt)$\", \"timeouts\": {{ \"existing_game_exit\": 0, \"post_exit_delay\": 0 }} }}");
+        var previous = Environment.GetEnvironmentVariable("RIMDEVTOOLS_CONFIG_DIR"); var previousCurrent = Environment.CurrentDirectory; Environment.SetEnvironmentVariable("RIMDEVTOOLS_CONFIG_DIR", cfg);
+        try
+        {
+            var old = Environment.CurrentDirectory; Environment.CurrentDirectory = root;
+            try
+            {
+                var exit = await DeployCommand.RunAsync(["deploy"]);
+                var target = Path.Combine(game, "Mods", "Demo");
+                Assert(exit == 0 && File.Exists(Path.Combine(target, "PublishedFileId.txt")) && !File.Exists(Path.Combine(target, "stale.txt")), "deploy preserves protected direct child and replaces stale target");
+                Assert(File.Exists(Path.Combine(target, "About", "About.txt")) && !File.Exists(Path.Combine(target, "About", "About.html")), "deploy filters About html/svg files");
+            }
+            finally { Environment.CurrentDirectory = old; }
+
+            var source = Path.Combine(game, "Mods", "RefMod", "About"); Directory.CreateDirectory(source); File.WriteAllText(Path.Combine(source, "About.xml"), "<ModMetaData><name>Reference Mod</name><packageId>demo.reference</packageId></ModMetaData>"); File.WriteAllText(Path.Combine(Path.GetDirectoryName(source)!, "readme.txt"), "reference");
+            var refRoot = Path.Combine(root, "参考文档"); var refConfig = Path.Combine(root, "mod_config.jsonc");
+            var text = File.ReadAllText(refConfig).Replace("\"Demo\"", "\"Demo\", \"workshop_paths\": [\"" + Escape(Path.Combine(game, "Mods")) + "\"]", StringComparison.Ordinal);
+            File.WriteAllText(refConfig, text);
+            Environment.CurrentDirectory = root;
+            var pullExit = await RefCommand.PullAsync(["ref", "pull", "demo.reference"]);
+            Assert(pullExit == 0 && File.Exists(Path.Combine(refRoot, "demo.reference", "readme.txt")), "ref pull stages and atomically installs a reference mod");
+        }
+        finally { Environment.CurrentDirectory = previousCurrent; Environment.SetEnvironmentVariable("RIMDEVTOOLS_CONFIG_DIR", previous); }
     }
 
     private static string Escape(string path) => path.Replace("\\", "\\\\");
