@@ -533,6 +533,12 @@ internal sealed class TestSuite
         using var failureJson = JsonDocument.Parse(restoreFailure.Output);
         Assert(restoreFailure.ExitCode == ExitCodes.TaskFailed && JsonErrorCode(restoreFailure.Output) == "TRANSACTION_RESTORE_FAILED", "restore failure returns a stable task error");
         Assert(failureJson.RootElement.GetProperty("ok").ValueKind == JsonValueKind.False && TransactionRecovery.PendingDirectories(environment.ConfigDirectory).Count == 1, "restore failure emits one JSON object and retains the transaction");
+
+        var missingSettings = CreateProjectEnvironment("game-missing-settings", createGameExecutable: true, createSettings: false);
+        using var missingScope = UseEnvironment(missingSettings);
+        Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", "quick");
+        var missingRun = await CaptureAsync(() => TestCommand.RunAsync(["test", "run", "--mode", "quick", "--timeout-seconds", "5"]));
+        Assert(missingRun.ExitCode == 0 && !File.Exists(missingSettings.SettingsPath), "test run temporarily creates and then removes an originally missing settings file");
     }
 
     private async Task TestDataWorkflowsAsync()
@@ -585,7 +591,7 @@ internal sealed class TestSuite
         AssertConfigurationRestored(environment, "data timeout restores configuration");
     }
 
-    private ProjectEnvironment CreateProjectEnvironment(string name, bool createConfigDirectory = true, bool createGameExecutable = false)
+    private ProjectEnvironment CreateProjectEnvironment(string name, bool createConfigDirectory = true, bool createGameExecutable = false, bool createSettings = true)
     {
         var root = NewDirectory(name);
         var game = NewDirectory(Path.Combine(name, "game"));
@@ -601,7 +607,7 @@ internal sealed class TestSuite
         const string originalMods = "<ModsConfigData><activeMods><li>ludeon.rimworld</li></activeMods></ModsConfigData>";
         if (createConfigDirectory)
         {
-            File.WriteAllText(settings, originalSettings);
+            if (createSettings) File.WriteAllText(settings, originalSettings);
             File.WriteAllText(mods, originalMods);
         }
 

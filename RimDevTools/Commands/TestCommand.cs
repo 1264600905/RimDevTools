@@ -66,9 +66,6 @@ public static class TestCommand
         var gamePath = Path.Combine(context.Config.RimWorldDir ?? "", "RimWorldWin64.exe");
         if (!File.Exists(gamePath))
             return CliResult.WriteFailure(command, ExitCodes.MissingDependency, "GAME_NOT_FOUND", $"找不到游戏可执行文件: {gamePath}", context.Root);
-        if (!File.Exists(GameEnvironment.LogSyncSettingsPath()))
-            return CliResult.WriteFailure(command, ExitCodes.MissingDependency, "LOGSYNC_SETTINGS_NOT_FOUND", $"找不到 LogSyncMod 设置文件: {GameEnvironment.LogSyncSettingsPath()}", context.Root);
-
         var runId = Guid.NewGuid().ToString("N");
         using var gate = EnvironmentLock.TryAcquire(GameEnvironment.ConfigDirectory(), command, context.Root, runId, out var busyInfo);
         if (gate is null)
@@ -370,9 +367,11 @@ public static class SettingsEditor
     public static async Task<bool> UpdateAsync(ProjectContext context, string mode, ConfigTransaction? transaction = null, string? runId = null)
     {
         var path = GameEnvironment.LogSyncSettingsPath();
-        if (!File.Exists(path)) throw new FileNotFoundException("找不到 LogSyncMod 设置文件", path);
-
-        var document = XDocument.Load(path);
+        var document = File.Exists(path)
+            ? XDocument.Load(path)
+            : new XDocument(
+                new XDeclaration("1.0", "utf-8", null),
+                new XElement("SettingsBlock", new XElement("ModSettings", new XAttribute("Class", "LogSyncMod.LogSyncSettings"))));
         var settings = document.Root?.DescendantsAndSelf().FirstOrDefault(x => x.Name.LocalName.Equals("ModSettings", StringComparison.OrdinalIgnoreCase))
             ?? throw new InvalidDataException("LogSync 设置缺少 ModSettings 节点");
         var changed = false;

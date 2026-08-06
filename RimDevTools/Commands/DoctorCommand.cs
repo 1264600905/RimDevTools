@@ -69,7 +69,13 @@ public static class DoctorCommand
         var modRoots = ModRoots(context).ToArray();
         AddModCheck(checks, "test.logsync_mod", modRoots, "trigger.logsyncmod", true);
         var logSyncDirectory = FindModDirectory(modRoots, "trigger.logsyncmod");
-        AddPathCheck(checks, "test.logsync_settings", GameEnvironment.LogSyncSettingsPath(), true, PathKind.File);
+        var logSyncSettings = GameEnvironment.LogSyncSettingsPath();
+        checks.Add(new DoctorCheck(
+            "test.logsync_settings",
+            File.Exists(logSyncSettings) ? "available" : "not_applicable",
+            false,
+            logSyncSettings,
+            File.Exists(logSyncSettings) ? null : "设置文件尚不存在；test run 会在事务内临时创建"));
         var autoTestAssembly = logSyncDirectory is null ? null : Directory.EnumerateFiles(logSyncDirectory, "*AutoTest*.dll", SearchOption.AllDirectories).FirstOrDefault();
         checks.Add(new DoctorCheck("test.autotest_extension", autoTestAssembly is null ? "missing" : "available", true, autoTestAssembly, autoTestAssembly is null ? "LogSync 模组中未发现 AutoTest 程序集" : null));
 
