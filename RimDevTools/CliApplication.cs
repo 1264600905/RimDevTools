@@ -20,18 +20,25 @@ public static class CliApplication
         }
 
         var command = CommandPath(args);
+        using var cancellation = new CancellationTokenSource();
+        ConsoleCancelEventHandler cancelHandler = (_, eventArgs) =>
+        {
+            eventArgs.Cancel = true;
+            cancellation.Cancel();
+        };
+        Console.CancelKeyPress += cancelHandler;
         try
         {
             return command switch
             {
                 "doctor" => await DoctorCommand.RunAsync(args),
-                "deploy" => await DeployCommand.RunAsync(args),
+                "deploy" => await DeployCommand.RunAsync(args, cancellation.Token),
                 "ref search" => await RefCommand.SearchAsync(args),
-                "ref pull" => await RefCommand.PullAsync(args),
+                "ref pull" => await RefCommand.PullAsync(args, cancellation.Token),
                 "ref deps" => await RefCommand.DepsAsync(args),
                 "ref related" => await RefCommand.RelatedAsync(args),
-                "test run" => await TestCommand.RunAsync(args),
-                "test settings" => await TestCommand.SettingsAsync(args),
+                "test run" => await TestCommand.RunAsync(args, cancellation.Token),
+                "test settings" => await TestCommand.SettingsAsync(args, cancellation.Token),
                 _ => CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "UNKNOWN_COMMAND", $"未知命令: {command}")
             };
         }
@@ -48,6 +55,10 @@ public static class CliApplication
             Console.Error.WriteLine($"[{command}] {ex}");
             return CliResult.WriteFailure(command, ExitCodes.TaskFailed, "UNEXPECTED_ERROR", ex.Message);
         }
+        finally
+        {
+            Console.CancelKeyPress -= cancelHandler;
+        }
     }
 
     public static string CommandPath(string[] args)
@@ -60,7 +71,13 @@ public static class CliApplication
     public static ProjectContext? RequireProject(string command, out int errorCode)
     {
         var context = ProjectDiscovery.Find(Environment.CurrentDirectory, out var error);
-        if (context is not null) { errorCode = ExitCodes.Success; return context; }
+        if (context is not null)
+        {
+            if (context.Config.ConfigVersion == 2) { errorCode = ExitCodes.Success; return context; }
+            errorCode = ExitCodes.InvalidArguments;
+            CliResult.WriteFailure(command, errorCode, "CONFIG_VERSION_UNSUPPORTED", $"需要 config_version=2，当前为 {context.Config.ConfigVersion}", context.Root);
+            return null;
+        }
         errorCode = error?.Code == "PROJECT_NOT_FOUND" ? ExitCodes.MissingDependency : ExitCodes.InvalidArguments;
         CliResult.WriteFailure(command, errorCode, error?.Code ?? "PROJECT_NOT_FOUND", error?.Message ?? "未找到项目");
         return null;
@@ -86,13 +103,25 @@ public static class CliArgs
 
     public static string? Value(string[] args, string name)
     {
-        for (var i = 0; i < args.Length - 1; i++) if (args[i].Equals(name, StringComparison.OrdinalIgnoreCase)) return args[i + 1];
+        for (var i = 0; i < args.Length - 1; i++)
+            if (args[i].Equals(name, StringComparison.OrdinalIgnoreCase) && !args[i + 1].StartsWith('-')) return args[i + 1];
         return null;
     }
 
-    public static int IntValue(string[] args, string name, int fallback)
-        => int.TryParse(Value(args, name), out var result) && result > 0 ? result : fallback;
-
     public static string RequiredValue(string[] args, string name)
         => Value(args, name) ?? throw new ArgumentException($"缺少参数 {name}");
+
+    public static bool TryPositiveInt(string[] args, string name, int fallback, out int value, out string? error)
+    {
+        error = null;
+        value = fallback;
+        if (!Has(args, name)) return value > 0;
+        var raw = Value(args, name);
+        if (raw is null || !int.TryParse(raw, out value) || value <= 0)
+        {
+            error = $"{name} 必须是正整数";
+            return false;
+        }
+        return true;
+    }
 }

@@ -1,44 +1,112 @@
+using System.Diagnostics;
+using System.Text;
 using System.Text.RegularExpressions;
+using System.Xml.Linq;
 
 namespace RimDevTools;
+
+public sealed record DoctorCheck(string Id, string Status, bool Required, string? Path, string? Message = null, object? Details = null);
 
 public static class DoctorCommand
 {
     public static Task<int> RunAsync(string[] args)
     {
         var context = ProjectDiscovery.Find(Environment.CurrentDirectory, out var discoveryError);
-        var checks = new List<object>();
+        var checks = new List<DoctorCheck>();
         if (context is null)
         {
-            checks.Add(new { id = "project.discovery", status = "missing", required = true, path = (string?)null, message = discoveryError?.Message });
+            checks.Add(new DoctorCheck("project.discovery", discoveryError?.Code == "CONFIG_INVALID" ? "invalid" : "missing", true, null, discoveryError?.Message));
             return Task.FromResult(CliResult.WriteSuccess("doctor", null, new { checks }, [discoveryError?.Code ?? "PROJECT_NOT_FOUND"]));
         }
 
-        checks.Add(new { id = "project.discovery", status = "available", required = true, path = context.ConfigPath, message = (string?)null });
-        AddFileCheck(checks, "game.executable", Path.Combine(context.Config.RimWorldDir ?? "", "RimWorldWin64.exe"), true);
-        AddFileCheck(checks, "game.config", GameEnvironment.ConfigDirectory(), false);
-        AddFileCheck(checks, "game.player_log", GameEnvironment.PlayerLogPath(), false);
-        foreach (var projectFile in context.Config.CsprojPaths)
-            AddFileCheck(checks, $"deploy.csproj.{projectFile}", Path.Combine(context.Root, projectFile), true);
+        var config = context.Config;
+        checks.Add(new DoctorCheck("project.discovery", "available", true, context.ConfigPath));
+        checks.Add(new DoctorCheck(
+            "project.config_version",
+            config.ConfigVersion == 2 ? "available" : "invalid",
+            true,
+            context.ConfigPath,
+            config.ConfigVersion == 2 ? null : $"需要 config_version=2，当前为 {config.ConfigVersion}"));
 
-        if (context.Config.ShaderBundle.Enabled)
-        {
-            AddFileCheck(checks, "deploy.unity", context.Config.ShaderBundle.UnityExePath, true);
-            AddFileCheck(checks, "deploy.unity_project", Path.Combine(context.Root, context.Config.ShaderBundle.UnityProjectPath ?? ""), true);
-        }
-        else checks.Add(new { id = "deploy.unity", status = "disabled", required = false, path = context.Config.ShaderBundle.UnityExePath, message = (string?)null });
+        AddPathCheck(checks, "game.directory", config.RimWorldDir, true, PathKind.Directory);
+        AddPathCheck(checks, "game.executable", string.IsNullOrWhiteSpace(config.RimWorldDir) ? null : Path.Combine(config.RimWorldDir, "RimWorldWin64.exe"), true, PathKind.File);
+        AddPathCheck(checks, "game.config_directory", GameEnvironment.ConfigDirectory(), false, PathKind.Directory);
+        AddPathCheck(checks, "game.mods_config", GameEnvironment.ModsConfigPath(), false, PathKind.File);
+        AddPathCheck(checks, "game.player_log", GameEnvironment.PlayerLogPath(), false, PathKind.File);
 
-        var dbPath = ResolveDbPath(context);
-        AddFileCheck(checks, "data.database", dbPath, false);
-        var ilspy = ResolveIlspyPath(context);
-        AddFileCheck(checks, "ref.ilspy", ilspy, false);
-        var invalidRegex = false;
-        if (!string.IsNullOrWhiteSpace(context.Config.ProtectedFilesRegex))
+        var steamRunning = Process.GetProcessesByName("steam").Length > 0;
+        var steamPath = FindSteamExecutable();
+        checks.Add(new DoctorCheck("game.steam", steamRunning || steamPath is not null ? "available" : "missing", false, steamPath, steamRunning ? "Steam 正在运行" : steamPath is null ? "未发现 Steam；直接启动游戏仍可用" : "Steam 已安装但未运行"));
+
+        var dotnet = FindOnPath("dotnet.exe");
+        checks.Add(new DoctorCheck("deploy.dotnet", dotnet is null ? "missing" : "available", config.CsprojPaths.Count > 0, dotnet, dotnet is null ? "PATH 中未找到 dotnet.exe" : null));
+        foreach (var projectFile in config.CsprojPaths)
         {
-            try { _ = new Regex(context.Config.ProtectedFilesRegex); } catch { invalidRegex = true; }
+            var path = ResolveProjectPath(context, projectFile);
+            var safe = path is not null && PathSafety.IsWithin(path, context.Root);
+            if (!safe) checks.Add(new DoctorCheck($"deploy.csproj.{projectFile}", "invalid", true, path, "工程路径越出项目目录"));
+            else AddPathCheck(checks, $"deploy.csproj.{projectFile}", path, true, PathKind.File);
         }
-        checks.Add(new { id = "deploy.protected_files_regex", status = invalidRegex ? "invalid" : "available", required = true, path = (string?)null, message = invalidRegex ? "正则表达式无法编译" : null });
-        var result = new { projectRoot = context.Root, configVersion = context.Config.ConfigVersion, checks };
+
+        if (config.ShaderBundle.Enabled)
+        {
+            AddPathCheck(checks, "deploy.unity", config.ShaderBundle.UnityExePath, true, PathKind.File);
+            AddPathCheck(checks, "deploy.unity_project", ResolveProjectPath(context, config.ShaderBundle.UnityProjectPath), true, PathKind.Directory);
+            checks.Add(new DoctorCheck("deploy.unity_method", string.IsNullOrWhiteSpace(config.ShaderBundle.BuildMethod) ? "missing" : "available", true, null, string.IsNullOrWhiteSpace(config.ShaderBundle.BuildMethod) ? "shader_bundle.build_method 未配置" : null));
+        }
+        else
+        {
+            checks.Add(new DoctorCheck("deploy.unity", "disabled", false, config.ShaderBundle.UnityExePath));
+        }
+
+        var regexStatus = ValidateRegex(config.ProtectedFilesRegex, out var regexMessage);
+        checks.Add(new DoctorCheck("deploy.protected_files_regex", regexStatus, true, null, regexMessage));
+
+        for (var index = 0; index < config.WorkshopPaths.Count; index++)
+            AddPathCheck(checks, $"ref.workshop.{index}", config.WorkshopPaths[index], false, PathKind.Directory);
+        AddPathCheck(checks, "ref.ilspy", ResolveIlspyPath(context), false, PathKind.File);
+
+        var modRoots = ModRoots(context).ToArray();
+        AddModCheck(checks, "test.logsync_mod", modRoots, "trigger.logsyncmod", true);
+        var logSyncDirectory = FindModDirectory(modRoots, "trigger.logsyncmod");
+        AddPathCheck(checks, "test.logsync_settings", GameEnvironment.LogSyncSettingsPath(), true, PathKind.File);
+        var autoTestAssembly = logSyncDirectory is null ? null : Directory.EnumerateFiles(logSyncDirectory, "*AutoTest*.dll", SearchOption.AllDirectories).FirstOrDefault();
+        checks.Add(new DoctorCheck("test.autotest_extension", autoTestAssembly is null ? "missing" : "available", true, autoTestAssembly, autoTestAssembly is null ? "LogSync 模组中未发现 AutoTest 程序集" : null));
+
+        AddModCheck(checks, "data.rimsearcher_datamod", modRoots, "kearril.RimSearcherDataMod", false);
+        var rimSearcher = Path.Combine(AppContext.BaseDirectory, "rimsearcher.exe");
+        AddPathCheck(checks, "data.rimsearcher_cli", rimSearcher, false, PathKind.File);
+        var rimSearcherVersion = File.Exists(rimSearcher) ? FileVersionInfo.GetVersionInfo(rimSearcher).FileVersion : null;
+
+        var databasePath = ResolveDbPath(context);
+        if (databasePath is null)
+        {
+            checks.Add(new DoctorCheck("data.database", "not_applicable", false, null, "rimsearcher_db_path 未配置"));
+        }
+        else if (!File.Exists(databasePath))
+        {
+            checks.Add(new DoctorCheck("data.database", "missing", false, databasePath, "数据库不存在；建议运行 RimDevTools data refresh"));
+        }
+        else
+        {
+            var info = new FileInfo(databasePath);
+            var headerValid = HasSqliteHeader(databasePath);
+            checks.Add(new DoctorCheck("data.database", headerValid && info.Length > 0 ? "available" : "invalid", false, databasePath, headerValid ? null : "文件不是有效的 SQLite 数据库头", new { info.Length, info.LastWriteTimeUtc }));
+        }
+
+        var lockPath = Path.Combine(GameEnvironment.ConfigDirectory(), "RimDevTools.lock.json");
+        checks.Add(new DoctorCheck("environment.lock", File.Exists(lockPath) ? "busy" : "available", false, lockPath, File.Exists(lockPath) ? "存在 RimDevTools 锁诊断文件" : null));
+        var pendingTransactions = TransactionRecovery.PendingDirectories(GameEnvironment.ConfigDirectory());
+        checks.Add(new DoctorCheck("environment.transactions", pendingTransactions.Count > 0 ? "stale" : "available", false, null, pendingTransactions.Count > 0 ? "存在未完成事务" : null, new { directories = pendingTransactions }));
+
+        var result = new
+        {
+            projectRoot = context.Root,
+            configVersion = config.ConfigVersion,
+            rimDevToolsVersion = typeof(DoctorCommand).Assembly.GetName().Version?.ToString(),
+            rimSearcherVersion,
+            checks
+        };
         return Task.FromResult(CliResult.WriteSuccess("doctor", context.Root, result));
     }
 
@@ -51,12 +119,92 @@ public static class DoctorCommand
         return Path.GetFullPath(context.Config.IlspycmdPath, Path.Combine(context.Root, ".tools"));
     }
 
-    private static void AddFileCheck(List<object> checks, string id, string? path, bool required)
+    private static string? ResolveProjectPath(ProjectContext context, string? path)
+        => string.IsNullOrWhiteSpace(path) ? null : Path.GetFullPath(path, context.Root);
+
+    private static IEnumerable<string> ModRoots(ProjectContext context)
+    {
+        if (!string.IsNullOrWhiteSpace(context.Config.RimWorldDir)) yield return Path.Combine(context.Config.RimWorldDir, "Mods");
+        foreach (var workshop in context.Config.WorkshopPaths) yield return workshop;
+    }
+
+    private static void AddModCheck(List<DoctorCheck> checks, string id, IEnumerable<string> roots, string packageId, bool required)
+    {
+        var path = FindModDirectory(roots, packageId);
+        checks.Add(new DoctorCheck(id, path is null ? required ? "missing" : "not_applicable" : "available", required, path, path is null ? $"未找到 {packageId}" : null));
+    }
+
+    private static string? FindModDirectory(IEnumerable<string> roots, string packageId)
+    {
+        foreach (var root in roots.Where(Directory.Exists).Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            foreach (var directory in Directory.EnumerateDirectories(root))
+            {
+                var about = Path.Combine(directory, "About", "About.xml");
+                if (!File.Exists(about)) continue;
+                try
+                {
+                    var candidate = XDocument.Load(about).Root?.Elements().FirstOrDefault(x => x.Name.LocalName.Equals("packageId", StringComparison.OrdinalIgnoreCase))?.Value.Trim();
+                    if (candidate?.Equals(packageId, StringComparison.OrdinalIgnoreCase) == true) return directory;
+                }
+                catch { }
+            }
+        }
+        return null;
+    }
+
+    private static string ValidateRegex(string? pattern, out string? message)
+    {
+        message = null;
+        if (string.IsNullOrWhiteSpace(pattern)) return "available";
+        try { _ = new Regex(pattern, RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1)); return "available"; }
+        catch (Exception ex) { message = ex.Message; return "invalid"; }
+    }
+
+    private static void AddPathCheck(List<DoctorCheck> checks, string id, string? path, bool required, PathKind kind)
     {
         var full = string.IsNullOrWhiteSpace(path) ? null : Path.GetFullPath(path);
-        var available = full is not null && (File.Exists(full) || Directory.Exists(full));
-        checks.Add(new { id, status = available ? "available" : required ? "missing" : "not_applicable", required, path = full, message = available ? null : required ? "路径不存在" : "未配置或未发现" });
+        var available = full is not null && (kind == PathKind.File ? File.Exists(full) : Directory.Exists(full));
+        checks.Add(new DoctorCheck(id, available ? "available" : required ? "missing" : "not_applicable", required, full, available ? null : required ? "路径不存在" : "未配置或未发现"));
     }
+
+    private static bool HasSqliteHeader(string path)
+    {
+        try
+        {
+            Span<byte> header = stackalloc byte[16];
+            using var stream = File.OpenRead(path);
+            return stream.Read(header) == header.Length && Encoding.ASCII.GetString(header) == "SQLite format 3\0";
+        }
+        catch { return false; }
+    }
+
+    private static string? FindSteamExecutable()
+    {
+        var candidates = new[]
+        {
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Steam", "steam.exe"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Steam", "steam.exe"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Steam", "steam.exe")
+        };
+        return candidates.FirstOrDefault(File.Exists);
+    }
+
+    private static string? FindOnPath(string fileName)
+    {
+        foreach (var directory in (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+        {
+            try
+            {
+                var path = Path.Combine(directory.Trim('"'), fileName);
+                if (File.Exists(path)) return path;
+            }
+            catch { }
+        }
+        return null;
+    }
+
+    private enum PathKind { File, Directory }
 }
 
 internal static class GameEnvironment
@@ -64,7 +212,9 @@ internal static class GameEnvironment
     public static string ConfigDirectory()
     {
         var overridePath = Environment.GetEnvironmentVariable("RIMDEVTOOLS_CONFIG_DIR");
-        return !string.IsNullOrWhiteSpace(overridePath) ? Path.GetFullPath(overridePath) : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "AppData", "LocalLow", "Ludeon Studios", "RimWorld by Ludeon Studios", "Config");
+        return !string.IsNullOrWhiteSpace(overridePath)
+            ? Path.GetFullPath(overridePath)
+            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "AppData", "LocalLow", "Ludeon Studios", "RimWorld by Ludeon Studios", "Config");
     }
 
     public static string PlayerLogPath() => Path.Combine(Directory.GetParent(ConfigDirectory())?.FullName ?? ConfigDirectory(), "Player.log");

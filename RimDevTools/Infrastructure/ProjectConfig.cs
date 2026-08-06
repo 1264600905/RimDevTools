@@ -6,7 +6,7 @@ namespace RimDevTools;
 
 public sealed class ProjectConfig
 {
-    [JsonPropertyName("config_version")] public int ConfigVersion { get; set; } = 2;
+    [JsonPropertyName("config_version")] public int ConfigVersion { get; set; }
     [JsonPropertyName("mod_name")] public string? ModName { get; set; }
     [JsonPropertyName("game_version")] public string? GameVersion { get; set; }
     [JsonPropertyName("rimworld_dir")] public string? RimWorldDir { get; set; }

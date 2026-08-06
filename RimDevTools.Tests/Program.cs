@@ -1,7 +1,96 @@
+using System.Text.Json;
+using System.Xml.Linq;
 using RimDevTools;
+
+if (args.Length == 2 && args[0] == "--abandon-lock")
+{
+    _ = EnvironmentLock.TryAcquire(args[1], "abandon", args[1], "abandoned", out _);
+    Environment.Exit(99);
+}
+
+if (Path.GetFileNameWithoutExtension(Environment.ProcessPath ?? "").Equals("RimWorldWin64", StringComparison.OrdinalIgnoreCase))
+{
+    await FakeRimWorld.RunAsync(args);
+    return;
+}
 
 var suite = new TestSuite();
 await suite.RunAsync();
+
+internal static class FakeRimWorld
+{
+    public static async Task RunAsync(string[] args)
+    {
+        Console.WriteLine("FAKE_GAME_STDOUT");
+        var configDirectory = Environment.GetEnvironmentVariable("RIMDEVTOOLS_CONFIG_DIR")!;
+        var mode = Environment.GetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE") ?? "quick";
+        Directory.CreateDirectory(configDirectory);
+        File.WriteAllText(Path.Combine(configDirectory, "fake-args.txt"), string.Join(" ", args));
+
+        var settingsPath = Path.Combine(configDirectory, "Mod_LogSyncMod_LogSyncMod.xml");
+        var settings = XDocument.Load(settingsPath);
+        File.WriteAllText(Path.Combine(configDirectory, "fake-settings.xml"), settings.ToString());
+        var values = settings.Descendants("ModSettings").First().Elements().ToDictionary(x => x.Name.LocalName, x => x.Value);
+        var playerLog = Path.Combine(Directory.GetParent(configDirectory)!.FullName, "Player.log");
+        Directory.CreateDirectory(Path.GetDirectoryName(playerLog)!);
+
+        if (mode == "manual")
+        {
+            await Task.Delay(200);
+            return;
+        }
+        if (mode == "hang")
+        {
+            await Task.Delay(TimeSpan.FromSeconds(30));
+            return;
+        }
+        if (mode == "modify")
+        {
+            File.WriteAllText(settingsPath, "game-modified");
+            File.AppendAllText(playerLog, "[LogSyncMod] RUNTIME_READY_TO_CLOSE\n");
+            await Task.Delay(TimeSpan.FromSeconds(30));
+            return;
+        }
+        if (mode == "break-backup")
+        {
+            var transaction = Directory.EnumerateDirectories(Path.Combine(configDirectory, "RimDevToolsTransactions")).Single();
+            var settingsBackup = Directory.EnumerateFiles(transaction, "*Mod_LogSyncMod_LogSyncMod.xml.original").Single();
+            File.Delete(settingsBackup);
+            File.WriteAllText(settingsPath, "game-modified");
+            File.AppendAllText(playerLog, "[LogSyncMod] RUNTIME_READY_TO_CLOSE\n");
+            await Task.Delay(TimeSpan.FromSeconds(30));
+            return;
+        }
+        if (!values.TryGetValue("autoTestEnabled", out var enabled) || !enabled.Equals("True", StringComparison.OrdinalIgnoreCase))
+        {
+            File.AppendAllText(playerLog, "[LogSyncMod] RUNTIME_READY_TO_CLOSE\n");
+            await Task.Delay(TimeSpan.FromSeconds(30));
+            return;
+        }
+
+        var outputPath = values["autoTestOutputPath"];
+        var packageId = values["autoTestTargetPackageId"];
+        Directory.CreateDirectory(outputPath);
+        var status = mode == "auto-fail" ? "failed" : "passed";
+        var result = new
+        {
+            packageId,
+            completeness = "Complete",
+            manifestDiscovered = 1,
+            manifestPlanned = 1,
+            manifestExecuted = 1,
+            manifestMissing = 0,
+            results = new[] { new { caseId = "case-1", status } }
+        };
+        File.WriteAllText(Path.Combine(outputPath, $"{packageId}_20260806_120000_Result.json"), JsonSerializer.Serialize(result));
+        File.AppendAllText(playerLog, $"[LogSyncAutoTest] COMPLETED packageId={packageId}\n");
+
+        // The real AutoTest extension persists autoTestEnabled=false after completion.
+        settings.Descendants("autoTestEnabled").First().Value = "False";
+        File.WriteAllText(settingsPath, settings.ToString());
+        await Task.Delay(TimeSpan.FromSeconds(30));
+    }
+}
 
 internal sealed class TestSuite
 {
@@ -15,116 +104,430 @@ internal sealed class TestSuite
         {
             TestJsoncAndDiscovery();
             TestModListParser();
-            await TestSettingsAndTransactionAsync();
-            await TestDeployAndRefAsync();
+            await TestSettingsAsync();
+            await TestTransactionsAsync();
+            await TestEnvironmentLockAsync();
+            await TestRefAsync();
+            await TestDeployAsync();
+            TestAutoResultValidator();
+            TestLogArchive();
+            await TestDoctorIsReadOnlyAsync();
             await TestRunPreflightAsync();
+            await TestGameWorkflowsAsync();
             Console.WriteLine($"PASS {_passed} tests");
         }
-        finally { if (Directory.Exists(_temp)) Directory.Delete(_temp, true); }
+        finally
+        {
+            Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", null);
+            if (Directory.Exists(_temp)) Directory.Delete(_temp, true);
+        }
     }
 
     private void TestJsoncAndDiscovery()
     {
-        var root = Path.Combine(_temp, "project"); Directory.CreateDirectory(root);
-        File.WriteAllText(Path.Combine(root, "mod_config.jsonc"), "{\n // comments stay comments\n \"mod_name\": \"Demo//Name\",\n \"rimworld_dir\": \"C:\\\\Game\",\n \"min_active_mods\": [],\n}");
+        var root = NewDirectory("discovery-project");
+        File.WriteAllText(Path.Combine(root, "mod_config.jsonc"), "{\n // comment\n \"config_version\": 2, \"mod_name\": \"Demo//Name\", \"rimworld_dir\": \"C:\\\\Game\",\n}");
         var context = ProjectDiscovery.Find(root, out var error);
-        Assert(context is not null && error is null && context.Config.ModName == "Demo//Name", "JSONC parses comments without corrupting // in strings");
-        var child = Path.Combine(root, "source"); Directory.CreateDirectory(child);
-        Assert(ProjectDiscovery.Find(child, out _)?.Root == root, "direct parent project discovery works");
-        var grandchild = Path.Combine(child, "Core"); Directory.CreateDirectory(grandchild);
-        Assert(ProjectDiscovery.Find(grandchild, out var missing) is null && missing?.Code == "PROJECT_NOT_FOUND", "project discovery does not climb past direct parent");
+        Assert(context is not null && error is null && context.Config.ModName == "Demo//Name", "JSONC preserves // inside strings");
+        var child = NewDirectory(Path.Combine("discovery-project", "source"));
+        Assert(ProjectDiscovery.Find(child, out _)?.Root == root, "project discovery checks direct parent");
+        var grandchild = NewDirectory(Path.Combine("discovery-project", "source", "Core"));
+        Assert(ProjectDiscovery.Find(grandchild, out var missing) is null && missing?.Code == "PROJECT_NOT_FOUND", "project discovery stops after direct parent");
     }
 
     private void TestModListParser()
     {
-        var root = Path.Combine(_temp, "mods-project"); var game = Path.Combine(_temp, "game"); Directory.CreateDirectory(Path.Combine(root, "About")); Directory.CreateDirectory(Path.Combine(game, "Mods", "Helper", "About")); Directory.CreateDirectory(Path.Combine(game, "Mods", "LogSync", "About"));
-        File.WriteAllText(Path.Combine(root, "About", "About.xml"), "<ModMetaData><packageId>demo.current</packageId></ModMetaData>");
-        File.WriteAllText(Path.Combine(game, "Mods", "Helper", "About", "About.xml"), "<ModMetaData><packageId>demo.helper</packageId></ModMetaData>");
-        File.WriteAllText(Path.Combine(game, "Mods", "LogSync", "About", "About.xml"), "<ModMetaData><packageId>trigger.logsyncmod</packageId></ModMetaData>");
-        File.WriteAllText(Path.Combine(root, "mod_config.jsonc"), $"{{ \"mod_name\": \"Demo\", \"rimworld_dir\": \"{Escape(game)}\", \"min_active_mods\": [\"demo.helper\"] }}");
-        File.WriteAllText(Path.Combine(root, "mods.xml"), "<ModsConfigData><ignored><li>not.allowed</li></ignored><activeMods><li>demo.helper</li><li>DEMO.HELPER</li></activeMods></ModsConfigData>");
-        var context = ProjectDiscovery.Find(root, out _)!;
-        var mods = ModListParser.Load(context, Path.Combine(root, "mods.xml"), out var error);
-        Assert(error is null && mods!.SequenceEqual(["demo.helper", "demo.current", "trigger.logsyncmod"], StringComparer.OrdinalIgnoreCase), "ModList reads only activeMods direct li, deduplicates, and inserts required mods");
+        var environment = CreateProjectEnvironment("mod-list");
+        CreateMod(environment.Game, "Helper", "demo.helper");
+        File.WriteAllText(environment.ConfigPath, Config(environment, minMods: "[\"demo.helper\"]"));
+        var modsFile = Path.Combine(environment.Root, "mods.xml");
+        File.WriteAllText(modsFile, "<ModsConfigData><ignored><li>not.allowed</li></ignored><activeMods><li>demo.helper</li><li>DEMO.HELPER</li></activeMods></ModsConfigData>");
+        var context = ProjectDiscovery.Find(environment.Root, out _)!;
+        var resolution = ModListParser.Resolve(context, modsFile, out var error);
+        Assert(error is null && resolution!.Mods.SequenceEqual(["demo.helper", "demo.current", "trigger.logsyncmod"], StringComparer.OrdinalIgnoreCase), "ModList reads direct activeMods entries and deduplicates");
+        Assert(resolution!.Additions.SequenceEqual([new ModListAddition("demo.current", 1, "current_project"), new ModListAddition("trigger.logsyncmod", 2, "logsync_tooling")]), "ModList reports automatic additions and positions");
     }
 
-    private async Task TestSettingsAndTransactionAsync()
+    private async Task TestSettingsAsync()
     {
-        var root = Path.Combine(_temp, "settings-project"); var configDir = Path.Combine(_temp, "rim-config"); Directory.CreateDirectory(Path.Combine(root, "About")); Directory.CreateDirectory(configDir);
-        File.WriteAllText(Path.Combine(root, "About", "About.xml"), "<ModMetaData><packageId>demo.current</packageId></ModMetaData>");
-        File.WriteAllText(Path.Combine(root, "mod_config.jsonc"), "{ \"mod_name\": \"Demo\", \"log_keywords\": [\"Ready\"] }");
-        var settings = Path.Combine(configDir, "Mod_LogSyncMod_LogSyncMod.xml"); var mods = Path.Combine(configDir, "ModsConfig.xml");
-        File.WriteAllText(settings, "<Root><ModSettings><logPath>old</logPath></ModSettings></Root>"); File.WriteAllText(mods, "<ModsConfigData><activeMods /></ModsConfigData>");
-        var previous = Environment.GetEnvironmentVariable("RIMDEVTOOLS_CONFIG_DIR"); Environment.SetEnvironmentVariable("RIMDEVTOOLS_CONFIG_DIR", configDir);
-        try
-        {
-            var context = ProjectDiscovery.Find(root, out _)!;
-            await SettingsEditor.UpdateAsync(context, "auto", true);
-            var changed = File.ReadAllText(settings);
-            Assert(changed.Contains("Ready") && changed.Contains("True"), "settings writer updates keywords and auto-test state");
-            var transaction = await ConfigTransaction.CreateAsync(configDir, "run", [settings, mods]);
-            File.WriteAllText(settings, "changed"); File.Delete(mods);
-            await transaction.DisposeAsync();
-            Assert(File.ReadAllText(settings) == changed && File.Exists(mods), "transaction restores exact original files");
-            var recovery = await ConfigTransaction.CreateAsync(configDir, "recovery", [settings]);
-            File.WriteAllText(settings, "tool-change"); await recovery.MarkWrittenAsync(settings);
-            await TransactionRecovery.RecoverAsync(configDir);
-            Assert(File.ReadAllText(settings) == changed, "interrupted transaction restores known tool-written state");
-        }
-        finally { Environment.SetEnvironmentVariable("RIMDEVTOOLS_CONFIG_DIR", previous); }
+        var environment = CreateProjectEnvironment("settings");
+        File.WriteAllText(environment.ConfigPath, Config(environment, extra: "\"log_keywords\":[\"Ready\"]"));
+        using var scope = UseEnvironment(environment);
+        var context = ProjectDiscovery.Find(environment.Root, out _)!;
+        var changed = await SettingsEditor.UpdateAsync(context, "auto");
+        var document = XDocument.Load(environment.SettingsPath);
+        var settings = document.Descendants("ModSettings").First();
+        Assert(changed && settings.Element("autoTestTargetPackageId")?.Value == "demo.current", "auto settings include current packageId");
+        Assert(settings.Element("autoTestOutputPath")?.Value == SettingsEditor.AutoTestOutputPath(context) && settings.Element("autoTestEnabled")?.Value == "True", "auto settings include output path and enabled state");
+        Assert(settings.Element("keywords")?.Elements("li").Single().Value == "Ready", "settings writer updates keywords");
     }
 
-    private async Task TestDeployAndRefAsync()
+    private async Task TestTransactionsAsync()
     {
-        var root = Path.Combine(_temp, "deploy-project"); var game = Path.Combine(_temp, "deploy-game"); var cfg = Path.Combine(_temp, "deploy-config");
-        Directory.CreateDirectory(Path.Combine(root, "About")); Directory.CreateDirectory(Path.Combine(root, "source")); Directory.CreateDirectory(Path.Combine(game, "Mods", "Demo"));
-        File.WriteAllText(Path.Combine(root, "About", "About.xml"), "<ModMetaData><packageId>demo.deploy</packageId></ModMetaData>");
-        File.WriteAllText(Path.Combine(root, "About", "About.html"), "filtered"); File.WriteAllText(Path.Combine(root, "About", "About.txt"), "kept");
-        File.WriteAllText(Path.Combine(root, "source", "Demo.csproj"), "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup></Project>");
-        File.WriteAllText(Path.Combine(game, "Mods", "Demo", "PublishedFileId.txt"), "123"); File.WriteAllText(Path.Combine(game, "Mods", "Demo", "stale.txt"), "stale");
-        File.WriteAllText(Path.Combine(root, "mod_config.jsonc"), $"{{ \"mod_name\": \"Demo\", \"rimworld_dir\": \"{Escape(game)}\", \"csproj_paths\": [\"source/Demo.csproj\"], \"sync_items\": [\"About\"], \"protected_files_regex\": \"^(PublishedFileId\\\\.txt)$\", \"timeouts\": {{ \"existing_game_exit\": 0, \"post_exit_delay\": 0 }} }}");
-        var previous = Environment.GetEnvironmentVariable("RIMDEVTOOLS_CONFIG_DIR"); var previousCurrent = Environment.CurrentDirectory; Environment.SetEnvironmentVariable("RIMDEVTOOLS_CONFIG_DIR", cfg);
-        try
-        {
-            var old = Environment.CurrentDirectory; Environment.CurrentDirectory = root;
-            try
-            {
-                var exit = await DeployCommand.RunAsync(["deploy"]);
-                var target = Path.Combine(game, "Mods", "Demo");
-                Assert(exit == 0 && File.Exists(Path.Combine(target, "PublishedFileId.txt")) && !File.Exists(Path.Combine(target, "stale.txt")), "deploy preserves protected direct child and replaces stale target");
-                Assert(File.Exists(Path.Combine(target, "About", "About.txt")) && !File.Exists(Path.Combine(target, "About", "About.html")), "deploy filters About html/svg files");
-            }
-            finally { Environment.CurrentDirectory = old; }
+        var directory = NewDirectory("transactions");
+        var first = Path.Combine(directory, "first.xml");
+        var second = Path.Combine(directory, "second.xml");
+        File.WriteAllText(first, "original");
 
-            var source = Path.Combine(game, "Mods", "RefMod", "About"); Directory.CreateDirectory(source); File.WriteAllText(Path.Combine(source, "About.xml"), "<ModMetaData><name>Reference Mod</name><packageId>demo.reference</packageId></ModMetaData>"); File.WriteAllText(Path.Combine(Path.GetDirectoryName(source)!, "readme.txt"), "reference");
-            var refRoot = Path.Combine(root, "参考文档"); var refConfig = Path.Combine(root, "mod_config.jsonc");
-            var text = File.ReadAllText(refConfig).Replace("\"Demo\"", "\"Demo\", \"workshop_paths\": [\"" + Escape(Path.Combine(game, "Mods")) + "\"]", StringComparison.Ordinal);
-            File.WriteAllText(refConfig, text);
-            Environment.CurrentDirectory = root;
-            var pullExit = await RefCommand.PullAsync(["ref", "pull", "demo.reference"]);
-            Assert(pullExit == 0 && File.Exists(Path.Combine(refRoot, "demo.reference", "readme.txt")), "ref pull stages and atomically installs a reference mod");
+        var transaction = await ConfigTransaction.CreateAsync(directory, "recover", [first, second]);
+        await transaction.WriteAllTextAsync(first, "tool-value");
+        await transaction.WriteAllTextAsync(second, "created");
+        var recovered = await TransactionRecovery.RecoverAsync(directory);
+        Assert(recovered.Ok && File.ReadAllText(first) == "original" && !File.Exists(second), "crash recovery restores existing and nonexistent files");
+
+        var conflict = await ConfigTransaction.CreateAsync(directory, "conflict", [first]);
+        await conflict.WriteAllTextAsync(first, "tool-value");
+        File.WriteAllText(first, "user-value");
+        var refused = await TransactionRecovery.RecoverAsync(directory);
+        Assert(!refused.Ok && refused.Error?.Code == "TRANSACTION_CONFLICT" && File.ReadAllText(first) == "user-value", "recovery refuses user-modified configuration");
+
+        await conflict.RestoreAsync(force: true);
+        Assert(File.ReadAllText(first) == "original", "owned transaction can force exact restoration after game writes");
+
+        var creating = Path.Combine(directory, "RimDevToolsTransactions", ".creating-dead");
+        Directory.CreateDirectory(creating);
+        File.WriteAllText(Path.Combine(creating, "partial"), "incomplete");
+        var cleaned = await TransactionRecovery.RecoverAsync(directory);
+        Assert(cleaned.Ok && !Directory.Exists(creating), "recovery removes transaction creation directories that never became active");
+    }
+
+    private async Task TestEnvironmentLockAsync()
+    {
+        var directory = NewDirectory("lock");
+        using (var first = EnvironmentLock.TryAcquire(directory, "first", _temp, "one", out _))
+        {
+            Assert(first is not null, "first environment lock is acquired");
+            await Task.Delay(100);
+            using var second = EnvironmentLock.TryAcquire(directory, "second", _temp, "two", out _);
+            Assert(second is null, "environment lock remains exclusive across await");
         }
-        finally { Environment.CurrentDirectory = previousCurrent; Environment.SetEnvironmentVariable("RIMDEVTOOLS_CONFIG_DIR", previous); }
+        using (var third = EnvironmentLock.TryAcquire(directory, "third", _temp, "three", out _))
+            Assert(third is not null, "environment lock releases cleanly");
+
+        var child = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Path.Combine(AppContext.BaseDirectory, "RimDevTools.Tests.exe"))
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            ArgumentList = { "--abandon-lock", directory }
+        })!;
+        await child.WaitForExitAsync();
+        child.Dispose();
+        using var afterCrash = EnvironmentLock.TryAcquire(directory, "recovery", _temp, "after-crash", out _);
+        Assert(afterCrash is not null, "abandoned named mutex is acquired by the next writer");
+    }
+
+    private async Task TestRefAsync()
+    {
+        AssertThrows<InvalidDataException>(() => RefCommand.SafeFolderName(".."), "unsafe packageId is rejected");
+        Assert(RefCommand.SafeFolderName("CON") == "_CON", "Windows reserved packageId is sanitized");
+
+        var environment = CreateProjectEnvironment("ref");
+        var workshop = NewDirectory(Path.Combine("ref", "workshop"));
+        File.WriteAllText(environment.ConfigPath, Config(environment, extra: $"\"workshop_paths\":[\"{Escape(workshop)}\"]"));
+        CreateMod(environment.Game, "DuplicateOne", "demo.duplicate");
+        CreateModAt(workshop, "DuplicateTwo", "demo.duplicate");
+        using var scope = UseEnvironment(environment);
+        var ambiguous = await CaptureAsync(() => RefCommand.DepsAsync(["ref", "deps", "demo.duplicate"]));
+        Assert(ambiguous.ExitCode == ExitCodes.InvalidArguments && JsonErrorCode(ambiguous.Output) == "MOD_AMBIGUOUS", "same-priority duplicate candidates fail explicitly");
+        var reorderedSearch = await CaptureAsync(() => RefCommand.SearchAsync(["ref", "search", "--fuzzy", "Duplicate"]));
+        Assert(reorderedSearch.ExitCode == 0, "ref query parsing accepts flags before the query");
+
+        var cycleA = CreateMod(environment.Game, "CycleA", "demo.a", "demo.b");
+        CreateMod(environment.Game, "CycleB", "demo.b", "demo.a");
+        var cycle = await CaptureAsync(() => RefCommand.PullAsync(["ref", "pull", "demo.a", "--deps"]));
+        Assert(cycle.ExitCode == ExitCodes.InvalidArguments && JsonErrorCode(cycle.Output) == "DEPENDENCY_CYCLE", "dependency cycles fail before writing targets");
+        Assert(!Directory.Exists(Path.Combine(environment.Root, "参考文档", "demo.a")) && Directory.Exists(cycleA), "cycle failure leaves source and targets untouched");
+
+        var versioned = CreateMod(environment.Game, "Versioned", "demo.versioned");
+        File.WriteAllText(Path.Combine(versioned, "About", "About.xml"), "<ModMetaData><name>Versioned</name><packageId>demo.versioned</packageId><modDependenciesByVersion><v1.5><li><packageId>demo.old</packageId></li></v1.5><v1.6><li><packageId>demo.new</packageId></li></v1.6></modDependenciesByVersion></ModMetaData>");
+        var versionResult = await CaptureAsync(() => RefCommand.DepsAsync(["ref", "deps", "demo.versioned", "--version", "1.5"]));
+        Assert(versionResult.ExitCode == 0 && versionResult.Output.Contains("demo.old") && !versionResult.Output.Contains("demo.new"), "ref --version selects version-specific dependencies");
+
+        CreateMod(environment.Game, "CollisionSlash", "demo/x");
+        CreateMod(environment.Game, "CollisionBackslash", "demo\\x");
+        var collisionRoot = CreateMod(environment.Game, "CollisionRoot", "demo.collision-root");
+        File.WriteAllText(Path.Combine(collisionRoot, "About", "About.xml"), "<ModMetaData><name>Root</name><packageId>demo.collision-root</packageId><modDependencies><li><packageId>demo/x</packageId></li><li><packageId>demo\\x</packageId></li></modDependencies></ModMetaData>");
+        var collision = await CaptureAsync(() => RefCommand.PullAsync(["ref", "pull", "demo.collision-root", "--deps"]));
+        Assert(collision.ExitCode == ExitCodes.InvalidArguments && JsonErrorCode(collision.Output) == "TARGET_COLLISION", "ref pull rejects packageIds that map to the same safe target");
+
+        CreateMod(environment.Game, "Reference", "demo.reference", content: "v1");
+        var pulled = await CaptureAsync(() => RefCommand.PullAsync(["ref", "pull", "demo.reference"]));
+        Assert(pulled.ExitCode == 0 && File.ReadAllText(Path.Combine(environment.Root, "参考文档", "demo.reference", "content.txt")) == "v1", "ref pull installs staged mod");
+
+        var batch = NewDirectory(Path.Combine("ref", "batch"));
+        var target1 = NewDirectory(Path.Combine("ref", "batch", "target1"));
+        var target2 = NewDirectory(Path.Combine("ref", "batch", "target2"));
+        File.WriteAllText(Path.Combine(target1, "old.txt"), "one");
+        File.WriteAllText(Path.Combine(target2, "old.txt"), "two");
+        var staging1 = NewDirectory(Path.Combine("ref", "batch", "staging1"));
+        File.WriteAllText(Path.Combine(staging1, "new.txt"), "new");
+        var candidate = new ModCandidate("x", "x", "x", batch, false, null, []);
+        var targets = new[]
+        {
+            new RefCommand.PullTarget(candidate, target1, staging1, Path.Combine(batch, "backup1")),
+            new RefCommand.PullTarget(candidate, target2, Path.Combine(batch, "missing-staging"), Path.Combine(batch, "backup2"))
+        };
+        AssertThrows<DirectoryNotFoundException>(() => RefCommand.InstallBatch(targets), "batch install surfaces replacement failure");
+        Assert(File.Exists(Path.Combine(target1, "old.txt")) && File.Exists(Path.Combine(target2, "old.txt")), "batch install rolls back all replaced targets");
+    }
+
+    private async Task TestDeployAsync()
+    {
+        var environment = CreateProjectEnvironment("deploy");
+        var target = NewDirectory(Path.Combine("deploy", "game", "Mods", "Demo"));
+        File.WriteAllText(Path.Combine(target, "PublishedFileId.txt"), "123");
+        File.WriteAllText(Path.Combine(target, "stale.txt"), "stale");
+        File.WriteAllText(Path.Combine(environment.Root, "About", "About.html"), "filtered");
+        File.WriteAllText(Path.Combine(environment.Root, "About", "About.txt"), "kept");
+        File.WriteAllText(environment.ConfigPath, Config(environment, modName: "Demo", extra: "\"sync_items\":[\"About\"],\"protected_files_regex\":\"^(PublishedFileId\\\\.txt)$\""));
+        using var scope = UseEnvironment(environment);
+
+        var dryRun = await DeployCommand.ExecuteAsync(["deploy", "--dry-run"]);
+        var dryResult = (DeployResult)dryRun.Result!;
+        Assert(dryRun.Ok && dryResult.Plan.TargetActions.Any(x => x.Action == "protect") && dryResult.Plan.TargetActions.Any(x => x.Action == "replace"), "deploy dry-run reports protected and replaced targets");
+
+        var pending = await ConfigTransaction.CreateAsync(environment.ConfigDirectory, "before-deploy", [environment.SettingsPath]);
+        await pending.WriteAllTextAsync(environment.SettingsPath, "temporary");
+        var deployed = await DeployCommand.ExecuteAsync(["deploy"]);
+        Assert(deployed.Ok && ((DeployResult)deployed.Result!).RecoveredTransaction && File.ReadAllText(environment.SettingsPath) == environment.OriginalSettings, "deploy restores interrupted configuration transaction before work");
+        Assert(File.Exists(Path.Combine(target, "PublishedFileId.txt")) && !File.Exists(Path.Combine(target, "stale.txt")), "deploy preserves protected items and replaces stale target");
+        Assert(File.Exists(Path.Combine(target, "About", "About.txt")) && !File.Exists(Path.Combine(target, "About", "About.html")), "deploy filters About html and svg files");
+
+        File.WriteAllText(environment.ConfigPath, Config(environment, modName: "Demo", extra: "\"sync_items\":[\"..\\\\outside\"]"));
+        var traversal = await DeployCommand.ExecuteAsync(["deploy", "--dry-run"]);
+        Assert(!traversal.Ok && traversal.Error?.Code == "SYNC_PATH_INVALID", "deploy rejects sync path traversal");
+
+        var invalidProject = Path.Combine(environment.Root, "bad.csproj");
+        File.WriteAllText(invalidProject, "not a project");
+        File.WriteAllText(Path.Combine(target, "still-here.txt"), "old");
+        File.WriteAllText(environment.ConfigPath, Config(environment, modName: "Demo", extra: "\"sync_items\":[\"About\"],\"csproj_paths\":[\"bad.csproj\"]"));
+        var failedBuild = await DeployCommand.ExecuteAsync(["deploy"]);
+        Assert(!failedBuild.Ok && failedBuild.Error?.Code == "BUILD_FAILED" && File.Exists(Path.Combine(target, "still-here.txt")), "build failure preserves deployed directory");
+    }
+
+    private void TestAutoResultValidator()
+    {
+        var output = NewDirectory("results");
+        var snapshot = AutoResultValidator.Snapshot(output);
+        WriteResult(output, "demo.current", "failed");
+        var failed = AutoResultValidator.Validate(output, "demo.current", snapshot);
+        Assert(!failed.Ok && failed.Code == "AUTO_RESULT_FAILED", "auto result validator rejects failed cases");
+
+        var freshSnapshot = AutoResultValidator.Snapshot(output);
+        WriteResult(output, "demo.current", "passed", "second_Result.json");
+        var passed = AutoResultValidator.Validate(output, "demo.current", freshSnapshot);
+        Assert(passed.Ok, "auto result validator accepts complete passing run");
+        var stale = AutoResultValidator.Validate(output, "demo.current", AutoResultValidator.Snapshot(output));
+        Assert(!stale.Ok && stale.Code == "AUTO_RESULT_MISSING", "old result files cannot satisfy a new run");
+    }
+
+    private void TestLogArchive()
+    {
+        var directory = NewDirectory("logs");
+        var log = Path.Combine(directory, "精选日志.log");
+        for (var index = 0; index < 4; index++)
+        {
+            File.WriteAllText(log, $"run-{index}");
+            LogArchive.Rotate(log, 3);
+        }
+        Assert(Directory.EnumerateFiles(directory, "精选日志*.log").Count() == 3 && File.ReadAllText(log) == "", "log rotation enforces retention and clears current log");
+    }
+
+    private async Task TestDoctorIsReadOnlyAsync()
+    {
+        var environment = CreateProjectEnvironment("doctor", createConfigDirectory: false);
+        File.WriteAllText(environment.ConfigPath, Config(environment));
+        using var scope = UseEnvironment(environment);
+        var result = await CaptureAsync(() => DoctorCommand.RunAsync(["doctor"]));
+        Assert(result.ExitCode == 0 && !Directory.Exists(environment.ConfigDirectory), "doctor does not create RimWorld configuration directory");
+        Assert(result.Output.Contains("environment.transactions") && result.Output.Contains("deploy.dotnet"), "doctor reports transaction and tool capabilities");
     }
 
     private async Task TestRunPreflightAsync()
     {
-        var root = Path.Combine(_temp, "test-project"); var game = Path.Combine(_temp, "test-game"); var cfg = Path.Combine(_temp, "test-config");
-        Directory.CreateDirectory(Path.Combine(root, "About")); Directory.CreateDirectory(Path.Combine(game, "Mods", "LogSync", "About")); Directory.CreateDirectory(cfg);
-        File.WriteAllText(Path.Combine(root, "About", "About.xml"), "<ModMetaData><packageId>demo.test</packageId></ModMetaData>"); File.WriteAllText(Path.Combine(game, "Mods", "LogSync", "About", "About.xml"), "<ModMetaData><packageId>trigger.logsyncmod</packageId></ModMetaData>");
-        File.WriteAllText(Path.Combine(root, "mod_config.jsonc"), $"{{ \"mod_name\": \"Demo\", \"rimworld_dir\": \"{Escape(game)}\", \"min_active_mods\": [] }}");
-        var oldDirectory = Environment.CurrentDirectory; var previous = Environment.GetEnvironmentVariable("RIMDEVTOOLS_CONFIG_DIR"); Environment.CurrentDirectory = root; Environment.SetEnvironmentVariable("RIMDEVTOOLS_CONFIG_DIR", cfg);
-        try
+        var environment = CreateProjectEnvironment("preflight", createGameExecutable: false);
+        using var scope = UseEnvironment(environment);
+        var result = await CaptureAsync(() => TestCommand.RunAsync(["test", "run", "--mode", "auto", "--timeout-seconds", "1"]));
+        Assert(result.ExitCode == ExitCodes.MissingDependency && JsonErrorCode(result.Output) == "GAME_NOT_FOUND", "test run rejects missing game before mutation");
+        Assert(File.ReadAllText(environment.ModsConfigPath) == environment.OriginalMods && File.ReadAllText(environment.SettingsPath) == environment.OriginalSettings, "preflight failure preserves global configuration");
+    }
+
+    private async Task TestGameWorkflowsAsync()
+    {
+        var environment = CreateProjectEnvironment("game-workflows", createGameExecutable: true);
+        using var scope = UseEnvironment(environment);
+
+        Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", "quick");
+        var quick = await CaptureAsync(() => TestCommand.RunAsync(["test", "run", "--mode", "quick", "--timeout-seconds", "5"]));
+        Assert(quick.ExitCode == 0 && !File.ReadAllText(Path.Combine(environment.ConfigDirectory, "fake-args.txt")).Contains("quicktest"), "quick mode waits for ready signal without quicktest argument");
+        AssertConfigurationRestored(environment, "quick mode restores exact configuration");
+
+        Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", "auto");
+        var auto = await CaptureAsync(() => TestCommand.RunAsync(["test", "run", "--mode", "auto", "--timeout-seconds", "5"]));
+        var observedSettings = File.ReadAllText(Path.Combine(environment.ConfigDirectory, "fake-settings.xml"));
+        Assert(auto.ExitCode == 0 && File.ReadAllText(Path.Combine(environment.ConfigDirectory, "fake-args.txt")).Contains("quicktest"), "auto mode launches with quicktest and validates result");
+        Assert(observedSettings.Contains("demo.current") && observedSettings.Contains("AutoTestOutput"), "auto mode passes target package and output path to LogSync");
+        AssertConfigurationRestored(environment, "auto mode restores settings changed by the game");
+
+        Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", "auto-fail");
+        var failed = await CaptureAsync(() => TestCommand.RunAsync(["test", "run", "--mode", "xml", "--timeout-seconds", "5"]));
+        Assert(failed.ExitCode == ExitCodes.GameFailed && JsonErrorCode(failed.Output) == "AUTO_RESULT_FAILED", "xml mode rejects failed auto-test JSON");
+        AssertConfigurationRestored(environment, "failed auto test restores configuration");
+
+        Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", "manual");
+        var manual = await CaptureAsync(() => TestCommand.RunAsync(["test", "run", "--mode", "manual", "--timeout-seconds", "5"]));
+        Assert(manual.ExitCode == 0, "manual mode succeeds after user process exits");
+
+        Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", "hang");
+        var timeout = await CaptureAsync(() => TestCommand.RunAsync(["test", "run", "--mode", "manual", "--timeout-seconds", "1"]));
+        Assert(timeout.ExitCode == ExitCodes.Timeout && JsonErrorCode(timeout.Output) == "TEST_TIMEOUT", "manual mode honors timeout");
+        AssertConfigurationRestored(environment, "manual timeout restores configuration");
+
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
+        var cancelled = await CaptureAsync(() => TestCommand.RunAsync(["test", "run", "--mode", "quick", "--timeout-seconds", "10"], cancellation.Token));
+        Assert(cancelled.ExitCode == ExitCodes.Cancelled && JsonErrorCode(cancelled.Output) == "CANCELLED", "cancellation enters unified cleanup path");
+        AssertConfigurationRestored(environment, "cancellation restores configuration");
+
+        Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", "modify");
+        var oneJson = await CaptureAsync(() => TestCommand.RunAsync(["test", "run", "--mode", "quick", "--timeout-seconds", "5"]));
+        using var parsed = JsonDocument.Parse(oneJson.Output);
+        Assert(oneJson.ExitCode == 0 && parsed.RootElement.GetProperty("ok").GetBoolean(), "game-side setting writes still produce one valid JSON result after restoration");
+
+        Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", "break-backup");
+        var restoreFailure = await CaptureAsync(() => TestCommand.RunAsync(["test", "run", "--mode", "quick", "--timeout-seconds", "5"]));
+        using var failureJson = JsonDocument.Parse(restoreFailure.Output);
+        Assert(restoreFailure.ExitCode == ExitCodes.TaskFailed && JsonErrorCode(restoreFailure.Output) == "TRANSACTION_RESTORE_FAILED", "restore failure returns a stable task error");
+        Assert(failureJson.RootElement.GetProperty("ok").ValueKind == JsonValueKind.False && TransactionRecovery.PendingDirectories(environment.ConfigDirectory).Count == 1, "restore failure emits one JSON object and retains the transaction");
+    }
+
+    private ProjectEnvironment CreateProjectEnvironment(string name, bool createConfigDirectory = true, bool createGameExecutable = false)
+    {
+        var root = NewDirectory(name);
+        var game = NewDirectory(Path.Combine(name, "game"));
+        var config = Path.Combine(_temp, name, "Config");
+        if (createConfigDirectory) Directory.CreateDirectory(config);
+        Directory.CreateDirectory(Path.Combine(root, "About"));
+        File.WriteAllText(Path.Combine(root, "About", "About.xml"), "<ModMetaData><name>Current</name><packageId>demo.current</packageId></ModMetaData>");
+        CreateMod(game, "LogSync", "trigger.logsyncmod");
+
+        var settings = Path.Combine(config, "Mod_LogSyncMod_LogSyncMod.xml");
+        var mods = Path.Combine(config, "ModsConfig.xml");
+        const string originalSettings = "<Root><ModSettings><logPath>old</logPath><keywords><li>Old</li></keywords><autoTestEnabled>False</autoTestEnabled></ModSettings></Root>";
+        const string originalMods = "<ModsConfigData><activeMods><li>ludeon.rimworld</li></activeMods></ModsConfigData>";
+        if (createConfigDirectory)
         {
-            var exit = await TestCommand.RunAsync(["test", "run", "--mode", "auto", "--timeout-seconds", "1"]);
-            Assert(exit == ExitCodes.MissingDependency, "test run rejects missing game before mutating global configuration");
-            var invalid = Path.Combine(root, "invalid.xml"); File.WriteAllText(invalid, "<ModsConfigData><other><li>demo.test</li></other></ModsConfigData>");
-            var parsed = ModListParser.Load(ProjectDiscovery.Find(root, out _)!, invalid, out var error);
-            Assert(parsed is null && error?.Code == "ACTIVE_MODS_MISSING", "test run rejects ModList without activeMods before launch");
+            File.WriteAllText(settings, originalSettings);
+            File.WriteAllText(mods, originalMods);
         }
-        finally { Environment.CurrentDirectory = oldDirectory; Environment.SetEnvironmentVariable("RIMDEVTOOLS_CONFIG_DIR", previous); }
+
+        var environment = new ProjectEnvironment(root, game, config, Path.Combine(root, "mod_config.jsonc"), settings, mods, originalSettings, originalMods);
+        File.WriteAllText(environment.ConfigPath, Config(environment));
+        if (createGameExecutable) InstallFakeGame(environment.Game);
+        return environment;
+    }
+
+    private void InstallFakeGame(string gameDirectory)
+    {
+        var output = AppContext.BaseDirectory;
+        File.Copy(Path.Combine(output, "RimDevTools.Tests.exe"), Path.Combine(gameDirectory, "RimWorldWin64.exe"), true);
+        foreach (var file in Directory.EnumerateFiles(output))
+        {
+            var destination = Path.Combine(gameDirectory, Path.GetFileName(file));
+            if (!Path.GetFullPath(file).Equals(Path.GetFullPath(destination), StringComparison.OrdinalIgnoreCase)) File.Copy(file, destination, true);
+        }
+    }
+
+    private string Config(ProjectEnvironment environment, string modName = "Demo", string minMods = "[]", string? extra = null)
+    {
+        var members = new List<string>
+        {
+            "\"config_version\":2",
+            $"\"mod_name\":\"{modName}\"",
+            "\"game_version\":\"1.6\"",
+            $"\"rimworld_dir\":\"{Escape(environment.Game)}\"",
+            $"\"min_active_mods\":{minMods}",
+            "\"timeouts\":{\"existing_game_exit\":2,\"post_exit_delay\":0,\"max_wait\":5}",
+            "\"retention\":{\"max_log_files\":3,\"max_auto_test_runs\":2}"
+        };
+        if (!string.IsNullOrWhiteSpace(extra)) members.Add(extra);
+        return "{" + string.Join(",", members) + "}";
+    }
+
+    private static string CreateMod(string gameDirectory, string folder, string packageId, string? dependency = null, string? content = null)
+        => CreateModAt(Path.Combine(gameDirectory, "Mods"), folder, packageId, dependency, content);
+
+    private static string CreateModAt(string root, string folder, string packageId, string? dependency = null, string? content = null)
+    {
+        var directory = Path.Combine(root, folder);
+        Directory.CreateDirectory(Path.Combine(directory, "About"));
+        var dependencies = dependency is null ? "" : $"<modDependencies><li><packageId>{dependency}</packageId></li></modDependencies>";
+        File.WriteAllText(Path.Combine(directory, "About", "About.xml"), $"<ModMetaData><name>{folder}</name><packageId>{packageId}</packageId>{dependencies}</ModMetaData>");
+        if (content is not null) File.WriteAllText(Path.Combine(directory, "content.txt"), content);
+        return directory;
+    }
+
+    private static void WriteResult(string output, string packageId, string status, string name = "first_Result.json")
+    {
+        var value = new { packageId, completeness = "Complete", manifestPlanned = 1, manifestExecuted = 1, manifestMissing = 0, results = new[] { new { caseId = "case", status } } };
+        File.WriteAllText(Path.Combine(output, name), JsonSerializer.Serialize(value));
+    }
+
+    private IDisposable UseEnvironment(ProjectEnvironment environment)
+    {
+        var oldDirectory = Environment.CurrentDirectory;
+        var oldConfig = Environment.GetEnvironmentVariable("RIMDEVTOOLS_CONFIG_DIR");
+        Environment.CurrentDirectory = environment.Root;
+        Environment.SetEnvironmentVariable("RIMDEVTOOLS_CONFIG_DIR", environment.ConfigDirectory);
+        return new ActionScope(() =>
+        {
+            Environment.CurrentDirectory = oldDirectory;
+            Environment.SetEnvironmentVariable("RIMDEVTOOLS_CONFIG_DIR", oldConfig);
+            Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", null);
+        });
+    }
+
+    private string NewDirectory(string relative)
+    {
+        var path = Path.IsPathRooted(relative) ? relative : Path.Combine(_temp, relative);
+        Directory.CreateDirectory(path);
+        return path;
+    }
+
+    private static async Task<CapturedResult> CaptureAsync(Func<Task<int>> action)
+    {
+        var original = Console.Out;
+        using var writer = new StringWriter();
+        Console.SetOut(writer);
+        try { return new CapturedResult(await action(), writer.ToString().Trim()); }
+        finally { Console.SetOut(original); }
+    }
+
+    private static string? JsonErrorCode(string output)
+    {
+        using var document = JsonDocument.Parse(output);
+        return document.RootElement.TryGetProperty("error", out var error) && error.TryGetProperty("code", out var code) ? code.GetString() : null;
+    }
+
+    private void AssertConfigurationRestored(ProjectEnvironment environment, string name)
+        => Assert(File.ReadAllText(environment.ModsConfigPath) == environment.OriginalMods && File.ReadAllText(environment.SettingsPath) == environment.OriginalSettings, name);
+
+    private void Assert(bool condition, string name)
+    {
+        if (!condition) throw new InvalidOperationException($"FAIL: {name}");
+        _passed++;
+        Console.WriteLine($"PASS: {name}");
+    }
+
+    private void AssertThrows<T>(Action action, string name) where T : Exception
+    {
+        try { action(); }
+        catch (T) { Assert(true, name); return; }
+        Assert(false, name);
     }
 
     private static string Escape(string path) => path.Replace("\\", "\\\\");
-    private void Assert(bool condition, string name) { if (!condition) throw new InvalidOperationException($"FAIL: {name}"); _passed++; Console.WriteLine($"PASS: {name}"); }
+
+    private sealed record CapturedResult(int ExitCode, string Output);
+    private sealed record ProjectEnvironment(string Root, string Game, string ConfigDirectory, string ConfigPath, string SettingsPath, string ModsConfigPath, string OriginalSettings, string OriginalMods);
+    private sealed class ActionScope(Action action) : IDisposable { public void Dispose() => action(); }
 }

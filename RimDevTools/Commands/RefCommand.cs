@@ -2,191 +2,489 @@ using System.Xml.Linq;
 
 namespace RimDevTools;
 
-public sealed record ModCandidate(string Name, string PackageId, string FolderName, string SourceDirectory, bool IsOfficial, List<string> Dependencies);
+public sealed record ModCandidate(
+    string Name,
+    string PackageId,
+    string FolderName,
+    string SourceDirectory,
+    bool IsOfficial,
+    string? Author,
+    List<string> Dependencies);
 
 public static class RefCommand
 {
     public static Task<int> SearchAsync(string[] args)
     {
-        var context = CliApplication.RequireProject("ref search", out var code); if (context is null) return Task.FromResult(code);
-        var keyword = args.FirstOrDefault(x => !x.StartsWith('-') && x is not "ref" and not "search") ?? "";
-        var candidates = FindCandidates(context, keyword, CliArgs.Has(args, "--fuzzy"));
-        return Task.FromResult(CliResult.WriteSuccess("ref search", context.Root, new { keyword, fuzzy = CliArgs.Has(args, "--fuzzy"), candidates }));
+        var context = CliApplication.RequireProject("ref search", out var code);
+        if (context is null) return Task.FromResult(code);
+
+        var keyword = QueryArgument(args, "search");
+        var fuzzy = CliArgs.Has(args, "--fuzzy");
+        var candidates = FindCandidates(context, keyword, fuzzy, context.Config.GameVersion);
+        return Task.FromResult(CliResult.WriteSuccess("ref search", context.Root, new { keyword, fuzzy, candidates }));
     }
 
     public static Task<int> DepsAsync(string[] args)
     {
-        var context = CliApplication.RequireProject("ref deps", out var code); if (context is null) return Task.FromResult(code);
+        var context = CliApplication.RequireProject("ref deps", out var code);
+        if (context is null) return Task.FromResult(code);
+
         var query = QueryArgument(args, "deps");
-        var resolved = ResolveUnique(context, query, CliArgs.Has(args, "--fuzzy"), out var error);
-        if (resolved is null) return Task.FromResult(CliResult.WriteFailure("ref deps", ExitCodes.InvalidArguments, error!.Code, error.Message, context.Root, error.Details));
-        return Task.FromResult(CliResult.WriteSuccess("ref deps", context.Root, new { target = resolved, dependencies = resolved.Dependencies }));
+        var version = CliArgs.Value(args, "--version") ?? context.Config.GameVersion;
+        var resolved = ResolveUnique(context, query, CliArgs.Has(args, "--fuzzy"), version, out var error);
+        if (resolved is null)
+            return Task.FromResult(CliResult.WriteFailure("ref deps", ExitCodes.InvalidArguments, error!.Code, error.Message, context.Root, error.Details));
+
+        return Task.FromResult(CliResult.WriteSuccess("ref deps", context.Root, new { target = resolved, version, dependencies = resolved.Dependencies }));
     }
 
     public static Task<int> RelatedAsync(string[] args)
     {
-        var context = CliApplication.RequireProject("ref related", out var code); if (context is null) return Task.FromResult(code);
+        var context = CliApplication.RequireProject("ref related", out var code);
+        if (context is null) return Task.FromResult(code);
+
         var query = QueryArgument(args, "related");
-        var resolved = ResolveUnique(context, query, CliArgs.Has(args, "--fuzzy"), out var error);
-        if (resolved is null) return Task.FromResult(CliResult.WriteFailure("ref related", ExitCodes.InvalidArguments, error!.Code, error.Message, context.Root, error.Details));
-        var related = FindCandidates(context, "", false).Where(x => x.Dependencies.Contains(resolved.PackageId, StringComparer.OrdinalIgnoreCase)).ToArray();
-        return Task.FromResult(CliResult.WriteSuccess("ref related", context.Root, new { target = resolved, related }));
+        var version = CliArgs.Value(args, "--version") ?? context.Config.GameVersion;
+        var resolved = ResolveUnique(context, query, CliArgs.Has(args, "--fuzzy"), version, out var error);
+        if (resolved is null)
+            return Task.FromResult(CliResult.WriteFailure("ref related", ExitCodes.InvalidArguments, error!.Code, error.Message, context.Root, error.Details));
+
+        var related = FindCandidates(context, "", false, version)
+            .Where(x => x.Dependencies.Contains(resolved.PackageId, StringComparer.OrdinalIgnoreCase))
+            .ToArray();
+        return Task.FromResult(CliResult.WriteSuccess("ref related", context.Root, new { target = resolved, version, related }));
     }
 
-    public static async Task<int> PullAsync(string[] args)
+    public static async Task<int> PullAsync(string[] args, CancellationToken cancellationToken = default)
     {
-        var context = CliApplication.RequireProject("ref pull", out var code); if (context is null) return code;
+        const string command = "ref pull";
+        var context = CliApplication.RequireProject(command, out var code);
+        if (context is null) return code;
+
         var query = QueryArgument(args, "pull");
-        var selected = ResolveUnique(context, query, CliArgs.Has(args, "--fuzzy"), out var error);
-        if (selected is null) return CliResult.WriteFailure("ref pull", ExitCodes.InvalidArguments, error!.Code, error.Message, context.Root, error.Details);
-        var all = CliArgs.Has(args, "--all");
-        var closure = new List<ModCandidate>(); var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var pending = new Queue<ModCandidate>([selected]);
-        while (pending.Count > 0)
+        var version = CliArgs.Value(args, "--version") ?? context.Config.GameVersion;
+        if (string.IsNullOrWhiteSpace(version))
+            return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "VERSION_MISSING", "ref pull 需要 --version 或 game_version", context.Root);
+
+        var selected = ResolveUnique(context, query, CliArgs.Has(args, "--fuzzy"), version, out var error);
+        if (selected is null)
+            return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, error!.Code, error.Message, context.Root, error.Details);
+
+        var closure = ResolveDependencyClosure(context, selected, CliArgs.Has(args, "--deps"), version, out error);
+        if (closure is null)
+            return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, error!.Code, error.Message, context.Root, error.Details);
+
+        var targetRoot = Path.GetFullPath(Path.Combine(context.Root, "参考文档"));
+        Directory.CreateDirectory(targetRoot);
+        var runId = Guid.NewGuid().ToString("N");
+        var stagingRoot = Path.Combine(targetRoot, ".rimdev-staging", runId);
+        var backupRoot = Path.Combine(targetRoot, ".rimdev-backup", runId);
+
+        PullTarget[] targets;
+        try
         {
-            var current = pending.Dequeue();
-            if (!seen.Add(current.PackageId)) continue;
-            closure.Add(current);
-            if (!CliArgs.Has(args, "--deps")) continue;
-            foreach (var dependency in current.Dependencies)
-            {
-                var dep = ResolveUnique(context, dependency, false, out var depError);
-                if (dep is null) return CliResult.WriteFailure("ref pull", ExitCodes.InvalidArguments, depError!.Code, $"依赖 {dependency}: {depError.Message}", context.Root, depError.Details);
-                pending.Enqueue(dep);
-            }
+            targets = closure.Select(mod => CreateTarget(targetRoot, stagingRoot, backupRoot, mod)).ToArray();
+            var collisions = targets.GroupBy(x => x.Target, StringComparer.OrdinalIgnoreCase).Where(x => x.Count() > 1).ToArray();
+            if (collisions.Length > 0)
+                return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "TARGET_COLLISION", "多个 packageId 映射到同一目标目录", context.Root, collisions.Select(x => new { target = x.Key, packageIds = x.Select(y => y.Mod.PackageId).ToArray() }).ToArray());
         }
-        var targetRoot = Path.GetFullPath(Path.Combine(context.Root, "参考文档")); Directory.CreateDirectory(targetRoot);
-        var targets = closure.Select(x => new { mod = x, target = Path.Combine(targetRoot, SafeFolderName(x.PackageId)) }).ToArray();
-        var conflicts = targets.Where(x => Directory.Exists(x.target) || File.Exists(x.target)).Select(x => x.target).ToArray();
-        if (conflicts.Length > 0 && !CliArgs.Has(args, "--force")) return CliResult.WriteFailure("ref pull", ExitCodes.TaskFailed, "TARGET_CONFLICT", "目标目录已存在，请使用 --force", context.Root, new { conflicts });
-        var runId = Guid.NewGuid().ToString("N"); var stagingRoot = Path.Combine(targetRoot, ".rimdev-staging", runId);
+        catch (Exception ex)
+        {
+            return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "PACKAGE_ID_INVALID", ex.Message, context.Root);
+        }
+
         using var targetLock = TargetDirectoryLock.Create(targetRoot, out var lockError);
-        if (targetLock is null) return CliResult.WriteFailure("ref pull", ExitCodes.Busy, "TARGET_BUSY", lockError!, context.Root);
+        if (targetLock is null)
+            return CliResult.WriteFailure(command, ExitCodes.Busy, "TARGET_BUSY", lockError!, context.Root);
+
+        var conflicts = targets.Where(x => Directory.Exists(x.Target) || File.Exists(x.Target)).Select(x => x.Target).ToArray();
+        if (conflicts.Length > 0 && !CliArgs.Has(args, "--force"))
+            return CliResult.WriteFailure(command, ExitCodes.TaskFailed, "TARGET_CONFLICT", "目标目录已存在，请使用 --force", context.Root, new { conflicts });
+
         var results = new List<object>();
         try
         {
             foreach (var entry in targets)
             {
-                var staging = Path.Combine(stagingRoot, SafeFolderName(entry.mod.PackageId));
-                Directory.CreateDirectory(staging);
-                try
+                Directory.CreateDirectory(entry.Staging);
+                CopyReference(entry.Mod.SourceDirectory, entry.Staging, CliArgs.Has(args, "--all") ? [] : context.Config.PullIgnoreFolders, cancellationToken);
+                var decompiled = await DecompileAssembliesAsync(context, entry.Staging, version, cancellationToken);
+                results.Add(new
                 {
-                    CopyReference(entry.mod.SourceDirectory, staging, all ? [] : context.Config.PullIgnoreFolders);
-                    var assemblies = Directory.EnumerateFiles(staging, "*.dll", SearchOption.AllDirectories).ToArray();
-                    var decompiled = 0;
-                    if (assemblies.Length > 0)
-                    {
-                        var ilspy = DoctorCommand.ResolveIlspyPath(context);
-                        if (ilspy is null || !File.Exists(ilspy)) throw new FileNotFoundException("找不到 ilspycmd，请运行 doctor", ilspy);
-                        foreach (var assembly in assemblies)
-                        {
-                            var output = Path.Combine(Path.GetDirectoryName(assembly)!, "Decompiled");
-                            Directory.CreateDirectory(output);
-                            if (!await ProcessUtil.RunAsync(ilspy, $"-p -o \"{output}\" \"{assembly}\"", context.Root)) throw new InvalidOperationException($"反编译失败: {assembly}");
-                            decompiled++;
-                        }
-                    }
-                    Directory.CreateDirectory(Path.GetDirectoryName(entry.target)!);
-                    if (Directory.Exists(entry.target)) Directory.Delete(entry.target, true); else if (File.Exists(entry.target)) File.Delete(entry.target);
-                    Directory.Move(staging, entry.target);
-                    results.Add(new { name = entry.mod.Name, packageId = entry.mod.PackageId, sourceDirectory = entry.mod.SourceDirectory, targetDirectory = entry.target, decompiledAssemblies = decompiled, ok = true });
-                }
-                catch (Exception ex)
-                {
-                    results.Add(new { name = entry.mod.Name, packageId = entry.mod.PackageId, sourceDirectory = entry.mod.SourceDirectory, targetDirectory = entry.target, ok = false, error = ex.Message });
-                    return CliResult.WriteFailure("ref pull", ExitCodes.TaskFailed, "PULL_FAILED", $"拉取 {entry.mod.PackageId} 失败: {ex.Message}", context.Root, new { runId, results });
-                }
+                    name = entry.Mod.Name,
+                    packageId = entry.Mod.PackageId,
+                    sourceDirectory = entry.Mod.SourceDirectory,
+                    targetDirectory = entry.Target,
+                    decompiledAssemblies = decompiled,
+                    ok = true
+                });
             }
-            return CliResult.WriteSuccess("ref pull", context.Root, new { runId, results });
+
+            InstallBatch(targets);
+            return CliResult.WriteSuccess(command, context.Root, new { runId, version, results });
         }
-        finally { if (Directory.Exists(stagingRoot)) Directory.Delete(stagingRoot, true); }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex)
+        {
+            return CliResult.WriteFailure(command, ExitCodes.TaskFailed, "PULL_FAILED", ex.Message, context.Root, new { runId, version, results });
+        }
+        finally
+        {
+            DeleteDirectoryBestEffort(stagingRoot);
+            DeleteDirectoryIfEmpty(backupRoot);
+        }
     }
 
-    private static string QueryArgument(string[] args, string command) => args.FirstOrDefault(x => !x.StartsWith('-') && x is not "ref" and not "pull" and not "deps" and not "related") ?? throw new ArgumentException($"缺少查询参数: ref {command} <query>");
+    internal static string SafeFolderName(string packageId)
+    {
+        if (string.IsNullOrWhiteSpace(packageId)) throw new InvalidDataException("packageId 为空");
 
-    private static List<ModCandidate> FindCandidates(ProjectContext context, string keyword, bool fuzzy)
+        var invalid = Path.GetInvalidFileNameChars().ToHashSet();
+        var sanitized = new string(packageId.Trim().Select(c => invalid.Contains(c) ? '_' : c).ToArray()).TrimEnd(' ', '.');
+        if (sanitized is "" or "." or "..") throw new InvalidDataException($"packageId 不能映射为安全目录名: {packageId}");
+
+        var stem = sanitized.Split('.')[0];
+        var reserved = stem.Equals("CON", StringComparison.OrdinalIgnoreCase)
+            || stem.Equals("PRN", StringComparison.OrdinalIgnoreCase)
+            || stem.Equals("AUX", StringComparison.OrdinalIgnoreCase)
+            || stem.Equals("NUL", StringComparison.OrdinalIgnoreCase)
+            || Enumerable.Range(1, 9).Any(i => stem.Equals($"COM{i}", StringComparison.OrdinalIgnoreCase) || stem.Equals($"LPT{i}", StringComparison.OrdinalIgnoreCase));
+        return reserved ? $"_{sanitized}" : sanitized;
+    }
+
+    private static PullTarget CreateTarget(string targetRoot, string stagingRoot, string backupRoot, ModCandidate mod)
+    {
+        var folder = SafeFolderName(mod.PackageId);
+        var target = Path.GetFullPath(Path.Combine(targetRoot, folder));
+        if (!PathSafety.IsWithin(target, targetRoot)) throw new InvalidDataException($"参考模组目标越界: {target}");
+        return new PullTarget(mod, target, Path.Combine(stagingRoot, folder), Path.Combine(backupRoot, folder));
+    }
+
+    private static List<ModCandidate>? ResolveDependencyClosure(ProjectContext context, ModCandidate selected, bool includeDependencies, string version, out CliError? error)
+    {
+        error = null;
+        if (!includeDependencies) return [selected];
+
+        var ordered = new List<ModCandidate>();
+        var completed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var visiting = new List<string>();
+        CliError? resolutionError = null;
+
+        bool Visit(ModCandidate current)
+        {
+            var cycleAt = visiting.FindIndex(x => x.Equals(current.PackageId, StringComparison.OrdinalIgnoreCase));
+            if (cycleAt >= 0)
+            {
+                var cycle = visiting.Skip(cycleAt).Append(current.PackageId).ToArray();
+                resolutionError = new CliError("DEPENDENCY_CYCLE", "检测到参考模组依赖循环", new { cycle });
+                return false;
+            }
+            if (completed.Contains(current.PackageId)) return true;
+
+            visiting.Add(current.PackageId);
+            foreach (var dependency in current.Dependencies)
+            {
+                var resolved = ResolveUnique(context, dependency, false, version, out var dependencyError);
+                if (resolved is null)
+                {
+                    resolutionError = new CliError(dependencyError!.Code, $"依赖 {dependency}: {dependencyError.Message}", dependencyError.Details);
+                    return false;
+                }
+                if (!Visit(resolved)) return false;
+            }
+            visiting.RemoveAt(visiting.Count - 1);
+            completed.Add(current.PackageId);
+            ordered.Add(current);
+            return true;
+        }
+
+        var succeeded = Visit(selected);
+        error = resolutionError;
+        return succeeded ? ordered : null;
+    }
+
+    private static async Task<int> DecompileAssembliesAsync(ProjectContext context, string staging, string version, CancellationToken cancellationToken)
+    {
+        var versioned = Path.Combine(staging, version, "Assemblies");
+        var fallback = Path.Combine(staging, "Assemblies");
+        var assemblyRoot = Directory.Exists(versioned) ? versioned : Directory.Exists(fallback) ? fallback : null;
+        if (assemblyRoot is null) return 0;
+
+        var assemblies = Directory.EnumerateFiles(assemblyRoot, "*.dll", SearchOption.TopDirectoryOnly).ToArray();
+        if (assemblies.Length == 0) return 0;
+
+        var ilspy = DoctorCommand.ResolveIlspyPath(context);
+        if (ilspy is null || !File.Exists(ilspy)) throw new FileNotFoundException("找不到 ilspycmd，请运行 doctor", ilspy);
+
+        var decompiled = 0;
+        foreach (var assembly in assemblies)
+        {
+            var output = Path.Combine(Path.GetDirectoryName(assembly)!, "Decompiled", Path.GetFileNameWithoutExtension(assembly));
+            Directory.CreateDirectory(output);
+            if (!await ProcessUtil.RunAsync(ilspy, ["-p", "-o", output, assembly], context.Root, cancellationToken))
+                throw new InvalidOperationException($"反编译失败: {assembly}");
+            decompiled++;
+        }
+        return decompiled;
+    }
+
+    internal static void InstallBatch(IReadOnlyList<PullTarget> targets)
+    {
+        var installed = new List<PullTarget>();
+        try
+        {
+            foreach (var entry in targets)
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(entry.Backup)!);
+                if (Directory.Exists(entry.Target)) Directory.Move(entry.Target, entry.Backup);
+                else if (File.Exists(entry.Target)) File.Move(entry.Target, entry.Backup);
+
+                Directory.Move(entry.Staging, entry.Target);
+                installed.Add(entry);
+            }
+        }
+        catch (Exception installError)
+        {
+            var rollbackErrors = new List<Exception>();
+            foreach (var entry in installed.AsEnumerable().Reverse())
+            {
+                try { RestoreTarget(entry); }
+                catch (Exception ex) { rollbackErrors.Add(ex); }
+            }
+            var current = targets.FirstOrDefault(x => !installed.Contains(x) && (Directory.Exists(x.Backup) || File.Exists(x.Backup)));
+            if (current is not null)
+            {
+                try { RestoreTarget(current); }
+                catch (Exception ex) { rollbackErrors.Add(ex); }
+            }
+            if (rollbackErrors.Count > 0) throw new AggregateException("参考模组替换失败且回滚不完整；备份已保留", [installError, .. rollbackErrors]);
+            throw;
+        }
+
+        foreach (var entry in installed)
+        {
+            try
+            {
+                if (Directory.Exists(entry.Backup)) Directory.Delete(entry.Backup, true);
+                else if (File.Exists(entry.Backup)) File.Delete(entry.Backup);
+            }
+            catch (Exception ex) { Console.Error.WriteLine($"清理参考模组备份失败: {entry.Backup}: {ex.Message}"); }
+        }
+    }
+
+    private static void RestoreTarget(PullTarget entry)
+    {
+        if (Directory.Exists(entry.Target)) Directory.Delete(entry.Target, true);
+        else if (File.Exists(entry.Target)) File.Delete(entry.Target);
+        if (Directory.Exists(entry.Backup)) Directory.Move(entry.Backup, entry.Target);
+        else if (File.Exists(entry.Backup)) File.Move(entry.Backup, entry.Target);
+    }
+
+    private static string QueryArgument(string[] args, string command)
+    {
+        var commandIndex = Array.FindIndex(args, x => x.Equals(command, StringComparison.OrdinalIgnoreCase));
+        for (var index = commandIndex + 1; commandIndex >= 0 && index < args.Length; index++)
+        {
+            if (args[index].Equals("--version", StringComparison.OrdinalIgnoreCase)) { index++; continue; }
+            if (!args[index].StartsWith('-')) return args[index];
+        }
+        throw new ArgumentException($"缺少查询参数: ref {command} <query>");
+    }
+
+    private static List<ModCandidate> FindCandidates(ProjectContext context, string keyword, bool fuzzy, string? version)
     {
         var roots = new List<string>();
         if (!string.IsNullOrWhiteSpace(context.Config.RimWorldDir)) roots.Add(Path.Combine(context.Config.RimWorldDir, "Mods"));
         roots.AddRange(context.Config.WorkshopPaths);
+
         var candidates = new List<ModCandidate>();
-        foreach (var root in roots.Where(Directory.Exists).Distinct(StringComparer.OrdinalIgnoreCase))
+        foreach (var root in roots.Where(Directory.Exists).Select(Path.GetFullPath).Distinct(StringComparer.OrdinalIgnoreCase))
         {
-            foreach (var about in Directory.EnumerateFiles(root, "About.xml", SearchOption.AllDirectories))
+            foreach (var modDirectory in Directory.EnumerateDirectories(root))
             {
-                var candidate = ParseCandidate(about); if (candidate is null) continue;
-                if (string.IsNullOrWhiteSpace(keyword) || Matches(candidate, keyword, fuzzy)) candidates.Add(candidate);
+                var candidate = ParseCandidate(Path.Combine(modDirectory, "About", "About.xml"), version);
+                if (candidate is not null && (string.IsNullOrWhiteSpace(keyword) || Matches(candidate, keyword, fuzzy))) candidates.Add(candidate);
             }
         }
-        return candidates.GroupBy(x => x.PackageId, StringComparer.OrdinalIgnoreCase).Select(x => x.OrderBy(y => y.SourceDirectory.Length).First()).OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase).ToList();
+
+        return candidates
+            .GroupBy(x => x.SourceDirectory, StringComparer.OrdinalIgnoreCase)
+            .Select(x => x.First())
+            .OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(x => x.SourceDirectory, StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
-    private static bool Matches(ModCandidate c, string keyword, bool fuzzy)
+    private static bool Matches(ModCandidate candidate, string keyword, bool fuzzy)
     {
-        var values = new[] { c.Name, c.PackageId, c.FolderName };
+        var values = new[] { candidate.Name, candidate.PackageId, candidate.FolderName, candidate.Author ?? "" };
         if (values.Any(x => x.Equals(keyword, StringComparison.OrdinalIgnoreCase))) return true;
         if (values.Any(x => x.Contains(keyword, StringComparison.OrdinalIgnoreCase))) return true;
-        if (!fuzzy) return false;
-        return values.Any(x => FuzzyScore(x, keyword) >= Math.Max(1, keyword.Length * 0.55));
+        return fuzzy && values.Any(x => IsSubsequence(x, keyword));
     }
 
-    private static int FuzzyScore(string source, string query)
+    private static bool IsSubsequence(string source, string query)
     {
-        var score = 0; var cursor = 0;
-        foreach (var c in query.ToLowerInvariant()) { var index = source.ToLowerInvariant().IndexOf(c, cursor); if (index < 0) return 0; score++; cursor = index + 1; }
-        return score;
+        var cursor = 0;
+        foreach (var character in query)
+        {
+            var index = source.IndexOf(character.ToString(), cursor, StringComparison.OrdinalIgnoreCase);
+            if (index < 0) return false;
+            cursor = index + 1;
+        }
+        return query.Length > 0;
     }
 
-    private static ModCandidate? ResolveUnique(ProjectContext context, string query, bool fuzzy, out CliError? error)
+    private static ModCandidate? ResolveUnique(ProjectContext context, string query, bool fuzzy, string? version, out CliError? error)
     {
         error = null;
-        if (Path.IsPathRooted(query) && Directory.Exists(query)) { var direct = ParseCandidate(Path.Combine(query, "About", "About.xml")); if (direct is not null) return direct; error = new("MOD_INVALID", "绝对目录中没有有效 About.xml"); return null; }
-        var all = FindCandidates(context, "", false);
-        var levels = new Func<ModCandidate, bool>[] { x => x.PackageId.Equals(query, StringComparison.OrdinalIgnoreCase), x => x.Name.Equals(query, StringComparison.OrdinalIgnoreCase), x => x.FolderName.Equals(query, StringComparison.OrdinalIgnoreCase), x => x.Name.Contains(query, StringComparison.OrdinalIgnoreCase) || x.PackageId.Contains(query, StringComparison.OrdinalIgnoreCase) || x.FolderName.Contains(query, StringComparison.OrdinalIgnoreCase) };
-        IEnumerable<ModCandidate> matches = [];
-        foreach (var level in levels) { matches = all.Where(level).ToArray(); if (matches.Any()) break; }
-        if (!matches.Any() && fuzzy) matches = all.Where(x => Matches(x, query, true));
-        var array = matches.ToArray();
-        if (array.Length == 1) return array[0];
-        error = array.Length == 0 ? new("MOD_NOT_FOUND", $"未找到参考模组: {query}") : new("MOD_AMBIGUOUS", $"查询存在多个候选: {query}", array);
+        if (Path.IsPathRooted(query) && Directory.Exists(query))
+        {
+            var direct = ParseCandidate(Path.Combine(query, "About", "About.xml"), version);
+            if (direct is not null) return direct;
+            error = new CliError("MOD_INVALID", "绝对目录中没有有效 About.xml");
+            return null;
+        }
+
+        var all = FindCandidates(context, "", false, version);
+        var levels = new Func<ModCandidate, bool>[]
+        {
+            x => x.PackageId.Equals(query, StringComparison.OrdinalIgnoreCase),
+            x => x.Name.Equals(query, StringComparison.OrdinalIgnoreCase),
+            x => x.FolderName.Equals(query, StringComparison.OrdinalIgnoreCase),
+            x => x.Name.Contains(query, StringComparison.OrdinalIgnoreCase)
+                || x.PackageId.Contains(query, StringComparison.OrdinalIgnoreCase)
+                || x.FolderName.Contains(query, StringComparison.OrdinalIgnoreCase)
+        };
+
+        ModCandidate[] matches = [];
+        foreach (var level in levels)
+        {
+            matches = all.Where(level).ToArray();
+            if (matches.Length > 0) break;
+        }
+        if (matches.Length == 0 && fuzzy) matches = all.Where(x => Matches(x, query, true)).ToArray();
+        if (matches.Length == 1) return matches[0];
+
+        error = matches.Length == 0
+            ? new CliError("MOD_NOT_FOUND", $"未找到参考模组: {query}")
+            : new CliError("MOD_AMBIGUOUS", $"查询存在多个候选: {query}", matches);
         return null;
     }
 
-    private static ModCandidate? ParseCandidate(string aboutPath)
+    private static ModCandidate? ParseCandidate(string aboutPath, string? version)
     {
         try
         {
-            var root = XDocument.Load(aboutPath).Root; if (root is null) return null;
-            var package = root.Element("packageId")?.Value.Trim(); if (string.IsNullOrWhiteSpace(package)) return null;
+            if (!File.Exists(aboutPath)) return null;
+            var root = XDocument.Load(aboutPath).Root;
+            if (root is null) return null;
+            var package = ElementValue(root, "packageId");
+            if (string.IsNullOrWhiteSpace(package)) return null;
+
             var modRoot = Directory.GetParent(aboutPath)?.Parent?.FullName ?? "";
-            var deps = root.Descendants("modDependencies").Elements("li").Select(x => x.Element("packageId")?.Value.Trim()).Where(x => !string.IsNullOrWhiteSpace(x)).Cast<string>().Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-            return new ModCandidate(root.Element("name")?.Value.Trim() ?? Path.GetFileName(modRoot), package, Path.GetFileName(modRoot), modRoot, false, deps);
+            var dependencies = ParseDependencies(root, version);
+            return new ModCandidate(
+                ElementValue(root, "name") ?? Path.GetFileName(modRoot),
+                package,
+                Path.GetFileName(modRoot),
+                modRoot,
+                package.StartsWith("ludeon.rimworld", StringComparison.OrdinalIgnoreCase),
+                ElementValue(root, "author"),
+                dependencies);
         }
-        catch { return null; }
-    }
-
-    private static void CopyReference(string source, string dest, IReadOnlyCollection<string> ignored)
-    {
-        foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
+        catch
         {
-            var relative = Path.GetRelativePath(source, file); var parts = relative.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            if (parts.Any(x => ignored.Contains(x, StringComparer.OrdinalIgnoreCase))) continue;
-            var target = Path.Combine(dest, relative); Directory.CreateDirectory(Path.GetDirectoryName(target)!); File.Copy(file, target, true);
+            return null;
         }
     }
 
-    private static string SafeFolderName(string packageId) => string.Concat(packageId.Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c));
+    private static List<string> ParseDependencies(XElement root, string? version)
+    {
+        var dependencies = new List<string>();
+        AddDependencies(root.Elements().FirstOrDefault(x => x.Name.LocalName.Equals("modDependencies", StringComparison.OrdinalIgnoreCase)), dependencies);
+
+        var byVersion = root.Elements().FirstOrDefault(x => x.Name.LocalName.Equals("modDependenciesByVersion", StringComparison.OrdinalIgnoreCase));
+        if (byVersion is not null)
+        {
+            var versionNode = !string.IsNullOrWhiteSpace(version)
+                ? byVersion.Elements().FirstOrDefault(x => x.Name.LocalName.Equals($"v{version}", StringComparison.OrdinalIgnoreCase))
+                : null;
+            versionNode ??= byVersion.Elements().LastOrDefault();
+            AddDependencies(versionNode, dependencies);
+        }
+        return dependencies.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    private static void AddDependencies(XElement? container, List<string> dependencies)
+    {
+        if (container is null) return;
+        foreach (var item in container.Elements().Where(x => x.Name.LocalName.Equals("li", StringComparison.OrdinalIgnoreCase)))
+        {
+            var package = ElementValue(item, "packageId");
+            if (!string.IsNullOrWhiteSpace(package)) dependencies.Add(package);
+        }
+    }
+
+    private static string? ElementValue(XElement root, string name)
+        => root.Elements().FirstOrDefault(x => x.Name.LocalName.Equals(name, StringComparison.OrdinalIgnoreCase))?.Value.Trim();
+
+    private static void CopyReference(string source, string destination, IReadOnlyCollection<string> ignored, CancellationToken cancellationToken)
+    {
+        CopyDirectoryRecursive(Path.GetFullPath(source), Path.GetFullPath(destination), ignored, cancellationToken);
+    }
+
+    private static void CopyDirectoryRecursive(string source, string destination, IReadOnlyCollection<string> ignored, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var info = new DirectoryInfo(source);
+        if (info.Attributes.HasFlag(FileAttributes.ReparsePoint)) throw new IOException($"拒绝跟随 Reparse Point: {source}");
+        Directory.CreateDirectory(destination);
+
+        foreach (var file in info.EnumerateFiles())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (file.Attributes.HasFlag(FileAttributes.ReparsePoint)) throw new IOException($"拒绝跟随 Reparse Point: {file.FullName}");
+            file.CopyTo(Path.Combine(destination, file.Name), true);
+        }
+        foreach (var directory in info.EnumerateDirectories())
+        {
+            if (ignored.Contains(directory.Name, StringComparer.OrdinalIgnoreCase)) continue;
+            CopyDirectoryRecursive(directory.FullName, Path.Combine(destination, directory.Name), ignored, cancellationToken);
+        }
+    }
+
+    private static void DeleteDirectoryBestEffort(string path)
+    {
+        try { if (Directory.Exists(path)) Directory.Delete(path, true); }
+        catch (Exception ex) { Console.Error.WriteLine($"清理目录失败: {path}: {ex.Message}"); }
+    }
+
+    private static void DeleteDirectoryIfEmpty(string path)
+    {
+        try
+        {
+            if (Directory.Exists(path) && !Directory.EnumerateFileSystemEntries(path).Any()) Directory.Delete(path);
+        }
+        catch (Exception ex) { Console.Error.WriteLine($"清理空目录失败: {path}: {ex.Message}"); }
+    }
+
+    internal sealed record PullTarget(ModCandidate Mod, string Target, string Staging, string Backup);
 }
 
 internal sealed class TargetDirectoryLock : IDisposable
 {
     private readonly FileStream _stream;
     private TargetDirectoryLock(FileStream stream) => _stream = stream;
+
     public static TargetDirectoryLock? Create(string root, out string? error)
     {
-        error = null; Directory.CreateDirectory(root); var path = Path.Combine(root, ".rimdev-target.lock");
+        error = null;
+        Directory.CreateDirectory(root);
+        var path = Path.Combine(root, ".rimdev-target.lock");
         try { return new TargetDirectoryLock(new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None)); }
         catch (IOException) { error = $"目标目录正被占用: {root}"; return null; }
     }
+
     public void Dispose() => _stream.Dispose();
 }

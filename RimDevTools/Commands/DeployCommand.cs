@@ -3,104 +3,198 @@ using System.Text.RegularExpressions;
 
 namespace RimDevTools;
 
+public sealed record DeployExecution(bool Ok, int ExitCode, object? Result = null, CliError? Error = null, IReadOnlyList<string>? Warnings = null);
+
 public static class DeployCommand
 {
-    public static async Task<int> RunAsync(string[] args)
+    public static async Task<int> RunAsync(string[] args, CancellationToken cancellationToken = default)
     {
-        var context = CliApplication.RequireProject("deploy", out var discoveryCode);
-        if (context is null) return discoveryCode;
+        var execution = await ExecuteAsync(args, cancellationToken);
+        if (!execution.Ok)
+            return CliResult.WriteFailure("deploy", execution.ExitCode, execution.Error!.Code, execution.Error.Message, execution.Result is DeployContextDetails details ? details.ProjectRoot : null, execution.Error.Details);
+
+        var projectRoot = execution.Result is DeployResult result ? result.ProjectRoot : null;
+        return CliResult.WriteSuccess("deploy", projectRoot, execution.Result, execution.Warnings);
+    }
+
+    public static async Task<DeployExecution> ExecuteAsync(string[] args, CancellationToken cancellationToken = default)
+    {
+        var context = ProjectDiscovery.Find(Environment.CurrentDirectory, out var discoveryError);
+        if (context is null)
+        {
+            var exitCode = discoveryError?.Code == "PROJECT_NOT_FOUND" ? ExitCodes.MissingDependency : ExitCodes.InvalidArguments;
+            return Failure(exitCode, discoveryError ?? new CliError("PROJECT_NOT_FOUND", "未找到项目"));
+        }
+
         var config = context.Config;
-        var targetRoot = Path.GetFullPath(Path.Combine(config.RimWorldDir ?? "", "Mods"));
-        var target = Path.Combine(targetRoot, config.ModName ?? Path.GetFileName(context.Root));
-        var warnings = new List<string>();
+        if (config.ConfigVersion != 2)
+            return Failure(ExitCodes.InvalidArguments, new CliError("CONFIG_VERSION_UNSUPPORTED", $"需要 config_version=2，当前为 {config.ConfigVersion}"), context.Root);
         if (string.IsNullOrWhiteSpace(config.RimWorldDir) || string.IsNullOrWhiteSpace(config.ModName))
-            return CliResult.WriteFailure("deploy", ExitCodes.InvalidArguments, "CONFIG_MISSING", "deploy 需要 rimworld_dir 和 mod_name", context.Root);
+            return Failure(ExitCodes.InvalidArguments, new CliError("CONFIG_MISSING", "deploy 需要 rimworld_dir 和 mod_name"), context.Root);
+        if (!Directory.Exists(config.RimWorldDir))
+            return Failure(ExitCodes.MissingDependency, new CliError("RIMWORLD_DIR_NOT_FOUND", $"RimWorld 目录不存在: {config.RimWorldDir}"), context.Root);
+
+        var targetRoot = Path.GetFullPath(Path.Combine(config.RimWorldDir, "Mods"));
+        var target = Path.GetFullPath(Path.Combine(targetRoot, config.ModName));
         if (!PathSafety.IsWithin(target, targetRoot))
-            return CliResult.WriteFailure("deploy", ExitCodes.InvalidArguments, "DEPLOY_TARGET_OUTSIDE_MODS", "部署目标不在 RimWorld Mods 目录内", context.Root, new { target, targetRoot });
+            return Failure(ExitCodes.InvalidArguments, new CliError("DEPLOY_TARGET_OUTSIDE_MODS", "部署目标不在 RimWorld Mods 目录内", new { target, targetRoot }), context.Root);
+        try { PathSafety.EnsureNoReparsePoints(config.RimWorldDir, target); }
+        catch (Exception ex) { return Failure(ExitCodes.InvalidArguments, new CliError("DEPLOY_TARGET_UNSAFE", ex.Message), context.Root); }
+
+        Regex? protectedRegex;
+        try
+        {
+            protectedRegex = string.IsNullOrWhiteSpace(config.ProtectedFilesRegex)
+                ? null
+                : new Regex(config.ProtectedFilesRegex, RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
+        }
+        catch (Exception ex)
+        {
+            return Failure(ExitCodes.InvalidArguments, new CliError("PROTECTED_REGEX_INVALID", ex.Message), context.Root);
+        }
 
         var syncItems = config.SyncItems.ToList();
-        if (CliArgs.Has(args, "--sync-source")) syncItems.Add("source");
-        Regex? protectedRegex = null;
-        try { protectedRegex = string.IsNullOrWhiteSpace(config.ProtectedFilesRegex) ? null : new Regex(config.ProtectedFilesRegex, RegexOptions.CultureInvariant); }
-        catch (Exception ex) { return CliResult.WriteFailure("deploy", ExitCodes.InvalidArguments, "PROTECTED_REGEX_INVALID", ex.Message, context.Root); }
-        var plan = new List<object>();
-        foreach (var item in syncItems)
+        if (CliArgs.Has(args, "--sync-source") && !syncItems.Contains("source", StringComparer.OrdinalIgnoreCase)) syncItems.Add("source");
+        if (syncItems.Count == 0)
+            return Failure(ExitCodes.InvalidArguments, new CliError("SYNC_ITEMS_EMPTY", "deploy 至少需要一个 sync_items"), context.Root);
+
+        var warnings = new List<string>();
+        var plan = new List<DeploySyncPlan>();
+        try
         {
-            var source = Path.GetFullPath(Path.Combine(context.Root, item));
-            var destination = Path.Combine(target, item);
-            var exists = File.Exists(source) || Directory.Exists(source);
-            plan.Add(new { source, destination, exists, severity = exists ? "info" : "warning" });
-            if (!exists) warnings.Add($"同步项不存在: {item}");
+            foreach (var item in syncItems)
+            {
+                var source = Path.GetFullPath(item, context.Root);
+                if (!PathSafety.IsWithin(source, context.Root)) throw new InvalidDataException($"同步源越出项目目录: {item}");
+                PathSafety.EnsureNoReparsePoints(context.Root, source);
+                var destination = Path.GetFullPath(Path.Combine(target, item));
+                if (!PathSafety.IsWithin(destination, target)) throw new InvalidDataException($"同步目标越出部署目录: {item}");
+                var exists = File.Exists(source) || Directory.Exists(source);
+                plan.Add(new DeploySyncPlan(item, source, destination, exists, exists ? "info" : "warning"));
+                if (!exists) warnings.Add($"同步项不存在: {item}");
+            }
         }
+        catch (Exception ex)
+        {
+            return Failure(ExitCodes.InvalidArguments, new CliError("SYNC_PATH_INVALID", ex.Message), context.Root);
+        }
+
         var projectFiles = new List<string>();
         foreach (var project in config.CsprojPaths)
         {
-            var path = Path.GetFullPath(Path.Combine(context.Root, project));
-            if (!File.Exists(path)) return CliResult.WriteFailure("deploy", ExitCodes.MissingDependency, "CSPROJ_NOT_FOUND", $"工程文件不存在: {project}", context.Root);
+            var path = Path.GetFullPath(project, context.Root);
+            if (!PathSafety.IsWithin(path, context.Root))
+                return Failure(ExitCodes.InvalidArguments, new CliError("CSPROJ_OUTSIDE_PROJECT", $"工程路径越出项目目录: {project}"), context.Root);
+            if (!File.Exists(path))
+                return Failure(ExitCodes.MissingDependency, new CliError("CSPROJ_NOT_FOUND", $"工程文件不存在: {project}"), context.Root);
             projectFiles.Add(path);
         }
-        var runId = Guid.NewGuid().ToString("N");
-        var preview = new { projectRoot = context.Root, target, shader = new { enabled = config.ShaderBundle.Enabled, unityPath = config.ShaderBundle.UnityExePath }, projects = projectFiles, syncItems = plan, protectedPattern = config.ProtectedFilesRegex };
-        if (CliArgs.Has(args, "--dry-run")) return CliResult.WriteSuccess("deploy", context.Root, new { dryRun = true, plan = preview }, warnings);
 
+        var targetActions = Directory.Exists(target)
+            ? Directory.EnumerateFileSystemEntries(target).Select(path => new DeployTargetAction(
+                path,
+                protectedRegex?.IsMatch(Path.GetFileName(path)) == true ? "protect" : "replace")).ToArray()
+            : [];
+        var preview = new DeployPlan(
+            context.Root,
+            target,
+            new ShaderPlan(config.ShaderBundle.Enabled, config.ShaderBundle.UnityExePath, config.ShaderBundle.UnityProjectPath, config.ShaderBundle.BuildMethod),
+            projectFiles,
+            plan,
+            targetActions,
+            config.ProtectedFilesRegex);
+
+        if (CliArgs.Has(args, "--dry-run"))
+            return new DeployExecution(true, ExitCodes.Success, new DeployResult(context.Root, true, null, target, [], preview, false), null, warnings);
+
+        var runId = Guid.NewGuid().ToString("N");
+        Directory.CreateDirectory(targetRoot);
         using var gate = EnvironmentLock.TryAcquire(GameEnvironment.ConfigDirectory(), "deploy", context.Root, runId, out var busyInfo);
-        if (gate is null) return CliResult.WriteFailure("deploy", ExitCodes.Busy, "ENVIRONMENT_BUSY", "RimWorld 环境正被另一个 RimDevTools 进程占用", context.Root, new { busyInfo });
-        if (!await ProcessUtil.WaitForRimWorldExitAsync(config.Timeouts.ExistingGameExit, config.Timeouts.PostExitDelay))
-            return CliResult.WriteFailure("deploy", ExitCodes.Timeout, "GAME_EXIT_TIMEOUT", "等待 RimWorld 退出超时", context.Root);
+        if (gate is null)
+            return Failure(ExitCodes.Busy, new CliError("ENVIRONMENT_BUSY", "RimWorld 环境正被另一个 RimDevTools 进程占用", new { busyInfo }), context.Root);
+        if (!await ProcessUtil.WaitForRimWorldExitAsync(config.Timeouts.ExistingGameExit, config.Timeouts.PostExitDelay, cancellationToken))
+            return Failure(ExitCodes.Timeout, new CliError("GAME_EXIT_TIMEOUT", "等待 RimWorld 退出超时"), context.Root);
+
+        var recovery = await TransactionRecovery.RecoverAsync(GameEnvironment.ConfigDirectory());
+        if (!recovery.Ok)
+            return Failure(ExitCodes.TaskFailed, recovery.Error!, context.Root);
+
         if (config.ShaderBundle.Enabled)
         {
-            var shaderResult = await BuildShaderAsync(context, config);
-            if (!shaderResult.ok) return CliResult.WriteFailure("deploy", ExitCodes.TaskFailed, "SHADER_BUILD_FAILED", shaderResult.message, context.Root);
+            var shaderResult = await BuildShaderAsync(context, config, cancellationToken);
+            if (!shaderResult.Ok)
+                return Failure(ExitCodes.TaskFailed, new CliError("SHADER_BUILD_FAILED", shaderResult.Message), context.Root);
         }
+
         foreach (var project in projectFiles)
         {
             Console.Error.WriteLine($"构建 {project}");
-            if (!await ProcessUtil.RunAsync("dotnet", $"build \"{project}\" --configuration Release", context.Root))
-                return CliResult.WriteFailure("deploy", ExitCodes.TaskFailed, "BUILD_FAILED", $"dotnet build 失败: {project}", context.Root);
+            if (!await ProcessUtil.RunAsync("dotnet", ["build", project, "--configuration", "Release"], context.Root, cancellationToken))
+                return Failure(ExitCodes.TaskFailed, new CliError("BUILD_FAILED", $"dotnet build 失败: {project}"), context.Root);
         }
+
         var staging = Path.Combine(targetRoot, $".rimdev-staging-{runId}");
         try
         {
             Directory.CreateDirectory(staging);
-            foreach (var item in syncItems) CopySyncItem(context.Root, staging, item, warnings);
+            foreach (var item in plan.Where(x => x.Exists)) CopySyncItem(context.Root, staging, item.Item);
             PreserveProtectedFiles(target, staging, protectedRegex);
-            var missingRequired = syncItems.Where(item => !File.Exists(Path.Combine(context.Root, item)) && !Directory.Exists(Path.Combine(context.Root, item))).ToArray();
-            if (missingRequired.Length > 0) Console.Error.WriteLine($"缺失同步项: {string.Join(", ", missingRequired)}");
+            ValidateStaging(staging, plan);
             ReplaceDirectory(target, staging, targetRoot, runId);
-            return CliResult.WriteSuccess("deploy", context.Root, new { runId, target, builtProjects = projectFiles, plan = preview }, warnings);
+            return new DeployExecution(true, ExitCodes.Success, new DeployResult(context.Root, false, runId, target, projectFiles, preview, recovery.Found), null, warnings);
         }
+        catch (OperationCanceledException) { throw; }
         catch (Exception ex)
         {
-            return CliResult.WriteFailure("deploy", ExitCodes.TaskFailed, "DEPLOY_FAILED", ex.Message, context.Root, new { runId, staging });
+            return Failure(ExitCodes.TaskFailed, new CliError("DEPLOY_FAILED", ex.Message, new { runId, staging }), context.Root);
         }
-        finally { if (Directory.Exists(staging)) Directory.Delete(staging, true); }
+        finally
+        {
+            if (Directory.Exists(staging)) Directory.Delete(staging, true);
+        }
     }
 
-    private static async Task<(bool ok, string message)> BuildShaderAsync(ProjectContext context, ProjectConfig config)
+    private static DeployExecution Failure(int exitCode, CliError error, string? projectRoot = null)
+        => new(false, exitCode, projectRoot is null ? null : new DeployContextDetails(projectRoot), error);
+
+    private static async Task<(bool Ok, string Message)> BuildShaderAsync(ProjectContext context, ProjectConfig config, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(config.ShaderBundle.UnityExePath) || !File.Exists(config.ShaderBundle.UnityExePath)) return (false, "Unity 路径不存在");
-        var projectPath = Path.GetFullPath(Path.Combine(context.Root, config.ShaderBundle.UnityProjectPath ?? ""));
-        if (!Directory.Exists(projectPath)) return (false, "Unity 项目路径不存在");
-        var args = $"-batchmode -quit -projectPath \"{projectPath}\" -executeMethod \"{config.ShaderBundle.BuildMethod}\"";
-        return (await ProcessUtil.RunAsync(config.ShaderBundle.UnityExePath, args, context.Root), "Unity 构建失败");
+        var projectPath = Path.GetFullPath(config.ShaderBundle.UnityProjectPath ?? "", context.Root);
+        if (!PathSafety.IsWithin(projectPath, context.Root) || !Directory.Exists(projectPath)) return (false, "Unity 项目路径不存在或越出项目目录");
+        if (string.IsNullOrWhiteSpace(config.ShaderBundle.BuildMethod)) return (false, "Unity build_method 未配置");
+        var ok = await ProcessUtil.RunAsync(config.ShaderBundle.UnityExePath, ["-batchmode", "-quit", "-projectPath", projectPath, "-executeMethod", config.ShaderBundle.BuildMethod], context.Root, cancellationToken);
+        return (ok, ok ? "" : "Unity 构建失败");
     }
 
-    private static void CopySyncItem(string root, string staging, string item, List<string> warnings)
+    private static void CopySyncItem(string root, string staging, string item)
     {
-        var source = Path.GetFullPath(Path.Combine(root, item));
-        var dest = Path.Combine(staging, item);
-        if (!File.Exists(source) && !Directory.Exists(source)) { warnings.Add($"同步项不存在: {item}"); return; }
-        if (File.GetAttributes(source).HasFlag(FileAttributes.ReparsePoint)) throw new IOException($"拒绝跟随 Reparse Point: {source}");
-        if (File.Exists(source)) { Directory.CreateDirectory(Path.GetDirectoryName(dest)!); File.Copy(source, dest, true); return; }
-        foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
+        var source = Path.GetFullPath(item, root);
+        var destination = Path.GetFullPath(Path.Combine(staging, item));
+        if (!PathSafety.IsWithin(source, root) || !PathSafety.IsWithin(destination, staging)) throw new IOException($"同步路径越界: {item}");
+        if (File.Exists(source))
         {
-            if (item.Equals("About", StringComparison.OrdinalIgnoreCase) && (file.EndsWith(".svg", StringComparison.OrdinalIgnoreCase) || file.EndsWith(".html", StringComparison.OrdinalIgnoreCase))) continue;
-            if (File.GetAttributes(file).HasFlag(FileAttributes.ReparsePoint)) throw new IOException($"拒绝跟随 Reparse Point: {file}");
-            var relative = Path.GetRelativePath(root, file);
-            var target = Path.Combine(staging, relative);
-            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-            File.Copy(file, target, true);
+            if (File.GetAttributes(source).HasFlag(FileAttributes.ReparsePoint)) throw new IOException($"拒绝跟随 Reparse Point: {source}");
+            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+            File.Copy(source, destination, true);
+            return;
         }
+        CopyDirectory(source, destination, item.Equals("About", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static void CopyDirectory(string source, string destination, bool filterAbout = false)
+    {
+        var sourceInfo = new DirectoryInfo(source);
+        if (sourceInfo.Attributes.HasFlag(FileAttributes.ReparsePoint)) throw new IOException($"拒绝跟随 Reparse Point: {source}");
+        Directory.CreateDirectory(destination);
+        foreach (var file in sourceInfo.EnumerateFiles())
+        {
+            if (file.Attributes.HasFlag(FileAttributes.ReparsePoint)) throw new IOException($"拒绝跟随 Reparse Point: {file.FullName}");
+            if (filterAbout && (file.Extension.Equals(".svg", StringComparison.OrdinalIgnoreCase) || file.Extension.Equals(".html", StringComparison.OrdinalIgnoreCase))) continue;
+            file.CopyTo(Path.Combine(destination, file.Name), true);
+        }
+        foreach (var directory in sourceInfo.EnumerateDirectories())
+            CopyDirectory(directory.FullName, Path.Combine(destination, directory.Name), filterAbout);
     }
 
     private static void PreserveProtectedFiles(string target, string staging, Regex? regex)
@@ -109,10 +203,19 @@ public static class DeployCommand
         foreach (var item in Directory.EnumerateFileSystemEntries(target))
         {
             if (!regex.IsMatch(Path.GetFileName(item))) continue;
-            var dest = Path.Combine(staging, Path.GetFileName(item));
-            if (File.Exists(item)) { Directory.CreateDirectory(Path.GetDirectoryName(dest)!); File.Copy(item, dest, true); }
-            else if (Directory.Exists(item)) CopyDirectory(item, dest);
+            if (File.GetAttributes(item).HasFlag(FileAttributes.ReparsePoint)) throw new IOException($"拒绝保护 Reparse Point: {item}");
+            var destination = Path.Combine(staging, Path.GetFileName(item));
+            if (File.Exists(item)) File.Copy(item, destination, true);
+            else CopyDirectory(item, destination);
         }
+    }
+
+    private static void ValidateStaging(string staging, IReadOnlyList<DeploySyncPlan> plan)
+    {
+        if (!Directory.EnumerateFileSystemEntries(staging).Any()) throw new InvalidDataException("部署暂存目录为空");
+        if (plan.Any(x => x.Item.Equals("About", StringComparison.OrdinalIgnoreCase) && x.Exists)
+            && !File.Exists(Path.Combine(staging, "About", "About.xml")))
+            throw new InvalidDataException("部署暂存结果缺少 About/About.xml");
     }
 
     private static void ReplaceDirectory(string target, string staging, string parent, string runId)
@@ -120,50 +223,93 @@ public static class DeployCommand
         var backup = Path.Combine(parent, $".rimdev-backup-{runId}");
         if (Directory.Exists(backup)) Directory.Delete(backup, true);
         if (Directory.Exists(target)) Directory.Move(target, backup);
-        try { Directory.Move(staging, target); if (Directory.Exists(backup)) Directory.Delete(backup, true); }
-        catch { if (!Directory.Exists(target) && Directory.Exists(backup)) Directory.Move(backup, target); throw; }
-    }
+        try
+        {
+            Directory.Move(staging, target);
+        }
+        catch
+        {
+            if (!Directory.Exists(target) && Directory.Exists(backup)) Directory.Move(backup, target);
+            throw;
+        }
 
-    private static void CopyDirectory(string source, string dest)
-    {
-        Directory.CreateDirectory(dest);
-        foreach (var file in Directory.EnumerateFiles(source)) File.Copy(file, Path.Combine(dest, Path.GetFileName(file)), true);
-        foreach (var dir in Directory.EnumerateDirectories(source)) CopyDirectory(dir, Path.Combine(dest, Path.GetFileName(dir)));
+        try { if (Directory.Exists(backup)) Directory.Delete(backup, true); }
+        catch (Exception ex) { Console.Error.WriteLine($"清理部署备份失败: {backup}: {ex.Message}"); }
     }
 }
 
-internal static class PathSafety
-{
-    public static bool IsWithin(string child, string parent)
-    {
-        var c = Path.GetFullPath(child).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
-        var p = Path.GetFullPath(parent).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
-        return c.StartsWith(p, StringComparison.OrdinalIgnoreCase);
-    }
-}
+public sealed record DeployContextDetails(string ProjectRoot);
+public sealed record DeploySyncPlan(string Item, string Source, string Destination, bool Exists, string Severity);
+public sealed record DeployTargetAction(string Path, string Action);
+public sealed record ShaderPlan(bool Enabled, string? UnityPath, string? ProjectPath, string? BuildMethod);
+public sealed record DeployPlan(string ProjectRoot, string Target, ShaderPlan Shader, IReadOnlyList<string> Projects, IReadOnlyList<DeploySyncPlan> SyncItems, IReadOnlyList<DeployTargetAction> TargetActions, string? ProtectedPattern);
+public sealed record DeployResult(string ProjectRoot, bool DryRun, string? RunId, string Target, IReadOnlyList<string> BuiltProjects, DeployPlan Plan, bool RecoveredTransaction);
 
 internal static class ProcessUtil
 {
-    public static async Task<bool> WaitForRimWorldExitAsync(int timeoutSeconds, int stableSeconds)
+    public static async Task<bool> WaitForRimWorldExitAsync(int timeoutSeconds, int stableSeconds, CancellationToken cancellationToken = default)
     {
         var deadline = DateTime.UtcNow.AddSeconds(Math.Max(0, timeoutSeconds));
-        while (Process.GetProcessesByName("RimWorldWin64").Length > 0 || Process.GetProcessesByName("RimWorld").Length > 0)
+        while (IsRimWorldRunning())
         {
             if (DateTime.UtcNow >= deadline) return false;
-            await Task.Delay(1000);
+            await Task.Delay(1000, cancellationToken);
         }
-        if (stableSeconds > 0) await Task.Delay(TimeSpan.FromSeconds(Math.Min(stableSeconds, Math.Max(0, (deadline - DateTime.UtcNow).TotalSeconds))));
+        if (stableSeconds > 0) await Task.Delay(TimeSpan.FromSeconds(stableSeconds), cancellationToken);
         return true;
     }
 
-    public static async Task<bool> RunAsync(string fileName, string arguments, string workingDirectory)
+    private static bool IsRimWorldRunning()
     {
-        var psi = new ProcessStartInfo(fileName, arguments) { WorkingDirectory = workingDirectory, UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true };
-        using var process = Process.Start(psi) ?? throw new InvalidOperationException($"无法启动进程: {fileName}");
-        process.OutputDataReceived += (_, e) => { if (e.Data is not null) Console.Error.WriteLine(e.Data); };
-        process.ErrorDataReceived += (_, e) => { if (e.Data is not null) Console.Error.WriteLine(e.Data); };
-        process.BeginOutputReadLine(); process.BeginErrorReadLine();
-        await process.WaitForExitAsync();
+        var processes = Process.GetProcessesByName("RimWorldWin64").Concat(Process.GetProcessesByName("RimWorld")).ToArray();
+        try { return processes.Length > 0; }
+        finally { foreach (var process in processes) process.Dispose(); }
+    }
+
+    public static Task<bool> RunAsync(string fileName, string arguments, string workingDirectory, CancellationToken cancellationToken = default)
+    {
+        var startInfo = new ProcessStartInfo(fileName, arguments)
+        {
+            WorkingDirectory = workingDirectory,
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true
+        };
+        return RunAsync(startInfo, cancellationToken);
+    }
+
+    public static Task<bool> RunAsync(string fileName, IEnumerable<string> arguments, string workingDirectory, CancellationToken cancellationToken = default)
+    {
+        var startInfo = new ProcessStartInfo(fileName)
+        {
+            WorkingDirectory = workingDirectory,
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true
+        };
+        foreach (var argument in arguments) startInfo.ArgumentList.Add(argument);
+        return RunAsync(startInfo, cancellationToken);
+    }
+
+    private static async Task<bool> RunAsync(ProcessStartInfo startInfo, CancellationToken cancellationToken)
+    {
+        using var process = Process.Start(startInfo) ?? throw new InvalidOperationException($"无法启动进程: {startInfo.FileName}");
+        process.OutputDataReceived += (_, eventArgs) => { if (eventArgs.Data is not null) Console.Error.WriteLine(eventArgs.Data); };
+        process.ErrorDataReceived += (_, eventArgs) => { if (eventArgs.Data is not null) Console.Error.WriteLine(eventArgs.Data); };
+        process.BeginOutputReadLine();
+        process.BeginErrorReadLine();
+        try
+        {
+            await process.WaitForExitAsync(cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            try { if (!process.HasExited) process.Kill(true); } catch { }
+            await process.WaitForExitAsync(CancellationToken.None);
+            throw;
+        }
         return process.ExitCode == 0;
     }
 }
