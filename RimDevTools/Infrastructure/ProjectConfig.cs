@@ -58,7 +58,7 @@ public sealed class TimeoutsConfig
 public sealed class RetentionConfig
 {
     [JsonPropertyName("max_log_files")] public int MaxLogFiles { get; set; } = 3;
-    [JsonPropertyName("max_auto_test_runs")] public int MaxAutoTestRuns { get; set; } = 2;
+    [JsonPropertyName("max_auto_test_runs")] public int MaxAutoTestRuns { get; set; } = 3;
 }
 
 public sealed class ShaderBundleConfig

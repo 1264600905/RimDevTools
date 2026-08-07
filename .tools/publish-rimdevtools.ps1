@@ -1,5 +1,5 @@
 param(
-    [string]$OutputPath = "artifacts\RimDevTools"
+    [string]$OutputPath = "artifacts\RimDevTools-Package"
 )
 
 $ErrorActionPreference = "Stop"
@@ -10,44 +10,59 @@ if (-not ($output.StartsWith($artifactsRoot + [System.IO.Path]::DirectorySeparat
     throw "发布输出必须位于 $artifactsRoot 内: $output"
 }
 
+$temporary = Join-Path $artifactsRoot ".rimdevtools-package-build"
 if (Test-Path -LiteralPath $output) { Remove-Item -LiteralPath $output -Recurse -Force }
-New-Item -ItemType Directory -Path $output -Force | Out-Null
-$rimSearcherTemp = Join-Path $artifactsRoot ".rimsearcher-publish"
-if (Test-Path -LiteralPath $rimSearcherTemp) { Remove-Item -LiteralPath $rimSearcherTemp -Recurse -Force }
+if (Test-Path -LiteralPath $temporary) { Remove-Item -LiteralPath $temporary -Recurse -Force }
+
+$toolRoot = Join-Path $output ".tools"
+$dataRoot = Join-Path $toolRoot "Data"
+$component = Join-Path $dataRoot "RimSearcher_DataMod"
+$logRoot = Join-Path $toolRoot "log"
+$autoTestOutput = Join-Path $logRoot "AutoTestOutput"
+$modListRoot = Join-Path $toolRoot "modlist"
+$databaseRoot = Join-Path $toolRoot "db"
 
 try {
-    dotnet publish (Join-Path $projectRoot "RimDevTools\RimDevTools.csproj") -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o $output
-    if ($LASTEXITCODE -ne 0) { throw "RimDevTools publish 失败" }
+    New-Item -ItemType Directory -Path $toolRoot, $dataRoot, $component, $autoTestOutput, $modListRoot, $databaseRoot -Force | Out-Null
 
-    dotnet publish (Join-Path $projectRoot "RimSearcher\Sources\RimSearcher.Cli\RimSearcher.Cli.csproj") -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o $rimSearcherTemp
+    $rimDevToolsPublish = Join-Path $temporary "RimDevTools"
+    dotnet publish (Join-Path $projectRoot "RimDevTools\RimDevTools.csproj") -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -o $rimDevToolsPublish
+    if ($LASTEXITCODE -ne 0) { throw "RimDevTools publish 失败" }
+    Copy-Item -LiteralPath (Join-Path $rimDevToolsPublish "RimDevTools.exe") -Destination (Join-Path $toolRoot "RimDevTools.exe") -Force
+
+    $rimSearcherPublish = Join-Path $temporary "RimSearcher"
+    dotnet publish (Join-Path $projectRoot "RimSearcher\Sources\RimSearcher.Cli\RimSearcher.Cli.csproj") -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -o $rimSearcherPublish
     if ($LASTEXITCODE -ne 0) { throw "RimSearcher publish 失败" }
-    Copy-Item -LiteralPath (Join-Path $rimSearcherTemp "rimsearcher.exe") -Destination (Join-Path $output "rimsearcher.exe") -Force
+    Copy-Item -LiteralPath (Join-Path $rimSearcherPublish "rimsearcher.exe") -Destination (Join-Path $toolRoot "rimsearcher.exe") -Force
 
     dotnet build (Join-Path $projectRoot "RimSearcher\Sources\RimSearcher.DataMod\RimSearcher.DataMod.csproj") -c Release --no-restore
     if ($LASTEXITCODE -ne 0) { throw "RimSearcher DataMod build 失败" }
-    $component = Join-Path $output "components\RimSearcher_DataMod"
     foreach ($folder in @("About", "Assemblies", "Languages", "Native")) {
         Copy-Item -LiteralPath (Join-Path $projectRoot "RimSearcher\RimSearcher_DataMod\$folder") -Destination (Join-Path $component $folder) -Recurse -Force
     }
 
     $ilspySource = Join-Path $projectRoot ".tools\ilspy"
     if (-not (Test-Path -LiteralPath (Join-Path $ilspySource "ilspycmd.exe"))) { throw "缺少 ILSpy 发布组件: $ilspySource" }
-    Copy-Item -LiteralPath $ilspySource -Destination (Join-Path $output "tools\ilspycmd") -Recurse -Force
+    Copy-Item -LiteralPath $ilspySource -Destination (Join-Path $toolRoot "Ilspy") -Recurse -Force
 
-    $licenses = Join-Path $output "licenses"
+    $licenses = Join-Path $dataRoot "licenses"
     New-Item -ItemType Directory -Path $licenses -Force | Out-Null
     Copy-Item -LiteralPath (Join-Path $projectRoot "RimSearcher\LICENSE") -Destination (Join-Path $licenses "RimSearcher-LICENSE.txt") -Force
     Copy-Item -LiteralPath (Join-Path $projectRoot "RimDevTools\Packaging\licenses\ILSpy-LICENSE.txt") -Destination $licenses -Force
     Copy-Item -LiteralPath (Join-Path $projectRoot "RimDevTools\Packaging\licenses\third-party-notices.txt") -Destination $licenses -Force
 
-    $versionJson = (& (Join-Path $output "RimDevTools.exe") --version | Out-String)
+    Copy-Item -LiteralPath (Join-Path $projectRoot ".tools\test\modlist\defaultMods.xml") -Destination (Join-Path $modListRoot "defaultMods.xml") -Force
+    Copy-Item -LiteralPath (Join-Path $projectRoot "mod_config.jsonc") -Destination (Join-Path $output "mod_config.jsonc") -Force
+    [System.IO.File]::WriteAllText((Join-Path $logRoot "精选日志.log"), "", [System.Text.UTF8Encoding]::new($false))
+
+    $versionJson = (& (Join-Path $toolRoot "RimDevTools.exe") --version | Out-String)
     if ($LASTEXITCODE -ne 0) { throw "发布后的 RimDevTools --version 验证失败" }
     $version = $versionJson | ConvertFrom-Json
     if (-not $version.componentsCompatible) { throw "发布组件版本不兼容: $versionJson" }
     Write-Host $versionJson.Trim()
 }
 finally {
-    if (Test-Path -LiteralPath $rimSearcherTemp) { Remove-Item -LiteralPath $rimSearcherTemp -Recurse -Force }
+    if (Test-Path -LiteralPath $temporary) { Remove-Item -LiteralPath $temporary -Recurse -Force }
 }
 
 Write-Host "发布完成: $output"

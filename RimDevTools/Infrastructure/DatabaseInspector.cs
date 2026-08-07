@@ -52,7 +52,7 @@ public static class ComponentLocator
     {
         var overridePath = Environment.GetEnvironmentVariable("RIMDEVTOOLS_DATAMOD_PATH");
         return string.IsNullOrWhiteSpace(overridePath)
-            ? Path.Combine(ExecutableDirectory(), "components", "RimSearcher_DataMod", "Assemblies", "RimSearcher.DataMod.dll")
+            ? Path.Combine(ExecutableDirectory(), "Data", "RimSearcher_DataMod", "Assemblies", "RimSearcher.DataMod.dll")
             : Path.GetFullPath(overridePath);
     }
 
@@ -71,7 +71,7 @@ public static class ComponentLocator
         return version.Major * 10000 + version.Minor * 100 + version.Build;
     }
 
-    private static string ExecutableDirectory()
+    internal static string ExecutableDirectory()
     {
         var processPath = Environment.ProcessPath;
         return processPath is not null && Path.GetFileNameWithoutExtension(processPath).Equals("RimDevTools", StringComparison.OrdinalIgnoreCase)

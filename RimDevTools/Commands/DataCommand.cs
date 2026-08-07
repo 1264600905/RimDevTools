@@ -138,6 +138,7 @@ public static class DataCommand
 
         ConfigTransaction? transaction = null;
         Process? game = null;
+        var gameExited = true;
         DataExportResult? exportResult = null;
         var completionLogSeen = false;
         var failureLogSeen = false;
@@ -226,15 +227,20 @@ public static class DataCommand
         {
             if (game is not null)
             {
-                try
+                var termination = await ProcessUtil.TerminateAsync(game);
+                if (!termination.Exited)
                 {
-                    if (!game.HasExited) game.Kill(true);
-                    await game.WaitForExitAsync(CancellationToken.None);
+                    gameExited = false;
+                    outcomeExitCode = ExitCodes.TaskFailed;
+                    outcomeCode = "GAME_TERMINATION_FAILED";
+                    outcomeMessage = $"无法终止 RimWorld，已保留配置事务: {termination.Error}";
                 }
-                catch (Exception ex) { Console.Error.WriteLine($"终止 RimWorld 失败: {ex.Message}"); }
                 game.Dispose();
             }
         }
+
+        if (!gameExited)
+            return CliResult.WriteFailure(command, outcomeExitCode, outcomeCode, outcomeMessage, context.Root, new { runId, outputPath, transactionRetained = transaction is not null });
 
         if (transaction is not null)
         {

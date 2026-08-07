@@ -15,7 +15,7 @@
     "game_version": "1.6",
 
     // RimSearcher 当前项目数据库；相对路径以项目根目录为基准。
-    "rimsearcher_db_path": ".rimdev\\defs.db",
+    "rimsearcher_db_path": ".tools\\db\\defs.db",
 
     // ============================================================
     // 本机环境 — 需要根据开发者本机的 Steam 安装位置修改
@@ -75,7 +75,7 @@
     "pull_ignore_folders": ["Textures", "Sounds", "News", ".git", ".vs", "obj", "bin"],
 
     // ILSpy 命令行反编译器路径（相对于 .tools 目录）
-    "ilspycmd_path": "ilspy\\ilspycmd.exe",
+    "ilspycmd_path": "Ilspy\\ilspycmd.exe",
 
     // ============================================================
     // 测试配置 — run_test.py / runner_core 专用
@@ -132,7 +132,7 @@
         // 同步日志最多保留几份（含当前文件）
         "max_log_files": 3,
         // 自动测试输出最多保留几次运行
-        "max_auto_test_runs": 2
+        "max_auto_test_runs": 3
     },
 
     // ============================================================

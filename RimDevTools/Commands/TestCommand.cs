@@ -90,6 +90,7 @@ public static class TestCommand
         ConfigTransaction? transaction = null;
         Process? game = null;
         TestOutcome outcome;
+        var gameExited = true;
         var outputPath = SettingsEditor.AutoTestOutputPath(context);
         var resultSnapshot = AutoResultValidator.Snapshot(outputPath);
         var logOffset = File.Exists(GameEnvironment.PlayerLogPath()) ? new FileInfo(GameEnvironment.PlayerLogPath()).Length : 0;
@@ -103,7 +104,6 @@ public static class TestCommand
             await SettingsEditor.UpdateAsync(context, mode, transaction, runId);
 
             LogArchive.Rotate(SettingsEditor.SyncLogPath(context), context.Config.Retention.MaxLogFiles);
-            if (mode is "auto" or "xml") LogArchive.PruneAutoTestRuns(outputPath, context.Config.Retention.MaxAutoTestRuns);
 
             var startInfo = new ProcessStartInfo(gamePath)
             {
@@ -141,23 +141,29 @@ public static class TestCommand
         {
             if (game is not null)
             {
-                try
+                var termination = await ProcessUtil.TerminateAsync(game);
+                if (!termination.Exited)
                 {
-                    if (!game.HasExited) game.Kill(true);
-                    await game.WaitForExitAsync(CancellationToken.None);
-                }
-                catch (Exception ex)
-                {
-                    Console.Error.WriteLine($"终止 RimWorld 失败: {ex.Message}");
+                    gameExited = false;
+                    outcome = TestOutcome.Failure(ExitCodes.TaskFailed, "GAME_TERMINATION_FAILED", $"无法终止 RimWorld，已保留配置事务: {termination.Error}");
                 }
                 game.Dispose();
             }
         }
 
+        if (!gameExited)
+            return CliResult.WriteFailure(command, outcome.ExitCode, outcome.Code, outcome.Message, context.Root, new { runId, mode, transactionRetained = transaction is not null });
+
         if (transaction is not null)
         {
             try { await transaction.RestoreAsync(force: true); }
             catch (Exception ex) { outcome = TestOutcome.Failure(ExitCodes.TaskFailed, "TRANSACTION_RESTORE_FAILED", ex.Message); }
+        }
+
+        if (mode is "auto" or "xml")
+        {
+            try { LogArchive.PruneAutoTestRuns(outputPath, context.Config.Retention.MaxAutoTestRuns); }
+            catch (Exception ex) { outcome = TestOutcome.Failure(ExitCodes.TaskFailed, "AUTO_RESULT_RETENTION_FAILED", ex.Message); }
         }
 
         if (!outcome.Ok)
@@ -187,6 +193,7 @@ public static class TestCommand
         CancellationToken cancellationToken)
     {
         var deadline = DateTime.UtcNow.AddSeconds(timeoutSeconds);
+        var logBuffer = "";
         while (DateTime.UtcNow < deadline)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -198,12 +205,14 @@ public static class TestCommand
             {
                 var read = await ReadNewLogAsync(GameEnvironment.PlayerLogPath(), logOffset, cancellationToken);
                 logOffset = read.Offset;
-                if (mode == "quick" && read.Text.Contains("[LogSyncMod] RUNTIME_READY_TO_CLOSE", StringComparison.Ordinal))
+                logBuffer += read.Text;
+                if (logBuffer.Length > 32768) logBuffer = logBuffer[^32768..];
+                if (mode == "quick" && logBuffer.Contains("[LogSyncMod] RUNTIME_READY_TO_CLOSE", StringComparison.Ordinal))
                     return TestOutcome.Success("quick ready signal");
 
                 if (mode is "auto" or "xml")
                 {
-                    var completed = read.Text.Contains($"[LogSyncAutoTest] COMPLETED runId={runId}", StringComparison.Ordinal);
+                    var completed = logBuffer.Contains($"[LogSyncAutoTest] COMPLETED runId={runId}", StringComparison.Ordinal);
                     if (completed || game.HasExited)
                     {
                         var validation = AutoResultValidator.Validate(outputPath, packageId, runId, resultSnapshot);
@@ -361,8 +370,8 @@ public static class ModListParser
 
 public static class SettingsEditor
 {
-    public static string SyncLogPath(ProjectContext context) => Path.Combine(context.Root, ".tools", "test", "精选日志.log");
-    public static string AutoTestOutputPath(ProjectContext context) => Path.Combine(context.Root, ".tools", "test", "AutoTestOutput");
+    public static string SyncLogPath(ProjectContext context) => Path.Combine(context.Root, ".tools", "log", "精选日志.log");
+    public static string AutoTestOutputPath(ProjectContext context) => Path.Combine(context.Root, ".tools", "log", "AutoTestOutput");
 
     public static async Task<bool> UpdateAsync(ProjectContext context, string mode, ConfigTransaction? transaction = null, string? runId = null)
     {

@@ -90,3 +90,40 @@ RimSearcher 独立仓库主要提交：
 10. 发布包包含版本匹配组件和许可证：通过。
 
 XML 模式当前项目未定义 XML 用例，因此真实运行证明了模式、runId、结果和恢复链路，但没有 XML 业务用例覆盖；自动模式的 6 个标准用例均实际执行并通过。
+
+## 2026-08-07 代码审查落地补充
+
+审查后的发布布局已调整为隔离项目包：默认输出到 `artifacts/RimDevTools-Package`，工具位于其 `.tools` 子目录。两个 CLI 均为 framework-dependent 单文件，不再内置 .NET 10 Runtime；DataMod 与许可证位于 `.tools/Data`，ILSpy 位于 `.tools/Ilspy`，日志、ModList 和数据库分别位于 `.tools/log`、`.tools/modlist` 和 `.tools/db`。发布脚本不会复制已有日志、AutoTestOutput 或数据库。
+
+本轮同时完成：
+
+- RimSearcher 在项目未配置数据库路径时，优先选择 EXE 同目录 `db` 子目录中最后修改时间最新的 `*.db`，再回退同目录 `defs.db`；显式路径无效时仍不静默回退。
+- 自动测试运行保留数继续由 `retention.max_auto_test_runs` 配置，默认值改为 3，并在每轮结束后执行保留清理。
+- test 完成信号使用跨日志读取缓冲，避免标记被分段写入时误超时。
+- `ref pull --deps` 跳过无需拉取的 `ludeon.rimworld.*` 官方依赖。
+- RimWorld 无法终止时不再强制恢复配置，保留事务供游戏退出后恢复。
+- 发布包内 ILSpy 可由 `.tools/Ilspy/ilspycmd.exe` 定位，DataMod 组件由 `.tools/Data/RimSearcher_DataMod` 定位。
+
+更新后的自动验证：
+
+| 验证项 | 结果 |
+| --- | --- |
+| RimDevTools 回归套件 | 85/85 通过 |
+| RimSearcher CLI/协议测试 | 15/15 通过 |
+| 新发布布局测试 | 29/29 通过 |
+| 相关构建 | 0 警告，0 错误 |
+
+隔离真实测试目录为 `artifacts/RimDevTools-RealTest`，没有复用原项目 `.tools/test` 或 `.rimdev` 数据。真实结果：
+
+| 流程 | 结果 |
+| --- | --- |
+| quick | 通过，runId `f7ede77881a24cf78c5c12358a475330` |
+| `auto --deploy` | 通过，runId `1d40bcf037484562aa8cc40c13391e47`，6/6 |
+| xml | 通过，runId `1cfd8f9f096b4c15afe4c0408945d536`，当前清单 0/0 |
+| data refresh | 通过，runId `1a2b5424b8af49f5a2740e9fe7f9fc79` |
+| data status | `integrity=ok`、`user_version=30103`、26 个实际模组、`refreshRecommended=false` |
+| RimSearcher 无 `--db` 查询 | 项目配置和 EXE `db` 子目录最新库两条路径均通过 |
+
+隔离数据库大小为 343,728,128 字节。全部真实流程结束后，真实用户配置目录的待恢复事务数、导出请求数和 RimWorld 残留进程数均为 0；隔离 AutoTestOutput 保留 2 轮结果，未超过配置上限 3。
+
+按最终发布要求，两个 CLI 已改为不内置 .NET 10 Runtime 的 framework-dependent 单文件：`RimDevTools.exe` 约 2.53 MiB，`rimsearcher.exe` 约 2.42 MiB。发布布局测试包含 32 MiB 体积上限，防止后续构建误恢复为 self-contained；目标机器需要预装 .NET 10 Runtime。

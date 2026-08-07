@@ -68,6 +68,14 @@ internal static class FakeRimWorld
             await Task.Delay(TimeSpan.FromSeconds(30));
             return;
         }
+        if (mode == "quick-split")
+        {
+            File.AppendAllText(playerLog, "[LogSyncMod] RUNTIME_READY_");
+            await Task.Delay(700);
+            File.AppendAllText(playerLog, "TO_CLOSE\n");
+            await Task.Delay(TimeSpan.FromSeconds(30));
+            return;
+        }
         if (!values.TryGetValue("autoTestEnabled", out var enabled) || !enabled.Equals("True", StringComparison.OrdinalIgnoreCase))
         {
             File.AppendAllText(playerLog, "[LogSyncMod] RUNTIME_READY_TO_CLOSE\n");
@@ -222,6 +230,7 @@ internal sealed class TestSuite
         File.WriteAllText(Path.Combine(root, "mod_config.jsonc"), "{\n // comment\n \"config_version\": 2, \"mod_name\": \"Demo//Name\", \"rimworld_dir\": \"C:\\\\Game\",\n}");
         var context = ProjectDiscovery.Find(root, out var error);
         Assert(context is not null && error is null && context.Config.ModName == "Demo//Name", "JSONC preserves // inside strings");
+        Assert(context!.Config.Retention.MaxAutoTestRuns == 3, "automatic test retention defaults to three runs");
         var child = NewDirectory(Path.Combine("discovery-project", "source"));
         Assert(ProjectDiscovery.Find(child, out _)?.Root == root, "project discovery checks direct parent");
         var grandchild = NewDirectory(Path.Combine("discovery-project", "source", "Core"));
@@ -349,6 +358,10 @@ internal sealed class TestSuite
         CreateMod(environment.Game, "Reference", "demo.reference", content: "v1");
         var pulled = await CaptureAsync(() => RefCommand.PullAsync(["ref", "pull", "demo.reference"]));
         Assert(pulled.ExitCode == 0 && File.ReadAllText(Path.Combine(environment.Root, "参考文档", "demo.reference", "content.txt")) == "v1", "ref pull installs staged mod");
+
+        CreateMod(environment.Game, "OfficialDependency", "demo.official-dependency", "ludeon.rimworld.royalty");
+        var officialDependency = await CaptureAsync(() => RefCommand.PullAsync(["ref", "pull", "demo.official-dependency", "--deps"]));
+        Assert(officialDependency.ExitCode == 0 && Directory.Exists(Path.Combine(environment.Root, "参考文档", "demo.official-dependency")), "ref pull skips official RimWorld dependencies that are not stored under Mods");
 
         var unsafeEnvironment = CreateProjectEnvironment("ref-reparse");
         CreateMod(unsafeEnvironment.Game, "Reference", "demo.reference", content: "safe");
@@ -501,11 +514,21 @@ internal sealed class TestSuite
         Assert(quick.ExitCode == 0 && !File.ReadAllText(Path.Combine(environment.ConfigDirectory, "fake-args.txt")).Contains("quicktest"), "quick mode waits for ready signal without quicktest argument");
         AssertConfigurationRestored(environment, "quick mode restores exact configuration");
 
+        Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", "quick-split");
+        var splitSignal = await CaptureAsync(() => TestCommand.RunAsync(["test", "run", "--mode", "quick", "--timeout-seconds", "5"]));
+        Assert(splitSignal.ExitCode == 0, "quick mode recognizes a ready signal split across log reads");
+
         Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", "auto");
+        var autoOutput = Path.Combine(environment.Root, ".tools", "log", "AutoTestOutput");
+        Directory.CreateDirectory(autoOutput);
+        WriteResult(autoOutput, "demo.current", "old-one", "passed", "old-one_Result.json");
+        WriteResult(autoOutput, "demo.current", "old-two", "passed", "old-two_Result.json");
+        WriteResult(autoOutput, "demo.current", "old-three", "passed", "old-three_Result.json");
         var auto = await CaptureAsync(() => TestCommand.RunAsync(["test", "run", "--mode", "auto", "--timeout-seconds", "5"]));
         var observedSettings = File.ReadAllText(Path.Combine(environment.ConfigDirectory, "fake-settings.xml"));
         Assert(auto.ExitCode == 0 && File.ReadAllText(Path.Combine(environment.ConfigDirectory, "fake-args.txt")).Contains("quicktest"), "auto mode launches with quicktest and validates result");
         Assert(observedSettings.Contains("demo.current") && observedSettings.Contains("AutoTestOutput"), "auto mode passes target package and output path to LogSync");
+        Assert(Directory.EnumerateFiles(autoOutput, "*_Result.json").Count() == 2, "configured auto-test retention is enforced after a run");
         AssertConfigurationRestored(environment, "auto mode restores settings changed by the game");
 
         Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", "auto-fail");

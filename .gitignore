@@ -12,6 +12,7 @@
 /obj/
 /artifacts/
 /.rimdev/
+/.tools/db/
 
 # 日志和临时文件
 精选日志.log

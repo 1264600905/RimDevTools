@@ -198,6 +198,7 @@ public static class RefCommand
             visiting.Add(current.PackageId);
             foreach (var dependency in current.Dependencies)
             {
+                if (IsOfficialPackageId(dependency)) continue;
                 var resolved = ResolveUnique(context, dependency, false, version, out var dependencyError);
                 if (resolved is null)
                 {
@@ -216,6 +217,10 @@ public static class RefCommand
         error = resolutionError;
         return succeeded ? ordered : null;
     }
+
+    private static bool IsOfficialPackageId(string packageId)
+        => packageId.Equals("ludeon.rimworld", StringComparison.OrdinalIgnoreCase)
+            || packageId.StartsWith("ludeon.rimworld.", StringComparison.OrdinalIgnoreCase);
 
     private static async Task<int> DecompileAssembliesAsync(ProjectContext context, string staging, string version, CancellationToken cancellationToken)
     {

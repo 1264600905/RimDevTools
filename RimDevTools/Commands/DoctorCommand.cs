@@ -144,8 +144,9 @@ public static class DoctorCommand
 
     internal static string? ResolveIlspyPath(ProjectContext context)
     {
-        if (string.IsNullOrWhiteSpace(context.Config.IlspycmdPath)) return null;
-        return Path.GetFullPath(context.Config.IlspycmdPath, Path.Combine(context.Root, ".tools"));
+        if (!string.IsNullOrWhiteSpace(context.Config.IlspycmdPath))
+            return Path.GetFullPath(context.Config.IlspycmdPath, Path.Combine(context.Root, ".tools"));
+        return Path.Combine(ComponentLocator.ExecutableDirectory(), "Ilspy", "ilspycmd.exe");
     }
 
     private static string? ResolveProjectPath(ProjectContext context, string? path)

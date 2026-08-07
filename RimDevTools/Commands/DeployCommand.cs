@@ -257,6 +257,7 @@ public sealed record DeployTargetAction(string Path, string Action);
 public sealed record ShaderPlan(bool Enabled, string? UnityPath, string? ProjectPath, string? BuildMethod);
 public sealed record DeployPlan(string ProjectRoot, string Target, ShaderPlan Shader, IReadOnlyList<string> Projects, IReadOnlyList<DeploySyncPlan> SyncItems, IReadOnlyList<DeployTargetAction> TargetActions, string? ProtectedPattern);
 public sealed record DeployResult(string ProjectRoot, bool DryRun, string? RunId, string Target, IReadOnlyList<string> BuiltProjects, DeployPlan Plan, bool RecoveredTransaction);
+public sealed record ProcessTerminationResult(bool Exited, string? Error = null);
 
 internal static class ProcessUtil
 {
@@ -277,6 +278,26 @@ internal static class ProcessUtil
         var processes = Process.GetProcessesByName("RimWorldWin64").Concat(Process.GetProcessesByName("RimWorld")).ToArray();
         try { return processes.Length > 0; }
         finally { foreach (var process in processes) process.Dispose(); }
+    }
+
+    public static async Task<ProcessTerminationResult> TerminateAsync(Process process)
+    {
+        try
+        {
+            if (!process.HasExited) process.Kill(true);
+            await process.WaitForExitAsync(CancellationToken.None);
+            return new ProcessTerminationResult(true);
+        }
+        catch (Exception ex)
+        {
+            try
+            {
+                process.Refresh();
+                if (process.HasExited) return new ProcessTerminationResult(true);
+            }
+            catch { }
+            return new ProcessTerminationResult(false, ex.Message);
+        }
     }
 
     public static Task<bool> RunAsync(string fileName, string arguments, string workingDirectory, CancellationToken cancellationToken = default)
