@@ -1,0 +1,4 @@
+[submodule "RimSearcher"]
+	path = RimSearcher
+	url = https://github.com/1264600905/RimSearcher.git
+	branch = master
