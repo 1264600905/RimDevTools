@@ -96,10 +96,22 @@ error CS0246: 未能找到类型或命名空间名"Verse"
 使用 `--capture-screenshots` 可为自动或 XML 自动测试保存截图。例如：
 
 ```powershell
-RimDevTools.exe test run --mode auto --target-package-id trigger.dms.mechweapons.autoequip --capture-screenshots
+RimDevTools.exe test run --mode auto --target-package-id aoba.deadmanswitch.core --capture-screenshots --mods-file .\.tools\modlist\deadmanswitch-core.xml
 ```
 
 截图、结果 JSON、清单和 Markdown 报告会写入项目的 `.tools/log/AutoTestOutput/`。
+
+quick、auto、xml 和 `data refresh` 默认在 Windows 隔离桌面运行；可用 `--no-isolated-desktop` 覆盖单次运行。manual 默认使用当前桌面。quick、auto 和 xml 会在游戏进程内临时静音，并在完成信号前恢复原音量。
+
+## RimDevTools 项目初始化
+
+发布包可直接释放 1.6、1.7 或 1.8 项目模板：
+
+```powershell
+RimDevTools.exe init 1.6 --output D:\RimWorldMods\NewMod
+```
+
+项目文件来自 `.tools/components/ProjectTemplate/<version>`，共享工具只复制一份到新项目 `.tools`，且不会递归复制 `components`。目标目录必须不存在或为空。
 
 祝模组开发顺利！
 

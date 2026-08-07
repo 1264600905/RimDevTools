@@ -19,6 +19,7 @@ RequireFile(Path.Combine(".tools", "Data", "licenses", "RimSearcher-LICENSE.txt"
 RequireFile(Path.Combine(".tools", "Data", "licenses", "ILSpy-LICENSE.txt"));
 RequireFile(Path.Combine(".tools", "Data", "licenses", "third-party-notices.txt"));
 RequireFile(Path.Combine(".tools", "modlist", "defaultMods.xml"));
+RequireFile(Path.Combine(".tools", "modlist", "deadmanswitch-core.xml"));
 RequireFile(Path.Combine(".tools", "components", "ProjectTemplate", "manifest.json"));
 RequireDirectory(Path.Combine(".tools", "log", "AutoTestOutput"));
 RequireDirectory(Path.Combine(".tools", "db"));

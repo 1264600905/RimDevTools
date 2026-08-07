@@ -52,7 +52,7 @@ try {
     Copy-Item -LiteralPath (Join-Path $projectRoot "RimDevTools\Packaging\licenses\ILSpy-LICENSE.txt") -Destination $licenses -Force
     Copy-Item -LiteralPath (Join-Path $projectRoot "RimDevTools\Packaging\licenses\third-party-notices.txt") -Destination $licenses -Force
 
-    Copy-Item -LiteralPath (Join-Path $projectRoot ".tools\test\modlist\defaultMods.xml") -Destination (Join-Path $modListRoot "defaultMods.xml") -Force
+    Copy-Item -Path (Join-Path $projectRoot ".tools\test\modlist\*.xml") -Destination $modListRoot -Force
     Copy-Item -LiteralPath (Join-Path $projectTemplateSource "1.6\mod_config.jsonc") -Destination (Join-Path $output "mod_config.jsonc") -Force
     [System.IO.File]::WriteAllText((Join-Path $logRoot "精选日志.log"), "", [System.Text.UTF8Encoding]::new($false))
 
