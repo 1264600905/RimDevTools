@@ -192,8 +192,13 @@ internal static class FakeRimWorld
                     load_order INTEGER NOT NULL, package_id TEXT NOT NULL, name TEXT NOT NULL, version TEXT NOT NULL,
                     root_path TEXT NOT NULL, is_official INTEGER NOT NULL, is_tooling INTEGER NOT NULL);
                 INSERT INTO export_metadata VALUES (1, $runId, $exporterVersion, $userVersion, '1.6.4871', 'ChineseSimplified', $utc, $inputHash, $requestedHash, $effectiveHash, $projectPackageId);
-                INSERT INTO loaded_mods VALUES (0, $projectPackageId, 'Current', '1.0', 'C:\\Current', 0, 0);
-                INSERT INTO loaded_mods VALUES (1, 'kearril.rimsearcherdatamod', 'RimSearcher', $exporterVersion, 'C:\\RimSearcher', 0, 1);
+                INSERT INTO loaded_mods VALUES (0, 'brrainz.harmony', 'Harmony', '1.0', 'C:\\Harmony', 0, 0);
+                INSERT INTO loaded_mods VALUES (1, 'sarg.smartspeed', 'SmartSpeed', '1.0', 'C:\\SmartSpeed', 0, 0);
+                INSERT INTO loaded_mods VALUES (2, 'brrainz.cameraplus', 'CameraPlus', '1.0', 'C:\\CameraPlus', 0, 0);
+                INSERT INTO loaded_mods VALUES (3, 'erdelf.humanoidalienraces', 'HumanoidAlienRaces', '1.0', 'C:\\HumanoidAlienRaces', 0, 0);
+                INSERT INTO loaded_mods VALUES (4, 'trigger.logsyncmod', 'LogSync', '1.0', 'C:\\LogSync', 0, 0);
+                INSERT INTO loaded_mods VALUES (5, $projectPackageId, 'Current', '1.0', 'C:\\Current', 0, 0);
+                INSERT INTO loaded_mods VALUES (6, 'kearril.rimsearcherdatamod', 'RimSearcher', $exporterVersion, 'C:\\RimSearcher', 0, 1);
                 PRAGMA user_version = {userVersion};";
             command.Parameters.AddWithValue("$runId", request.RunId);
             command.Parameters.AddWithValue("$exporterVersion", exporterVersion);
@@ -380,14 +385,27 @@ internal sealed class TestSuite
     private void TestModListParser()
     {
         var environment = CreateProjectEnvironment("mod-list");
+        CreateMod(environment.Game, "Harmony", "brrainz.harmony");
+        CreateMod(environment.Game, "SmartSpeed", "sarg.smartspeed");
+        CreateMod(environment.Game, "CameraPlus", "brrainz.cameraplus");
+        CreateMod(environment.Game, "HumanoidAlienRaces", "erdelf.humanoidalienraces");
+        CreateMod(environment.Game, "LogSync", "trigger.logsyncmod");
         CreateMod(environment.Game, "Helper", "demo.helper");
-        File.WriteAllText(environment.ConfigPath, Config(environment, minMods: "[\"demo.helper\"]"));
+        File.WriteAllText(environment.ConfigPath, Config(environment, minMods: "[\"brrainz.harmony\",\"sarg.smartspeed\",\"brrainz.cameraplus\",\"erdelf.humanoidalienraces\",\"trigger.logsyncmod\",\"demo.helper\"]"));
         var modsFile = Path.Combine(environment.Root, "mods.xml");
-        File.WriteAllText(modsFile, "<ModsConfigData><ignored><li>not.allowed</li></ignored><activeMods><li>demo.helper</li><li>DEMO.HELPER</li></activeMods></ModsConfigData>");
+        File.WriteAllText(modsFile, "<ModsConfigData><ignored><li>not.allowed</li></ignored><activeMods><li>brrainz.harmony</li><li>sarg.smartspeed</li><li>brrainz.cameraplus</li><li>erdelf.humanoidalienraces</li><li>trigger.logsyncmod</li><li>demo.helper</li><li>DEMO.HELPER</li></activeMods></ModsConfigData>");
         var context = ProjectDiscovery.Find(environment.Root, out _)!;
         var resolution = ModListParser.Resolve(context, modsFile, out var error);
-        Assert(error is null && resolution!.Mods.SequenceEqual(["demo.helper", "demo.current", "trigger.logsyncmod"], StringComparer.OrdinalIgnoreCase), "ModList reads direct activeMods entries and deduplicates");
-        Assert(resolution!.Additions.SequenceEqual([new ModListAddition("demo.current", 1, "current_project"), new ModListAddition("trigger.logsyncmod", 2, "logsync_tooling")]), "ModList reports automatic additions and positions");
+        Assert(error is null && resolution!.Mods.SequenceEqual(["brrainz.harmony", "sarg.smartspeed", "brrainz.cameraplus", "erdelf.humanoidalienraces", "demo.current", "trigger.logsyncmod", "demo.helper"], StringComparer.OrdinalIgnoreCase), "ModList reads direct activeMods entries, enforces required mods, and deduplicates");
+        Assert(resolution!.Additions.SequenceEqual([new ModListAddition("demo.current", 4, "current_project")]), "ModList reports automatic additions and positions");
+
+        File.WriteAllText(modsFile, "<ModsConfigData><activeMods><li>brrainz.harmony</li><li>trigger.logsyncmod</li></activeMods></ModsConfigData>");
+        var rejected = ModListParser.Resolve(context, modsFile, out var rejectedError);
+        Assert(rejected is null && rejectedError?.Code == "REQUIRED_MODS_DISABLED", "ModList rejects game launches without all required mods enabled");
+
+        File.WriteAllText(modsFile, "<ModsConfigData><activeMods><li>brrainz.harmony</li><li>sarg.smartspeed</li><li>brrainz.cameraplus</li><li>erdelf.humanoidalienraces</li><li>trigger.logsyncmod</li></activeMods></ModsConfigData>");
+        var dataRejected = ModListParser.ResolveData(context, modsFile, out var dataRejectedError);
+        Assert(dataRejected is null && dataRejectedError?.Code == "REQUIRED_MODS_DISABLED", "Data workflows require RimSearcherDataMod to be enabled");
     }
 
     private void TestIncrementalLogSignalScanner()
@@ -761,7 +779,10 @@ internal sealed class TestSuite
     {
         var environment = CreateProjectEnvironment("data-workflows", createGameExecutable: true);
         CreateMod(environment.Game, "RimSearcherDataMod", "kearril.rimsearcherdatamod");
-        File.WriteAllText(environment.ConfigPath, Config(environment, extra: "\"rimsearcher_db_path\":\".rimdev\\\\defs.db\""));
+        File.WriteAllText(environment.ConfigPath, Config(
+            environment,
+            minMods: "[\"brrainz.harmony\",\"sarg.smartspeed\",\"brrainz.cameraplus\",\"erdelf.humanoidalienraces\",\"trigger.logsyncmod\",\"kearril.rimsearcherdatamod\"]",
+            extra: "\"rimsearcher_db_path\":\".rimdev\\\\defs.db\""));
         using var scope = UseEnvironment(environment);
         Environment.SetEnvironmentVariable("RIMDEVTOOLS_RIMSEARCHER_PATH", Path.Combine(AppContext.BaseDirectory, "RimDevTools.Tests.exe"));
 
@@ -783,7 +804,7 @@ internal sealed class TestSuite
         AssertConfigurationRestored(environment, "large-log data refresh restores exact configuration");
         var databasePath = Path.Combine(environment.Root, ".rimdev", "defs.db");
         var inspected = DatabaseInspector.Inspect(databasePath, "test");
-        Assert(inspected.Integrity == "ok" && inspected.VersionMatches && inspected.Metadata?.RunId is not null && inspected.LoadedMods.Count == 2, "database inspector validates metadata and ordered loaded mods");
+        Assert(inspected.Integrity == "ok" && inspected.VersionMatches && inspected.Metadata?.RunId is not null && inspected.LoadedMods.Count == 7, "database inspector validates metadata and ordered loaded mods");
         Assert(
             !File.Exists(Path.Combine(environment.ConfigDirectory, "RimDevTools.ExportRequest.json"))
             && !Directory.EnumerateFiles(environment.ConfigDirectory, "RimDevTools.ExportRequest.processing.*.json").Any()
@@ -827,6 +848,10 @@ internal sealed class TestSuite
         if (createConfigDirectory) Directory.CreateDirectory(config);
         Directory.CreateDirectory(Path.Combine(root, "About"));
         File.WriteAllText(Path.Combine(root, "About", "About.xml"), "<ModMetaData><name>Current</name><packageId>demo.current</packageId></ModMetaData>");
+        CreateMod(game, "Harmony", "brrainz.harmony");
+        CreateMod(game, "SmartSpeed", "sarg.smartspeed");
+        CreateMod(game, "CameraPlus", "brrainz.cameraplus");
+        CreateMod(game, "HumanoidAlienRaces", "erdelf.humanoidalienraces");
         CreateMod(game, "LogSync", "trigger.logsyncmod");
 
         var settings = Path.Combine(config, "Mod_LogSyncMod_LogSyncMod.xml");
@@ -865,7 +890,7 @@ internal sealed class TestSuite
         foreach (var directory in Directory.EnumerateDirectories(source)) CopyTestDirectory(directory, Path.Combine(destination, Path.GetFileName(directory)));
     }
 
-    private string Config(ProjectEnvironment environment, string modName = "Demo", string minMods = "[]", string? extra = null)
+    private string Config(ProjectEnvironment environment, string modName = "Demo", string minMods = "[\"brrainz.harmony\",\"sarg.smartspeed\",\"brrainz.cameraplus\",\"erdelf.humanoidalienraces\",\"trigger.logsyncmod\"]", string? extra = null)
     {
         var members = new List<string>
         {

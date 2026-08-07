@@ -19,7 +19,14 @@
   "pull_ignore_folders": ["Textures", "Sounds", "News", ".git", ".vs", "obj", "bin"],
   "ilspycmd_path": "Ilspy\\ilspycmd.exe",
   "log_keywords": ["MyCustomMod"],
-  "min_active_mods": ["brrainz.harmony", "ludeon.rimworld"],
+  "min_active_mods": [
+    "brrainz.harmony",
+    "sarg.smartspeed",
+    "brrainz.cameraplus",
+    "erdelf.humanoidalienraces",
+    "trigger.logsyncmod",
+    "ludeon.rimworld"
+  ],
   "timeouts": {
     "steam_launch_detect": 120,
     "max_wait": 600,

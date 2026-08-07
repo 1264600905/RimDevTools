@@ -65,15 +65,15 @@ public static class TestCommand
             return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "TARGET_PACKAGE_ID_MISSING", "无法确定自动测试目标；请提供 --target-package-id", context.Root);
         var captureScreenshots = CliArgs.Has(args, "--capture-screenshots");
 
+        var gamePath = Path.Combine(context.Config.RimWorldDir ?? "", "RimWorldWin64.exe");
+        if (!File.Exists(gamePath))
+            return CliResult.WriteFailure(command, ExitCodes.MissingDependency, "GAME_NOT_FOUND", $"找不到游戏可执行文件: {gamePath}", context.Root);
+
         var modsFileValue = CliArgs.Value(args, "--mods-file");
         var modsFile = modsFileValue is null ? null : Path.GetFullPath(modsFileValue, context.Root);
         var modList = ModListParser.Resolve(context, modsFile, targetPackageId, out var modError);
         if (modList is null)
             return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, modError!.Code, modError.Message, context.Root, modError.Details);
-
-        var gamePath = Path.Combine(context.Config.RimWorldDir ?? "", "RimWorldWin64.exe");
-        if (!File.Exists(gamePath))
-            return CliResult.WriteFailure(command, ExitCodes.MissingDependency, "GAME_NOT_FOUND", $"找不到游戏可执行文件: {gamePath}", context.Root);
         var runId = Guid.NewGuid().ToString("N");
         using var gate = EnvironmentLock.TryAcquire(GameEnvironment.ConfigDirectory(), command, context.Root, runId, out var busyInfo);
         if (gate is null)
@@ -241,6 +241,15 @@ public sealed record ModListResolution(IReadOnlyList<string> Mods, IReadOnlyList
 
 public static class ModListParser
 {
+    private static readonly string[] RequiredStartupMods =
+    [
+        "brrainz.harmony",
+        "sarg.smartspeed",
+        "brrainz.cameraplus",
+        "erdelf.humanoidalienraces",
+        "trigger.logsyncmod"
+    ];
+
     public static ModListResolution? Resolve(ProjectContext context, string? path, out CliError? error)
         => ResolveCore(context, path, "trigger.logsyncmod", "logsync_tooling", context.Config.CurrentPackageId(context.Root), "current_project", out error);
 
@@ -289,6 +298,22 @@ public static class ModListParser
                 error = new CliError("MODS_XML_INVALID", ex.Message);
                 return null;
             }
+        }
+
+        var requiredMods = RequiredStartupMods
+            .Append(toolingPackageId)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var disabledRequiredMods = requiredMods
+            .Where(required => !mods.Contains(required, StringComparer.OrdinalIgnoreCase))
+            .ToArray();
+        if (disabledRequiredMods.Length > 0)
+        {
+            error = new CliError(
+                "REQUIRED_MODS_DISABLED",
+                "启动 RimWorld 前必须启用以下最小可用模组",
+                new { required = requiredMods, missing = disabledRequiredMods });
+            return null;
         }
 
         var additions = new List<ModListAddition>();

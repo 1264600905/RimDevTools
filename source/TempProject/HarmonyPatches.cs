@@ -86,6 +86,7 @@ namespace LogSyncMod
         private static void ProcessLog(string text, string type)
         {
             if (string.IsNullOrEmpty(text)) return;
+            bool controlSignal = IsControlSignal(text);
             bool pendingSourceCandidate = pendingSourceReference != null && IsPotentialSourceReferenceLine(text);
 
             // 1. 检查关键词
@@ -103,7 +104,7 @@ namespace LogSyncMod
             }
 
             // 检查设置开关。普通 Message 默认可禁用，但关键词命中的 Message 仍允许进入同步流程。
-            if (type == "Message" && !LogSyncMod.settings.syncMessage && !keywordMatched && !pendingSourceCandidate) return;
+            if (type == "Message" && !LogSyncMod.settings.syncMessage && !controlSignal && !keywordMatched && !pendingSourceCandidate) return;
             if (type == "Warning" && !LogSyncMod.settings.syncWarning) return;
             if (type == "Error" && !LogSyncMod.settings.syncError) return;
 
@@ -125,7 +126,7 @@ namespace LogSyncMod
                 modMatched = !string.IsNullOrEmpty(sourceModLower) && LogSyncMod.settings.targetModIds.Contains(sourceModLower);
             }
 
-            if (pendingSourceCandidate || keywordMatched || modMatched)
+            if (controlSignal || pendingSourceCandidate || keywordMatched || modMatched)
             {
                 WriteToFile(text, type, sourceMod);
             }
