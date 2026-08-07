@@ -1,0 +1,36 @@
+1.使用cli的ref pull 拉取的内容应该使用name而不是packageId作为文件夹名称，如果name里面存在不能作为文件夹名称的字符则使用_替代那个字符，如果存在空格则使用_替代空格。
+2.
+在 D:\RimworldProject\环世界日志同步mod\artifacts\RimDevTools-RealTest\RimDevTools_V2_系统输出测试报告.md 出现未通过情况，检查并且分析下面的内容。
+检查分析 data refresh --timeout-seconds 180 为什么并且修复。
+检查分析 test run --mode quick --timeout-seconds 120  
+失能机关 本家模组是aoba.deadmanswitch.core 要求重新跑测试。
+
+3.新增测试用例，测试在log输出行数超过阈值时能否正确的检查到测试完成的信号并且放行。
+
+4.新增能力在新增一个参数，允许开启和关闭，在 mod_config.jsonc 里新增这个配置选项，功能是开启后测试自动在隔离桌面静默进行测试。（手动测试默认不进入隔离桌面）
+
+5.在执行快速测试，自动测试时自动设置游戏音量为0,测试完成后恢复原有音量,可能需要写到LogSyncMod.AutoTest 内
+
+6.RimDevTools新增init参数，init参数自动新建文件路径，构建标准的开发路径，如下
+-.tools
+-mod_config.jsonc
+-1.6
+--Assemblies
+--Defs
+--Patches
+// 注意init脚本需要指定参数，如果指定1.6则为上面这种，如果是1.7则把1.6改成1.7,最多支持写1.6,1.7,1.8,只能写这三种之一。
+-参考文档
+-About
+--About.xml
+--Preview.png
+-Languages
+-source
+--TempProject
+---TempProject里面的内容
+-.gitignore
+-LoadFolders.xml
+-README.md
+
+7.测试新增的 支持指定模组自动测试和自动截图功能，检查其功能是否与D:\RimworldProject\环世界日志同步mod\.tools\test\run_test.py 一致。
+
+8.完善-help命令，需要写详细一点，像真正的cli一样列出功能。
