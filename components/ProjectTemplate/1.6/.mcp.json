@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "decompiler": {
+      "type": "stdio",
+      "command": ".decompilerserver/DecompilerServer.exe"
+    }
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  // DecompilerServer MCP — 对应 .codex/config.toml 中的配置
+  // 原 Codex 配置: command = ".decompilerserver/DecompilerServer.exe"
+  // 需要 .NET 10 运行时
+  "mcp": {
+    "decompiler": {
+      "type": "local",
+      "command": [".decompilerserver/DecompilerServer.exe"],
+      "enabled": true
+    }
+  }
+}
