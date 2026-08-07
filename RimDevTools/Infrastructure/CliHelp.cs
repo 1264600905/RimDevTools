@@ -78,20 +78,22 @@ public static class CliHelp
         Create a RimWorld mod project from a packaged components template.
 
         Usage:
-          RimDevTools.exe init <version> --output <directory>
+          RimDevTools.exe init <version> --output <project-root>
 
         Arguments:
           version             Currently supported: 1.6.
 
         Options:
-          --output <path>     Required. Target must not exist or must be empty.
+          --output <path>     Required project root. Target must not exist or must be empty.
           -h, --help          Show this help.
 
         Behavior:
           Reads components/ProjectTemplate/manifest.json beside RimDevTools.exe and copies
           components/ProjectTemplate/<version> verbatim. Shared tooling is installed once
           from the executable directory as .tools, excluding components. Only missing empty
-          directories declared by the manifest are created. No existing project is required.
+          directories declared by the manifest are created. The output root directly contains
+          mod_config.jsonc, 1.6, and .tools as siblings. Do not pass a config-file, version,
+          .tools, or source path. No existing project is required.
 
         Example:
           RimDevTools.exe init 1.6 --output D:\RimWorldMods\MyMod

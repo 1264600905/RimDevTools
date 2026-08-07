@@ -54,7 +54,7 @@ RimDevTools.exe data status
 
 项目命令从当前目录或直接父目录发现 `mod_config.jsonc`。正常结果写入 stdout 的单个 JSON 对象，诊断信息写入 stderr。
 
-`init` 不需要已有项目。版本模板来自 `components/ProjectTemplate/<version>`，共享工具目录只复制一次到目标 `.tools` 并排除 `components`；目标必须不存在或为空。项目模板不嵌入 RimDevTools 程序集，修改组件文件无需改动 InitCommand。
+`init` 不需要已有项目。`--output` 是将直接包含 `mod_config.jsonc`、`1.6` 和 `.tools` 的项目根目录，不是配置文件、版本目录、工具目录或 `source` 目录。版本模板来自 `components/ProjectTemplate/<version>`，共享工具目录只复制一次到目标 `.tools` 并排除 `components`；目标必须不存在或为空。项目模板不嵌入 RimDevTools 程序集，修改组件文件无需改动 InitCommand。
 
 quick、auto、xml 和 `data refresh` 默认使用隔离桌面，manual 默认使用当前桌面。`--isolated-desktop` 与 `--no-isolated-desktop` 可覆盖单次运行。quick、auto、xml 会在游戏进程内临时设置 `AudioListener.volume=0`，完成前恢复，不修改 Windows 或玩家持久音量。
 

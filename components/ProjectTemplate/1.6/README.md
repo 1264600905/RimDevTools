@@ -8,7 +8,7 @@ RimWorld 1.6 模组开发模板。
 - `mod_config.jsonc` 中的模组名、RimWorld 路径和 Workshop 路径。
 - `source/MyCustomMod` 中的程序集名称和命名空间。
 
-Codex 会从项目内的 `.codex/config.toml` 启动随模板提供的 DecompilerServer MCP；该配置使用相对于项目根目录的路径。
+Codex 会从项目内的 `.codex/config.toml` 启动随模板提供的 DecompilerServer MCP；该配置使用相对于项目根目录的路径，并默认批准这个只读服务器的全部工具调用。
 
 项目级 Codex skill 位于 `.agents/skills`：
 
@@ -23,6 +23,9 @@ Codex 会从项目内的 `.codex/config.toml` 启动随模板提供的 Decompile
 
 ```powershell
 .\.tools\RimDevTools.exe doctor
+.\.tools\RimDevTools.exe data status
 .\.tools\RimDevTools.exe deploy --dry-run
 .\.tools\RimDevTools.exe test run --mode quick
 ```
+
+开始实际开发前必须先运行 `data status`；若结果建议刷新，则运行 `data refresh` 并再次确认状态有效。先用 RimSearcher 获取运行时 Def 证据，只有需要确认 C# 行为时才使用 DecompilerServer。

@@ -82,10 +82,16 @@ using (var manifestDocument = JsonDocument.Parse(File.ReadAllText(Path.Combine(p
             using (var initJson = JsonDocument.Parse(init.Stdout))
             {
                 var result = initJson.RootElement.GetProperty("result");
-                Assert(initJson.RootElement.GetProperty("ok").GetBoolean() && result.GetProperty("version").GetString() == version, $"init {version} returns structured success JSON");
+                Assert(initJson.RootElement.GetProperty("ok").GetBoolean()
+                    && result.GetProperty("version").GetString() == version
+                    && result.GetProperty("projectRoot").GetString() == output
+                    && result.GetProperty("configPath").GetString() == Path.Combine(output, "mod_config.jsonc"), $"init {version} returns its standard project-root layout");
             }
 
             AssertTemplateMatchesOutput(template, tools, output, requiredDirectories, version);
+            Assert(File.Exists(Path.Combine(output, "mod_config.jsonc"))
+                && Directory.Exists(Path.Combine(output, version))
+                && Directory.Exists(Path.Combine(output, ".tools")), $"init {version} places mod_config.jsonc, {version}, and .tools directly under one project root");
             using (var config = JsonDocument.Parse(File.ReadAllText(Path.Combine(output, "mod_config.jsonc")), new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true }))
                 Assert(config.RootElement.GetProperty("game_version").GetString() == version && config.RootElement.GetProperty("isolated_desktop").GetBoolean(), $"init {version} keeps its version-specific JSONC");
             Assert(XDocument.Load(Path.Combine(output, "LoadFolders.xml")).Root?.Element($"v{version}") is not null, $"init {version} keeps its version-specific LoadFolders XML");
@@ -93,7 +99,9 @@ using (var manifestDocument = JsonDocument.Parse(File.ReadAllText(Path.Combine(p
             Assert(XDocument.Load(Path.Combine(output, "source", "MyCustomMod", "MyCustomMod.csproj")).Root is not null, $"init {version} produces parseable csproj XML");
             Assert(File.ReadAllText(Path.Combine(output, "source", "MyCustomMod", "MyCustomMod.sln")).Contains("MyCustomMod.csproj", StringComparison.Ordinal), $"init {version} produces a valid solution contract");
             Assert(File.Exists(Path.Combine(output, ".decompilerserver", "DecompilerServer.exe")), $"init {version} includes DecompilerServer");
-            Assert(File.ReadAllText(Path.Combine(output, ".codex", "config.toml")).Contains("command = \".decompilerserver/DecompilerServer.exe\"", StringComparison.Ordinal), $"init {version} configures Codex MCP with a project-relative executable path");
+            var codexConfig = File.ReadAllText(Path.Combine(output, ".codex", "config.toml"));
+            Assert(codexConfig.Contains("command = \".decompilerserver/DecompilerServer.exe\"", StringComparison.Ordinal)
+                && codexConfig.Contains("default_tools_approval_mode = \"approve\"", StringComparison.Ordinal), $"init {version} configures the relative read-only DecompilerServer MCP with default tool approval");
             foreach (var skill in new[] { "rimdevtools", "rimsearcher", "decompiler-mcp", "about-write-description", "rimworld-modding", "rimworld-development-engineer" })
             {
                 var skillRoot = Path.Combine(output, ".agents", "skills", skill);
@@ -102,8 +110,10 @@ using (var manifestDocument = JsonDocument.Parse(File.ReadAllText(Path.Combine(p
                 Assert(Directory.EnumerateFiles(Path.Combine(skillRoot, "references")).Any(), $"init {version} includes detailed references for {skill}");
             }
             var engineerSkill = File.ReadAllText(Path.Combine(output, ".agents", "skills", "rimworld-development-engineer", "SKILL.md"));
-            Assert(engineerSkill.Contains("use DecompilerServer first", StringComparison.OrdinalIgnoreCase)
-                && engineerSkill.Contains("Never run `ref pull` merely to inspect code", StringComparison.Ordinal), $"init {version} prioritizes DecompilerServer and keeps ref pull as fallback");
+            Assert(engineerSkill.Contains("Always run `RimDevTools.exe data status`", StringComparison.Ordinal)
+                && engineerSkill.Contains("Do not research or edit", StringComparison.Ordinal)
+                && engineerSkill.IndexOf("RimSearcher before inspecting C# behavior", StringComparison.Ordinal) < engineerSkill.IndexOf("For C# and binary behavior", StringComparison.Ordinal)
+                && engineerSkill.Contains("Never run `ref pull` merely to inspect code", StringComparison.Ordinal), $"init {version} enforces the database and RimSearcher gates before decompilation, with ref pull as fallback");
             var moddingSkillRoot = Path.Combine(output, ".agents", "skills", "rimworld-modding");
             Assert(File.Exists(Path.Combine(moddingSkillRoot, "LICENSE")), $"init {version} preserves the imported modding skill license");
             using (JsonDocument.Parse(File.ReadAllText(Path.Combine(moddingSkillRoot, "tests", "evals.json")))) { }

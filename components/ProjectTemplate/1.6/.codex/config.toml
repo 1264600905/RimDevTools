@@ -1,2 +1,3 @@
 [mcp_servers.decompiler]
 command = ".decompilerserver/DecompilerServer.exe"
+default_tools_approval_mode = "approve"

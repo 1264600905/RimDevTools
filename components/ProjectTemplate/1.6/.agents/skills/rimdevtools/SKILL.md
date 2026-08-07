@@ -19,7 +19,7 @@ Treat `mod_config.jsonc` as the project contract. Run commands from the director
 2. Use `deploy --dry-run` to inspect build and synchronization plans. Run mutating `deploy` only when the user asked to deploy or the requested workflow explicitly requires it.
 3. Use `ref search`, `ref deps`, or `ref related` for read-only reference-mod discovery. Use `ref pull` only when copying/decompiling reference mods is in scope.
 4. Use `test run --mode quick` for startup and runtime-ready validation; use `manual` for user-observed play; use `auto` or `xml` for LogSync AutoTest cases.
-5. Use `data status` for database diagnosis. Use `data refresh` only when a current runtime-merged Def database is needed.
+5. Use `data status` before every feature-development workflow and for database diagnosis. Use `data refresh` only when status recommends it and a current runtime-merged Def database is required.
 6. Use `test settings` only when persistent LogSync settings are desired. Normal test runs apply and restore settings transactionally.
 
 ## Diagnose
@@ -60,7 +60,7 @@ Never edit live RimWorld `ModsConfig.xml`, LogSync settings, transaction manifes
 
 Use `ref pull` to copy a local/Workshop mod into `参考文档` and decompile its assemblies with packaged ILSpy. Resolve ambiguity with an exact package ID, name, folder, or absolute path. Use `--deps` for a complete hard-dependency closure and `--force` only after reviewing replacement targets.
 
-Use `data refresh` to launch RimWorld with the DataMod and produce a validated `defs.db`. Use `data status` before RimSearcher work when freshness is uncertain. A successful refresh requires matching request, result, log signal, database metadata, component version, and mod hashes.
+Use `data refresh` to launch RimWorld with the DataMod and produce a validated `defs.db`. Always use `data status` before feature-development RimSearcher work; for other queries, use it whenever freshness is uncertain. A successful refresh requires matching request, result, log signal, database metadata, component version, and mod hashes.
 
 ## Guardrails
 

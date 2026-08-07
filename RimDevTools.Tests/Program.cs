@@ -259,6 +259,11 @@ internal sealed class TestSuite
         var output = Path.Combine(_temp, "init-output-1.6");
         var success = await CaptureAsync(() => InitCommand.RunAsync(["init", "1.6", "--output", output], templateRoot, toolRoot));
         Assert(success.ExitCode == 0 && File.ReadAllText(Path.Combine(output, "marker.txt")) == "template-1.6", "init selects and copies the requested filesystem template");
+        using (var successJson = JsonDocument.Parse(success.Output))
+        {
+            var result = successJson.RootElement.GetProperty("result");
+            Assert(result.GetProperty("projectRoot").GetString() == output && result.GetProperty("configPath").GetString() == Path.Combine(output, "mod_config.jsonc"), "init identifies output as the project root and reports its config path");
+        }
         Assert(File.ReadAllBytes(Path.Combine(output, "nested", "bytes.bin")).SequenceEqual(new byte[] { 0, 1, 2, 255 }), "init copies template files byte-for-byte");
         Assert(Directory.Exists(Path.Combine(output, "1.6", "Assemblies")) && Directory.Exists(Path.Combine(output, "empty-runtime")), "init creates only manifest-declared missing directories");
         Assert(File.ReadAllText(Path.Combine(output, ".tools", "RimDevTools.exe")) == "shared-tool" && !Directory.Exists(Path.Combine(output, ".tools", "components")), "init installs shared tooling once and excludes components");

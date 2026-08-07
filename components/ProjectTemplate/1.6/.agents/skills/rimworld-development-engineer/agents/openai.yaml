@@ -1,7 +1,7 @@
 interface:
   display_name: "RimWorld Development Engineer"
-  short_description: "Drive evidence-first implementation and game validation"
-  default_prompt: "Use $rimworld-development-engineer to implement and verify this RimWorld mod change end to end."
+  short_description: "Build the Def database, then implement and validate"
+  default_prompt: "Use $rimworld-development-engineer to establish a current Def database, then implement and verify this RimWorld mod change end to end."
 
 dependencies:
   tools:

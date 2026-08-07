@@ -73,9 +73,9 @@ data refresh [--mods-file <path>] [--output <path>]
 
 Common errors: `DATABASE_PATH_MISSING`, `EXPORT_REQUEST_CONFLICT`, `DATA_REFRESH_TIMEOUT`, `EXPORT_SIGNAL_MISMATCH`, `DATABASE_INVALID`, `VERSION_MISMATCH`.
 
-### `init 1.6 --output <directory>`
+### `init 1.6 --output <project-root>`
 
-Create a project from the packaged 1.6 template. The target must not exist or be empty. This is mainly a distribution-root command; an initialized project normally does not initialize itself.
+Create a project from the packaged 1.6 template. `--output` is the new project root directory, not a path to `mod_config.jsonc`, `1.6`, `.tools`, or `source`. The target must not exist or be empty. The generated root directly contains `mod_config.jsonc`, `1.6`, and `.tools` as siblings. This is mainly a distribution-root command; an initialized project normally does not initialize itself.
 
 ## Configuration Fields
 

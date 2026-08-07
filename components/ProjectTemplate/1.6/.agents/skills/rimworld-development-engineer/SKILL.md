@@ -9,9 +9,19 @@ Own the implementation through verification. Do not stop after editing when a sa
 
 Read [references/tool-priority.md](references/tool-priority.md) before researching game/mod behavior. Read [references/verification-loop.md](references/verification-loop.md) before deploying or launching RimWorld.
 
-## Use The Evidence Tools In The Right Order
+## Pass The Database Gate Before Development
 
-For C# and binary behavior, **use DecompilerServer first**:
+Do not research or edit the requested feature until the project has a current, valid runtime Def database:
+
+1. Run `RimDevTools.exe doctor` first when project paths, tool availability, or recovery state are uncertain.
+2. Always run `RimDevTools.exe data status` from the project root and read its structured JSON.
+3. Proceed only when `refreshRecommended` is `false`, `reasonCodes` is empty, and the database exists, opens, passes integrity, and matches the current RimSearcher version, game version, project package ID, and requested mod set.
+4. If status reports missing, stale, invalid, mismatched, or otherwise recommends refresh, run `RimDevTools.exe data refresh`. This launches RimWorld; obtain authorization first when the user's request does not already authorize that workflow.
+5. Run `data status` again after refresh. If a current valid database still cannot be established, stop before implementation and report the exact blocker. Do not substitute decompilation or raw XML guesses for this gate.
+
+After the gate passes, establish runtime Def evidence with RimSearcher before inspecting C# behavior. Use DecompilerServer only for behavior that Def data cannot establish, such as implementation classes, methods, signatures, call paths, and Harmony targets.
+
+For C# and binary behavior:
 
 1. Locate the actual game or mod assembly from `mod_config.jsonc`, the project, the deployed mod, or a known local mod path.
 2. Load it directly with DecompilerServer and verify its context identity.
@@ -20,13 +30,13 @@ For C# and binary behavior, **use DecompilerServer first**:
 
 Never run `ref pull` merely to inspect code that DecompilerServer can load directly. A pulled ILSpy tree is secondary evidence; DecompilerServer against the real assembly is authoritative.
 
-For Def data, use RimSearcher against the runtime-merged database. Use raw installed Core XML only for source constructs absent from the runtime database, especially abstract `ParentName` definitions, and label such evidence as source XML rather than effective runtime data.
+Use raw installed Core XML only for source constructs absent from the runtime database, especially abstract `ParentName` definitions, and label such evidence as source XML rather than effective runtime data.
 
 ## Implement
 
-1. Read the nearest project files and existing conventions.
-2. Run `RimDevTools.exe doctor` when project/tool state is uncertain.
-3. Establish the relevant Def and/or code evidence before choosing fields, APIs, overloads, or Harmony targets.
+1. Pass the mandatory database gate above.
+2. Read the nearest project files and existing conventions.
+3. Establish the relevant RimSearcher evidence, then any required code evidence, before choosing fields, APIs, overloads, or Harmony targets.
 4. Make the smallest coherent change in `1.6`, `Languages`, `About`, `source`, or approved asset directories.
 5. Keep package IDs, namespaces, assembly names, translation keys, Def names, and config paths consistent.
 6. Preserve user changes and avoid unrelated refactors.

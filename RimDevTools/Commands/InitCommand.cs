@@ -97,6 +97,8 @@ public static class InitCommand
                 {
                     version,
                     output,
+                    projectRoot = output,
+                    configPath = Path.Combine(output, "mod_config.jsonc"),
                     createdEntries
                 }));
             }

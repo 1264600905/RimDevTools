@@ -111,7 +111,7 @@ quick、auto、xml 和 `data refresh` 默认在 Windows 隔离桌面运行；可
 RimDevTools.exe init 1.6 --output D:\RimWorldMods\NewMod
 ```
 
-项目文件来自 `.tools/components/ProjectTemplate/<version>`，共享工具只复制一份到新项目 `.tools`，且不会递归复制 `components`。目标目录必须不存在或为空。
+`--output` 必须指向新模组的项目根目录，而不是 `mod_config.jsonc` 文件、`1.6`、`.tools` 或 `source` 目录。生成后该根目录会直接包含同级的 `mod_config.jsonc`、`1.6` 和 `.tools`。项目文件来自 `.tools/components/ProjectTemplate/<version>`，共享工具只复制一份到新项目 `.tools`，且不会递归复制 `components`。目标目录必须不存在或为空。
 
 祝模组开发顺利！
 
