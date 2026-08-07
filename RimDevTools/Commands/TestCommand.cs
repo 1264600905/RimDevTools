@@ -11,6 +11,9 @@ public static class TestCommand
         const string command = "test settings";
         var context = CliApplication.RequireProject(command, out var code);
         if (context is null) return code;
+        var templateError = ProjectTemplatePreflight.Validate(context);
+        if (templateError is not null)
+            return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, templateError.Code, templateError.Message, context.Root, templateError.Details);
 
         var runId = Guid.NewGuid().ToString("N");
         using var gate = EnvironmentLock.TryAcquire(GameEnvironment.ConfigDirectory(), command, context.Root, runId, out var busyInfo);
@@ -47,6 +50,9 @@ public static class TestCommand
         const string command = "test run";
         var context = CliApplication.RequireProject(command, out var code);
         if (context is null) return code;
+        var templateError = ProjectTemplatePreflight.Validate(context);
+        if (templateError is not null)
+            return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, templateError.Code, templateError.Message, context.Root, templateError.Details);
 
         var mode = CliArgs.Value(args, "--mode")?.ToLowerInvariant() ?? "quick";
         if (mode is not ("quick" or "manual" or "auto" or "xml"))
@@ -323,6 +329,13 @@ public static class ModListParser
         }
 
         var additions = new List<ModListAddition>();
+        if (!mods.Contains("ludeon.rimworld", StringComparer.OrdinalIgnoreCase))
+        {
+            var harmonyIndex = mods.FindIndex(mod => mod.Equals("brrainz.harmony", StringComparison.OrdinalIgnoreCase));
+            var coreIndex = harmonyIndex >= 0 ? harmonyIndex + 1 : 0;
+            mods.Insert(coreIndex, "ludeon.rimworld");
+            additions.Add(new ModListAddition("ludeon.rimworld", coreIndex, "rimworld_core"));
+        }
         AddBeforeTooling(mods, targetPackageId, toolingPackageId, targetReason, additions);
         AddBeforeTooling(mods, toolingPackageId, toolingPackageId, toolingReason, additions);
 

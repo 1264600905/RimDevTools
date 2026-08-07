@@ -27,6 +27,8 @@ public static class DeployCommand
         }
 
         var config = context.Config;
+        var templateError = ProjectTemplatePreflight.Validate(context);
+        if (templateError is not null) return Failure(ExitCodes.InvalidArguments, templateError, context.Root);
         if (config.ConfigVersion != 2)
             return Failure(ExitCodes.InvalidArguments, new CliError("CONFIG_VERSION_UNSUPPORTED", $"需要 config_version=2，当前为 {config.ConfigVersion}"), context.Root);
         if (string.IsNullOrWhiteSpace(config.RimWorldDir) || string.IsNullOrWhiteSpace(config.ModName))
