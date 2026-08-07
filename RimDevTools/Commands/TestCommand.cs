@@ -336,6 +336,7 @@ public static class ModListParser
             mods.Insert(coreIndex, "ludeon.rimworld");
             additions.Add(new ModListAddition("ludeon.rimworld", coreIndex, "rimworld_core"));
         }
+        NormalizeDefaultModOrder(mods, context.Config.MinActiveMods);
         AddBeforeTooling(mods, targetPackageId, toolingPackageId, targetReason, additions);
         AddBeforeTooling(mods, toolingPackageId, toolingPackageId, toolingReason, additions);
 
@@ -375,6 +376,30 @@ public static class ModListParser
         if (index < 0) index = mods.Count;
         mods.Insert(index, packageId);
         additions.Add(new ModListAddition(packageId, index, reason));
+    }
+
+    private static void NormalizeDefaultModOrder(List<string> mods, IReadOnlyList<string> defaultOrder)
+    {
+        var orderedDefaults = defaultOrder
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (orderedDefaults.Count == 0) return;
+
+        var rank = orderedDefaults
+            .Select((packageId, index) => new { packageId, index })
+            .ToDictionary(x => x.packageId, x => x.index, StringComparer.OrdinalIgnoreCase);
+        var defaultIndices = mods
+            .Select((packageId, index) => new { packageId, index })
+            .Where(x => rank.ContainsKey(x.packageId))
+            .Select(x => x.index)
+            .ToArray();
+        var sortedDefaults = defaultIndices
+            .Select(index => mods[index])
+            .OrderBy(packageId => rank[packageId])
+            .ToArray();
+
+        for (var i = 0; i < defaultIndices.Length; i++) mods[defaultIndices[i]] = sortedDefaults[i];
     }
 
     private static bool IsResolvable(ProjectContext context, string packageId)

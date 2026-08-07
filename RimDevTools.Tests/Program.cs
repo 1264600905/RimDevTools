@@ -389,6 +389,7 @@ internal sealed class TestSuite
         CreateMod(environment.Game, "SmartSpeed", "sarg.smartspeed");
         CreateMod(environment.Game, "CameraPlus", "brrainz.cameraplus");
         CreateMod(environment.Game, "HumanoidAlienRaces", "erdelf.humanoidalienraces");
+        CreateMod(environment.Game, "RimSearcherDataMod", "kearril.rimsearcherdatamod");
         CreateMod(environment.Game, "LogSync", "trigger.logsyncmod");
         CreateMod(environment.Game, "Helper", "demo.helper");
         File.WriteAllText(environment.ConfigPath, Config(environment, minMods: "[\"brrainz.harmony\",\"sarg.smartspeed\",\"brrainz.cameraplus\",\"erdelf.humanoidalienraces\",\"trigger.logsyncmod\",\"demo.helper\"]"));
@@ -396,8 +397,8 @@ internal sealed class TestSuite
         File.WriteAllText(modsFile, "<ModsConfigData><ignored><li>not.allowed</li></ignored><activeMods><li>brrainz.harmony</li><li>sarg.smartspeed</li><li>brrainz.cameraplus</li><li>erdelf.humanoidalienraces</li><li>trigger.logsyncmod</li><li>demo.helper</li><li>DEMO.HELPER</li></activeMods></ModsConfigData>");
         var context = ProjectDiscovery.Find(environment.Root, out _)!;
         var resolution = ModListParser.Resolve(context, modsFile, out var error);
-        Assert(error is null && resolution!.Mods.SequenceEqual(["brrainz.harmony", "sarg.smartspeed", "brrainz.cameraplus", "erdelf.humanoidalienraces", "demo.current", "trigger.logsyncmod", "demo.helper"], StringComparer.OrdinalIgnoreCase), "ModList reads direct activeMods entries, enforces required mods, and deduplicates");
-        Assert(resolution!.Additions.SequenceEqual([new ModListAddition("demo.current", 4, "current_project")]), "ModList reports automatic additions and positions");
+        Assert(error is null && resolution!.Mods.SequenceEqual(["brrainz.harmony", "ludeon.rimworld", "sarg.smartspeed", "brrainz.cameraplus", "erdelf.humanoidalienraces", "demo.current", "trigger.logsyncmod", "demo.helper"], StringComparer.OrdinalIgnoreCase), "ModList reads direct activeMods entries, enforces required mods, and deduplicates");
+        Assert(resolution!.Additions.SequenceEqual([new ModListAddition("ludeon.rimworld", 1, "rimworld_core"), new ModListAddition("demo.current", 5, "current_project")]), "ModList reports automatic additions and positions");
 
         File.WriteAllText(modsFile, "<ModsConfigData><activeMods><li>brrainz.harmony</li><li>trigger.logsyncmod</li></activeMods></ModsConfigData>");
         var rejected = ModListParser.Resolve(context, modsFile, out var rejectedError);
@@ -406,6 +407,12 @@ internal sealed class TestSuite
         File.WriteAllText(modsFile, "<ModsConfigData><activeMods><li>brrainz.harmony</li><li>sarg.smartspeed</li><li>brrainz.cameraplus</li><li>erdelf.humanoidalienraces</li><li>trigger.logsyncmod</li></activeMods></ModsConfigData>");
         var dataRejected = ModListParser.ResolveData(context, modsFile, out var dataRejectedError);
         Assert(dataRejected is null && dataRejectedError?.Code == "REQUIRED_MODS_DISABLED", "Data workflows require RimSearcherDataMod to be enabled");
+
+        File.WriteAllText(environment.ConfigPath, Config(environment, minMods: "[\"brrainz.harmony\",\"sarg.smartspeed\",\"brrainz.cameraplus\",\"erdelf.humanoidalienraces\",\"kearril.rimsearcherdatamod\",\"trigger.logsyncmod\"]"));
+        File.WriteAllText(modsFile, "<ModsConfigData><activeMods><li>brrainz.harmony</li><li>sarg.smartspeed</li><li>brrainz.cameraplus</li><li>erdelf.humanoidalienraces</li><li>trigger.logsyncmod</li><li>kearril.rimsearcherdatamod</li></activeMods></ModsConfigData>");
+        var sortedContext = ProjectDiscovery.Find(environment.Root, out _)!;
+        var dataResolution = ModListParser.ResolveData(sortedContext, modsFile, out var dataOrderError);
+        Assert(dataOrderError is null && dataResolution!.Mods.SequenceEqual(["brrainz.harmony", "ludeon.rimworld", "sarg.smartspeed", "brrainz.cameraplus", "erdelf.humanoidalienraces", "demo.current", "kearril.rimsearcherdatamod", "trigger.logsyncmod"], StringComparer.OrdinalIgnoreCase), "Data workflows normalize default mods to min_active_mods order and keep the target before RimSearcherDataMod");
     }
 
     private void TestIncrementalLogSignalScanner()
