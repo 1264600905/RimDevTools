@@ -52,6 +52,10 @@
       <HintPath>..\..\参考文档\gamedll\UnityEngine.CoreModule.dll</HintPath>
       <Private>False</Private>
     </Reference>
+    <Reference Include="UnityEngine.AudioModule">
+      <HintPath>..\..\参考文档\gamedll\UnityEngine.AudioModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
     <Reference Include="UnityEngine.ImageConversionModule">
       <HintPath>..\..\参考文档\gamedll\UnityEngine.ImageConversionModule.dll</HintPath>
       <Private>False</Private>

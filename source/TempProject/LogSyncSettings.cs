@@ -38,6 +38,7 @@ namespace LogSyncMod
         public int logMaxLines = 500;
         public bool enableVerboseDebug = false;
         public bool enableSmokeTest = false;
+        public bool testMuteAudio = false;
         public bool autoTestEnabled = false;
         public string autoTestTargetPackageId = "";
         public string autoTestRunId = "";
@@ -66,6 +67,7 @@ namespace LogSyncMod
             Scribe_Values.Look(ref logMaxLines, "logMaxLines", 500);
             Scribe_Values.Look(ref enableVerboseDebug, "enableVerboseDebug", false);
             Scribe_Values.Look(ref enableSmokeTest, "enableSmokeTest", false);
+            Scribe_Values.Look(ref testMuteAudio, "testMuteAudio", false);
             Scribe_Values.Look(ref autoTestEnabled, "autoTestEnabled", false);
             Scribe_Values.Look(ref autoTestTargetPackageId, "autoTestTargetPackageId", "");
             Scribe_Values.Look(ref autoTestRunId, "autoTestRunId", "");

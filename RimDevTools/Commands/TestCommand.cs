@@ -26,7 +26,7 @@ public static class TestCommand
 
         try
         {
-            var changed = await SettingsEditor.UpdateAsync(context, "quick");
+            var changed = await SettingsEditor.UpdateAsync(context, "quick", muteAudio: false);
             return CliResult.WriteSuccess(command, context.Root, new
             {
                 runId,
@@ -109,7 +109,7 @@ public static class TestCommand
                 runId,
                 [GameEnvironment.ModsConfigPath(), GameEnvironment.LogSyncSettingsPath()]);
             await transaction.WriteAllTextAsync(GameEnvironment.ModsConfigPath(), ModListParser.Render(GameEnvironment.ModsConfigPath(), modList.Mods));
-            await SettingsEditor.UpdateAsync(context, mode, transaction, runId, targetPackageId, captureScreenshots);
+            await SettingsEditor.UpdateAsync(context, mode, transaction, runId, targetPackageId, captureScreenshots, muteAudio: mode != "manual");
 
             LogArchive.Rotate(SettingsEditor.SyncLogPath(context), context.Config.Retention.MaxLogFiles);
 
@@ -366,7 +366,7 @@ public static class SettingsEditor
     public static string SyncLogPath(ProjectContext context) => Path.Combine(context.Root, ".tools", "log", "精选日志.log");
     public static string AutoTestOutputPath(ProjectContext context) => Path.Combine(context.Root, ".tools", "log", "AutoTestOutput");
 
-    public static async Task<bool> UpdateAsync(ProjectContext context, string mode, ConfigTransaction? transaction = null, string? runId = null, string? targetPackageId = null, bool captureScreenshots = false)
+    public static async Task<bool> UpdateAsync(ProjectContext context, string mode, ConfigTransaction? transaction = null, string? runId = null, string? targetPackageId = null, bool captureScreenshots = false, bool? muteAudio = null)
     {
         var path = GameEnvironment.LogSyncSettingsPath();
         var document = File.Exists(path)
@@ -390,6 +390,7 @@ public static class SettingsEditor
         changed |= Set(settings, "autoTestCaptureScreenshots", auto && captureScreenshots ? "True" : "False");
         changed |= Set(settings, "autoTestPreventPause", "True");
         changed |= Set(settings, "autoTestUseFastSpeed", "True");
+        changed |= Set(settings, "testMuteAudio", muteAudio == true ? "True" : "False");
 
         if (!changed) return false;
         var content = document.ToString(SaveOptions.None);

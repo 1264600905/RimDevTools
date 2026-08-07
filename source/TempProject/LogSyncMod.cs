@@ -28,6 +28,7 @@ namespace LogSyncMod
             // 在所有加载完成（进入主菜单）时执行
             LongEventHandler.ExecuteWhenFinished(() =>
             {
+                TestAudioController.ArmIfRequested();
                 Log.Message("[LogSyncMod] INITIALIZATION COMPLETED.");
                 LogLoadedMods();
                 ScheduleWindowModeLog();
@@ -36,6 +37,7 @@ namespace LogSyncMod
                 var timer = new System.Timers.Timer(10000);
                 timer.Elapsed += (s, e) =>
                 {
+                    TestAudioController.Restore();
                     Log.Message("[LogSyncMod] RUNTIME_READY_TO_CLOSE");
                     timer.Stop();
                     timer.Dispose();

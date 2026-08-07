@@ -328,6 +328,7 @@ internal sealed class TestSuite
         Assert(settings.Element("autoTestRunId")?.Value == "settings-run", "auto settings bind the requested runId");
         Assert(settings.Element("autoTestOutputPath")?.Value == SettingsEditor.AutoTestOutputPath(context) && settings.Element("autoTestEnabled")?.Value == "True", "auto settings include output path and enabled state");
         Assert(settings.Element("keywords")?.Elements("li").Single().Value == "Ready", "settings writer updates keywords");
+        Assert(settings.Element("testMuteAudio")?.Value == "False", "persistent test settings do not enable audio muting");
     }
 
     private async Task TestTransactionsAsync()
@@ -581,8 +582,10 @@ internal sealed class TestSuite
         Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", "quick");
         var quick = await CaptureAsync(() => TestCommand.RunAsync(["test", "run", "--mode", "quick", "--timeout-seconds", "5"]));
         var isolatedDesktop = File.ReadAllText(Path.Combine(environment.ConfigDirectory, "fake-desktop.txt"));
+        var quickSettings = XDocument.Parse(File.ReadAllText(Path.Combine(environment.ConfigDirectory, "fake-settings.xml")));
         Assert(quick.ExitCode == 0 && quick.Output.Contains("\"isolatedDesktop\": true") && !File.ReadAllText(Path.Combine(environment.ConfigDirectory, "fake-args.txt")).Contains("quicktest"), "quick mode waits for ready signal on the default isolated desktop");
         Assert(isolatedDesktop.StartsWith("RimDevTools.", StringComparison.Ordinal) && !string.Equals(isolatedDesktop, callerDesktop, StringComparison.Ordinal), "default quick process runs on a distinct desktop");
+        Assert(quickSettings.Descendants("testMuteAudio").Single().Value == "True", "quick mode enables transactional audio muting");
         AssertConfigurationRestored(environment, "quick mode restores exact configuration");
 
         Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", "quick");
@@ -610,6 +613,7 @@ internal sealed class TestSuite
         var observedSettings = File.ReadAllText(Path.Combine(environment.ConfigDirectory, "fake-settings.xml"));
         Assert(auto.ExitCode == 0 && File.ReadAllText(Path.Combine(environment.ConfigDirectory, "fake-args.txt")).Contains("quicktest"), "auto mode launches with quicktest and validates result");
         Assert(observedSettings.Contains("demo.current") && observedSettings.Contains("AutoTestOutput"), "auto mode passes target package and output path to LogSync");
+        Assert(XDocument.Parse(observedSettings).Descendants("testMuteAudio").Single().Value == "True", "auto mode enables transactional audio muting");
         Assert(Directory.EnumerateFiles(autoOutput, "*_Result.json").Count() == 2, "configured auto-test retention is enforced after a run");
         AssertConfigurationRestored(environment, "auto mode restores settings changed by the game");
 
@@ -624,7 +628,9 @@ internal sealed class TestSuite
 
         Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", "manual");
         var manual = await CaptureAsync(() => TestCommand.RunAsync(["test", "run", "--mode", "manual", "--timeout-seconds", "5"]));
+        var manualSettings = XDocument.Parse(File.ReadAllText(Path.Combine(environment.ConfigDirectory, "fake-settings.xml")));
         Assert(manual.ExitCode == 0 && manual.Output.Contains("\"isolatedDesktop\": false") && File.ReadAllText(Path.Combine(environment.ConfigDirectory, "fake-desktop.txt")) == callerDesktop, "manual mode defaults to the current desktop despite project configuration");
+        Assert(manualSettings.Descendants("testMuteAudio").Single().Value == "False", "manual mode leaves test audio muting disabled");
 
         Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", "manual");
         var isolatedManual = await CaptureAsync(() => TestCommand.RunAsync(["test", "run", "--mode", "manual", "--isolated-desktop", "--timeout-seconds", "5"]));

@@ -600,7 +600,14 @@ namespace LogSyncMod.AutoTest
             CleanupSharedHediffPawn();
 
             runSummary = BuildRunSummary();
-            AutoTestReportWriter.Write(runArtifacts, targetPackageId ?? "unknown", runId, results, targetMod?.Name ?? "Unknown", discoveredManifest, plannedManifest, runSummary);
+            try
+            {
+                AutoTestReportWriter.Write(runArtifacts, targetPackageId ?? "unknown", runId, results, targetMod?.Name ?? "Unknown", discoveredManifest, plannedManifest, runSummary);
+            }
+            finally
+            {
+                global::LogSyncMod.TestAudioController.Restore();
+            }
             Log.Message(string.Format(
                 "[LogSyncAutoTest] COMPLETED runId={0} packageId={1} total={2} passed={3} failed={4} discovered={5} planned={6} missing={7}",
                 runId,
