@@ -67,6 +67,10 @@ try {
         if (-not (Test-Path -LiteralPath $sourceVersion)) { throw "缺少 ProjectTemplate $version 模板: $sourceVersion" }
         $targetVersion = Join-Path $projectTemplateTarget $version
         Copy-Item -LiteralPath $sourceVersion -Destination $targetVersion -Recurse -Force
+        $claudeLocalSettings = Join-Path $targetVersion ".claude\settings.local.json"
+        if (Test-Path -LiteralPath $claudeLocalSettings) {
+            Remove-Item -LiteralPath $claudeLocalSettings -Force
+        }
         if (Test-Path -LiteralPath (Join-Path $targetVersion ".tools")) {
             throw "ProjectTemplate $version 不得重复包含 .tools"
         }
