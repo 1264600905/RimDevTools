@@ -14,6 +14,10 @@
     // 用途: pull_ref.py 反编译时定位版本化 Assemblies 文件夹、deploy.ps1 同步项的版本目录
     "game_version": "1.6",
 
+    // 自动启动 RimWorld 时默认使用 Windows 隔离桌面；命令行参数可覆盖单次运行。
+    // quick/auto/xml 和 data refresh 使用此值，manual 默认仍使用普通桌面。
+    "isolated_desktop": true,
+
     // RimSearcher 当前项目数据库；相对路径以项目根目录为基准。
     "rimsearcher_db_path": ".tools\\db\\defs.db",
 

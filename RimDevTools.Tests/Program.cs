@@ -27,6 +27,7 @@ internal static class FakeRimWorld
         var mode = Environment.GetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE") ?? "quick";
         Directory.CreateDirectory(configDirectory);
         File.WriteAllText(Path.Combine(configDirectory, "fake-args.txt"), string.Join(" ", args));
+        File.WriteAllText(Path.Combine(configDirectory, "fake-desktop.txt"), GameProcessLauncher.CurrentDesktopName() ?? "<unknown>");
 
         if (mode.StartsWith("data", StringComparison.Ordinal))
         {
@@ -246,6 +247,13 @@ internal sealed class TestSuite
         var context = ProjectDiscovery.Find(root, out var error);
         Assert(context is not null && error is null && context.Config.ModName == "Demo//Name", "JSONC preserves // inside strings");
         Assert(context!.Config.Retention.MaxAutoTestRuns == 3, "automatic test retention defaults to three runs");
+        Assert(context.Config.IsolatedDesktop, "isolated desktop defaults to enabled when omitted from JSONC");
+        var disabledConfig = new ProjectConfig { IsolatedDesktop = false };
+        var configured = IsolatedDesktopOptions.Resolve(disabledConfig, "auto", [], out _);
+        var overridden = IsolatedDesktopOptions.Resolve(disabledConfig, "auto", ["--isolated-desktop"], out _);
+        var manual = IsolatedDesktopOptions.Resolve(context.Config, "manual", [], out _);
+        Assert(configured is { Enabled: false, Source: "project_config" } && overridden is { Enabled: true, Source: "command_line" }, "isolated desktop CLI option overrides a disabled project setting");
+        Assert(manual is { Enabled: false, Source: "mode_default" }, "manual isolation ignores the enabled project default");
         var child = NewDirectory(Path.Combine("discovery-project", "source"));
         Assert(ProjectDiscovery.Find(child, out _)?.Root == root, "project discovery checks direct parent");
         var grandchild = NewDirectory(Path.Combine("discovery-project", "source", "Core"));
@@ -568,11 +576,21 @@ internal sealed class TestSuite
     {
         var environment = CreateProjectEnvironment("game-workflows", createGameExecutable: true);
         using var scope = UseEnvironment(environment);
+        var callerDesktop = GameProcessLauncher.CurrentDesktopName();
 
         Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", "quick");
         var quick = await CaptureAsync(() => TestCommand.RunAsync(["test", "run", "--mode", "quick", "--timeout-seconds", "5"]));
-        Assert(quick.ExitCode == 0 && !File.ReadAllText(Path.Combine(environment.ConfigDirectory, "fake-args.txt")).Contains("quicktest"), "quick mode waits for ready signal without quicktest argument");
+        var isolatedDesktop = File.ReadAllText(Path.Combine(environment.ConfigDirectory, "fake-desktop.txt"));
+        Assert(quick.ExitCode == 0 && quick.Output.Contains("\"isolatedDesktop\": true") && !File.ReadAllText(Path.Combine(environment.ConfigDirectory, "fake-args.txt")).Contains("quicktest"), "quick mode waits for ready signal on the default isolated desktop");
+        Assert(isolatedDesktop.StartsWith("RimDevTools.", StringComparison.Ordinal) && !string.Equals(isolatedDesktop, callerDesktop, StringComparison.Ordinal), "default quick process runs on a distinct desktop");
         AssertConfigurationRestored(environment, "quick mode restores exact configuration");
+
+        Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", "quick");
+        var visibleQuick = await CaptureAsync(() => TestCommand.RunAsync(["test", "run", "--mode", "quick", "--no-isolated-desktop", "--timeout-seconds", "5"]));
+        Assert(visibleQuick.ExitCode == 0 && visibleQuick.Output.Contains("\"isolatedDesktop\": false") && File.ReadAllText(Path.Combine(environment.ConfigDirectory, "fake-desktop.txt")) == callerDesktop, "quick CLI override uses the current desktop");
+
+        var conflictingIsolation = await CaptureAsync(() => TestCommand.RunAsync(["test", "run", "--isolated-desktop", "--no-isolated-desktop"]));
+        Assert(conflictingIsolation.ExitCode == ExitCodes.InvalidArguments && JsonErrorCode(conflictingIsolation.Output) == "ISOLATED_DESKTOP_OPTIONS_CONFLICT", "conflicting isolation options fail before test mutation");
 
         Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", "quick-split");
         var splitSignal = await CaptureAsync(() => TestCommand.RunAsync(["test", "run", "--mode", "quick", "--timeout-seconds", "5"]));
@@ -606,7 +624,11 @@ internal sealed class TestSuite
 
         Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", "manual");
         var manual = await CaptureAsync(() => TestCommand.RunAsync(["test", "run", "--mode", "manual", "--timeout-seconds", "5"]));
-        Assert(manual.ExitCode == 0, "manual mode succeeds after user process exits");
+        Assert(manual.ExitCode == 0 && manual.Output.Contains("\"isolatedDesktop\": false") && File.ReadAllText(Path.Combine(environment.ConfigDirectory, "fake-desktop.txt")) == callerDesktop, "manual mode defaults to the current desktop despite project configuration");
+
+        Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", "manual");
+        var isolatedManual = await CaptureAsync(() => TestCommand.RunAsync(["test", "run", "--mode", "manual", "--isolated-desktop", "--timeout-seconds", "5"]));
+        Assert(isolatedManual.ExitCode == 0 && isolatedManual.Output.Contains("\"isolatedDesktop\": true") && File.ReadAllText(Path.Combine(environment.ConfigDirectory, "fake-desktop.txt")).StartsWith("RimDevTools.", StringComparison.Ordinal), "manual mode supports an explicit isolated desktop override");
 
         Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", "hang");
         var timeout = await CaptureAsync(() => TestCommand.RunAsync(["test", "run", "--mode", "manual", "--timeout-seconds", "1"]));
@@ -646,8 +668,15 @@ internal sealed class TestSuite
 
         Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", "data-success");
         var refresh = await CaptureAsync(() => DataCommand.RefreshAsync(["data", "refresh", "--timeout-seconds", "5"]));
-        Assert(refresh.ExitCode == 0, "data refresh accepts matching result, log, database version and metadata");
+        Assert(refresh.ExitCode == 0 && refresh.Output.Contains("\"isolatedDesktop\": true") && File.ReadAllText(Path.Combine(environment.ConfigDirectory, "fake-desktop.txt")).StartsWith("RimDevTools.", StringComparison.Ordinal), "data refresh accepts matching result and defaults to an isolated desktop");
         AssertConfigurationRestored(environment, "data refresh restores exact ModsConfig and leaves LogSync settings unchanged");
+
+        Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", "data-success");
+        var visibleRefresh = await CaptureAsync(() => DataCommand.RefreshAsync(["data", "refresh", "--no-isolated-desktop", "--timeout-seconds", "5"]));
+        Assert(visibleRefresh.ExitCode == 0 && visibleRefresh.Output.Contains("\"isolatedDesktop\": false"), "data refresh CLI override disables isolation");
+
+        var conflictingIsolation = await CaptureAsync(() => DataCommand.RefreshAsync(["data", "refresh", "--isolated-desktop", "--no-isolated-desktop"]));
+        Assert(conflictingIsolation.ExitCode == ExitCodes.InvalidArguments && JsonErrorCode(conflictingIsolation.Output) == "ISOLATED_DESKTOP_OPTIONS_CONFLICT", "conflicting data isolation options fail before mutation");
 
         Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", "data-large-log");
         var largeRefresh = await CaptureAsync(() => DataCommand.RefreshAsync(["data", "refresh", "--timeout-seconds", "5"]));

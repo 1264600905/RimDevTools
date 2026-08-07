@@ -126,9 +126,9 @@ public static class CliArgs
             ["ref pull"] = (2, 1, [new("--version", true), new("--deps", false), new("--all", false), new("--fuzzy", false), new("--force", false)]),
             ["ref deps"] = (2, 1, [new("--version", true), new("--fuzzy", false)]),
             ["ref related"] = (2, 1, [new("--version", true), new("--fuzzy", false)]),
-            ["test run"] = (2, 0, [new("--deploy", false), new("--sync-source", false), new("--mode", true), new("--mods-file", true), new("--timeout-seconds", true), new("--target-package-id", true), new("--capture-screenshots", false)]),
+            ["test run"] = (2, 0, [new("--deploy", false), new("--sync-source", false), new("--mode", true), new("--mods-file", true), new("--timeout-seconds", true), new("--target-package-id", true), new("--capture-screenshots", false), new("--isolated-desktop", false), new("--no-isolated-desktop", false)]),
             ["test settings"] = (2, 0, []),
-            ["data refresh"] = (2, 0, [new("--mods-file", true), new("--output", true), new("--timeout-seconds", true)]),
+            ["data refresh"] = (2, 0, [new("--mods-file", true), new("--output", true), new("--timeout-seconds", true), new("--isolated-desktop", false), new("--no-isolated-desktop", false)]),
             ["data status"] = (2, 0, [])
         };
 

@@ -76,6 +76,9 @@ public static class DataCommand
         if (context is null) return code;
         if (!CliArgs.TryPositiveInt(args, "--timeout-seconds", context.Config.Timeouts.MaxWait, out var timeoutSeconds, out var timeoutError))
             return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "TIMEOUT_INVALID", timeoutError!, context.Root);
+        var isolation = IsolatedDesktopOptions.Resolve(context.Config, "data", args, out var isolationError);
+        if (isolation is null)
+            return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, isolationError!.Code, isolationError.Message, context.Root);
 
         var outputPath = ResolveOutputPath(context, CliArgs.Value(args, "--output"), out var outputError);
         if (outputPath is null)
@@ -137,7 +140,7 @@ public static class DataCommand
         };
 
         ConfigTransaction? transaction = null;
-        Process? game = null;
+        GameProcessSession? gameSession = null;
         var gameExited = true;
         DataExportResult? exportResult = null;
         var completionLogSeen = false;
@@ -155,21 +158,8 @@ public static class DataCommand
             await transaction.WriteAllTextAsync(GameEnvironment.ModsConfigPath(), ModListParser.Render(GameEnvironment.ModsConfigPath(), modList.Mods));
             await transaction.WriteAllTextAsync(requestPath, JsonSerializer.Serialize(request, JsonOptions));
 
-            var startInfo = new ProcessStartInfo(gamePath)
-            {
-                WorkingDirectory = context.Config.RimWorldDir,
-                UseShellExecute = false,
-                CreateNoWindow = false,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true
-            };
-            startInfo.ArgumentList.Add("-popupwindow");
-            game = new Process { StartInfo = startInfo };
-            game.OutputDataReceived += (_, eventArgs) => { if (eventArgs.Data is not null) Console.Error.WriteLine(eventArgs.Data); };
-            game.ErrorDataReceived += (_, eventArgs) => { if (eventArgs.Data is not null) Console.Error.WriteLine(eventArgs.Data); };
-            if (!game.Start()) throw new InvalidOperationException("无法启动 RimWorld");
-            game.BeginOutputReadLine();
-            game.BeginErrorReadLine();
+            gameSession = GameProcessLauncher.Start(gamePath, context.Config.RimWorldDir, ["-popupwindow"], isolation.Enabled, runId);
+            var game = gameSession.Process;
 
             var deadline = DateTimeOffset.UtcNow.AddSeconds(timeoutSeconds);
             while (DateTimeOffset.UtcNow < deadline)
@@ -219,6 +209,12 @@ public static class DataCommand
             outcomeCode = "CANCELLED";
             outcomeMessage = "操作已取消";
         }
+        catch (GameProcessLaunchException ex)
+        {
+            outcomeExitCode = ExitCodes.GameFailed;
+            outcomeCode = ex.Code;
+            outcomeMessage = ex.Message;
+        }
         catch (Exception ex)
         {
             outcomeExitCode = ExitCodes.GameFailed;
@@ -227,9 +223,9 @@ public static class DataCommand
         }
         finally
         {
-            if (game is not null)
+            if (gameSession is not null)
             {
-                var termination = await ProcessUtil.TerminateAsync(game);
+                var termination = await ProcessUtil.TerminateAsync(gameSession.Process);
                 if (!termination.Exited)
                 {
                     gameExited = false;
@@ -237,33 +233,41 @@ public static class DataCommand
                     outcomeCode = "GAME_TERMINATION_FAILED";
                     outcomeMessage = $"无法终止 RimWorld，已保留配置事务: {termination.Error}";
                 }
-                game.Dispose();
+                gameSession.Dispose();
+                if (gameExited && gameSession.CleanupError is { } cleanupError)
+                {
+                    outcomeExitCode = ExitCodes.TaskFailed;
+                    outcomeCode = "ISOLATED_DESKTOP_CLEANUP_FAILED";
+                    outcomeMessage = $"无法关闭隔离桌面，Windows error={cleanupError}";
+                }
             }
         }
 
         if (!gameExited)
-            return CliResult.WriteFailure(command, outcomeExitCode, outcomeCode, outcomeMessage, context.Root, new { runId, outputPath, transactionRetained = transaction is not null });
+            return CliResult.WriteFailure(command, outcomeExitCode, outcomeCode, outcomeMessage, context.Root, new { runId, outputPath, isolatedDesktop = isolation.Enabled, isolatedDesktopSource = isolation.Source, transactionRetained = transaction is not null });
 
         if (transaction is not null)
         {
             try { await transaction.RestoreAsync(force: true); }
             catch (Exception ex)
             {
-                return CliResult.WriteFailure(command, ExitCodes.TaskFailed, "TRANSACTION_RESTORE_FAILED", ex.Message, context.Root, new { runId, outputPath });
+                return CliResult.WriteFailure(command, ExitCodes.TaskFailed, "TRANSACTION_RESTORE_FAILED", ex.Message, context.Root, new { runId, outputPath, isolatedDesktop = isolation.Enabled, isolatedDesktopSource = isolation.Source });
             }
         }
         if (outcomeExitCode != ExitCodes.Success)
-            return CliResult.WriteFailure(command, outcomeExitCode, outcomeCode, outcomeMessage, context.Root, new { runId, outputPath, resultPath });
+            return CliResult.WriteFailure(command, outcomeExitCode, outcomeCode, outcomeMessage, context.Root, new { runId, outputPath, resultPath, isolatedDesktop = isolation.Enabled, isolatedDesktopSource = isolation.Source });
 
         var validationError = ValidateRefreshResult(
             exportResult!, outputPath, runId, inputModsHash, requestedModsHash,
             context.Config.GameVersion, context.Config.CurrentPackageId(context.Root), out var status);
         if (validationError is not null)
-            return CliResult.WriteFailure(command, ExitCodes.GameFailed, validationError.Code, validationError.Message, context.Root, validationError.Details);
+            return CliResult.WriteFailure(command, ExitCodes.GameFailed, validationError.Code, validationError.Message, context.Root, new { isolatedDesktop = isolation.Enabled, isolatedDesktopSource = isolation.Source, validationError.Details });
         return CliResult.WriteSuccess(command, context.Root, new
         {
             databasePath = outputPath,
             runId,
+            isolatedDesktop = isolation.Enabled,
+            isolatedDesktopSource = isolation.Source,
             mods = modList.Mods,
             additions = modList.Additions,
             requestPath,

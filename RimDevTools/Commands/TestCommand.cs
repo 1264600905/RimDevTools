@@ -55,6 +55,9 @@ public static class TestCommand
             return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "SYNC_SOURCE_REQUIRES_DEPLOY", "--sync-source 必须与 --deploy 一起使用", context.Root);
         if (!CliArgs.TryPositiveInt(args, "--timeout-seconds", context.Config.Timeouts.MaxWait, out var timeout, out var timeoutError))
             return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "TIMEOUT_INVALID", timeoutError!, context.Root);
+        var isolation = IsolatedDesktopOptions.Resolve(context.Config, mode, args, out var isolationError);
+        if (isolation is null)
+            return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, isolationError!.Code, isolationError.Message, context.Root);
 
         var targetPackageId = CliArgs.Value(args, "--target-package-id")?.Trim();
         if (string.IsNullOrWhiteSpace(targetPackageId)) targetPackageId = context.Config.CurrentPackageId(context.Root);
@@ -93,7 +96,7 @@ public static class TestCommand
         }
 
         ConfigTransaction? transaction = null;
-        Process? game = null;
+        GameProcessSession? gameSession = null;
         TestOutcome outcome;
         var gameExited = true;
         var outputPath = SettingsEditor.AutoTestOutputPath(context);
@@ -110,33 +113,18 @@ public static class TestCommand
 
             LogArchive.Rotate(SettingsEditor.SyncLogPath(context), context.Config.Retention.MaxLogFiles);
 
-            var startInfo = new ProcessStartInfo(gamePath)
-            {
-                WorkingDirectory = context.Config.RimWorldDir,
-                UseShellExecute = false,
-                CreateNoWindow = false,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true
-            };
-            startInfo.ArgumentList.Add("-popupwindow");
-            if (mode is "auto" or "xml") startInfo.ArgumentList.Add("quicktest");
-            game = new Process { StartInfo = startInfo };
-            game.OutputDataReceived += (_, eventArgs) => { if (eventArgs.Data is not null) Console.Error.WriteLine(eventArgs.Data); };
-            game.ErrorDataReceived += (_, eventArgs) => { if (eventArgs.Data is not null) Console.Error.WriteLine(eventArgs.Data); };
-            if (!game.Start())
-            {
-                outcome = TestOutcome.Failure(ExitCodes.GameFailed, "GAME_START_FAILED", "无法启动 RimWorld");
-            }
-            else
-            {
-                game.BeginOutputReadLine();
-                game.BeginErrorReadLine();
-                outcome = await WaitForModeAsync(mode, game, timeout, logOffset, outputPath, targetPackageId, runId, resultSnapshot, cancellationToken);
-            }
+            var gameArguments = new List<string> { "-popupwindow" };
+            if (mode is "auto" or "xml") gameArguments.Add("quicktest");
+            gameSession = GameProcessLauncher.Start(gamePath, context.Config.RimWorldDir, gameArguments, isolation.Enabled, runId);
+            outcome = await WaitForModeAsync(mode, gameSession.Process, timeout, logOffset, outputPath, targetPackageId, runId, resultSnapshot, cancellationToken);
         }
         catch (OperationCanceledException)
         {
             outcome = TestOutcome.Failure(ExitCodes.Cancelled, "CANCELLED", "操作已取消");
+        }
+        catch (GameProcessLaunchException ex)
+        {
+            outcome = TestOutcome.Failure(ExitCodes.GameFailed, ex.Code, ex.Message, new { ex.NativeError });
         }
         catch (Exception ex)
         {
@@ -144,20 +132,22 @@ public static class TestCommand
         }
         finally
         {
-            if (game is not null)
+            if (gameSession is not null)
             {
-                var termination = await ProcessUtil.TerminateAsync(game);
+                var termination = await ProcessUtil.TerminateAsync(gameSession.Process);
                 if (!termination.Exited)
                 {
                     gameExited = false;
                     outcome = TestOutcome.Failure(ExitCodes.TaskFailed, "GAME_TERMINATION_FAILED", $"无法终止 RimWorld，已保留配置事务: {termination.Error}");
                 }
-                game.Dispose();
+                gameSession.Dispose();
+                if (gameExited && gameSession.CleanupError is { } cleanupError)
+                    outcome = TestOutcome.Failure(ExitCodes.TaskFailed, "ISOLATED_DESKTOP_CLEANUP_FAILED", "无法关闭隔离桌面", new { nativeError = cleanupError });
             }
         }
 
         if (!gameExited)
-            return CliResult.WriteFailure(command, outcome.ExitCode, outcome.Code, outcome.Message, context.Root, new { runId, mode, transactionRetained = transaction is not null });
+            return CliResult.WriteFailure(command, outcome.ExitCode, outcome.Code, outcome.Message, context.Root, new { runId, mode, isolatedDesktop = isolation.Enabled, isolatedDesktopSource = isolation.Source, transactionRetained = transaction is not null });
 
         if (transaction is not null)
         {
@@ -172,7 +162,7 @@ public static class TestCommand
         }
 
         if (!outcome.Ok)
-            return CliResult.WriteFailure(command, outcome.ExitCode, outcome.Code, outcome.Message, context.Root, new { runId, mode, mods = modList.Mods, additions = modList.Additions, outcome.Details });
+            return CliResult.WriteFailure(command, outcome.ExitCode, outcome.Code, outcome.Message, context.Root, new { runId, mode, isolatedDesktop = isolation.Enabled, isolatedDesktopSource = isolation.Source, mods = modList.Mods, additions = modList.Additions, outcome.Details });
 
         return CliResult.WriteSuccess(command, context.Root, new
         {
@@ -180,6 +170,8 @@ public static class TestCommand
             mode,
             targetPackageId,
             captureScreenshots,
+            isolatedDesktop = isolation.Enabled,
+            isolatedDesktopSource = isolation.Source,
             mods = modList.Mods,
             additions = modList.Additions,
             signal = outcome.Message,
