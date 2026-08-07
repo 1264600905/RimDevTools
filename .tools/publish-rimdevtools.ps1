@@ -21,6 +21,7 @@ $logRoot = Join-Path $toolRoot "log"
 $autoTestOutput = Join-Path $logRoot "AutoTestOutput"
 $modListRoot = Join-Path $toolRoot "modlist"
 $databaseRoot = Join-Path $toolRoot "db"
+$projectTemplateSource = Join-Path $projectRoot "components\ProjectTemplate"
 
 try {
     New-Item -ItemType Directory -Path $toolRoot, $dataRoot, $component, $autoTestOutput, $modListRoot, $databaseRoot -Force | Out-Null
@@ -52,8 +53,24 @@ try {
     Copy-Item -LiteralPath (Join-Path $projectRoot "RimDevTools\Packaging\licenses\third-party-notices.txt") -Destination $licenses -Force
 
     Copy-Item -LiteralPath (Join-Path $projectRoot ".tools\test\modlist\defaultMods.xml") -Destination (Join-Path $modListRoot "defaultMods.xml") -Force
-    Copy-Item -LiteralPath (Join-Path $projectRoot "mod_config.jsonc") -Destination (Join-Path $output "mod_config.jsonc") -Force
+    Copy-Item -LiteralPath (Join-Path $projectTemplateSource "1.6\mod_config.jsonc") -Destination (Join-Path $output "mod_config.jsonc") -Force
     [System.IO.File]::WriteAllText((Join-Path $logRoot "精选日志.log"), "", [System.Text.UTF8Encoding]::new($false))
+
+    $projectTemplateTarget = Join-Path $toolRoot "components\ProjectTemplate"
+    if (-not (Test-Path -LiteralPath (Join-Path $projectTemplateSource "manifest.json"))) {
+        throw "缺少 ProjectTemplate manifest: $projectTemplateSource"
+    }
+    New-Item -ItemType Directory -Path $projectTemplateTarget -Force | Out-Null
+    Copy-Item -LiteralPath (Join-Path $projectTemplateSource "manifest.json") -Destination $projectTemplateTarget -Force
+    foreach ($version in @("1.6", "1.7", "1.8")) {
+        $sourceVersion = Join-Path $projectTemplateSource $version
+        if (-not (Test-Path -LiteralPath $sourceVersion)) { throw "缺少 ProjectTemplate $version 模板: $sourceVersion" }
+        $targetVersion = Join-Path $projectTemplateTarget $version
+        Copy-Item -LiteralPath $sourceVersion -Destination $targetVersion -Recurse -Force
+        if (Test-Path -LiteralPath (Join-Path $targetVersion ".tools")) {
+            throw "ProjectTemplate $version 不得重复包含 .tools"
+        }
+    }
 
     $versionJson = (& (Join-Path $toolRoot "RimDevTools.exe") --version | Out-String)
     if ($LASTEXITCODE -ne 0) { throw "发布后的 RimDevTools --version 验证失败" }

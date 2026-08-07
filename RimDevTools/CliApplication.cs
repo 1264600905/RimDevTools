@@ -51,6 +51,7 @@ public static class CliApplication
         {
             return command switch
             {
+                "init" => await InitCommand.RunAsync(args, cancellation.Token),
                 "doctor" => await DoctorCommand.RunAsync(args),
                 "deploy" => await DeployCommand.RunAsync(args, cancellation.Token),
                 "ref search" => await RefCommand.SearchAsync(args),
@@ -120,6 +121,7 @@ public static class CliArgs
     private static readonly IReadOnlyDictionary<string, (int PrefixLength, int Positionals, Option[] Options)> Contracts
         = new Dictionary<string, (int, int, Option[])>(StringComparer.OrdinalIgnoreCase)
         {
+            ["init"] = (1, 1, [new("--output", true)]),
             ["doctor"] = (1, 0, []),
             ["deploy"] = (1, 0, [new("--sync-source", false), new("--dry-run", false)]),
             ["ref search"] = (2, 1, [new("--fuzzy", false)]),

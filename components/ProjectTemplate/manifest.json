@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "supportedVersions": ["1.6", "1.7", "1.8"],
+  "requiredFiles": [
+    ".gitignore",
+    "mod_config.jsonc",
+    "LoadFolders.xml",
+    "README.md",
+    "About/About.xml",
+    "About/Preview.png",
+    "source/TempProject/Bootstrap.cs",
+    "source/TempProject/TempProject.csproj",
+    "source/TempProject/TempProject.sln",
+    ".tools/RimDevTools.exe",
+    ".tools/rimsearcher.exe",
+    ".tools/Data/RimSearcher_DataMod/Assemblies/RimSearcher.DataMod.dll",
+    ".tools/Data/RimSearcher_DataMod/Native/e_sqlite3.dll",
+    ".tools/Ilspy/ilspycmd.exe",
+    ".tools/modlist/defaultMods.xml",
+    ".tools/log/精选日志.log"
+  ],
+  "requiredDirectories": [
+    ".tools/db",
+    ".tools/log/AutoTestOutput",
+    "{version}/Assemblies",
+    "{version}/Defs",
+    "{version}/Patches",
+    "Languages",
+    "参考文档"
+  ]
+}

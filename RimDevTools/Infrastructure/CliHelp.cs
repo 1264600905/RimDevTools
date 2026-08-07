@@ -88,9 +88,10 @@ public static class CliHelp
           -h, --help          Show this help.
 
         Behavior:
-          Reads components/ProjectTemplate/manifest.json beside RimDevTools.exe, copies
-          components/ProjectTemplate/<version> verbatim, and creates only missing empty
-          directories declared by the manifest. No existing project is required.
+          Reads components/ProjectTemplate/manifest.json beside RimDevTools.exe and copies
+          components/ProjectTemplate/<version> verbatim. Shared tooling is installed once
+          from the executable directory as .tools, excluding components. Only missing empty
+          directories declared by the manifest are created. No existing project is required.
 
         Example:
           RimDevTools.exe init 1.6 --output D:\RimWorldMods\MyMod

@@ -5,6 +5,7 @@ using System.Xml.Linq;
 
 var release = Path.GetFullPath(args.Length > 0 ? args[0] : Path.Combine(Environment.CurrentDirectory, "artifacts", "RimDevTools-Package"));
 var tools = Path.Combine(release, ".tools");
+var projectTemplates = Path.Combine(tools, "components", "ProjectTemplate");
 var passed = 0;
 
 RequireFile("mod_config.jsonc");
@@ -18,6 +19,7 @@ RequireFile(Path.Combine(".tools", "Data", "licenses", "RimSearcher-LICENSE.txt"
 RequireFile(Path.Combine(".tools", "Data", "licenses", "ILSpy-LICENSE.txt"));
 RequireFile(Path.Combine(".tools", "Data", "licenses", "third-party-notices.txt"));
 RequireFile(Path.Combine(".tools", "modlist", "defaultMods.xml"));
+RequireFile(Path.Combine(".tools", "components", "ProjectTemplate", "manifest.json"));
 RequireDirectory(Path.Combine(".tools", "log", "AutoTestOutput"));
 RequireDirectory(Path.Combine(".tools", "db"));
 Assert(File.Exists(Path.Combine(tools, "log", "精选日志.log")) && new FileInfo(Path.Combine(tools, "log", "精选日志.log")).Length == 0, "release starts with an empty selected log");
@@ -39,6 +41,7 @@ using (var config = JsonDocument.Parse(File.ReadAllText(Path.Combine(release, "m
     Assert(root.GetProperty("rimsearcher_db_path").GetString() == ".tools\\db\\defs.db", "packaged configuration points at the isolated database directory");
     Assert(root.GetProperty("ilspycmd_path").GetString() == "Ilspy\\ilspycmd.exe", "packaged configuration points at the packaged ILSpy directory");
     Assert(root.GetProperty("retention").GetProperty("max_auto_test_runs").GetInt32() == 3, "packaged configuration keeps three automatic test runs by default");
+    Assert(root.GetProperty("isolated_desktop").GetBoolean(), "packaged configuration enables isolated desktop by default");
 }
 
 var versionOutput = Run(Path.Combine(tools, "RimDevTools.exe"), release, "--version");
@@ -56,6 +59,64 @@ var dataModVersion = AssemblyName.GetAssemblyName(Path.Combine(tools, "Data", "R
 var rimSearcherVersion = FileVersionInfo.GetVersionInfo(Path.Combine(tools, "rimsearcher.exe")).FileVersion;
 Assert(SameProductVersion(dataModVersion, rimSearcherVersion), "component file versions are product-compatible");
 
+using (var manifestDocument = JsonDocument.Parse(File.ReadAllText(Path.Combine(projectTemplates, "manifest.json"))))
+{
+    var manifest = manifestDocument.RootElement;
+    Assert(manifest.GetProperty("schemaVersion").GetInt32() == 1, "project template manifest uses the supported schema");
+    var supportedVersions = manifest.GetProperty("supportedVersions").EnumerateArray().Select(value => value.GetString()).ToArray();
+    Assert(supportedVersions.SequenceEqual(new[] { "1.6", "1.7", "1.8" }), "project template manifest advertises all supported versions");
+    var requiredDirectories = manifest.GetProperty("requiredDirectories").EnumerateArray().Select(value => value.GetString()!).ToArray();
+    var initRoot = Path.Combine(Path.GetTempPath(), "RimDevToolsReleaseTests", Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(initRoot);
+    try
+    {
+        foreach (var version in new[] { "1.6", "1.7", "1.8" })
+        {
+            var template = Path.Combine(projectTemplates, version);
+            Assert(!Directory.Exists(Path.Combine(template, ".tools")) && !File.Exists(Path.Combine(template, ".tools")), $"{version} template does not duplicate shared .tools");
+
+            var output = Path.Combine(initRoot, $"project-{version}");
+            var init = RunResult(Path.Combine(tools, "RimDevTools.exe"), release, "init", version, "--output", output);
+            Assert(init.ExitCode == 0, $"init {version} exits successfully");
+            using (var initJson = JsonDocument.Parse(init.Stdout))
+            {
+                var result = initJson.RootElement.GetProperty("result");
+                Assert(initJson.RootElement.GetProperty("ok").GetBoolean() && result.GetProperty("version").GetString() == version, $"init {version} returns structured success JSON");
+            }
+
+            AssertTemplateMatchesOutput(template, tools, output, requiredDirectories, version);
+            using (var config = JsonDocument.Parse(File.ReadAllText(Path.Combine(output, "mod_config.jsonc")), new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true }))
+                Assert(config.RootElement.GetProperty("game_version").GetString() == version && config.RootElement.GetProperty("isolated_desktop").GetBoolean(), $"init {version} keeps its version-specific JSONC");
+            Assert(XDocument.Load(Path.Combine(output, "LoadFolders.xml")).Root?.Element($"v{version}") is not null, $"init {version} keeps its version-specific LoadFolders XML");
+            Assert(XDocument.Load(Path.Combine(output, "About", "About.xml")).Root?.Element("supportedVersions")?.Elements("li").Single().Value == version, $"init {version} keeps its version-specific About XML");
+            Assert(XDocument.Load(Path.Combine(output, "source", "TempProject", "TempProject.csproj")).Root is not null, $"init {version} produces parseable csproj XML");
+            Assert(File.ReadAllText(Path.Combine(output, "source", "TempProject", "TempProject.sln")).Contains("TempProject.csproj", StringComparison.Ordinal), $"init {version} produces a valid solution contract");
+
+            var doctor = RunResult(Path.Combine(output, ".tools", "RimDevTools.exe"), output, "doctor");
+            Assert(doctor.ExitCode == 0 && JsonDocument.Parse(doctor.Stdout).RootElement.GetProperty("ok").GetBoolean(), $"doctor discovers initialized {version} project");
+            var initializedVersion = RunResult(Path.Combine(output, ".tools", "RimDevTools.exe"), output, "--version");
+            Assert(initializedVersion.ExitCode == 0 && JsonDocument.Parse(initializedVersion.Stdout).RootElement.GetProperty("componentsCompatible").GetBoolean(), $"initialized {version} tools start with compatible components");
+            Assert(!Directory.EnumerateFileSystemEntries(Path.Combine(output, ".tools", "db")).Any(), $"init {version} does not contain a database");
+            Assert(!Directory.EnumerateFileSystemEntries(Path.Combine(output, ".tools", "log", "AutoTestOutput")).Any(), $"init {version} does not contain automatic test output");
+            Assert(Directory.EnumerateFiles(Path.Combine(output, ".tools", "log")).All(path => new FileInfo(path).Length == 0), $"init {version} does not contain historical logs");
+        }
+
+        var unsupportedOutput = Path.Combine(initRoot, "unsupported");
+        var unsupported = RunResult(Path.Combine(tools, "RimDevTools.exe"), release, "init", "1.5", "--output", unsupportedOutput);
+        Assert(unsupported.ExitCode == 2 && JsonDocument.Parse(unsupported.Stdout).RootElement.GetProperty("error").GetProperty("code").GetString() == "VERSION_UNSUPPORTED" && !Directory.Exists(unsupportedOutput), "packaged init rejects unsupported versions before writing");
+
+        var nonemptyOutput = Path.Combine(initRoot, "nonempty");
+        Directory.CreateDirectory(nonemptyOutput);
+        File.WriteAllText(Path.Combine(nonemptyOutput, "keep.txt"), "user");
+        var nonempty = RunResult(Path.Combine(tools, "RimDevTools.exe"), release, "init", "1.6", "--output", nonemptyOutput);
+        Assert(nonempty.ExitCode == 2 && JsonDocument.Parse(nonempty.Stdout).RootElement.GetProperty("error").GetProperty("code").GetString() == "INIT_TARGET_NOT_EMPTY" && File.ReadAllText(Path.Combine(nonemptyOutput, "keep.txt")) == "user", "packaged init preserves a nonempty target");
+    }
+    finally
+    {
+        if (Directory.Exists(initRoot)) Directory.Delete(initRoot, recursive: true);
+    }
+}
+
 Console.WriteLine($"PASS {passed} release tests");
 
 void RequireFile(string relative)
@@ -69,15 +130,62 @@ void RequireDirectory(string relative)
 
 string Run(string executable, string workingDirectory, params string[] arguments)
 {
+    var result = RunResult(executable, workingDirectory, arguments);
+    if (result.ExitCode != 0) throw new InvalidOperationException($"{Path.GetFileName(executable)} exited {result.ExitCode}: {result.Stderr}");
+    return result.Stdout;
+}
+
+(int ExitCode, string Stdout, string Stderr) RunResult(string executable, string workingDirectory, params string[] arguments)
+{
     var startInfo = new ProcessStartInfo(executable) { WorkingDirectory = workingDirectory, UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true };
     foreach (var argument in arguments) startInfo.ArgumentList.Add(argument);
     using var process = Process.Start(startInfo) ?? throw new InvalidOperationException($"Unable to start {executable}");
     var stdout = process.StandardOutput.ReadToEnd();
     var stderr = process.StandardError.ReadToEnd();
     process.WaitForExit();
-    if (process.ExitCode != 0) throw new InvalidOperationException($"{Path.GetFileName(executable)} exited {process.ExitCode}: {stderr}");
-    return stdout;
+    return (process.ExitCode, stdout, stderr);
 }
+
+void AssertTemplateMatchesOutput(string template, string sharedTools, string output, IReadOnlyList<string> requiredDirectories, string version)
+{
+    var templateFiles = RelativeEntries(template, files: true);
+    var outputFiles = RelativeEntries(output, files: true);
+    var toolFiles = SharedToolEntries(sharedTools, files: true);
+    var expectedFiles = templateFiles.Concat(toolFiles.Select(path => Path.Combine(".tools", path))).OrderBy(path => path, StringComparer.OrdinalIgnoreCase).ToArray();
+    Assert(expectedFiles.SequenceEqual(outputFiles, StringComparer.OrdinalIgnoreCase), $"init {version} contains exactly its template plus shared tooling files");
+    var allBytesMatch = true;
+    foreach (var relative in templateFiles)
+        allBytesMatch &= File.ReadAllBytes(Path.Combine(template, relative)).SequenceEqual(File.ReadAllBytes(Path.Combine(output, relative)));
+    foreach (var relative in toolFiles)
+        allBytesMatch &= File.ReadAllBytes(Path.Combine(sharedTools, relative)).SequenceEqual(File.ReadAllBytes(Path.Combine(output, ".tools", relative)));
+    Assert(allBytesMatch, $"init {version} copies template and shared tooling files byte-for-byte");
+
+    var expectedDirectories = new HashSet<string>(RelativeEntries(template, files: false), StringComparer.OrdinalIgnoreCase);
+    expectedDirectories.Add(".tools");
+    foreach (var relative in SharedToolEntries(sharedTools, files: false)) expectedDirectories.Add(Path.Combine(".tools", relative));
+    foreach (var declared in requiredDirectories)
+    {
+        var relative = declared.Replace("{version}", version, StringComparison.Ordinal).Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar);
+        while (!string.IsNullOrEmpty(relative) && relative != ".")
+        {
+            expectedDirectories.Add(relative);
+            relative = Path.GetDirectoryName(relative) ?? "";
+        }
+    }
+    var outputDirectories = RelativeEntries(output, files: false);
+    Assert(expectedDirectories.OrderBy(path => path, StringComparer.OrdinalIgnoreCase).SequenceEqual(outputDirectories, StringComparer.OrdinalIgnoreCase), $"init {version} creates only manifest-declared directory paths");
+}
+
+string[] RelativeEntries(string root, bool files)
+    => (files ? Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories) : Directory.EnumerateDirectories(root, "*", SearchOption.AllDirectories))
+        .Select(path => Path.GetRelativePath(root, path))
+        .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+        .ToArray();
+
+string[] SharedToolEntries(string root, bool files)
+    => RelativeEntries(root, files)
+        .Where(path => !path.Equals("components", StringComparison.OrdinalIgnoreCase) && !path.StartsWith($"components{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase))
+        .ToArray();
 
 bool SameProductVersion(Version? assemblyVersion, string? fileVersion)
     => assemblyVersion is not null && Version.TryParse(fileVersion, out var parsed)

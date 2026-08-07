@@ -217,6 +217,7 @@ internal sealed class TestSuite
         try
         {
             TestJsoncAndDiscovery();
+            await TestInitAsync();
             await TestHelpAsync();
             TestModListParser();
             TestIncrementalLogSignalScanner();
@@ -238,6 +239,86 @@ internal sealed class TestSuite
             Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", null);
             if (Directory.Exists(_temp)) Directory.Delete(_temp, true);
         }
+    }
+
+    private async Task TestInitAsync()
+    {
+        var templateRoot = NewDirectory(Path.Combine("init", "components", "ProjectTemplate"));
+        var toolRoot = NewDirectory(Path.Combine("init", "shared-tools"));
+        File.WriteAllText(Path.Combine(toolRoot, "RimDevTools.exe"), "shared-tool");
+        Directory.CreateDirectory(Path.Combine(toolRoot, "components", "must-not-copy"));
+        WriteInitManifest(templateRoot);
+        foreach (var version in new[] { "1.6", "1.7", "1.8" })
+        {
+            var versionRoot = NewDirectory(Path.Combine("init", "components", "ProjectTemplate", version));
+            File.WriteAllText(Path.Combine(versionRoot, "marker.txt"), $"template-{version}");
+            var nested = Directory.CreateDirectory(Path.Combine(versionRoot, "nested")).FullName;
+            File.WriteAllBytes(Path.Combine(nested, "bytes.bin"), [0, 1, 2, 255]);
+        }
+
+        var output = Path.Combine(_temp, "init-output-1.6");
+        var success = await CaptureAsync(() => InitCommand.RunAsync(["init", "1.6", "--output", output], templateRoot, toolRoot));
+        Assert(success.ExitCode == 0 && File.ReadAllText(Path.Combine(output, "marker.txt")) == "template-1.6", "init selects and copies the requested filesystem template");
+        Assert(File.ReadAllBytes(Path.Combine(output, "nested", "bytes.bin")).SequenceEqual(new byte[] { 0, 1, 2, 255 }), "init copies template files byte-for-byte");
+        Assert(Directory.Exists(Path.Combine(output, "1.6", "Assemblies")) && Directory.Exists(Path.Combine(output, "empty-runtime")), "init creates only manifest-declared missing directories");
+        Assert(File.ReadAllText(Path.Combine(output, ".tools", "RimDevTools.exe")) == "shared-tool" && !Directory.Exists(Path.Combine(output, ".tools", "components")), "init installs shared tooling once and excludes components");
+
+        File.WriteAllText(Path.Combine(templateRoot, "1.7", "marker.txt"), "template-updated-without-code-change");
+        var updatedOutput = Path.Combine(_temp, "init-output-1.7");
+        var updated = await CaptureAsync(() => InitCommand.RunAsync(["init", "1.7", "--output", updatedOutput], templateRoot, toolRoot));
+        Assert(updated.ExitCode == 0 && File.ReadAllText(Path.Combine(updatedOutput, "marker.txt")) == "template-updated-without-code-change", "init reflects component template updates without hardcoded project content");
+        Assert(!Directory.Exists(Path.Combine(updatedOutput, "1.6")) && Directory.Exists(Path.Combine(updatedOutput, "1.7", "Assemblies")), "init does not rewrite one version template into another");
+
+        var unsupportedOutput = Path.Combine(_temp, "init-unsupported");
+        var unsupported = await CaptureAsync(() => InitCommand.RunAsync(["init", "1.5", "--output", unsupportedOutput], templateRoot, toolRoot));
+        Assert(unsupported.ExitCode == ExitCodes.InvalidArguments && JsonErrorCode(unsupported.Output) == "VERSION_UNSUPPORTED" && !Directory.Exists(unsupportedOutput), "init rejects unsupported versions before writing the target");
+
+        var nonempty = NewDirectory("init-nonempty");
+        File.WriteAllText(Path.Combine(nonempty, "keep.txt"), "user");
+        var nonemptyResult = await CaptureAsync(() => InitCommand.RunAsync(["init", "1.6", "--output", nonempty], templateRoot, toolRoot));
+        Assert(nonemptyResult.ExitCode == ExitCodes.InvalidArguments && JsonErrorCode(nonemptyResult.Output) == "INIT_TARGET_NOT_EMPTY" && File.ReadAllText(Path.Combine(nonempty, "keep.txt")) == "user", "init rejects a nonempty target without changing it");
+
+        var missingManifestRoot = NewDirectory(Path.Combine("init", "missing-manifest"));
+        var missingManifestOutput = Path.Combine(_temp, "init-missing-manifest-output");
+        var missingManifest = await CaptureAsync(() => InitCommand.RunAsync(["init", "1.6", "--output", missingManifestOutput], missingManifestRoot, toolRoot));
+        Assert(missingManifest.ExitCode == ExitCodes.MissingDependency && JsonErrorCode(missingManifest.Output) == "INIT_TEMPLATE_MISSING" && !Directory.Exists(missingManifestOutput), "init fails atomically when the manifest is missing");
+
+        var invalidRoot = NewDirectory(Path.Combine("init", "invalid-schema"));
+        File.WriteAllText(Path.Combine(invalidRoot, "manifest.json"), "{\"schemaVersion\":2,\"supportedVersions\":[\"1.6\"],\"requiredFiles\":[],\"requiredDirectories\":[]}");
+        var invalidOutput = Path.Combine(_temp, "init-invalid-schema-output");
+        var invalid = await CaptureAsync(() => InitCommand.RunAsync(["init", "1.6", "--output", invalidOutput], invalidRoot, toolRoot));
+        Assert(invalid.ExitCode == ExitCodes.TaskFailed && JsonErrorCode(invalid.Output) == "INIT_TEMPLATE_INVALID" && !Directory.Exists(invalidOutput), "init rejects an unsupported manifest schema before installation");
+
+        var missingFileRoot = NewDirectory(Path.Combine("init", "missing-file"));
+        WriteInitManifest(missingFileRoot, requiredFiles: ["required.txt"]);
+        Directory.CreateDirectory(Path.Combine(missingFileRoot, "1.6"));
+        var missingFileOutput = Path.Combine(_temp, "init-missing-file-output");
+        var missingFile = await CaptureAsync(() => InitCommand.RunAsync(["init", "1.6", "--output", missingFileOutput], missingFileRoot, toolRoot));
+        Assert(missingFile.ExitCode == ExitCodes.TaskFailed && JsonErrorCode(missingFile.Output) == "INIT_TEMPLATE_INVALID" && !Directory.Exists(missingFileOutput), "init does not synthesize a missing required file");
+
+        var traversalRoot = NewDirectory(Path.Combine("init", "traversal"));
+        WriteInitManifest(traversalRoot, requiredDirectories: ["..\\escape"]);
+        Directory.CreateDirectory(Path.Combine(traversalRoot, "1.6"));
+        var traversalOutput = Path.Combine(_temp, "init-traversal-output");
+        var traversal = await CaptureAsync(() => InitCommand.RunAsync(["init", "1.6", "--output", traversalOutput], traversalRoot, toolRoot));
+        Assert(traversal.ExitCode == ExitCodes.TaskFailed && JsonErrorCode(traversal.Output) == "INIT_TEMPLATE_INVALID" && !Directory.Exists(traversalOutput), "init rejects manifest path traversal before installation");
+
+        Directory.CreateDirectory(Path.Combine(templateRoot, "1.8", ".tools"));
+        var duplicateToolsOutput = Path.Combine(_temp, "init-duplicate-tools-output");
+        var duplicateTools = await CaptureAsync(() => InitCommand.RunAsync(["init", "1.8", "--output", duplicateToolsOutput], templateRoot, toolRoot));
+        Assert(duplicateTools.ExitCode == ExitCodes.TaskFailed && JsonErrorCode(duplicateTools.Output) == "INIT_TEMPLATE_INVALID" && !Directory.Exists(duplicateToolsOutput), "init rejects version templates that duplicate shared tooling");
+    }
+
+    private static void WriteInitManifest(string root, string[]? requiredFiles = null, string[]? requiredDirectories = null)
+    {
+        var manifest = new
+        {
+            schemaVersion = 1,
+            supportedVersions = new[] { "1.6", "1.7", "1.8" },
+            requiredFiles = requiredFiles ?? new[] { "marker.txt", "nested/bytes.bin" },
+            requiredDirectories = requiredDirectories ?? new[] { "{version}/Assemblies", "empty-runtime" }
+        };
+        File.WriteAllText(Path.Combine(root, "manifest.json"), JsonSerializer.Serialize(manifest));
     }
 
     private void TestJsoncAndDiscovery()
@@ -275,7 +356,7 @@ internal sealed class TestSuite
             Assert(result.ExitCode == 0 && result.Output.Contains("Usage:", StringComparison.Ordinal), $"help succeeds without project discovery: {string.Join(' ', args)}");
         }
 
-        foreach (var command in new[] { "deploy", "ref search", "ref pull", "ref deps", "ref related", "test run", "data refresh" })
+        foreach (var command in new[] { "init", "deploy", "ref search", "ref pull", "ref deps", "ref related", "test run", "data refresh" })
         {
             using var writer = new StringWriter();
             var original = Console.Out;

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ModMetaData>
+  <name>TempProject</name>
+  <author>Author</author>
+  <packageId>author.tempproject</packageId>
+  <supportedVersions>
+    <li>1.8</li>
+  </supportedVersions>
+  <description>RimWorld 1.8 mod project created from the RimDevTools template.</description>
+</ModMetaData>
