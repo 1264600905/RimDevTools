@@ -25,6 +25,12 @@ __pycache__/
 *.vscode/
 .claude/
 .external/
+!components/ProjectTemplate/
+!components/ProjectTemplate/1.6/
+!components/ProjectTemplate/1.6/.claude/
+components/ProjectTemplate/1.6/.claude/*
+!components/ProjectTemplate/1.6/.claude/skills/
+!components/ProjectTemplate/1.6/.claude/skills/**
 .tools/ilspy/
 # 配置文件
 *.config

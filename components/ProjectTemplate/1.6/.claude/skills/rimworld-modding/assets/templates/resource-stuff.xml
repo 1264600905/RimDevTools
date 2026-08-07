@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Verify every Stuff stat/category against a concrete RimWorld 1.6 material before use. -->
+<Defs>
+  <ThingDef ParentName="ResourceBase">
+    <defName>Template_Material</defName>
+    <label>template material</label>
+    <description>Replace this player-facing description.</description>
+    <thingCategories>
+      <li>ResourcesRaw</li>
+    </thingCategories>
+    <statBases>
+      <MarketValue>3</MarketValue>
+      <Mass>0.5</Mass>
+      <StuffPower_Armor_Sharp>0.08</StuffPower_Armor_Sharp>
+      <StuffPower_Armor_Blunt>0.03</StuffPower_Armor_Blunt>
+      <StuffPower_Armor_Heat>0.12</StuffPower_Armor_Heat>
+      <SharpDamageMultiplier>1</SharpDamageMultiplier>
+      <BluntDamageMultiplier>1</BluntDamageMultiplier>
+    </statBases>
+    <graphicData>
+      <texPath>Things/Item/Resource/Template_Material</texPath>
+      <graphicClass>Graphic_StackCount</graphicClass>
+    </graphicData>
+    <stuffProps>
+      <categories>
+        <li>Metallic</li>
+      </categories>
+      <appearance>Metal</appearance>
+      <color>(0.7, 0.5, 0.3)</color>
+      <commonality>0.3</commonality>
+      <constructEffect>ConstructMetal</constructEffect>
+      <statFactors>
+        <MaxHitPoints>1</MaxHitPoints>
+        <Flammability>0.3</Flammability>
+        <WorkToBuild>1</WorkToBuild>
+      </statFactors>
+    </stuffProps>
+    <smeltable>true</smeltable>
+  </ThingDef>
+</Defs>

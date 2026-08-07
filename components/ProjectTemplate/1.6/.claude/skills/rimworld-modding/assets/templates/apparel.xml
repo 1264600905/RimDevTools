@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Choose a verified apparel parent, body groups, layers, and texture layout for the intended garment. -->
+<Defs>
+  <ThingDef ParentName="ApparelMakeableBase">
+    <defName>Template_Apparel</defName>
+    <label>template apparel</label>
+    <description>Replace this player-facing description.</description>
+    <techLevel>Industrial</techLevel>
+    <costStuffCount>50</costStuffCount>
+    <stuffCategories>
+      <li>Fabric</li>
+      <li>Leathery</li>
+    </stuffCategories>
+    <statBases>
+      <MaxHitPoints>150</MaxHitPoints>
+      <WorkToMake>5000</WorkToMake>
+      <Mass>1</Mass>
+      <EquipDelay>2</EquipDelay>
+    </statBases>
+    <apparel>
+      <bodyPartGroups>
+        <li>Torso</li>
+      </bodyPartGroups>
+      <wornGraphicPath>Things/Pawn/Humanlike/Apparel/Template/Template</wornGraphicPath>
+      <layers>
+        <li>OnSkin</li>
+      </layers>
+    </apparel>
+    <graphicData>
+      <texPath>Things/Pawn/Humanlike/Apparel/Template/Template</texPath>
+      <graphicClass>Graphic_Single</graphicClass>
+    </graphicData>
+    <recipeMaker>
+      <researchPrerequisite>ComplexClothing</researchPrerequisite>
+      <skillRequirements>
+        <Crafting>5</Crafting>
+      </skillRequirements>
+      <workAmount>5000</workAmount>
+    </recipeMaker>
+  </ThingDef>
+</Defs>
