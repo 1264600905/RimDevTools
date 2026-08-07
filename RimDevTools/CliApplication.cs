@@ -7,10 +7,16 @@ public static class CliApplication
 {
     public static async Task<int> RunAsync(string[] args)
     {
-        if (args.Length == 0 || args.Contains("--help", StringComparer.OrdinalIgnoreCase) || args.Contains("-h"))
+        if (args.Length == 0)
         {
-            WriteHelp();
+            CliHelp.TryWrite("help");
             return ExitCodes.Success;
+        }
+
+        if (args.Contains("--help", StringComparer.OrdinalIgnoreCase) || args.Contains("-h"))
+        {
+            var helpPath = CliHelp.Path(args);
+            if (CliHelp.TryWrite(helpPath)) return ExitCodes.Success;
         }
 
         if (args.Length == 1 && args[0].Equals("--version", StringComparison.OrdinalIgnoreCase))
@@ -105,12 +111,6 @@ public static class CliApplication
             && leftVersion.Minor == rightVersion.Minor
             && leftVersion.Build == rightVersion.Build;
 
-    private static void WriteHelp()
-    {
-        Console.WriteLine("RimDevTools.exe <command> [options]");
-        Console.WriteLine("Commands: doctor, deploy, ref search|pull|deps|related, test run|settings, data refresh|status");
-        Console.WriteLine("Project commands discover mod_config.jsonc in the current directory or its direct parent.");
-    }
 }
 
 public static class CliArgs
@@ -158,6 +158,11 @@ public static class CliArgs
             ? null
             : $"命令 {command} 需要 {contract.Positionals} 个位置参数，实际为 {positionals}";
     }
+
+    internal static IReadOnlyList<string> OptionNames(string command)
+        => Contracts.TryGetValue(command, out var contract)
+            ? contract.Options.Select(option => option.Name).ToArray()
+            : [];
 
     public static bool Has(string[] args, string name) => args.Any(x => x.Equals(name, StringComparison.OrdinalIgnoreCase));
 

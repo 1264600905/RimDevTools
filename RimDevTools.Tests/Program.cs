@@ -216,6 +216,7 @@ internal sealed class TestSuite
         try
         {
             TestJsoncAndDiscovery();
+            await TestHelpAsync();
             TestModListParser();
             TestIncrementalLogSignalScanner();
             await TestSettingsAsync();
@@ -249,6 +250,37 @@ internal sealed class TestSuite
         Assert(ProjectDiscovery.Find(child, out _)?.Root == root, "project discovery checks direct parent");
         var grandchild = NewDirectory(Path.Combine("discovery-project", "source", "Core"));
         Assert(ProjectDiscovery.Find(grandchild, out var missing) is null && missing?.Code == "PROJECT_NOT_FOUND", "project discovery stops after direct parent");
+    }
+
+    private async Task TestHelpAsync()
+    {
+        var paths = new[]
+        {
+            Array.Empty<string>(), ["--help"], ["init", "--help"], ["doctor", "--help"], ["deploy", "--help"],
+            ["ref", "--help"], ["ref", "search", "--help"], ["ref", "pull", "--help"], ["ref", "deps", "--help"], ["ref", "related", "--help"],
+            ["test", "--help"], ["test", "run", "--help"], ["test", "settings", "--help"],
+            ["data", "--help"], ["data", "refresh", "--help"], ["data", "status", "--help"]
+        };
+        foreach (var args in paths)
+        {
+            var result = await CaptureAsync(() => CliApplication.RunAsync(args));
+            Assert(result.ExitCode == 0 && result.Output.Contains("Usage:", StringComparison.Ordinal), $"help succeeds without project discovery: {string.Join(' ', args)}");
+        }
+
+        foreach (var command in new[] { "deploy", "ref search", "ref pull", "ref deps", "ref related", "test run", "data refresh" })
+        {
+            using var writer = new StringWriter();
+            var original = Console.Out;
+            Console.SetOut(writer);
+            try { Assert(CliHelp.TryWrite(command), $"help metadata exists for {command}"); }
+            finally { Console.SetOut(original); }
+            var help = writer.ToString();
+            foreach (var option in CliArgs.OptionNames(command))
+                Assert(help.Contains(option, StringComparison.Ordinal), $"{command} help documents {option}");
+        }
+
+        var unknown = await CaptureAsync(() => CliApplication.RunAsync(["unknown", "--help"]));
+        Assert(unknown.ExitCode == ExitCodes.InvalidArguments && JsonErrorCode(unknown.Output) == "UNKNOWN_COMMAND", "unknown command with help remains a structured error");
     }
 
     private void TestModListParser()
