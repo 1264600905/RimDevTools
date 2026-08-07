@@ -1,47 +1,102 @@
 {
-  "config_version": 2,
-  "mod_name": "MyCustomMod",
-  "game_version": "1.6",
-  "isolated_desktop": true,
-  "rimsearcher_db_path": ".tools\\db\\defs.db",
-  "rimworld_dir": "C:\\Program Files (x86)\\Steam\\steamapps\\common\\RimWorld",
-  "workshop_paths": [],
-  "csproj_paths": ["source\\MyCustomMod\\MyCustomMod.csproj"],
-  "sync_items": [
-    "1.6\\Assemblies",
-    "1.6\\Defs",
-    "1.6\\Patches",
-    "Languages",
-    "About",
-    "LoadFolders.xml"
-  ],
-  "protected_files_regex": "^(PublishedFileId\\.txt)$",
-  "pull_ignore_folders": ["Textures", "Sounds", "News", ".git", ".vs", "obj", "bin"],
-  "ilspycmd_path": "Ilspy\\ilspycmd.exe",
-  "log_keywords": ["MyCustomMod"],
-  "min_active_mods": [
-    "brrainz.harmony",
-    "sarg.smartspeed",
-    "brrainz.cameraplus",
-    "erdelf.humanoidalienraces",
-    "trigger.logsyncmod",
-    "ludeon.rimworld"
-  ],
-  "timeouts": {
-    "steam_launch_detect": 120,
-    "max_wait": 600,
-    "existing_game_exit": 600,
-    "post_exit_delay": 10
-  },
-  "retention": {
-    "max_log_files": 3,
-    "max_auto_test_runs": 3
-  },
-  "shader_bundle": {
-    "enabled": false,
-    "unity_project_path": "UnityProjects\\ShaderBundleBuilder",
-    "unity_exe_path": "",
-    "build_method": "MyCustomMod.ShaderBundleBuilder.Build",
-    "bundle_name": "mycustommod_shaders"
-  }
+    "config_version": 2,
+
+    // ============================================================
+    // 项目信息 — 每个模组项目必须修改的核心字段
+    // init 运行后会自动更新这些值
+    // ============================================================
+    // 模组名称（英文，不含空格）。部署目标、日志关键词和程序集名称会使用它。
+    "mod_name": "MyCustomMod",
+    // 目标 RimWorld 版本号；用于定位版本化 Assemblies 和 Defs 目录。
+    "game_version": "1.6",
+    // quick/auto/xml 和 data refresh 默认使用隔离桌面；manual 默认使用当前桌面。
+    "isolated_desktop": true,
+    // RimSearcher 当前项目数据库；相对路径以项目根目录为基准。
+    "rimsearcher_db_path": ".tools\\db\\defs.db",
+
+    // ============================================================
+    // 本机环境 — 需要根据开发者本机的 Steam 安装位置修改
+    // ============================================================
+    // RimWorld 安装根目录；工具会自动推导游戏、部署和本地模组搜索路径。
+    "rimworld_dir": "H:\\SteamLibrary\\steamapps\\common\\RimWorld",
+    // 额外的 Steam Workshop 模组搜索路径；{rimworld_dir}/Mods 会自动包含。
+    "workshop_paths": [
+        "C:\\Program Files (x86)\\Steam\\steamapps\\workshop\\content\\294100",
+        "D:\\SteamLibrary\\steamapps\\workshop\\content\\294100",
+        "E:\\SteamLibrary\\steamapps\\workshop\\content\\294100",
+        "F:\\SteamLibrary\\steamapps\\workshop\\content\\294100",
+        "G:\\SteamLibrary\\steamapps\\workshop\\content\\294100",
+        "H:\\SteamLibrary\\steamapps\\workshop\\content\\294100"
+    ],
+
+    // ============================================================
+    // 部署配置 — deploy 专用
+    // ============================================================
+    // C# 项目文件路径（相对于项目根目录），按编译顺序排列。
+    // 单程序集项目通常为 source/{mod_name}/{mod_name}.csproj。
+    "csproj_paths": ["source\\MyCustomMod\\MyCustomMod.csproj"],
+    // 需要同步到游戏 Mods 目录的文件和文件夹（相对于项目根目录）。
+    "sync_items": [
+        "1.6\\Assemblies",
+        "AssetBundles",
+        "1.6\\Defs",
+        "1.6\\Patches",
+        "Languages",
+        "About",
+        "LoadFolders.xml"
+    ],
+    // 部署时清空目标目录需要保留的文件（正则表达式）。
+    "protected_files_regex": "^(PublishedFileId\\.txt)$",
+
+    // ============================================================
+    // 引用与测试配置
+    // ============================================================
+    // 拉取参考模组时忽略的文件夹（节省空间和复制时间）。
+    "pull_ignore_folders": ["Textures", "Sounds", "News", ".git", ".vs", "obj", "bin"],
+    // ILSpy 命令行反编译器路径（相对于 .tools 目录）。
+    "ilspycmd_path": "Ilspy\\ilspycmd.exe",
+    // 日志同步关键词。测试启动时会写入 LogSyncMod 的配置文件。
+    "log_keywords": ["MyCustomMod"],
+    // 默认的最小测试模组集（无 --mods-file 时使用）。
+    // 启动 RimWorld 前必须包含这五个基础模组；data refresh 还需要 RimSearcherDataMod。
+    "min_active_mods": [
+        "brrainz.harmony",
+        "sarg.smartspeed",
+        "brrainz.cameraplus",
+        "erdelf.humanoidalienraces",
+        "trigger.logsyncmod",
+        "ludeon.rimworld"
+    ],
+    // 超时参数（单位: 秒）。
+    "timeouts": {
+        // Steam 协议启动后等待游戏进程出现的最大时间。
+        "steam_launch_detect": 120,
+        // 测试或数据导出的最大等待时间。
+        "max_wait": 600,
+        // 等待已有游戏进程退出的最大时间。
+        "existing_game_exit": 600,
+        // 游戏退出后额外稳定等待时间。
+        "post_exit_delay": 10
+    },
+    // 日志和测试输出的保留策略。
+    "retention": {
+        // 同步日志最多保留几份（含当前文件）。
+        "max_log_files": 3,
+        // 自动测试输出最多保留几次运行。
+        "max_auto_test_runs": 3
+    },
+
+    // ============================================================
+    // Shader Bundle 配置 — .tools/shader/build_shader_bundle.ps1 专用
+    // ============================================================
+    "shader_bundle": {
+        // 启用后 deploy 会在同步前执行 Shader Bundle 构建。
+        "enabled": false,
+        // Unity 项目路径和 Unity.exe 路径。
+        "unity_project_path": "UnityProjects\\ShaderBundleBuilder",
+        "unity_exe_path": "D:\\UnityEditor\\2023.2.20f1c1\\Editor\\Unity.exe",
+        // Unity 静态构建方法与生成的 Bundle 名称。
+        "build_method": "MyCustomMod.ShaderBundleBuilder.Build",
+        "bundle_name": "mycustommod_shaders"
+    }
 }
