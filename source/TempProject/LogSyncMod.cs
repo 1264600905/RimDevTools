@@ -33,16 +33,19 @@ namespace LogSyncMod
                 LogLoadedMods();
                 ScheduleWindowModeLog();
 
-                // 创建一个 10 秒的定时器
-                var timer = new System.Timers.Timer(10000);
-                timer.Elapsed += (s, e) =>
+                // Auto/XML 由 AutoTestRunner 在完成信号前恢复；只有 quick 使用 ready timer。
+                if (settings == null || !settings.autoTestEnabled)
                 {
-                    TestAudioController.Restore();
-                    Log.Message("[LogSyncMod] RUNTIME_READY_TO_CLOSE");
-                    timer.Stop();
-                    timer.Dispose();
-                };
-                timer.Start();
+                    var timer = new System.Timers.Timer(10000);
+                    timer.Elapsed += (s, e) =>
+                    {
+                        TestAudioController.Restore();
+                        Log.Message("[LogSyncMod] RUNTIME_READY_TO_CLOSE");
+                        timer.Stop();
+                        timer.Dispose();
+                    };
+                    timer.Start();
+                }
             });
         }
 

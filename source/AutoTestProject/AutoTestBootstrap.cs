@@ -66,6 +66,7 @@ namespace LogSyncMod.AutoTest
             if (string.IsNullOrEmpty(packageId))
             {
                 RestoreLogAutoOpen();
+                global::LogSyncMod.TestAudioController.Restore();
                 Log.Warning("[LogSyncAutoTest] Missing target packageId. Auto test aborted.");
                 settings.autoTestEnabled = false;
                 settings.Write();
