@@ -99,7 +99,7 @@ public static class RefCommand
         }
         catch (Exception ex)
         {
-            return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "PACKAGE_ID_INVALID", ex.Message, context.Root);
+            return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "MOD_NAME_INVALID", ex.Message, context.Root);
         }
 
         using var targetLock = TargetDirectoryLock.Create(targetRoot, out var lockError);
@@ -144,13 +144,13 @@ public static class RefCommand
         }
     }
 
-    internal static string SafeFolderName(string packageId)
+    internal static string SafeFolderName(string name)
     {
-        if (string.IsNullOrWhiteSpace(packageId)) throw new InvalidDataException("packageId 为空");
+        if (string.IsNullOrWhiteSpace(name)) throw new InvalidDataException("模组 name 为空");
 
         var invalid = Path.GetInvalidFileNameChars().ToHashSet();
-        var sanitized = new string(packageId.Trim().Select(c => invalid.Contains(c) ? '_' : c).ToArray()).TrimEnd(' ', '.');
-        if (sanitized is "" or "." or "..") throw new InvalidDataException($"packageId 不能映射为安全目录名: {packageId}");
+        var sanitized = new string(name.Trim().Select(c => invalid.Contains(c) || char.IsWhiteSpace(c) || char.IsControl(c) ? '_' : c).ToArray()).TrimEnd(' ', '.');
+        if (sanitized is "" or "." or "..") throw new InvalidDataException($"模组 name 不能映射为安全目录名: {name}");
 
         var stem = sanitized.Split('.')[0];
         var reserved = stem.Equals("CON", StringComparison.OrdinalIgnoreCase)
@@ -163,7 +163,7 @@ public static class RefCommand
 
     private static PullTarget CreateTarget(string targetRoot, string stagingRoot, string backupRoot, ModCandidate mod)
     {
-        var folder = SafeFolderName(mod.PackageId);
+        var folder = SafeFolderName(mod.Name);
         var target = Path.GetFullPath(Path.Combine(targetRoot, folder));
         if (!PathSafety.IsWithin(target, targetRoot)) throw new InvalidDataException($"参考模组目标越界: {target}");
         var staging = Path.Combine(stagingRoot, folder);

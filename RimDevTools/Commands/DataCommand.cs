@@ -146,7 +146,9 @@ public static class DataCommand
         var outcomeMessage = "";
         var outcomeExitCode = ExitCodes.Success;
         var logOffset = File.Exists(GameEnvironment.PlayerLogPath()) ? new FileInfo(GameEnvironment.PlayerLogPath()).Length : 0;
-        var logBuffer = "";
+        var completionSignal = $"[RimSearcher] EXPORT_COMPLETE runId={runId}";
+        var failureSignal = $"[RimSearcher] EXPORT_FAILED runId={runId}";
+        var scanner = new IncrementalLogSignalScanner(completionSignal, failureSignal);
         try
         {
             transaction = await ConfigTransaction.CreateAsync(configDirectory, runId, [GameEnvironment.ModsConfigPath(), requestPath, processingPath]);
@@ -174,12 +176,12 @@ public static class DataCommand
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 if (exportResult is null && File.Exists(resultPath)) exportResult = TryReadResult(resultPath, runId);
-                var read = await ReadNewLogAsync(GameEnvironment.PlayerLogPath(), logOffset, cancellationToken);
+                var read = await IncrementalLogReader.ReadAsync(GameEnvironment.PlayerLogPath(), logOffset, cancellationToken);
                 logOffset = read.Offset;
-                logBuffer = (logBuffer + read.Text);
-                if (logBuffer.Length > 32768) logBuffer = logBuffer[^32768..];
-                completionLogSeen = logBuffer.Contains($"[RimSearcher] EXPORT_COMPLETE runId={runId}", StringComparison.Ordinal);
-                failureLogSeen = logBuffer.Contains($"[RimSearcher] EXPORT_FAILED runId={runId}", StringComparison.Ordinal);
+                if (read.Reset) scanner.Reset();
+                scanner.Append(read.Text);
+                completionLogSeen = scanner.HasSeen(completionSignal);
+                failureLogSeen = scanner.HasSeen(failureSignal);
 
                 if (exportResult is not null && (completionLogSeen || failureLogSeen)) break;
                 if (game.HasExited && exportResult is null)
@@ -335,17 +337,6 @@ public static class DataCommand
             && leftVersion.Major == rightVersion.Major
             && leftVersion.Minor == rightVersion.Minor
             && leftVersion.Build == rightVersion.Build;
-
-    private static async Task<(string Text, long Offset)> ReadNewLogAsync(string path, long offset, CancellationToken cancellationToken)
-    {
-        if (!File.Exists(path)) return ("", 0);
-        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 4096, true);
-        if (stream.Length < offset) offset = 0;
-        stream.Seek(offset, SeekOrigin.Begin);
-        using var reader = new StreamReader(stream, Encoding.UTF8, true, leaveOpen: true);
-        var text = await reader.ReadToEndAsync(cancellationToken);
-        return (text, stream.Position);
-    }
 
     public static string HashLines(IEnumerable<string> values) => HashBytes(Encoding.UTF8.GetBytes(string.Join("\n", values)));
     public static string HashBytes(ReadOnlySpan<byte> bytes) => "sha256:" + Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();

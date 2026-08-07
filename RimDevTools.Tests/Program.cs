@@ -76,6 +76,13 @@ internal static class FakeRimWorld
             await Task.Delay(TimeSpan.FromSeconds(30));
             return;
         }
+        if (mode == "quick-large-log")
+        {
+            var largeLog = "[LogSyncMod] RUNTIME_READY_TO_CLOSE\n" + string.Concat(Enumerable.Repeat(new string('x', 96) + "\n", 600));
+            File.AppendAllText(playerLog, largeLog);
+            await Task.Delay(TimeSpan.FromSeconds(30));
+            return;
+        }
         if (!values.TryGetValue("autoTestEnabled", out var enabled) || !enabled.Equals("True", StringComparison.OrdinalIgnoreCase))
         {
             File.AppendAllText(playerLog, "[LogSyncMod] RUNTIME_READY_TO_CLOSE\n");
@@ -100,7 +107,10 @@ internal static class FakeRimWorld
             results = new[] { new { caseId = "case-1", status } }
         };
         File.WriteAllText(Path.Combine(outputPath, $"{packageId}_20260806_120000_Result.json"), JsonSerializer.Serialize(result));
-        File.AppendAllText(playerLog, $"[LogSyncAutoTest] COMPLETED runId={runId} packageId={packageId}\n");
+        var completion = $"[LogSyncAutoTest] COMPLETED runId={runId} packageId={packageId}\n";
+        File.AppendAllText(playerLog, mode == "auto-large-log"
+            ? completion + string.Concat(Enumerable.Repeat(new string('y', 96) + "\n", 600))
+            : completion);
 
         // The real AutoTest extension persists autoTestEnabled=false after completion.
         settings.Descendants("autoTestEnabled").First().Value = "False";
@@ -149,9 +159,12 @@ internal static class FakeRimWorld
             completedUtc = DateTimeOffset.UtcNow
         };
         File.WriteAllText(resultPath, JsonSerializer.Serialize(result));
-        File.AppendAllText(playerLog, mode == "data-signal-mismatch"
+        var signal = mode == "data-signal-mismatch"
             ? $"[RimSearcher] EXPORT_FAILED runId={request.RunId} code=WRONG_SIGNAL\n"
-            : $"[RimSearcher] EXPORT_COMPLETE runId={request.RunId}\n");
+            : $"[RimSearcher] EXPORT_COMPLETE runId={request.RunId}\n";
+        File.AppendAllText(playerLog, mode == "data-large-log"
+            ? signal + string.Concat(Enumerable.Repeat(new string('z', 96) + "\n", 600))
+            : signal);
         await Task.Delay(100);
     }
 
@@ -204,6 +217,7 @@ internal sealed class TestSuite
         {
             TestJsoncAndDiscovery();
             TestModListParser();
+            TestIncrementalLogSignalScanner();
             await TestSettingsAsync();
             await TestTransactionsAsync();
             await TestEnvironmentLockAsync();
@@ -248,6 +262,17 @@ internal sealed class TestSuite
         var resolution = ModListParser.Resolve(context, modsFile, out var error);
         Assert(error is null && resolution!.Mods.SequenceEqual(["demo.helper", "demo.current", "trigger.logsyncmod"], StringComparer.OrdinalIgnoreCase), "ModList reads direct activeMods entries and deduplicates");
         Assert(resolution!.Additions.SequenceEqual([new ModListAddition("demo.current", 1, "current_project"), new ModListAddition("trigger.logsyncmod", 2, "logsync_tooling")]), "ModList reports automatic additions and positions");
+    }
+
+    private void TestIncrementalLogSignalScanner()
+    {
+        const string signal = "[LogSyncAutoTest] COMPLETED runId=current";
+        var scanner = new IncrementalLogSignalScanner(signal);
+        scanner.Append("prefix " + signal[..20]);
+        scanner.Append(signal[20..] + string.Concat(Enumerable.Repeat(new string('x', 96) + "\n", 600)));
+        Assert(scanner.HasSeen(signal), "incremental log scanner recognizes a split signal before more than 32 KiB of trailing output");
+        scanner.Reset();
+        Assert(!scanner.HasSeen(signal), "incremental log scanner resets after log truncation");
     }
 
     private async Task TestSettingsAsync()
@@ -323,8 +348,9 @@ internal sealed class TestSuite
 
     private async Task TestRefAsync()
     {
-        AssertThrows<InvalidDataException>(() => RefCommand.SafeFolderName(".."), "unsafe packageId is rejected");
-        Assert(RefCommand.SafeFolderName("CON") == "_CON", "Windows reserved packageId is sanitized");
+        AssertThrows<InvalidDataException>(() => RefCommand.SafeFolderName(".."), "unsafe mod name is rejected");
+        Assert(RefCommand.SafeFolderName("CON") == "_CON", "Windows reserved mod name is sanitized");
+        Assert(RefCommand.SafeFolderName("联合重工-UF Heavy:Industries") == "联合重工-UF_Heavy_Industries", "mod name whitespace and invalid characters are sanitized");
 
         var environment = CreateProjectEnvironment("ref");
         var workshop = NewDirectory(Path.Combine("ref", "workshop"));
@@ -341,15 +367,17 @@ internal sealed class TestSuite
         CreateMod(environment.Game, "CycleB", "demo.b", "demo.a");
         var cycle = await CaptureAsync(() => RefCommand.PullAsync(["ref", "pull", "demo.a", "--deps"]));
         Assert(cycle.ExitCode == ExitCodes.InvalidArguments && JsonErrorCode(cycle.Output) == "DEPENDENCY_CYCLE", "dependency cycles fail before writing targets");
-        Assert(!Directory.Exists(Path.Combine(environment.Root, "参考文档", "demo.a")) && Directory.Exists(cycleA), "cycle failure leaves source and targets untouched");
+        Assert(!Directory.Exists(Path.Combine(environment.Root, "参考文档", "CycleA")) && Directory.Exists(cycleA), "cycle failure leaves source and targets untouched");
 
         var versioned = CreateMod(environment.Game, "Versioned", "demo.versioned");
         File.WriteAllText(Path.Combine(versioned, "About", "About.xml"), "<ModMetaData><name>Versioned</name><packageId>demo.versioned</packageId><modDependenciesByVersion><v1.5><li><packageId>demo.old</packageId></li></v1.5><v1.6><li><packageId>demo.new</packageId></li></v1.6></modDependenciesByVersion></ModMetaData>");
         var versionResult = await CaptureAsync(() => RefCommand.DepsAsync(["ref", "deps", "demo.versioned", "--version", "1.5"]));
         Assert(versionResult.ExitCode == 0 && versionResult.Output.Contains("demo.old") && !versionResult.Output.Contains("demo.new"), "ref --version selects version-specific dependencies");
 
-        CreateMod(environment.Game, "CollisionSlash", "demo/x");
-        CreateMod(environment.Game, "CollisionBackslash", "demo\\x");
+        var collisionSlash = CreateMod(environment.Game, "CollisionSlash", "demo/x");
+        var collisionBackslash = CreateMod(environment.Game, "CollisionBackslash", "demo\\x");
+        File.WriteAllText(Path.Combine(collisionSlash, "About", "About.xml"), "<ModMetaData><name>Same/Name</name><packageId>demo/x</packageId></ModMetaData>");
+        File.WriteAllText(Path.Combine(collisionBackslash, "About", "About.xml"), "<ModMetaData><name>Same\\Name</name><packageId>demo\\x</packageId></ModMetaData>");
         var collisionRoot = CreateMod(environment.Game, "CollisionRoot", "demo.collision-root");
         File.WriteAllText(Path.Combine(collisionRoot, "About", "About.xml"), "<ModMetaData><name>Root</name><packageId>demo.collision-root</packageId><modDependencies><li><packageId>demo/x</packageId></li><li><packageId>demo\\x</packageId></li></modDependencies></ModMetaData>");
         var collision = await CaptureAsync(() => RefCommand.PullAsync(["ref", "pull", "demo.collision-root", "--deps"]));
@@ -357,11 +385,11 @@ internal sealed class TestSuite
 
         CreateMod(environment.Game, "Reference", "demo.reference", content: "v1");
         var pulled = await CaptureAsync(() => RefCommand.PullAsync(["ref", "pull", "demo.reference"]));
-        Assert(pulled.ExitCode == 0 && File.ReadAllText(Path.Combine(environment.Root, "参考文档", "demo.reference", "content.txt")) == "v1", "ref pull installs staged mod");
+        Assert(pulled.ExitCode == 0 && File.ReadAllText(Path.Combine(environment.Root, "参考文档", "Reference", "content.txt")) == "v1", "ref pull installs staged mod using its name");
 
         CreateMod(environment.Game, "OfficialDependency", "demo.official-dependency", "ludeon.rimworld.royalty");
         var officialDependency = await CaptureAsync(() => RefCommand.PullAsync(["ref", "pull", "demo.official-dependency", "--deps"]));
-        Assert(officialDependency.ExitCode == 0 && Directory.Exists(Path.Combine(environment.Root, "参考文档", "demo.official-dependency")), "ref pull skips official RimWorld dependencies that are not stored under Mods");
+        Assert(officialDependency.ExitCode == 0 && Directory.Exists(Path.Combine(environment.Root, "参考文档", "OfficialDependency")), "ref pull skips official RimWorld dependencies that are not stored under Mods");
 
         var unsafeEnvironment = CreateProjectEnvironment("ref-reparse");
         CreateMod(unsafeEnvironment.Game, "Reference", "demo.reference", content: "safe");
@@ -518,6 +546,10 @@ internal sealed class TestSuite
         var splitSignal = await CaptureAsync(() => TestCommand.RunAsync(["test", "run", "--mode", "quick", "--timeout-seconds", "5"]));
         Assert(splitSignal.ExitCode == 0, "quick mode recognizes a ready signal split across log reads");
 
+        Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", "quick-large-log");
+        var largeQuick = await CaptureAsync(() => TestCommand.RunAsync(["test", "run", "--mode", "quick", "--timeout-seconds", "5"]));
+        Assert(largeQuick.ExitCode == 0, "quick mode recognizes a signal before more than 32 KiB of trailing log output");
+
         Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", "auto");
         var autoOutput = Path.Combine(environment.Root, ".tools", "log", "AutoTestOutput");
         Directory.CreateDirectory(autoOutput);
@@ -530,6 +562,10 @@ internal sealed class TestSuite
         Assert(observedSettings.Contains("demo.current") && observedSettings.Contains("AutoTestOutput"), "auto mode passes target package and output path to LogSync");
         Assert(Directory.EnumerateFiles(autoOutput, "*_Result.json").Count() == 2, "configured auto-test retention is enforced after a run");
         AssertConfigurationRestored(environment, "auto mode restores settings changed by the game");
+
+        Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", "auto-large-log");
+        var largeAuto = await CaptureAsync(() => TestCommand.RunAsync(["test", "run", "--mode", "auto", "--timeout-seconds", "5"]));
+        Assert(largeAuto.ExitCode == 0, "auto mode recognizes a completion signal before more than 32 KiB of trailing log output");
 
         Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", "auto-fail");
         var failed = await CaptureAsync(() => TestCommand.RunAsync(["test", "run", "--mode", "xml", "--timeout-seconds", "5"]));
@@ -580,6 +616,11 @@ internal sealed class TestSuite
         var refresh = await CaptureAsync(() => DataCommand.RefreshAsync(["data", "refresh", "--timeout-seconds", "5"]));
         Assert(refresh.ExitCode == 0, "data refresh accepts matching result, log, database version and metadata");
         AssertConfigurationRestored(environment, "data refresh restores exact ModsConfig and leaves LogSync settings unchanged");
+
+        Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", "data-large-log");
+        var largeRefresh = await CaptureAsync(() => DataCommand.RefreshAsync(["data", "refresh", "--timeout-seconds", "5"]));
+        Assert(largeRefresh.ExitCode == 0, "data refresh recognizes a completion signal before more than 32 KiB of trailing log output");
+        AssertConfigurationRestored(environment, "large-log data refresh restores exact configuration");
         var databasePath = Path.Combine(environment.Root, ".rimdev", "defs.db");
         var inspected = DatabaseInspector.Inspect(databasePath, "test");
         Assert(inspected.Integrity == "ok" && inspected.VersionMatches && inspected.Metadata?.RunId is not null && inspected.LoadedMods.Count == 2, "database inspector validates metadata and ordered loaded mods");

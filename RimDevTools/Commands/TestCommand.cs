@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Text;
 using System.Text.Json;
 using System.Xml.Linq;
 
@@ -201,7 +200,9 @@ public static class TestCommand
         CancellationToken cancellationToken)
     {
         var deadline = DateTime.UtcNow.AddSeconds(timeoutSeconds);
-        var logBuffer = "";
+        const string quickSignal = "[LogSyncMod] RUNTIME_READY_TO_CLOSE";
+        var autoSignal = $"[LogSyncAutoTest] COMPLETED runId={runId}";
+        var scanner = new IncrementalLogSignalScanner(quickSignal, autoSignal);
         while (DateTime.UtcNow < deadline)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -211,16 +212,16 @@ public static class TestCommand
             }
             else
             {
-                var read = await ReadNewLogAsync(GameEnvironment.PlayerLogPath(), logOffset, cancellationToken);
+                var read = await IncrementalLogReader.ReadAsync(GameEnvironment.PlayerLogPath(), logOffset, cancellationToken);
                 logOffset = read.Offset;
-                logBuffer += read.Text;
-                if (logBuffer.Length > 32768) logBuffer = logBuffer[^32768..];
-                if (mode == "quick" && logBuffer.Contains("[LogSyncMod] RUNTIME_READY_TO_CLOSE", StringComparison.Ordinal))
+                if (read.Reset) scanner.Reset();
+                scanner.Append(read.Text);
+                if (mode == "quick" && scanner.HasSeen(quickSignal))
                     return TestOutcome.Success("quick ready signal");
 
                 if (mode is "auto" or "xml")
                 {
-                    var completed = logBuffer.Contains($"[LogSyncAutoTest] COMPLETED runId={runId}", StringComparison.Ordinal);
+                    var completed = scanner.HasSeen(autoSignal);
                     if (completed || game.HasExited)
                     {
                         var validation = AutoResultValidator.Validate(outputPath, packageId, runId, resultSnapshot);
@@ -236,17 +237,6 @@ public static class TestCommand
         return TestOutcome.Failure(ExitCodes.Timeout, "TEST_TIMEOUT", $"{mode} 模式等待超时");
     }
 
-    private static async Task<(string Text, long Offset)> ReadNewLogAsync(string path, long offset, CancellationToken cancellationToken)
-    {
-        if (!File.Exists(path)) return ("", 0);
-        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 4096, true);
-        if (stream.Length < offset) offset = 0;
-        stream.Seek(offset, SeekOrigin.Begin);
-        using var reader = new StreamReader(stream, Encoding.UTF8, true, leaveOpen: true);
-        var text = await reader.ReadToEndAsync(cancellationToken);
-        return (text, stream.Position);
-    }
-
     private sealed record TestOutcome(bool Ok, int ExitCode, string Code, string Message, object? Details = null)
     {
         public static TestOutcome Success(string message, object? details = null) => new(true, ExitCodes.Success, "", message, details);
@@ -260,15 +250,15 @@ public sealed record ModListResolution(IReadOnlyList<string> Mods, IReadOnlyList
 public static class ModListParser
 {
     public static ModListResolution? Resolve(ProjectContext context, string? path, out CliError? error)
-        => Resolve(context, path, context.Config.CurrentPackageId(context.Root), out error);
+        => ResolveCore(context, path, "trigger.logsyncmod", "logsync_tooling", context.Config.CurrentPackageId(context.Root), "current_project", out error);
 
     public static ModListResolution? Resolve(ProjectContext context, string? path, string? targetPackageId, out CliError? error)
-        => ResolveCore(context, path, "trigger.logsyncmod", "logsync_tooling", targetPackageId, out error);
+        => ResolveCore(context, path, "trigger.logsyncmod", "logsync_tooling", targetPackageId, "target_mod", out error);
 
     public static ModListResolution? ResolveData(ProjectContext context, string? path, out CliError? error)
-        => ResolveCore(context, path, "kearril.rimsearcherdatamod", "rimsearcher_tooling", context.Config.CurrentPackageId(context.Root), out error);
+        => ResolveCore(context, path, "kearril.rimsearcherdatamod", "rimsearcher_tooling", context.Config.CurrentPackageId(context.Root), "current_project", out error);
 
-    private static ModListResolution? ResolveCore(ProjectContext context, string? path, string toolingPackageId, string toolingReason, string? targetPackageId, out CliError? error)
+    private static ModListResolution? ResolveCore(ProjectContext context, string? path, string toolingPackageId, string toolingReason, string? targetPackageId, string targetReason, out CliError? error)
     {
         error = null;
         List<string> mods;
@@ -310,7 +300,7 @@ public static class ModListParser
         }
 
         var additions = new List<ModListAddition>();
-        AddBeforeTooling(mods, targetPackageId, toolingPackageId, "target_mod", additions);
+        AddBeforeTooling(mods, targetPackageId, toolingPackageId, targetReason, additions);
         AddBeforeTooling(mods, toolingPackageId, toolingPackageId, toolingReason, additions);
 
         var missing = mods.Where(x => !IsResolvable(context, x)).ToArray();
