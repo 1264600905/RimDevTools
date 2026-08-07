@@ -123,6 +123,9 @@ internal static class FakeRimWorld
     {
         if (mode == "data-hang")
         {
+            var hangingRequest = JsonSerializer.Deserialize<DataExportRequest>(File.ReadAllText(Path.Combine(configDirectory, "RimDevTools.ExportRequest.json")), new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
+            var hangingLog = Path.Combine(Directory.GetParent(configDirectory)!.FullName, "Player.log");
+            File.AppendAllText(hangingLog, $"[RimSearcher] EXPORT_STAGE runId={hangingRequest.RunId} stage=records\n");
             await Task.Delay(TimeSpan.FromSeconds(30));
             return;
         }
@@ -394,6 +397,13 @@ internal sealed class TestSuite
         Assert(scanner.HasSeen(signal), "incremental log scanner recognizes a split signal before more than 32 KiB of trailing output");
         scanner.Reset();
         Assert(!scanner.HasSeen(signal), "incremental log scanner resets after log truncation");
+
+        var stageScanner = new IncrementalLogStageScanner("[RimSearcher] EXPORT_STAGE runId=current stage=");
+        stageScanner.Append("prefix [RimSearcher] EXPORT_STAGE runId=current sta");
+        stageScanner.Append("ge=records\n" + string.Concat(Enumerable.Repeat(new string('s', 96) + "\n", 600)));
+        Assert(stageScanner.LatestStage == "records", "incremental stage scanner recognizes a split stage before more than 32 KiB of trailing output");
+        stageScanner.Reset();
+        Assert(stageScanner.LatestStage is null, "incremental stage scanner resets after log truncation");
     }
 
     private async Task TestSettingsAsync()
@@ -803,7 +813,7 @@ internal sealed class TestSuite
 
         Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", "data-hang");
         var timeout = await CaptureAsync(() => DataCommand.RefreshAsync(["data", "refresh", "--timeout-seconds", "1"]));
-        Assert(timeout.ExitCode == ExitCodes.Timeout && JsonErrorCode(timeout.Output) == "DATA_REFRESH_TIMEOUT", "data refresh enforces timeout");
+        Assert(timeout.ExitCode == ExitCodes.Timeout && JsonErrorCode(timeout.Output) == "DATA_REFRESH_TIMEOUT" && timeout.Output.Contains("\"latestExportStage\": \"records\""), "data refresh timeout reports the latest export stage");
         AssertConfigurationRestored(environment, "data timeout restores configuration");
     }
 

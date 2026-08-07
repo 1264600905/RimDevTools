@@ -152,6 +152,7 @@ public static class DataCommand
         var completionSignal = $"[RimSearcher] EXPORT_COMPLETE runId={runId}";
         var failureSignal = $"[RimSearcher] EXPORT_FAILED runId={runId}";
         var scanner = new IncrementalLogSignalScanner(completionSignal, failureSignal);
+        var stageScanner = new IncrementalLogStageScanner($"[RimSearcher] EXPORT_STAGE runId={runId} stage=");
         try
         {
             transaction = await ConfigTransaction.CreateAsync(configDirectory, runId, [GameEnvironment.ModsConfigPath(), requestPath, processingPath]);
@@ -168,8 +169,13 @@ public static class DataCommand
                 if (exportResult is null && File.Exists(resultPath)) exportResult = TryReadResult(resultPath, runId);
                 var read = await IncrementalLogReader.ReadAsync(GameEnvironment.PlayerLogPath(), logOffset, cancellationToken);
                 logOffset = read.Offset;
-                if (read.Reset) scanner.Reset();
+                if (read.Reset)
+                {
+                    scanner.Reset();
+                    stageScanner.Reset();
+                }
                 scanner.Append(read.Text);
+                stageScanner.Append(read.Text);
                 completionLogSeen = scanner.HasSeen(completionSignal);
                 failureLogSeen = scanner.HasSeen(failureSignal);
 
@@ -255,7 +261,7 @@ public static class DataCommand
             }
         }
         if (outcomeExitCode != ExitCodes.Success)
-            return CliResult.WriteFailure(command, outcomeExitCode, outcomeCode, outcomeMessage, context.Root, new { runId, outputPath, resultPath, isolatedDesktop = isolation.Enabled, isolatedDesktopSource = isolation.Source });
+            return CliResult.WriteFailure(command, outcomeExitCode, outcomeCode, outcomeMessage, context.Root, new { runId, outputPath, resultPath, latestExportStage = stageScanner.LatestStage, isolatedDesktop = isolation.Enabled, isolatedDesktopSource = isolation.Source });
 
         var validationError = ValidateRefreshResult(
             exportResult!, outputPath, runId, inputModsHash, requestedModsHash,
