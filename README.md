@@ -89,6 +89,18 @@ error CS0246: 未能找到类型或命名空间名"Verse"
 4. 开始在 `source/` 目录下编写你的模组代码
 5. 参考示例文档学习具体的实现方法
 
+## RimDevTools 自动测试
+
+发布包中的 `RimDevTools.exe test run` 支持通过 `--target-package-id <packageId>` 指定本轮自动测试的目标模组；该模组会自动加入临时 ModList，原有游戏配置会在测试结束后恢复。
+
+使用 `--capture-screenshots` 可为自动或 XML 自动测试保存截图。例如：
+
+```powershell
+RimDevTools.exe test run --mode auto --target-package-id trigger.dms.mechweapons.autoequip --capture-screenshots
+```
+
+截图、结果 JSON、清单和 Markdown 报告会写入项目的 `.tools/log/AutoTestOutput/`。
+
 祝模组开发顺利！
 
 作者提示： 注意使用rimworld-source mcp工具进行开发！

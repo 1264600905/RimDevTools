@@ -57,9 +57,15 @@ public static class TestCommand
         if (!CliArgs.TryPositiveInt(args, "--timeout-seconds", context.Config.Timeouts.MaxWait, out var timeout, out var timeoutError))
             return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "TIMEOUT_INVALID", timeoutError!, context.Root);
 
+        var targetPackageId = CliArgs.Value(args, "--target-package-id")?.Trim();
+        if (string.IsNullOrWhiteSpace(targetPackageId)) targetPackageId = context.Config.CurrentPackageId(context.Root);
+        if (string.IsNullOrWhiteSpace(targetPackageId))
+            return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "TARGET_PACKAGE_ID_MISSING", "无法确定自动测试目标；请提供 --target-package-id", context.Root);
+        var captureScreenshots = CliArgs.Has(args, "--capture-screenshots");
+
         var modsFileValue = CliArgs.Value(args, "--mods-file");
         var modsFile = modsFileValue is null ? null : Path.GetFullPath(modsFileValue, context.Root);
-        var modList = ModListParser.Resolve(context, modsFile, out var modError);
+        var modList = ModListParser.Resolve(context, modsFile, targetPackageId, out var modError);
         if (modList is null)
             return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, modError!.Code, modError.Message, context.Root, modError.Details);
 
@@ -101,7 +107,7 @@ public static class TestCommand
                 runId,
                 [GameEnvironment.ModsConfigPath(), GameEnvironment.LogSyncSettingsPath()]);
             await transaction.WriteAllTextAsync(GameEnvironment.ModsConfigPath(), ModListParser.Render(GameEnvironment.ModsConfigPath(), modList.Mods));
-            await SettingsEditor.UpdateAsync(context, mode, transaction, runId);
+            await SettingsEditor.UpdateAsync(context, mode, transaction, runId, targetPackageId, captureScreenshots);
 
             LogArchive.Rotate(SettingsEditor.SyncLogPath(context), context.Config.Retention.MaxLogFiles);
 
@@ -126,7 +132,7 @@ public static class TestCommand
             {
                 game.BeginOutputReadLine();
                 game.BeginErrorReadLine();
-                outcome = await WaitForModeAsync(mode, game, timeout, logOffset, outputPath, context.Config.CurrentPackageId(context.Root), runId, resultSnapshot, cancellationToken);
+                outcome = await WaitForModeAsync(mode, game, timeout, logOffset, outputPath, targetPackageId, runId, resultSnapshot, cancellationToken);
             }
         }
         catch (OperationCanceledException)
@@ -173,6 +179,8 @@ public static class TestCommand
         {
             runId,
             mode,
+            targetPackageId,
+            captureScreenshots,
             mods = modList.Mods,
             additions = modList.Additions,
             signal = outcome.Message,
@@ -252,12 +260,15 @@ public sealed record ModListResolution(IReadOnlyList<string> Mods, IReadOnlyList
 public static class ModListParser
 {
     public static ModListResolution? Resolve(ProjectContext context, string? path, out CliError? error)
-        => ResolveCore(context, path, "trigger.logsyncmod", "logsync_tooling", out error);
+        => Resolve(context, path, context.Config.CurrentPackageId(context.Root), out error);
+
+    public static ModListResolution? Resolve(ProjectContext context, string? path, string? targetPackageId, out CliError? error)
+        => ResolveCore(context, path, "trigger.logsyncmod", "logsync_tooling", targetPackageId, out error);
 
     public static ModListResolution? ResolveData(ProjectContext context, string? path, out CliError? error)
-        => ResolveCore(context, path, "kearril.rimsearcherdatamod", "rimsearcher_tooling", out error);
+        => ResolveCore(context, path, "kearril.rimsearcherdatamod", "rimsearcher_tooling", context.Config.CurrentPackageId(context.Root), out error);
 
-    private static ModListResolution? ResolveCore(ProjectContext context, string? path, string toolingPackageId, string toolingReason, out CliError? error)
+    private static ModListResolution? ResolveCore(ProjectContext context, string? path, string toolingPackageId, string toolingReason, string? targetPackageId, out CliError? error)
     {
         error = null;
         List<string> mods;
@@ -299,7 +310,7 @@ public static class ModListParser
         }
 
         var additions = new List<ModListAddition>();
-        AddBeforeTooling(mods, context.Config.CurrentPackageId(context.Root), toolingPackageId, "current_project", additions);
+        AddBeforeTooling(mods, targetPackageId, toolingPackageId, "target_mod", additions);
         AddBeforeTooling(mods, toolingPackageId, toolingPackageId, toolingReason, additions);
 
         var missing = mods.Where(x => !IsResolvable(context, x)).ToArray();
@@ -373,7 +384,7 @@ public static class SettingsEditor
     public static string SyncLogPath(ProjectContext context) => Path.Combine(context.Root, ".tools", "log", "精选日志.log");
     public static string AutoTestOutputPath(ProjectContext context) => Path.Combine(context.Root, ".tools", "log", "AutoTestOutput");
 
-    public static async Task<bool> UpdateAsync(ProjectContext context, string mode, ConfigTransaction? transaction = null, string? runId = null)
+    public static async Task<bool> UpdateAsync(ProjectContext context, string mode, ConfigTransaction? transaction = null, string? runId = null, string? targetPackageId = null, bool captureScreenshots = false)
     {
         var path = GameEnvironment.LogSyncSettingsPath();
         var document = File.Exists(path)
@@ -389,12 +400,12 @@ public static class SettingsEditor
 
         var auto = mode is "auto" or "xml";
         changed |= Set(settings, "autoTestEnabled", auto ? "True" : "False");
-        changed |= Set(settings, "autoTestTargetPackageId", auto ? context.Config.CurrentPackageId(context.Root)?.ToLowerInvariant() ?? "" : "");
+        changed |= Set(settings, "autoTestTargetPackageId", auto ? targetPackageId?.ToLowerInvariant() ?? context.Config.CurrentPackageId(context.Root)?.ToLowerInvariant() ?? "" : "");
         changed |= Set(settings, "autoTestRunId", auto ? runId ?? "" : "");
         changed |= Set(settings, "autoTestOutputPath", AutoTestOutputPath(context));
         changed |= Set(settings, "autoTestMode", mode == "xml" ? "XmlDriven" : "Automatic");
         changed |= Set(settings, "autoTestScope", "Standard");
-        changed |= Set(settings, "autoTestCaptureScreenshots", "False");
+        changed |= Set(settings, "autoTestCaptureScreenshots", auto && captureScreenshots ? "True" : "False");
         changed |= Set(settings, "autoTestPreventPause", "True");
         changed |= Set(settings, "autoTestUseFastSpeed", "True");
 
