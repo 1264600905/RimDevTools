@@ -1,0 +1,11 @@
+interface:
+  display_name: "RimWorld Modding"
+  short_description: "Author verified RimWorld 1.6 content and patches"
+  default_prompt: "Use $rimworld-modding to implement this RimWorld 1.6 mod feature from verified data and code evidence."
+
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "decompiler"
+      description: "Project-local DecompilerServer for verified RimWorld and mod APIs"
+      transport: "stdio"

@@ -15,6 +15,9 @@ Codex 会从项目内的 `.codex/config.toml` 启动随模板提供的 Decompile
 - `rimdevtools`：项目检查、部署、参考模组、测试和 Def 数据库管理。
 - `rimsearcher`：查询运行时合并后的 RimWorld Def 数据并建立数据证据链。
 - `decompiler-mcp`：使用 DecompilerServer 检查真实游戏或模组程序集。
+- `rimworld-development-engineer`：按证据实施、部署并完成游戏内验证。
+- `rimworld-modding`：RimWorld 1.6 XML、C#、Harmony、资源与发布开发规范。
+- `about-write-description`：基于已验证功能更新双语 Workshop 描述。
 
 常用命令：
 

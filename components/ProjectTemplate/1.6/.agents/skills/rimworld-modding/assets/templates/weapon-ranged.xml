@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Rename every Template_* identity and replace the projectile with a verified project Def. -->
+<Defs>
+  <ThingDef ParentName="BaseHumanMakeableGun">
+    <defName>Template_Weapon_Ranged</defName>
+    <label>template ranged weapon</label>
+    <description>Replace this player-facing description.</description>
+    <techLevel>Industrial</techLevel>
+    <costStuffCount>60</costStuffCount>
+    <stuffCategories>
+      <li>Metallic</li>
+    </stuffCategories>
+    <statBases>
+      <WorkToMake>12000</WorkToMake>
+      <Mass>3</Mass>
+      <RangedWeapon_Cooldown>1.5</RangedWeapon_Cooldown>
+    </statBases>
+    <weaponTags>
+      <li>Template_Ranged</li>
+    </weaponTags>
+    <verbs>
+      <li>
+        <verbClass>Verb_Shoot</verbClass>
+        <hasStandardCommand>true</hasStandardCommand>
+        <defaultProjectile>Bullet_AssaultRifle</defaultProjectile>
+        <warmupTime>1</warmupTime>
+        <range>25</range>
+      </li>
+    </verbs>
+    <graphicData>
+      <texPath>Things/Item/Template_Weapon_Ranged</texPath>
+      <graphicClass>Graphic_Single</graphicClass>
+    </graphicData>
+    <recipeMaker>
+      <researchPrerequisite>Gunsmithing</researchPrerequisite>
+      <skillRequirements>
+        <Crafting>5</Crafting>
+      </skillRequirements>
+      <workAmount>12000</workAmount>
+    </recipeMaker>
+  </ThingDef>
+</Defs>

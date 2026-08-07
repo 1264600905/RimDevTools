@@ -1,0 +1,4 @@
+interface:
+  display_name: "About Description Writer"
+  short_description: "Write evidence-based bilingual Workshop descriptions"
+  default_prompt: "Use $about-write-description to update only the About.xml description from verified project behavior."

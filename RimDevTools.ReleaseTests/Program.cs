@@ -94,13 +94,20 @@ using (var manifestDocument = JsonDocument.Parse(File.ReadAllText(Path.Combine(p
             Assert(File.ReadAllText(Path.Combine(output, "source", "MyCustomMod", "MyCustomMod.sln")).Contains("MyCustomMod.csproj", StringComparison.Ordinal), $"init {version} produces a valid solution contract");
             Assert(File.Exists(Path.Combine(output, ".decompilerserver", "DecompilerServer.exe")), $"init {version} includes DecompilerServer");
             Assert(File.ReadAllText(Path.Combine(output, ".codex", "config.toml")).Contains("command = \".decompilerserver/DecompilerServer.exe\"", StringComparison.Ordinal), $"init {version} configures Codex MCP with a project-relative executable path");
-            foreach (var skill in new[] { "rimdevtools", "rimsearcher", "decompiler-mcp" })
+            foreach (var skill in new[] { "rimdevtools", "rimsearcher", "decompiler-mcp", "about-write-description", "rimworld-modding", "rimworld-development-engineer" })
             {
                 var skillRoot = Path.Combine(output, ".agents", "skills", skill);
                 Assert(File.Exists(Path.Combine(skillRoot, "SKILL.md")), $"init {version} includes the discoverable {skill} skill");
                 Assert(File.Exists(Path.Combine(skillRoot, "agents", "openai.yaml")), $"init {version} includes UI metadata for {skill}");
                 Assert(Directory.EnumerateFiles(Path.Combine(skillRoot, "references")).Any(), $"init {version} includes detailed references for {skill}");
             }
+            var engineerSkill = File.ReadAllText(Path.Combine(output, ".agents", "skills", "rimworld-development-engineer", "SKILL.md"));
+            Assert(engineerSkill.Contains("use DecompilerServer first", StringComparison.OrdinalIgnoreCase)
+                && engineerSkill.Contains("Never run `ref pull` merely to inspect code", StringComparison.Ordinal), $"init {version} prioritizes DecompilerServer and keeps ref pull as fallback");
+            var moddingSkillRoot = Path.Combine(output, ".agents", "skills", "rimworld-modding");
+            Assert(File.Exists(Path.Combine(moddingSkillRoot, "LICENSE")), $"init {version} preserves the imported modding skill license");
+            using (JsonDocument.Parse(File.ReadAllText(Path.Combine(moddingSkillRoot, "tests", "evals.json")))) { }
+            Assert(Directory.EnumerateFiles(Path.Combine(moddingSkillRoot, "assets", "templates"), "*.xml").All(path => XDocument.Load(path).Root is not null), $"init {version} includes parseable RimWorld XML skill templates");
 
             var doctor = RunResult(Path.Combine(output, ".tools", "RimDevTools.exe"), output, "doctor");
             Assert(doctor.ExitCode == 0 && JsonDocument.Parse(doctor.Stdout).RootElement.GetProperty("ok").GetBoolean(), $"doctor discovers initialized {version} project");

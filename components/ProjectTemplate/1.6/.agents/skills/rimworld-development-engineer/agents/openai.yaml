@@ -1,0 +1,11 @@
+interface:
+  display_name: "RimWorld Development Engineer"
+  short_description: "Drive evidence-first implementation and game validation"
+  default_prompt: "Use $rimworld-development-engineer to implement and verify this RimWorld mod change end to end."
+
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "decompiler"
+      description: "Primary code evidence source for game and mod assemblies"
+      transport: "stdio"
