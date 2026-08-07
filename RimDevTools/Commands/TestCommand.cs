@@ -311,8 +311,14 @@ public static class ModListParser
         {
             error = new CliError(
                 "REQUIRED_MODS_DISABLED",
-                "启动 RimWorld 前必须启用以下最小可用模组",
-                new { required = requiredMods, missing = disabledRequiredMods });
+                "测试启动被拒绝：以下默认模组未出现在本次 ModList 的 <activeMods> 中。请将它们加入 mod_config.jsonc 的 min_active_mods，或加入 --mods-file 指定文件的 <activeMods> 后重试；这不是模组文件缺失错误。",
+                new
+                {
+                    required = requiredMods,
+                    missingFromActiveMods = disabledRequiredMods,
+                    activationConfig = "min_active_mods",
+                    activationModsFileElement = "activeMods"
+                });
             return null;
         }
 
