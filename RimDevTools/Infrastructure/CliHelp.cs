@@ -81,7 +81,7 @@ public static class CliHelp
           RimDevTools.exe init <version> --output <directory>
 
         Arguments:
-          version             Exactly one of: 1.6, 1.7, 1.8.
+          version             Currently supported: 1.6.
 
         Options:
           --output <path>     Required. Target must not exist or must be empty.

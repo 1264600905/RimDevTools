@@ -1,0 +1,3 @@
+{"msg":"init","dagFile":"Library/Bee/1900b0aP.dag","targets":["ScriptAssembliesAndTypeDB"]}
+{"msg":"enqueueNode","enqueuedNodeAnnotation":"ScriptAssembliesAndTypeDB","enqueuedNodeIndex":2}
+{"msg":"enqueueNode","enqueuedNodeAnnotation":"ScriptAssemblies","enqueuedNodeIndex":1,"enqueueingNodeAnnotation":"ScriptAssembliesAndTypeDB","enqueueingNodeIndex":2}

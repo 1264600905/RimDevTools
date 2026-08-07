@@ -1,0 +1,2 @@
+[mcp_servers.decompiler]
+command = ".decompilerserver/DecompilerServer.exe"

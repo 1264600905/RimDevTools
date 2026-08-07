@@ -7,9 +7,7 @@ public static class InitCommand
 {
     private static readonly HashSet<string> AllowedVersions = new(StringComparer.Ordinal)
     {
-        "1.6",
-        "1.7",
-        "1.8"
+        "1.6"
     };
 
     public static Task<int> RunAsync(string[] args, CancellationToken cancellationToken = default)
@@ -151,7 +149,7 @@ public static class InitCommand
         if (manifest.SupportedVersions is null || manifest.RequiredFiles is null || manifest.RequiredDirectories is null)
             throw InvalidTemplate("模板清单缺少 supportedVersions、requiredFiles 或 requiredDirectories");
         if (manifest.SupportedVersions.Count == 0 || manifest.SupportedVersions.Any(version => !AllowedVersions.Contains(version)))
-            throw InvalidTemplate("supportedVersions 只能包含 1.6、1.7、1.8");
+            throw InvalidTemplate("supportedVersions 只能包含 1.6");
         if (manifest.SupportedVersions.Count != manifest.SupportedVersions.Distinct(StringComparer.Ordinal).Count())
             throw InvalidTemplate("supportedVersions 不得包含重复版本");
 

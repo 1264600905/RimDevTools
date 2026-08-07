@@ -65,13 +65,13 @@ using (var manifestDocument = JsonDocument.Parse(File.ReadAllText(Path.Combine(p
     var manifest = manifestDocument.RootElement;
     Assert(manifest.GetProperty("schemaVersion").GetInt32() == 1, "project template manifest uses the supported schema");
     var supportedVersions = manifest.GetProperty("supportedVersions").EnumerateArray().Select(value => value.GetString()).ToArray();
-    Assert(supportedVersions.SequenceEqual(new[] { "1.6", "1.7", "1.8" }), "project template manifest advertises all supported versions");
+    Assert(supportedVersions.SequenceEqual(new[] { "1.6" }), "project template manifest advertises only the available 1.6 template");
     var requiredDirectories = manifest.GetProperty("requiredDirectories").EnumerateArray().Select(value => value.GetString()!).ToArray();
     var initRoot = Path.Combine(Path.GetTempPath(), "RimDevToolsReleaseTests", Guid.NewGuid().ToString("N"));
     Directory.CreateDirectory(initRoot);
     try
     {
-        foreach (var version in new[] { "1.6", "1.7", "1.8" })
+        foreach (var version in new[] { "1.6" })
         {
             var template = Path.Combine(projectTemplates, version);
             Assert(!Directory.Exists(Path.Combine(template, ".tools")) && !File.Exists(Path.Combine(template, ".tools")), $"{version} template does not duplicate shared .tools");
@@ -90,8 +90,17 @@ using (var manifestDocument = JsonDocument.Parse(File.ReadAllText(Path.Combine(p
                 Assert(config.RootElement.GetProperty("game_version").GetString() == version && config.RootElement.GetProperty("isolated_desktop").GetBoolean(), $"init {version} keeps its version-specific JSONC");
             Assert(XDocument.Load(Path.Combine(output, "LoadFolders.xml")).Root?.Element($"v{version}") is not null, $"init {version} keeps its version-specific LoadFolders XML");
             Assert(XDocument.Load(Path.Combine(output, "About", "About.xml")).Root?.Element("supportedVersions")?.Elements("li").Single().Value == version, $"init {version} keeps its version-specific About XML");
-            Assert(XDocument.Load(Path.Combine(output, "source", "TempProject", "TempProject.csproj")).Root is not null, $"init {version} produces parseable csproj XML");
-            Assert(File.ReadAllText(Path.Combine(output, "source", "TempProject", "TempProject.sln")).Contains("TempProject.csproj", StringComparison.Ordinal), $"init {version} produces a valid solution contract");
+            Assert(XDocument.Load(Path.Combine(output, "source", "MyCustomMod", "MyCustomMod.csproj")).Root is not null, $"init {version} produces parseable csproj XML");
+            Assert(File.ReadAllText(Path.Combine(output, "source", "MyCustomMod", "MyCustomMod.sln")).Contains("MyCustomMod.csproj", StringComparison.Ordinal), $"init {version} produces a valid solution contract");
+            Assert(File.Exists(Path.Combine(output, ".decompilerserver", "DecompilerServer.exe")), $"init {version} includes DecompilerServer");
+            Assert(File.ReadAllText(Path.Combine(output, ".codex", "config.toml")).Contains("command = \".decompilerserver/DecompilerServer.exe\"", StringComparison.Ordinal), $"init {version} configures Codex MCP with a project-relative executable path");
+            foreach (var skill in new[] { "rimdevtools", "rimsearcher", "decompiler-mcp" })
+            {
+                var skillRoot = Path.Combine(output, ".agents", "skills", skill);
+                Assert(File.Exists(Path.Combine(skillRoot, "SKILL.md")), $"init {version} includes the discoverable {skill} skill");
+                Assert(File.Exists(Path.Combine(skillRoot, "agents", "openai.yaml")), $"init {version} includes UI metadata for {skill}");
+                Assert(Directory.EnumerateFiles(Path.Combine(skillRoot, "references")).Any(), $"init {version} includes detailed references for {skill}");
+            }
 
             var doctor = RunResult(Path.Combine(output, ".tools", "RimDevTools.exe"), output, "doctor");
             Assert(doctor.ExitCode == 0 && JsonDocument.Parse(doctor.Stdout).RootElement.GetProperty("ok").GetBoolean(), $"doctor discovers initialized {version} project");

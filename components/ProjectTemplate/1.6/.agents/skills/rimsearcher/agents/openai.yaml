@@ -1,0 +1,4 @@
+interface:
+  display_name: "RimSearcher"
+  short_description: "Query runtime RimWorld Def data with evidence"
+  default_prompt: "Use $rimsearcher to investigate this RimWorld Def or mechanic."

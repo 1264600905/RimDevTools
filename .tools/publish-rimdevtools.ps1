@@ -62,7 +62,7 @@ try {
     }
     New-Item -ItemType Directory -Path $projectTemplateTarget -Force | Out-Null
     Copy-Item -LiteralPath (Join-Path $projectTemplateSource "manifest.json") -Destination $projectTemplateTarget -Force
-    foreach ($version in @("1.6", "1.7", "1.8")) {
+    foreach ($version in @("1.6")) {
         $sourceVersion = Join-Path $projectTemplateSource $version
         if (-not (Test-Path -LiteralPath $sourceVersion)) { throw "缺少 ProjectTemplate $version 模板: $sourceVersion" }
         $targetVersion = Join-Path $projectTemplateTarget $version

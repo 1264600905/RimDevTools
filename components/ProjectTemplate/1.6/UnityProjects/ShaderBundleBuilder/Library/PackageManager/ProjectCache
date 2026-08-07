@@ -1,0 +1,784 @@
+m_ProjectFiles:
+  m_ManifestFileStatus:
+    m_FilePath: "D:/RimworldProject2/\u6A21\u7EC4\u6A21\u677F(\u7CBE\u7B80)/UnityProjects/ShaderBundleBuilder/Packages/manifest.json"
+    m_PathExists: 1
+    m_ContentTrackingEnabled: 1
+    m_ModificationDate:
+      serializedVersion: 2
+      ticks: 639160903357966674
+    m_Hash: 459396509
+  m_LockFileStatus:
+    m_FilePath: "D:/RimworldProject2/\u6A21\u7EC4\u6A21\u677F(\u7CBE\u7B80)/UnityProjects/ShaderBundleBuilder/Packages/packages-lock.json"
+    m_PathExists: 1
+    m_ContentTrackingEnabled: 1
+    m_ModificationDate:
+      serializedVersion: 2
+      ticks: 639160905963003714
+    m_Hash: 335649269
+m_EmbeddedPackageManifests:
+  m_ManifestsStatus: {}
+m_LocalPackages:
+  m_LocalFileStatus: []
+m_ProjectPath: "D:/RimworldProject2/\u6A21\u7EC4\u6A21\u677F(\u7CBE\u7B80)/UnityProjects/ShaderBundleBuilder/Packages"
+m_EditorVersion: 2023.2.20f1c1 (ceda3f59bbc9)
+m_ResolvedPackages:
+- packageId: com.unity.modules.animation@1.0.0
+  testable: 0
+  isDirectDependency: 1
+  version: 1.0.0
+  source: 2
+  resolvedPath: "D:\\RimworldProject2\\\u6A21\u7EC4\u6A21\u677F(\u7CBE\u7B80)\\UnityProjects\\ShaderBundleBuilder\\Library\\PackageCache\\com.unity.modules.animation@1.0.0"
+  assetPath: Packages/com.unity.modules.animation
+  name: com.unity.modules.animation
+  displayName: Animation
+  author:
+    name: 
+    email: 
+    url: 
+  category: 
+  type: module
+  description: 'The Animation module implements Unity''s animation system. Scripting
+    API: https://docs.unity3d.com/ScriptReference/UnityEngine.AnimationModule.html'
+  errors: []
+  versions:
+    all:
+    - 1.0.0
+    compatible:
+    - 1.0.0
+    recommended: 1.0.0
+    deprecated: []
+  dependencies: []
+  resolvedDependencies: []
+  keywords: []
+  registry:
+    id: main
+    name: 
+    url: https://packages.unity.cn
+    scopes: []
+    isDefault: 1
+    capabilities: 7
+    configSource: 0
+  hideInEditor: 1
+  entitlements:
+    licensingModel: 0
+  isAssetStorePackage: 0
+  datePublishedTicks: 0
+  documentationUrl: 
+  hasRepository: 0
+  repository:
+    type: 
+    url: 
+    revision: 
+    path: 
+  unityLifecycle:
+    version: 1.0.0
+    nextVersion: 
+    recommendedVersion: 
+    isDeprecated: 0
+    deprecationMessage: 
+  isDeprecated: 0
+  deprecationMessage: 
+  git:
+    hash: 
+    revision: 
+  upmReserved: 
+  assetStore:
+    productId: 
+- packageId: com.unity.modules.assetbundle@1.0.0
+  testable: 0
+  isDirectDependency: 1
+  version: 1.0.0
+  source: 2
+  resolvedPath: "D:\\RimworldProject2\\\u6A21\u7EC4\u6A21\u677F(\u7CBE\u7B80)\\UnityProjects\\ShaderBundleBuilder\\Library\\PackageCache\\com.unity.modules.assetbundle@1.0.0"
+  assetPath: Packages/com.unity.modules.assetbundle
+  name: com.unity.modules.assetbundle
+  displayName: Asset Bundle
+  author:
+    name: 
+    email: 
+    url: 
+  category: 
+  type: module
+  description: 'The AssetBundle module implements the AssetBundle class and related
+    APIs to load data from AssetBundles. Scripting API: https://docs.unity3d.com/ScriptReference/UnityEngine.AssetBundleModule.html'
+  errors: []
+  versions:
+    all:
+    - 1.0.0
+    compatible:
+    - 1.0.0
+    recommended: 1.0.0
+    deprecated: []
+  dependencies: []
+  resolvedDependencies: []
+  keywords: []
+  registry:
+    id: main
+    name: 
+    url: https://packages.unity.cn
+    scopes: []
+    isDefault: 1
+    capabilities: 7
+    configSource: 0
+  hideInEditor: 1
+  entitlements:
+    licensingModel: 0
+  isAssetStorePackage: 0
+  datePublishedTicks: 0
+  documentationUrl: 
+  hasRepository: 0
+  repository:
+    type: 
+    url: 
+    revision: 
+    path: 
+  unityLifecycle:
+    version: 1.0.0
+    nextVersion: 
+    recommendedVersion: 
+    isDeprecated: 0
+    deprecationMessage: 
+  isDeprecated: 0
+  deprecationMessage: 
+  git:
+    hash: 
+    revision: 
+  upmReserved: 
+  assetStore:
+    productId: 
+- packageId: com.unity.modules.audio@1.0.0
+  testable: 0
+  isDirectDependency: 1
+  version: 1.0.0
+  source: 2
+  resolvedPath: "D:\\RimworldProject2\\\u6A21\u7EC4\u6A21\u677F(\u7CBE\u7B80)\\UnityProjects\\ShaderBundleBuilder\\Library\\PackageCache\\com.unity.modules.audio@1.0.0"
+  assetPath: Packages/com.unity.modules.audio
+  name: com.unity.modules.audio
+  displayName: Audio
+  author:
+    name: 
+    email: 
+    url: 
+  category: 
+  type: module
+  description: 'The Audio module implements Unity''s audio system. Scripting API:
+    https://docs.unity3d.com/ScriptReference/UnityEngine.AudioModule.html'
+  errors: []
+  versions:
+    all:
+    - 1.0.0
+    compatible:
+    - 1.0.0
+    recommended: 1.0.0
+    deprecated: []
+  dependencies: []
+  resolvedDependencies: []
+  keywords: []
+  registry:
+    id: main
+    name: 
+    url: https://packages.unity.cn
+    scopes: []
+    isDefault: 1
+    capabilities: 7
+    configSource: 0
+  hideInEditor: 1
+  entitlements:
+    licensingModel: 0
+  isAssetStorePackage: 0
+  datePublishedTicks: 0
+  documentationUrl: 
+  hasRepository: 0
+  repository:
+    type: 
+    url: 
+    revision: 
+    path: 
+  unityLifecycle:
+    version: 1.0.0
+    nextVersion: 
+    recommendedVersion: 
+    isDeprecated: 0
+    deprecationMessage: 
+  isDeprecated: 0
+  deprecationMessage: 
+  git:
+    hash: 
+    revision: 
+  upmReserved: 
+  assetStore:
+    productId: 
+- packageId: com.unity.modules.imageconversion@1.0.0
+  testable: 0
+  isDirectDependency: 1
+  version: 1.0.0
+  source: 2
+  resolvedPath: "D:\\RimworldProject2\\\u6A21\u7EC4\u6A21\u677F(\u7CBE\u7B80)\\UnityProjects\\ShaderBundleBuilder\\Library\\PackageCache\\com.unity.modules.imageconversion@1.0.0"
+  assetPath: Packages/com.unity.modules.imageconversion
+  name: com.unity.modules.imageconversion
+  displayName: Image Conversion
+  author:
+    name: 
+    email: 
+    url: 
+  category: 
+  type: module
+  description: 'The ImageConversion module implements the ImageConversion class which
+    provides helper methods for converting image data. Scripting API: https://docs.unity3d.com/ScriptReference/UnityEngine.ImageConversionModule.html'
+  errors: []
+  versions:
+    all:
+    - 1.0.0
+    compatible:
+    - 1.0.0
+    recommended: 1.0.0
+    deprecated: []
+  dependencies: []
+  resolvedDependencies: []
+  keywords: []
+  registry:
+    id: main
+    name: 
+    url: https://packages.unity.cn
+    scopes: []
+    isDefault: 1
+    capabilities: 7
+    configSource: 0
+  hideInEditor: 1
+  entitlements:
+    licensingModel: 0
+  isAssetStorePackage: 0
+  datePublishedTicks: 0
+  documentationUrl: 
+  hasRepository: 0
+  repository:
+    type: 
+    url: 
+    revision: 
+    path: 
+  unityLifecycle:
+    version: 1.0.0
+    nextVersion: 
+    recommendedVersion: 
+    isDeprecated: 0
+    deprecationMessage: 
+  isDeprecated: 0
+  deprecationMessage: 
+  git:
+    hash: 
+    revision: 
+  upmReserved: 
+  assetStore:
+    productId: 
+- packageId: com.unity.modules.imgui@1.0.0
+  testable: 0
+  isDirectDependency: 1
+  version: 1.0.0
+  source: 2
+  resolvedPath: "D:\\RimworldProject2\\\u6A21\u7EC4\u6A21\u677F(\u7CBE\u7B80)\\UnityProjects\\ShaderBundleBuilder\\Library\\PackageCache\\com.unity.modules.imgui@1.0.0"
+  assetPath: Packages/com.unity.modules.imgui
+  name: com.unity.modules.imgui
+  displayName: IMGUI
+  author:
+    name: 
+    email: 
+    url: 
+  category: 
+  type: module
+  description: 'The IMGUI module provides Unity''s immediate mode GUI solution for
+    creating in-game and editor user interfaces. Scripting API: https://docs.unity3d.com/ScriptReference/UnityEngine.IMGUIModule.html'
+  errors: []
+  versions:
+    all:
+    - 1.0.0
+    compatible:
+    - 1.0.0
+    recommended: 1.0.0
+    deprecated: []
+  dependencies: []
+  resolvedDependencies: []
+  keywords: []
+  registry:
+    id: main
+    name: 
+    url: https://packages.unity.cn
+    scopes: []
+    isDefault: 1
+    capabilities: 7
+    configSource: 0
+  hideInEditor: 1
+  entitlements:
+    licensingModel: 0
+  isAssetStorePackage: 0
+  datePublishedTicks: 0
+  documentationUrl: 
+  hasRepository: 0
+  repository:
+    type: 
+    url: 
+    revision: 
+    path: 
+  unityLifecycle:
+    version: 1.0.0
+    nextVersion: 
+    recommendedVersion: 
+    isDeprecated: 0
+    deprecationMessage: 
+  isDeprecated: 0
+  deprecationMessage: 
+  git:
+    hash: 
+    revision: 
+  upmReserved: 
+  assetStore:
+    productId: 
+- packageId: com.unity.modules.particlesystem@1.0.0
+  testable: 0
+  isDirectDependency: 1
+  version: 1.0.0
+  source: 2
+  resolvedPath: "D:\\RimworldProject2\\\u6A21\u7EC4\u6A21\u677F(\u7CBE\u7B80)\\UnityProjects\\ShaderBundleBuilder\\Library\\PackageCache\\com.unity.modules.particlesystem@1.0.0"
+  assetPath: Packages/com.unity.modules.particlesystem
+  name: com.unity.modules.particlesystem
+  displayName: Particle System
+  author:
+    name: 
+    email: 
+    url: 
+  category: 
+  type: module
+  description: 'The ParticleSystem module implements Unity''s Particle System. Scripting
+    API: https://docs.unity3d.com/ScriptReference/UnityEngine.ParticleSystemModule.html'
+  errors: []
+  versions:
+    all:
+    - 1.0.0
+    compatible:
+    - 1.0.0
+    recommended: 1.0.0
+    deprecated: []
+  dependencies: []
+  resolvedDependencies: []
+  keywords: []
+  registry:
+    id: main
+    name: 
+    url: https://packages.unity.cn
+    scopes: []
+    isDefault: 1
+    capabilities: 7
+    configSource: 0
+  hideInEditor: 1
+  entitlements:
+    licensingModel: 0
+  isAssetStorePackage: 0
+  datePublishedTicks: 0
+  documentationUrl: 
+  hasRepository: 0
+  repository:
+    type: 
+    url: 
+    revision: 
+    path: 
+  unityLifecycle:
+    version: 1.0.0
+    nextVersion: 
+    recommendedVersion: 
+    isDeprecated: 0
+    deprecationMessage: 
+  isDeprecated: 0
+  deprecationMessage: 
+  git:
+    hash: 
+    revision: 
+  upmReserved: 
+  assetStore:
+    productId: 
+- packageId: com.unity.modules.physics@1.0.0
+  testable: 0
+  isDirectDependency: 1
+  version: 1.0.0
+  source: 2
+  resolvedPath: "D:\\RimworldProject2\\\u6A21\u7EC4\u6A21\u677F(\u7CBE\u7B80)\\UnityProjects\\ShaderBundleBuilder\\Library\\PackageCache\\com.unity.modules.physics@1.0.0"
+  assetPath: Packages/com.unity.modules.physics
+  name: com.unity.modules.physics
+  displayName: Physics
+  author:
+    name: 
+    email: 
+    url: 
+  category: 
+  type: module
+  description: 'The Physics module implements 3D physics in Unity. Scripting API:
+    https://docs.unity3d.com/ScriptReference/UnityEngine.PhysicsModule.html'
+  errors: []
+  versions:
+    all:
+    - 1.0.0
+    compatible:
+    - 1.0.0
+    recommended: 1.0.0
+    deprecated: []
+  dependencies: []
+  resolvedDependencies: []
+  keywords: []
+  registry:
+    id: main
+    name: 
+    url: https://packages.unity.cn
+    scopes: []
+    isDefault: 1
+    capabilities: 7
+    configSource: 0
+  hideInEditor: 1
+  entitlements:
+    licensingModel: 0
+  isAssetStorePackage: 0
+  datePublishedTicks: 0
+  documentationUrl: 
+  hasRepository: 0
+  repository:
+    type: 
+    url: 
+    revision: 
+    path: 
+  unityLifecycle:
+    version: 1.0.0
+    nextVersion: 
+    recommendedVersion: 
+    isDeprecated: 0
+    deprecationMessage: 
+  isDeprecated: 0
+  deprecationMessage: 
+  git:
+    hash: 
+    revision: 
+  upmReserved: 
+  assetStore:
+    productId: 
+- packageId: com.unity.modules.physics2d@1.0.0
+  testable: 0
+  isDirectDependency: 1
+  version: 1.0.0
+  source: 2
+  resolvedPath: "D:\\RimworldProject2\\\u6A21\u7EC4\u6A21\u677F(\u7CBE\u7B80)\\UnityProjects\\ShaderBundleBuilder\\Library\\PackageCache\\com.unity.modules.physics2d@1.0.0"
+  assetPath: Packages/com.unity.modules.physics2d
+  name: com.unity.modules.physics2d
+  displayName: Physics 2D
+  author:
+    name: 
+    email: 
+    url: 
+  category: 
+  type: module
+  description: 'The Physics2d module implements 2D physics in Unity. Scripting API:
+    https://docs.unity3d.com/ScriptReference/UnityEngine.Physics2DModule.html'
+  errors: []
+  versions:
+    all:
+    - 1.0.0
+    compatible:
+    - 1.0.0
+    recommended: 1.0.0
+    deprecated: []
+  dependencies: []
+  resolvedDependencies: []
+  keywords: []
+  registry:
+    id: main
+    name: 
+    url: https://packages.unity.cn
+    scopes: []
+    isDefault: 1
+    capabilities: 7
+    configSource: 0
+  hideInEditor: 1
+  entitlements:
+    licensingModel: 0
+  isAssetStorePackage: 0
+  datePublishedTicks: 0
+  documentationUrl: 
+  hasRepository: 0
+  repository:
+    type: 
+    url: 
+    revision: 
+    path: 
+  unityLifecycle:
+    version: 1.0.0
+    nextVersion: 
+    recommendedVersion: 
+    isDeprecated: 0
+    deprecationMessage: 
+  isDeprecated: 0
+  deprecationMessage: 
+  git:
+    hash: 
+    revision: 
+  upmReserved: 
+  assetStore:
+    productId: 
+- packageId: com.unity.modules.ui@1.0.0
+  testable: 0
+  isDirectDependency: 1
+  version: 1.0.0
+  source: 2
+  resolvedPath: "D:\\RimworldProject2\\\u6A21\u7EC4\u6A21\u677F(\u7CBE\u7B80)\\UnityProjects\\ShaderBundleBuilder\\Library\\PackageCache\\com.unity.modules.ui@1.0.0"
+  assetPath: Packages/com.unity.modules.ui
+  name: com.unity.modules.ui
+  displayName: UI
+  author:
+    name: 
+    email: 
+    url: 
+  category: 
+  type: module
+  description: 'The UI module implements basic components required for Unity''s UI
+    system Scripting API: https://docs.unity3d.com/ScriptReference/UnityEngine.UIModule.html'
+  errors: []
+  versions:
+    all:
+    - 1.0.0
+    compatible:
+    - 1.0.0
+    recommended: 1.0.0
+    deprecated: []
+  dependencies: []
+  resolvedDependencies: []
+  keywords: []
+  registry:
+    id: main
+    name: 
+    url: https://packages.unity.cn
+    scopes: []
+    isDefault: 1
+    capabilities: 7
+    configSource: 0
+  hideInEditor: 1
+  entitlements:
+    licensingModel: 0
+  isAssetStorePackage: 0
+  datePublishedTicks: 0
+  documentationUrl: 
+  hasRepository: 0
+  repository:
+    type: 
+    url: 
+    revision: 
+    path: 
+  unityLifecycle:
+    version: 1.0.0
+    nextVersion: 
+    recommendedVersion: 
+    isDeprecated: 0
+    deprecationMessage: 
+  isDeprecated: 0
+  deprecationMessage: 
+  git:
+    hash: 
+    revision: 
+  upmReserved: 
+  assetStore:
+    productId: 
+- packageId: com.unity.modules.uielements@1.0.0
+  testable: 0
+  isDirectDependency: 1
+  version: 1.0.0
+  source: 2
+  resolvedPath: "D:\\RimworldProject2\\\u6A21\u7EC4\u6A21\u677F(\u7CBE\u7B80)\\UnityProjects\\ShaderBundleBuilder\\Library\\PackageCache\\com.unity.modules.uielements@1.0.0"
+  assetPath: Packages/com.unity.modules.uielements
+  name: com.unity.modules.uielements
+  displayName: UIElements
+  author:
+    name: 
+    email: 
+    url: 
+  category: 
+  type: module
+  description: 'The UIElements module implements the UIElements retained mode UI
+    framework. Scripting API: https://docs.unity3d.com/ScriptReference/UnityEngine.UIElementsModule.html'
+  errors: []
+  versions:
+    all:
+    - 1.0.0
+    compatible:
+    - 1.0.0
+    recommended: 1.0.0
+    deprecated: []
+  dependencies:
+  - name: com.unity.modules.ui
+    version: 1.0.0
+  - name: com.unity.modules.imgui
+    version: 1.0.0
+  - name: com.unity.modules.jsonserialize
+    version: 1.0.0
+  - name: com.unity.modules.hierarchycore
+    version: 1.0.0
+  resolvedDependencies:
+  - name: com.unity.modules.ui
+    version: 1.0.0
+  - name: com.unity.modules.imgui
+    version: 1.0.0
+  - name: com.unity.modules.jsonserialize
+    version: 1.0.0
+  - name: com.unity.modules.hierarchycore
+    version: 1.0.0
+  keywords: []
+  registry:
+    id: main
+    name: 
+    url: https://packages.unity.cn
+    scopes: []
+    isDefault: 1
+    capabilities: 7
+    configSource: 0
+  hideInEditor: 1
+  entitlements:
+    licensingModel: 0
+  isAssetStorePackage: 0
+  datePublishedTicks: 0
+  documentationUrl: 
+  hasRepository: 0
+  repository:
+    type: 
+    url: 
+    revision: 
+    path: 
+  unityLifecycle:
+    version: 1.0.0
+    nextVersion: 
+    recommendedVersion: 
+    isDeprecated: 0
+    deprecationMessage: 
+  isDeprecated: 0
+  deprecationMessage: 
+  git:
+    hash: 
+    revision: 
+  upmReserved: 
+  assetStore:
+    productId: 
+- packageId: com.unity.modules.jsonserialize@1.0.0
+  testable: 0
+  isDirectDependency: 0
+  version: 1.0.0
+  source: 2
+  resolvedPath: "D:\\RimworldProject2\\\u6A21\u7EC4\u6A21\u677F(\u7CBE\u7B80)\\UnityProjects\\ShaderBundleBuilder\\Library\\PackageCache\\com.unity.modules.jsonserialize@1.0.0"
+  assetPath: Packages/com.unity.modules.jsonserialize
+  name: com.unity.modules.jsonserialize
+  displayName: JSONSerialize
+  author:
+    name: 
+    email: 
+    url: 
+  category: 
+  type: module
+  description: 'The JSONSerialize module provides the JsonUtility class which lets
+    you serialize Unity Objects to JSON format. Scripting API: https://docs.unity3d.com/ScriptReference/UnityEngine.JSONSerializeModule.html'
+  errors: []
+  versions:
+    all:
+    - 1.0.0
+    compatible:
+    - 1.0.0
+    recommended: 1.0.0
+    deprecated: []
+  dependencies: []
+  resolvedDependencies: []
+  keywords: []
+  registry:
+    id: main
+    name: 
+    url: https://packages.unity.cn
+    scopes: []
+    isDefault: 1
+    capabilities: 7
+    configSource: 0
+  hideInEditor: 1
+  entitlements:
+    licensingModel: 0
+  isAssetStorePackage: 0
+  datePublishedTicks: 0
+  documentationUrl: 
+  hasRepository: 0
+  repository:
+    type: 
+    url: 
+    revision: 
+    path: 
+  unityLifecycle:
+    version: 1.0.0
+    nextVersion: 
+    recommendedVersion: 
+    isDeprecated: 0
+    deprecationMessage: 
+  isDeprecated: 0
+  deprecationMessage: 
+  git:
+    hash: 
+    revision: 
+  upmReserved: 
+  assetStore:
+    productId: 
+- packageId: com.unity.modules.hierarchycore@1.0.0
+  testable: 0
+  isDirectDependency: 0
+  version: 1.0.0
+  source: 2
+  resolvedPath: "D:\\RimworldProject2\\\u6A21\u7EC4\u6A21\u677F(\u7CBE\u7B80)\\UnityProjects\\ShaderBundleBuilder\\Library\\PackageCache\\com.unity.modules.hierarchycore@1.0.0"
+  assetPath: Packages/com.unity.modules.hierarchycore
+  name: com.unity.modules.hierarchycore
+  displayName: Hierarchy Core
+  author:
+    name: 
+    email: 
+    url: 
+  category: 
+  type: module
+  description: 'Module that contains a high-performance hierarchy container. Scripting
+    API: https://docs.unity3d.com/ScriptReference/UnityEngine.HierarchyCoreModule.html'
+  errors: []
+  versions:
+    all:
+    - 1.0.0
+    compatible:
+    - 1.0.0
+    recommended: 1.0.0
+    deprecated: []
+  dependencies: []
+  resolvedDependencies: []
+  keywords: []
+  registry:
+    id: main
+    name: 
+    url: https://packages.unity.cn
+    scopes: []
+    isDefault: 1
+    capabilities: 7
+    configSource: 0
+  hideInEditor: 1
+  entitlements:
+    licensingModel: 0
+  isAssetStorePackage: 0
+  datePublishedTicks: 0
+  documentationUrl: 
+  hasRepository: 0
+  repository:
+    type: 
+    url: 
+    revision: 
+    path: 
+  unityLifecycle:
+    version: 
+    nextVersion: 
+    recommendedVersion: 
+    isDeprecated: 0
+    deprecationMessage: 
+  isDeprecated: 0
+  deprecationMessage: 
+  git:
+    hash: 
+    revision: 
+  upmReserved: 
+  assetStore:
+    productId: 

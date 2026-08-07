@@ -1,12 +1,12 @@
 {
   "config_version": 2,
-  "mod_name": "TempProject",
+  "mod_name": "MyCustomMod",
   "game_version": "1.6",
   "isolated_desktop": true,
   "rimsearcher_db_path": ".tools\\db\\defs.db",
   "rimworld_dir": "C:\\Program Files (x86)\\Steam\\steamapps\\common\\RimWorld",
   "workshop_paths": [],
-  "csproj_paths": ["source\\TempProject\\TempProject.csproj"],
+  "csproj_paths": ["source\\MyCustomMod\\MyCustomMod.csproj"],
   "sync_items": [
     "1.6\\Assemblies",
     "1.6\\Defs",
@@ -18,7 +18,7 @@
   "protected_files_regex": "^(PublishedFileId\\.txt)$",
   "pull_ignore_folders": ["Textures", "Sounds", "News", ".git", ".vs", "obj", "bin"],
   "ilspycmd_path": "Ilspy\\ilspycmd.exe",
-  "log_keywords": ["TempProject"],
+  "log_keywords": ["MyCustomMod"],
   "min_active_mods": ["brrainz.harmony", "ludeon.rimworld"],
   "timeouts": {
     "steam_launch_detect": 120,
@@ -34,7 +34,7 @@
     "enabled": false,
     "unity_project_path": "UnityProjects\\ShaderBundleBuilder",
     "unity_exe_path": "",
-    "build_method": "TempProject.ShaderBundleBuilder.Build",
-    "bundle_name": "tempproject_shaders"
+    "build_method": "MyCustomMod.ShaderBundleBuilder.Build",
+    "bundle_name": "mycustommod_shaders"
   }
 }

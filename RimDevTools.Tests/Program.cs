@@ -251,13 +251,10 @@ internal sealed class TestSuite
         File.WriteAllText(Path.Combine(toolRoot, "RimDevTools.exe"), "shared-tool");
         Directory.CreateDirectory(Path.Combine(toolRoot, "components", "must-not-copy"));
         WriteInitManifest(templateRoot);
-        foreach (var version in new[] { "1.6", "1.7", "1.8" })
-        {
-            var versionRoot = NewDirectory(Path.Combine("init", "components", "ProjectTemplate", version));
-            File.WriteAllText(Path.Combine(versionRoot, "marker.txt"), $"template-{version}");
-            var nested = Directory.CreateDirectory(Path.Combine(versionRoot, "nested")).FullName;
-            File.WriteAllBytes(Path.Combine(nested, "bytes.bin"), [0, 1, 2, 255]);
-        }
+        var versionRoot = NewDirectory(Path.Combine("init", "components", "ProjectTemplate", "1.6"));
+        File.WriteAllText(Path.Combine(versionRoot, "marker.txt"), "template-1.6");
+        var nested = Directory.CreateDirectory(Path.Combine(versionRoot, "nested")).FullName;
+        File.WriteAllBytes(Path.Combine(nested, "bytes.bin"), [0, 1, 2, 255]);
 
         var output = Path.Combine(_temp, "init-output-1.6");
         var success = await CaptureAsync(() => InitCommand.RunAsync(["init", "1.6", "--output", output], templateRoot, toolRoot));
@@ -266,11 +263,11 @@ internal sealed class TestSuite
         Assert(Directory.Exists(Path.Combine(output, "1.6", "Assemblies")) && Directory.Exists(Path.Combine(output, "empty-runtime")), "init creates only manifest-declared missing directories");
         Assert(File.ReadAllText(Path.Combine(output, ".tools", "RimDevTools.exe")) == "shared-tool" && !Directory.Exists(Path.Combine(output, ".tools", "components")), "init installs shared tooling once and excludes components");
 
-        File.WriteAllText(Path.Combine(templateRoot, "1.7", "marker.txt"), "template-updated-without-code-change");
-        var updatedOutput = Path.Combine(_temp, "init-output-1.7");
-        var updated = await CaptureAsync(() => InitCommand.RunAsync(["init", "1.7", "--output", updatedOutput], templateRoot, toolRoot));
+        File.WriteAllText(Path.Combine(templateRoot, "1.6", "marker.txt"), "template-updated-without-code-change");
+        var updatedOutput = Path.Combine(_temp, "init-output-1.6-updated");
+        var updated = await CaptureAsync(() => InitCommand.RunAsync(["init", "1.6", "--output", updatedOutput], templateRoot, toolRoot));
         Assert(updated.ExitCode == 0 && File.ReadAllText(Path.Combine(updatedOutput, "marker.txt")) == "template-updated-without-code-change", "init reflects component template updates without hardcoded project content");
-        Assert(!Directory.Exists(Path.Combine(updatedOutput, "1.6")) && Directory.Exists(Path.Combine(updatedOutput, "1.7", "Assemblies")), "init does not rewrite one version template into another");
+        Assert(Directory.Exists(Path.Combine(updatedOutput, "1.6", "Assemblies")), "init keeps the declared 1.6 runtime directory");
 
         var unsupportedOutput = Path.Combine(_temp, "init-unsupported");
         var unsupported = await CaptureAsync(() => InitCommand.RunAsync(["init", "1.5", "--output", unsupportedOutput], templateRoot, toolRoot));
@@ -306,9 +303,9 @@ internal sealed class TestSuite
         var traversal = await CaptureAsync(() => InitCommand.RunAsync(["init", "1.6", "--output", traversalOutput], traversalRoot, toolRoot));
         Assert(traversal.ExitCode == ExitCodes.TaskFailed && JsonErrorCode(traversal.Output) == "INIT_TEMPLATE_INVALID" && !Directory.Exists(traversalOutput), "init rejects manifest path traversal before installation");
 
-        Directory.CreateDirectory(Path.Combine(templateRoot, "1.8", ".tools"));
+        Directory.CreateDirectory(Path.Combine(templateRoot, "1.6", ".tools"));
         var duplicateToolsOutput = Path.Combine(_temp, "init-duplicate-tools-output");
-        var duplicateTools = await CaptureAsync(() => InitCommand.RunAsync(["init", "1.8", "--output", duplicateToolsOutput], templateRoot, toolRoot));
+        var duplicateTools = await CaptureAsync(() => InitCommand.RunAsync(["init", "1.6", "--output", duplicateToolsOutput], templateRoot, toolRoot));
         Assert(duplicateTools.ExitCode == ExitCodes.TaskFailed && JsonErrorCode(duplicateTools.Output) == "INIT_TEMPLATE_INVALID" && !Directory.Exists(duplicateToolsOutput), "init rejects version templates that duplicate shared tooling");
     }
 
@@ -317,7 +314,7 @@ internal sealed class TestSuite
         var manifest = new
         {
             schemaVersion = 1,
-            supportedVersions = new[] { "1.6", "1.7", "1.8" },
+            supportedVersions = new[] { "1.6" },
             requiredFiles = requiredFiles ?? new[] { "marker.txt", "nested/bytes.bin" },
             requiredDirectories = requiredDirectories ?? new[] { "{version}/Assemblies", "empty-runtime" }
         };

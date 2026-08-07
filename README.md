@@ -15,15 +15,15 @@ RimWorld Mod Template/
 ├── Reference_Documentation/       # 参考文档和示例代码
 ├── Textures/                      # 贴图资源
 └── source/                       # C#源代码
-    └── TempProject/              # 主要模组项目
+    └── MyCustomMod/              # 主要模组项目
 ```
 
 ## 重要路径说明
 
 ### 开发相关路径
-- **`source/TempProject/`** - 主要的C#模组代码存放位置
-  - `TempProject.csproj` - 项目文件
-  - `TempProject.sln` - 解决方案文件
+- **`source/MyCustomMod/`** - 主要的C#模组代码存放位置
+  - `MyCustomMod.csproj` - 项目文件
+  - `MyCustomMod.sln` - 解决方案文件
   - 包含模组的主要逻辑类文件
 
 ### 配置文件
@@ -50,7 +50,7 @@ RimWorld Mod Template/
 ## 开发指南
 
 ### 1. 项目设置
-- 主要C#代码位于 `source/TempProject/`
+- 主要C#代码位于 `source/MyCustomMod/`
 - 使用Visual Studio或Rider进行开发
 - 需要安装.NET框架和RimWorld开发环境
 
@@ -84,7 +84,7 @@ error CS0246: 未能找到类型或命名空间名"Verse"
 
 ## 快速开始
 1. 克隆或下载此模板
-2. 重命名 `TempProject` 为你的模组名称
+2. 重命名 `MyCustomMod` 为你的模组名称
 3. 修改 `About/About.xml` 中的模组信息
 4. 开始在 `source/` 目录下编写你的模组代码
 5. 参考示例文档学习具体的实现方法
@@ -105,7 +105,7 @@ quick、auto、xml 和 `data refresh` 默认在 Windows 隔离桌面运行；可
 
 ## RimDevTools 项目初始化
 
-发布包可直接释放 1.6、1.7 或 1.8 项目模板：
+发布包当前提供 1.6 项目模板：
 
 ```powershell
 RimDevTools.exe init 1.6 --output D:\RimWorldMods\NewMod
@@ -115,9 +115,9 @@ RimDevTools.exe init 1.6 --output D:\RimWorldMods\NewMod
 
 祝模组开发顺利！
 
-作者提示： 注意使用rimworld-source mcp工具进行开发！
+作者提示：注意使用模板内配置的 DecompilerServer MCP 工具进行开发！
 注意阅读规则文件 D:\RimworldProject\模组模板\模组模板\.cursor\rules\rule.mdc
-如果正式开发，记得把TempProject重新命名为标准的模组名称！
+如果正式开发，记得把 MyCustomMod 重新命名为标准的模组名称！
 
 记得在第一次部署前检查模组文件，并且删除可能被部署的不必要的文件，
 注意这里的不必要的文件排除 
