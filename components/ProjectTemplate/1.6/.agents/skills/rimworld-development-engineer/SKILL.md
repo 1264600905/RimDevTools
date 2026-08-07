@@ -41,6 +41,18 @@ Use raw installed Core XML only for source constructs absent from the runtime da
 5. Keep package IDs, namespaces, assembly names, translation keys, Def names, and config paths consistent.
 6. Preserve user changes and avoid unrelated refactors.
 
+## Mod Activation Order
+
+Treat `mod_config.jsonc.min_active_mods` as the authoritative default mod list for development, data, and test workflows. Prefer that list over an ad hoc ModList so the project starts with its known working baseline.
+
+When a requested mod must be enabled but is absent from `min_active_mods`:
+
+1. Add it immediately before `trigger.universalblueprints`.
+2. When it has dependencies that are also absent, add the complete dependency chain in dependency order immediately before `trigger.universalblueprints`, followed by the requested mod. Dependencies must load before the mod that requires them.
+3. Preserve the existing order of every unrelated entry. Do not move `trigger.universalblueprints` or use an arbitrary append position.
+
+Before testing, confirm the effective mod list still follows this order. An explicit user-supplied ModList may add further mods, but must retain the configured default mods and their dependency ordering.
+
 For domain patterns and reusable templates, invoke the `rimworld-modding` skill. For tool details, invoke `rimdevtools`, `rimsearcher`, or `decompiler-mcp` rather than duplicating their full manuals here.
 
 ## Verify
@@ -51,7 +63,9 @@ Match verification to the change:
 - Build every changed C# project.
 - Run `RimDevTools.exe deploy --dry-run` before an actual deployment.
 - Use `RimDevTools.exe test run --deploy --mode quick` for startup/runtime smoke tests.
-- Use auto/XML modes for feature cases supported by LogSync AutoTest.
+- Do not run an auto test first: it is slower than quick mode. Fix and rerun quick tests until they pass without current-mod errors, then run `RimDevTools.exe test run --deploy --mode auto` once for the relevant feature case.
+- Treat a feature change as fully verified only after that follow-up auto test passes. Do not claim the verification loop is complete on a quick-test pass alone.
+- Use XML mode when the feature case requires a declarative LogSync AutoTest specification.
 - Use manual mode only for genuinely interactive behavior.
 
 Read the final structured JSON result and relevant `.tools/log/精选日志.log` content. Do not infer success solely from process exit or a lack of visible UI errors.
