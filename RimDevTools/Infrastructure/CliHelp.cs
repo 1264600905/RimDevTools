@@ -257,7 +257,7 @@ public static class CliHelp
           -h, --help                  Show this help.
 
         Isolation precedence:
-          Explicit CLI flag > isolated_desktop project config > built-in true for
+          Explicit CLI flag > isolated_desktop project config > built-in false for
           quick/auto/xml. Manual defaults to the visible desktop regardless of config,
           unless --isolated-desktop is explicitly supplied.
 
@@ -318,7 +318,7 @@ public static class CliHelp
           -h, --help                  Show this help.
 
         Isolation precedence:
-          Explicit CLI flag > isolated_desktop project config > built-in true.
+          Explicit CLI flag > isolated_desktop project config > built-in false.
 
         Example:
           RimDevTools.exe data refresh --timeout-seconds 180

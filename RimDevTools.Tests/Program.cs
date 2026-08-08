@@ -262,13 +262,19 @@ internal sealed class TestSuite
         var context = ProjectDiscovery.Find(root, out var error);
         Assert(context is not null && error is null && context.Config.ModName == "Demo//Name", "JSONC preserves // inside strings");
         Assert(context!.Config.Retention.MaxAutoTestRuns == 3, "automatic test retention defaults to three runs");
-        Assert(context.Config.IsolatedDesktop, "isolated desktop defaults to enabled when omitted from JSONC");
+        Assert(!context.Config.IsolatedDesktop, "isolated desktop defaults to disabled when omitted from JSONC");
         var disabledConfig = new ProjectConfig { IsolatedDesktop = false };
         var configured = IsolatedDesktopOptions.Resolve(disabledConfig, "auto", [], out _);
         var overridden = IsolatedDesktopOptions.Resolve(disabledConfig, "auto", ["--isolated-desktop"], out _);
         var manual = IsolatedDesktopOptions.Resolve(context.Config, "manual", [], out _);
         Assert(configured is { Enabled: false, Source: "project_config" } && overridden is { Enabled: true, Source: "command_line" }, "isolated desktop CLI option overrides a disabled project setting");
         Assert(manual is { Enabled: false, Source: "mode_default" }, "manual isolation ignores the enabled project default");
+        var steamLoggedIn = SteamSessionGuard.Evaluate(true, "C:\\Steam", "\"users\" { \"76561198000000000\" { \"AccountName\" \"tester\" \"MostRecent\" \"1\" \"WantsOfflineMode\" \"0\" } }");
+        var steamOffline = SteamSessionGuard.Evaluate(true, "C:\\Steam", "\"users\" { \"76561198000000000\" { \"AccountName\" \"tester\" \"MostRecent\" \"1\" \"WantsOfflineMode\" \"1\" } }");
+        var steamStopped = SteamSessionGuard.Evaluate(false, "C:\\Steam", null);
+        Assert(steamLoggedIn.IsLoggedIn && steamLoggedIn.Code == "STEAM_LOGGED_IN", "Steam session guard accepts a running online account");
+        Assert(!steamOffline.IsLoggedIn && steamOffline.Code == "STEAM_NOT_LOGGED_IN", "Steam session guard rejects offline mode");
+        Assert(!steamStopped.IsLoggedIn && steamStopped.Code == "STEAM_NOT_RUNNING", "Steam session guard rejects a stopped client");
         var child = NewDirectory(Path.Combine("discovery-project", "source"));
         Assert(ProjectDiscovery.Find(child, out _)?.Root == root, "project discovery checks direct parent");
         var grandchild = NewDirectory(Path.Combine("discovery-project", "source", "Core"));
@@ -862,6 +868,13 @@ internal sealed class TestSuite
         var result = await CaptureAsync(() => TestCommand.RunAsync(["test", "run", "--mode", "auto", "--timeout-seconds", "1"]));
         Assert(result.ExitCode == ExitCodes.MissingDependency && JsonErrorCode(result.Output) == "GAME_NOT_FOUND", "test run rejects missing game before mutation");
         Assert(File.ReadAllText(environment.ModsConfigPath) == environment.OriginalMods && File.ReadAllText(environment.SettingsPath) == environment.OriginalSettings, "preflight failure preserves global configuration");
+
+        var steamBlocked = CreateProjectEnvironment("steam-blocked", createGameExecutable: true);
+        using var blockedScope = UseEnvironment(steamBlocked);
+        SteamSessionGuard.ProbeOverride = () => new SteamSessionStatus(true, false, "test", "test\\loginusers.vdf", "STEAM_NOT_LOGGED_IN", "测试 Steam 未登录");
+        var blocked = await CaptureAsync(() => TestCommand.RunAsync(["test", "run", "--mode", "quick", "--timeout-seconds", "1"]));
+        Assert(blocked.ExitCode == ExitCodes.GameFailed && JsonErrorCode(blocked.Output) == "STEAM_NOT_LOGGED_IN", "test run rejects an unlogged Steam session before mutation");
+        Assert(File.ReadAllText(steamBlocked.ModsConfigPath) == steamBlocked.OriginalMods && File.ReadAllText(steamBlocked.SettingsPath) == steamBlocked.OriginalSettings, "Steam login rejection preserves global configuration");
     }
 
     private async Task TestGameWorkflowsAsync()
@@ -874,8 +887,8 @@ internal sealed class TestSuite
         var quick = await CaptureAsync(() => TestCommand.RunAsync(["test", "run", "--mode", "quick", "--timeout-seconds", "5"]));
         var isolatedDesktop = File.ReadAllText(Path.Combine(environment.ConfigDirectory, "fake-desktop.txt"));
         var quickSettings = XDocument.Parse(File.ReadAllText(Path.Combine(environment.ConfigDirectory, "fake-settings.xml")));
-        Assert(quick.ExitCode == 0 && quick.Output.Contains("\"isolatedDesktop\": true") && !File.ReadAllText(Path.Combine(environment.ConfigDirectory, "fake-args.txt")).Contains("quicktest"), "quick mode waits for ready signal on the default isolated desktop");
-        Assert(isolatedDesktop.StartsWith("RimDevTools.", StringComparison.Ordinal) && !string.Equals(isolatedDesktop, callerDesktop, StringComparison.Ordinal), "default quick process runs on a distinct desktop");
+        Assert(quick.ExitCode == 0 && quick.Output.Contains("\"isolatedDesktop\": false") && !File.ReadAllText(Path.Combine(environment.ConfigDirectory, "fake-args.txt")).Contains("quicktest"), "quick mode waits for ready signal on the normal desktop by default");
+        Assert(string.Equals(isolatedDesktop, callerDesktop, StringComparison.Ordinal), "default quick process runs on the current desktop");
         Assert(quickSettings.Descendants("testMuteAudio").Single().Value == "True", "quick mode enables transactional audio muting");
         AssertConfigurationRestored(environment, "quick mode restores exact configuration");
 
@@ -968,7 +981,7 @@ internal sealed class TestSuite
 
         Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", "data-success");
         var refresh = await CaptureAsync(() => DataCommand.RefreshAsync(["data", "refresh", "--timeout-seconds", "5"]));
-        Assert(refresh.ExitCode == 0 && refresh.Output.Contains("\"isolatedDesktop\": true") && File.ReadAllText(Path.Combine(environment.ConfigDirectory, "fake-desktop.txt")).StartsWith("RimDevTools.", StringComparison.Ordinal), "data refresh accepts matching result and defaults to an isolated desktop");
+        Assert(refresh.ExitCode == 0 && refresh.Output.Contains("\"isolatedDesktop\": false") && File.ReadAllText(Path.Combine(environment.ConfigDirectory, "fake-desktop.txt")) == GameProcessLauncher.CurrentDesktopName(), "data refresh accepts matching result and defaults to the normal desktop");
         AssertConfigurationRestored(environment, "data refresh restores exact ModsConfig and leaves LogSync settings unchanged");
 
         Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", "data-success");
@@ -1135,14 +1148,17 @@ internal sealed class TestSuite
         var oldDirectory = Environment.CurrentDirectory;
         var oldConfig = Environment.GetEnvironmentVariable("RIMDEVTOOLS_CONFIG_DIR");
         var oldRimSearcher = Environment.GetEnvironmentVariable("RIMDEVTOOLS_RIMSEARCHER_PATH");
+        var oldSteamProbe = SteamSessionGuard.ProbeOverride;
         Environment.CurrentDirectory = environment.Root;
         Environment.SetEnvironmentVariable("RIMDEVTOOLS_CONFIG_DIR", environment.ConfigDirectory);
+        SteamSessionGuard.ProbeOverride = () => new SteamSessionStatus(true, true, "test", null, "STEAM_LOGGED_IN", "测试 Steam 会话已登录");
         return new ActionScope(() =>
         {
             Environment.CurrentDirectory = oldDirectory;
             Environment.SetEnvironmentVariable("RIMDEVTOOLS_CONFIG_DIR", oldConfig);
             Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", null);
             Environment.SetEnvironmentVariable("RIMDEVTOOLS_RIMSEARCHER_PATH", oldRimSearcher);
+            SteamSessionGuard.ProbeOverride = oldSteamProbe;
         });
     }
 

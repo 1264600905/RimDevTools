@@ -2,6 +2,7 @@
 # 负责所有与游戏进程生命周期相关的操作。
 
 import os
+import re
 import subprocess
 import sys
 import time
@@ -31,10 +32,43 @@ def is_steam_running():
     return "steam.exe" in (result.stdout or "").lower()
 
 
+def _steam_roots():
+    return [
+        Path(os.environ.get("PROGRAMFILES(X86)", "")) / "Steam",
+        Path(os.environ.get("PROGRAMFILES", "")) / "Steam",
+        Path(os.environ.get("LOCALAPPDATA", "")) / "Steam",
+    ]
+
+
+def is_steam_logged_in(steam_root: Path | None = None):
+    """Checks the active Steam account marker before any game launch."""
+    roots = [steam_root] if steam_root else _steam_roots()
+    for root in roots:
+        if not root:
+            continue
+        login_users = root / "config" / "loginusers.vdf"
+        if not login_users.is_file():
+            continue
+        try:
+            content = login_users.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for entry in re.finditer(r'"[0-9]{10,}"\s*\{(?P<body>.*?)\}', content, re.S):
+            body = entry.group("body")
+            if (re.search(r'"MostRecent"\s+"1"', body, re.I)
+                    and not re.search(r'"WantsOfflineMode"\s+"1"', body, re.I)
+                    and re.search(r'"AccountName"\s+"[^"]+"', body, re.I)):
+                return True
+    return False
+
+
 def ensure_steam_running():
-    """在直接启动 RimWorld 前尽力启动 Steam，但不阻断本地 exe 启动。"""
+    """在启动 RimWorld 前确认 Steam 正在运行且已登录。"""
     if is_steam_running():
-        return True
+        if is_steam_logged_in():
+            return True
+        print("[错误] Steam 未登录或处于离线模式，拒绝启动 RimWorld。", file=sys.stderr)
+        return False
 
     candidates = [
         Path(os.environ.get("PROGRAMFILES(X86)", "")) / "Steam" / "steam.exe",
@@ -47,7 +81,13 @@ def ensure_steam_running():
         try:
             subprocess.Popen([str(steam_path), "-silent"], shell=False)
             print(f"[信息] Steam 未运行，已尝试启动: {steam_path}")
-            return True
+            deadline = time.time() + STEAM_LAUNCH_DETECT_TIMEOUT
+            while time.time() < deadline and not is_steam_running():
+                time.sleep(1)
+            if is_steam_running() and is_steam_logged_in(steam_path.parent):
+                return True
+            print("[错误] Steam 启动后仍未登录，拒绝启动 RimWorld。", file=sys.stderr)
+            return False
         except OSError as e:
             print(f"[警告] 启动 Steam 失败: {e}")
             return False
@@ -55,9 +95,10 @@ def ensure_steam_running():
     try:
         os.startfile("steam://open/main")
         print("[信息] Steam 未运行，已通过协议尝试启动。")
-        return True
+        print("[错误] 无法确认 Steam 登录状态，拒绝启动 RimWorld。", file=sys.stderr)
+        return False
     except OSError as e:
-        print(f"[警告] 未找到 Steam 客户端，继续直接启动 RimWorld: {e}")
+        print(f"[错误] 未找到 Steam 客户端，拒绝启动 RimWorld: {e}", file=sys.stderr)
         return False
 
 
@@ -94,7 +135,8 @@ def is_rimworld_running():
 def launch_rimworld(use_quicktest: bool):
     game_path = Path(GAME_PATH)
     if game_path.exists():
-        ensure_steam_running()
+        if not ensure_steam_running():
+            raise RuntimeError("Steam 未运行或未登录，已拒绝启动 RimWorld")
         command = [str(game_path), BORDERLESS_WINDOW_ARGUMENT]
         if use_quicktest:
             command.append("quicktest")
@@ -103,6 +145,8 @@ def launch_rimworld(use_quicktest: bool):
     if use_quicktest:
         raise RuntimeError(f"找不到游戏 exe，无法以 quicktest 模式启动: {GAME_PATH}")
 
+    if not ensure_steam_running():
+        raise RuntimeError("Steam 未运行或未登录，已拒绝启动 RimWorld")
     try:
         subprocess.Popen(["start", STEAM_URL], shell=True)
     except Exception:

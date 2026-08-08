@@ -8,8 +8,8 @@
     "mod_name": "MyCustomMod",
     // 目标 RimWorld 版本号；用于定位版本化 Assemblies 和 Defs 目录。
     "game_version": "1.6",
-    // quick/auto/xml 和 data refresh 默认使用隔离桌面；manual 默认使用当前桌面。
-    "isolated_desktop": true,
+    // quick/auto/xml 和 data refresh 默认使用当前桌面；需要隔离桌面时显式传入命令行参数。
+    "isolated_desktop": false,
     // RimSearcher 当前项目数据库；相对路径以项目根目录为基准。
     "rimsearcher_db_path": ".tools\\db\\defs.db",
 

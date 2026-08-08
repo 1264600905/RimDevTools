@@ -22,7 +22,7 @@ public sealed class ProjectConfig
     [JsonPropertyName("retention")] public RetentionConfig Retention { get; set; } = new();
     [JsonPropertyName("shader_bundle")] public ShaderBundleConfig ShaderBundle { get; set; } = new();
     [JsonPropertyName("rimsearcher_db_path")] public string? RimSearcherDbPath { get; set; }
-    [JsonPropertyName("isolated_desktop")] public bool IsolatedDesktop { get; set; } = true;
+    [JsonPropertyName("isolated_desktop")] public bool IsolatedDesktop { get; set; }
 
     public static ProjectConfig Load(string path)
     {

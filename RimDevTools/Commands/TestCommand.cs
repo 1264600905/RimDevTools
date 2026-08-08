@@ -74,6 +74,9 @@ public static class TestCommand
         var gamePath = Path.Combine(context.Config.RimWorldDir ?? "", "RimWorldWin64.exe");
         if (!File.Exists(gamePath))
             return CliResult.WriteFailure(command, ExitCodes.MissingDependency, "GAME_NOT_FOUND", $"找不到游戏可执行文件: {gamePath}", context.Root);
+        var steam = SteamSessionGuard.CheckForLaunch();
+        if (!steam.IsLoggedIn)
+            return CliResult.WriteFailure(command, ExitCodes.GameFailed, steam.Code, steam.Message, context.Root, new { steam.IsRunning, steam.SteamRoot, steam.LoginUsersPath });
 
         var modsFileValue = CliArgs.Value(args, "--mods-file");
         var modsFile = modsFileValue is null ? null : Path.GetFullPath(modsFileValue, context.Root);

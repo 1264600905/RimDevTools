@@ -1,4 +1,5 @@
 using Microsoft.Win32;
+using System.Diagnostics;
 using System.Runtime.Versioning;
 
 namespace RimDevTools;
@@ -14,6 +15,63 @@ public sealed record SteamInstallationResult(
     string? AppManifestPath,
     IReadOnlyList<string> WorkshopPaths,
     IReadOnlyList<SteamDiagnostic> Diagnostics);
+
+public sealed record SteamSessionStatus(
+    bool IsRunning,
+    bool IsLoggedIn,
+    string? SteamRoot,
+    string? LoginUsersPath,
+    string Code,
+    string Message);
+
+public static class SteamSessionGuard
+{
+    // Tests inject a deterministic probe; production always uses the real Steam process and VDF.
+    internal static Func<SteamSessionStatus>? ProbeOverride { get; set; }
+
+    public static SteamSessionStatus CheckForLaunch()
+        => ProbeOverride?.Invoke() ?? Check();
+
+    public static SteamSessionStatus Check(string? steamRoot = null, Func<bool>? isRunning = null)
+    {
+        steamRoot ??= SteamInstallationResolver.Resolve(null, []).SteamRoot;
+        var running = isRunning?.Invoke() ?? IsSteamRunning();
+        if (!running)
+            return new(false, false, steamRoot, null, "STEAM_NOT_RUNNING", "Steam 未运行，拒绝启动 RimWorld");
+        if (string.IsNullOrWhiteSpace(steamRoot))
+            return new(true, false, null, null, "STEAM_INSTALLATION_UNKNOWN", "无法定位 Steam 安装目录，拒绝启动 RimWorld");
+
+        var loginUsersPath = Path.Combine(steamRoot, "config", "loginusers.vdf");
+        if (!File.Exists(loginUsersPath))
+            return new(true, false, steamRoot, loginUsersPath, "STEAM_NOT_LOGGED_IN", "Steam 登录状态文件不存在，拒绝启动 RimWorld");
+        try { return Evaluate(true, steamRoot, File.ReadAllText(loginUsersPath)) with { LoginUsersPath = loginUsersPath }; }
+        catch (Exception ex) { return new(true, false, steamRoot, loginUsersPath, "STEAM_LOGIN_STATE_INVALID", $"无法读取 Steam 登录状态: {ex.Message}"); }
+    }
+
+    public static SteamSessionStatus Evaluate(bool isRunning, string? steamRoot, string? loginUsersVdf)
+    {
+        if (!isRunning) return new(false, false, steamRoot, null, "STEAM_NOT_RUNNING", "Steam 未运行，拒绝启动 RimWorld");
+        if (string.IsNullOrWhiteSpace(loginUsersVdf)) return new(true, false, steamRoot, null, "STEAM_NOT_LOGGED_IN", "Steam 登录状态文件不存在，拒绝启动 RimWorld");
+        try
+        {
+            var users = ValveKeyValues.Parse(loginUsersVdf).FirstOrDefault(value => value.Name.Equals("users", StringComparison.OrdinalIgnoreCase));
+            var loggedIn = users?.Children.Any(user => user.IsObject
+                && user.Scalar("MostRecent") == "1"
+                && user.Scalar("WantsOfflineMode") != "1"
+                && !string.IsNullOrWhiteSpace(user.Scalar("AccountName"))) == true;
+            return loggedIn
+                ? new(true, true, steamRoot, null, "STEAM_LOGGED_IN", "Steam 已运行且已登录")
+                : new(true, false, steamRoot, null, "STEAM_NOT_LOGGED_IN", "Steam 未登录或处于离线模式，拒绝启动 RimWorld");
+        }
+        catch (Exception ex) { return new(true, false, steamRoot, null, "STEAM_LOGIN_STATE_INVALID", $"无法解析 Steam 登录状态: {ex.Message}"); }
+    }
+
+    private static bool IsSteamRunning()
+    {
+        try { return Process.GetProcessesByName("steam").Length > 0; }
+        catch { return false; }
+    }
+}
 
 public static class SteamInstallationResolver
 {
