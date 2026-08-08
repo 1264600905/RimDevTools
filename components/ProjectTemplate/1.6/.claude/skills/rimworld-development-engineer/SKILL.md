@@ -47,9 +47,9 @@ Treat `mod_config.jsonc.min_active_mods` as the authoritative default mod list f
 
 When a requested mod must be enabled but is absent from `min_active_mods`:
 
-1. Add it immediately before `trigger.universalblueprints`.
-2. When it has dependencies that are also absent, add the complete dependency chain in dependency order immediately before `trigger.universalblueprints`, followed by the requested mod. Dependencies must load before the mod that requires them.
-3. Preserve the existing order of every unrelated entry. Do not move `trigger.universalblueprints` or use an arbitrary append position.
+1. Add it immediately before `kearril.rimsearcherdatamod`.
+2. When it has dependencies that are also absent, add the complete dependency chain in dependency order immediately before `kearril.rimsearcherdatamod`, followed by the requested mod. Dependencies must load before the mod that requires them.
+3. Preserve the existing order of every unrelated entry. Do not move `kearril.rimsearcherdatamod` or use an arbitrary append position.
 
 Before testing, confirm the effective mod list still follows this order. An explicit user-supplied ModList may add further mods, but must retain the configured default mods and their dependency ordering.
 

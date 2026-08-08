@@ -60,12 +60,17 @@
     // 启动 RimWorld 前必须包含基础模组；data refresh 还需要 RimSearcherDataMod。
     "min_active_mods": [
         "brrainz.harmony",
+		"ludeon.rimworld",
         "sarg.smartspeed",
         "brrainz.cameraplus",
+        "ludeon.rimworld.royalty",
+        "ludeon.rimworld.ideology",
+        "ludeon.rimworld.biotech",
+        "ludeon.rimworld.anomaly",
+        "ludeon.rimworld.odyssey",
         "erdelf.humanoidalienraces",
         "kearril.rimsearcherdatamod",
-        "trigger.logsyncmod",
-        "ludeon.rimworld"
+        "trigger.logsyncmod"
     ],
     // 超时参数（单位: 秒）。
     "timeouts": {
