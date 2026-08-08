@@ -222,6 +222,13 @@ internal sealed class TestSuite
         using var versionJson = JsonDocument.Parse(version.Output);
         Assert(version.ExitCode == 0
             && versionJson.RootElement.EnumerateObject().Select(property => property.Name).SequenceEqual(["ok", "command", "rimDevToolsVersion"]), "version output only reports the RimDevTools version");
+
+        var localized = await CaptureAsync(() => Task.FromResult(CliResult.WriteFailure("deploy", ExitCodes.InvalidArguments,
+            "PROJECT_TEMPLATE_NOT_CONFIGURED", "部署或测试被拒绝：项目仍包含模板占位符。")));
+        using var localizedJson = JsonDocument.Parse(localized.Output);
+        Assert(localizedJson.RootElement.GetProperty("error").GetProperty("message").GetString() == "部署或测试被拒绝：项目仍包含模板占位符。"
+            && localized.Output.Contains("部署或测试被拒绝", StringComparison.Ordinal)
+            && !localized.Output.Contains("\\u90E8", StringComparison.OrdinalIgnoreCase), "structured JSON output preserves readable Unicode text");
     }
 
     private void TestEnvironmentDiscovery()

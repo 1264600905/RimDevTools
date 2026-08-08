@@ -1,5 +1,7 @@
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.Unicode;
 
 namespace RimDevTools;
 
@@ -18,7 +20,8 @@ public sealed class CliResult
     {
         WriteIndented = true,
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        Encoder = JavaScriptEncoder.Create(UnicodeRanges.All)
     };
 
     public static int WriteSuccess(string command, string? projectRoot, object? result = null, IEnumerable<string>? warnings = null)
