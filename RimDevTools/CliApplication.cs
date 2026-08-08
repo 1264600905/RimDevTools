@@ -122,7 +122,7 @@ public static class CliArgs
         = new Dictionary<string, (int, int, Option[])>(StringComparer.OrdinalIgnoreCase)
         {
             ["init"] = (1, 1, [new("--output", true)]),
-            ["doctor"] = (1, 0, []),
+            ["doctor"] = (1, 0, [new("--verbose", false)]),
             ["deploy"] = (1, 0, [new("--sync-source", false), new("--dry-run", false)]),
             ["ref search"] = (2, 1, [new("--fuzzy", false)]),
             ["ref pull"] = (2, 1, [new("--version", true), new("--deps", false), new("--all", false), new("--fuzzy", false), new("--force", false)]),

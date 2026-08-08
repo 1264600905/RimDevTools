@@ -9,9 +9,12 @@
     <AppDesignerFolder>Properties</AppDesignerFolder>
     <RootNamespace>MyCustomMod</RootNamespace>
     <AssemblyName>MyCustomMod</AssemblyName>
-    <TargetFrameworkVersion>v4.7.2</TargetFrameworkVersion>
+    <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
     <Deterministic>true</Deterministic>
+    <RimWorldDir Condition="'$(RimWorldDir)' == ''"></RimWorldDir>
+    <RimWorldManagedDir Condition="'$(RimWorldManagedDir)' == '' and '$(RimWorldDir)' != ''">$(RimWorldDir)\RimWorldWin64_Data\Managed</RimWorldManagedDir>
+    <HarmonyDllPath Condition="'$(HarmonyDllPath)' == ''"></HarmonyDllPath>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <DebugSymbols>false</DebugSymbols>
@@ -33,11 +36,11 @@
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="0Harmony">
-      <HintPath>..\..\参考文档\gamedll\0Harmony.dll</HintPath>
+      <HintPath>$(HarmonyDllPath)</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="Assembly-CSharp">
-      <HintPath>..\..\参考文档\gamedll\Assembly-CSharp.dll</HintPath>
+      <HintPath>$(RimWorldManagedDir)\Assembly-CSharp.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="System" />
@@ -49,24 +52,29 @@
     <Reference Include="System.Net.Http" />
     <Reference Include="System.Xml" />
     <Reference Include="UnityEngine.CoreModule">
-      <HintPath>..\..\参考文档\gamedll\UnityEngine.CoreModule.dll</HintPath>
+      <HintPath>$(RimWorldManagedDir)\UnityEngine.CoreModule.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="UnityEngine.ImageConversionModule">
-      <HintPath>..\..\参考文档\gamedll\UnityEngine.ImageConversionModule.dll</HintPath>
+      <HintPath>$(RimWorldManagedDir)\UnityEngine.ImageConversionModule.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="UnityEngine.IMGUIModule">
-      <HintPath>..\..\参考文档\gamedll\UnityEngine.IMGUIModule.dll</HintPath>
+      <HintPath>$(RimWorldManagedDir)\UnityEngine.IMGUIModule.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="UnityEngine.TextRenderingModule">
-      <HintPath>..\..\参考文档\gamedll\UnityEngine.TextRenderingModule.dll</HintPath>
+      <HintPath>$(RimWorldManagedDir)\UnityEngine.TextRenderingModule.dll</HintPath>
       <Private>False</Private>
     </Reference>
   </ItemGroup>
   <ItemGroup>
     <Compile Include="**\*.cs" Exclude="obj\**;bin\**" />
   </ItemGroup>
+  <Target Name="ValidateRimWorldReferences" BeforeTargets="ResolveAssemblyReferences">
+    <Error Condition="'$(RimWorldDir)' == ''" Text="RimWorldDir is required. Run RimDevTools deploy or pass -p:RimWorldDir=&lt;RimWorld installation&gt;." />
+    <Error Condition="'$(RimWorldManagedDir)' == '' or !Exists('$(RimWorldManagedDir)\Assembly-CSharp.dll')" Text="RimWorldManagedDir must point to the real RimWorldWin64_Data\Managed directory." />
+    <Error Condition="'$(HarmonyDllPath)' == '' or !Exists('$(HarmonyDllPath)')" Text="HarmonyDllPath must point to the real 0Harmony.dll selected for RimWorld 1.6." />
+  </Target>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

@@ -28,10 +28,11 @@ Run:
 
 ```powershell
 .\.tools\RimDevTools.exe doctor
+.\.tools\RimDevTools.exe doctor --verbose
 .\.tools\RimDevTools.exe --version
 ```
 
-Read the final JSON object on stdout. Treat stderr as progress or diagnostics. Distinguish unavailable, missing, invalid, disabled, and busy capabilities rather than collapsing them into a generic failure. Fix the narrowest failing prerequisite, then rerun `doctor`.
+Read the final JSON object on stdout. The default `checks` array contains actionable problems plus the resolved `Assembly-CSharp.dll` and `0Harmony.dll` absolute paths; use `ready`, `issueCount`, and `warningCount` for the summary, and `--verbose` for every other successful/disabled/not-applicable check. Fix the narrowest failing prerequisite, then rerun `doctor`. It does not run a build or check the .NET 10 Runtime required to start the tools.
 
 ## Deploy
 

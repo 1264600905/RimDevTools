@@ -16,9 +16,9 @@ Successful and expected failure results end with one JSON object on stdout. Prog
 
 ## Commands
 
-### `doctor`
+### `doctor [--verbose]`
 
-Inspect project JSONC, game paths, .NET and project builds, deployment, ILSpy, LogSync, AutoTest, RimSearcher CLI/DataMod, database integrity/version, environment lock, and recoverable transactions. This command is read-only.
+Inspect .NET Framework 4.8 build prerequisites, Steam/RimWorld/Workshop, real game/Harmony assemblies, Unity, Git/worktree, required mods, ILSpy, LogSync, AutoTest, RimSearcher data, locks, and transactions. This command is read-only and never runs a build. Default output contains actionable problems, readiness/counts, and the resolved `Assembly-CSharp.dll` and `0Harmony.dll` absolute paths; `--verbose` includes every check. It does not check .NET 10 Runtime or Steam account licensing.
 
 ### `deploy [--sync-source] [--dry-run]`
 

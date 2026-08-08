@@ -2,6 +2,10 @@
 
 这是一个专门为AI开发者设计的RimWorld模组模板工程，用于快速创建和开发RimWorld模组。
 
+## 工具环境要求
+
+RimDevTools、RimSearcher 和 DecompilerServer 都需要 Windows x64 .NET 10 Runtime。仅运行工具不需要 .NET 10 SDK；编译 .NET Framework 4.8 模组还需要 dotnet SDK 和 .NET Framework 4.8 Developer/Targeting Pack。缺少 Runtime 时 RimDevTools 自身无法启动，因此 `doctor` 不负责检查该前提。
+
 ## 项目结构
 
 ```
@@ -55,11 +59,7 @@ RimWorld Mod Template/
 - 需要安装.NET框架和RimWorld开发环境
 
 ### 2. 编译说明
-编译时出现的以下错误是正常的，因为缺少游戏依赖：
-```
-error CS0246: 未能找到类型或命名空间名"UnityEngine"
-error CS0246: 未能找到类型或命名空间名"Verse"
-```
+模板目标为 .NET Framework 4.8。使用 RimDevTools deploy 时会从本机真实 RimWorld 安装和 Harmony 模组解析 Assembly-CSharp、Unity 与 0Harmony 引用；直接运行 `dotnet build` 时需传入 `RimWorldDir`、`RimWorldManagedDir` 和 `HarmonyDllPath`。
 
 ### 3. 参考学习
 - 查看 `Reference_Documentation/` 下的示例代码

@@ -1,7 +1,10 @@
 using System.Text.Json;
 using System.Xml.Linq;
+using System.Runtime.Versioning;
 using Microsoft.Data.Sqlite;
 using RimDevTools;
+
+[assembly: SupportedOSPlatform("windows")]
 
 if (args.Length == 2 && args[0] == "--abandon-lock")
 {
@@ -193,12 +196,13 @@ internal static class FakeRimWorld
                     root_path TEXT NOT NULL, is_official INTEGER NOT NULL, is_tooling INTEGER NOT NULL);
                 INSERT INTO export_metadata VALUES (1, $runId, $exporterVersion, $userVersion, '1.6.4871', 'ChineseSimplified', $utc, $inputHash, $requestedHash, $effectiveHash, $projectPackageId);
                 INSERT INTO loaded_mods VALUES (0, 'brrainz.harmony', 'Harmony', '1.0', 'C:\\Harmony', 0, 0);
-                INSERT INTO loaded_mods VALUES (1, 'sarg.smartspeed', 'SmartSpeed', '1.0', 'C:\\SmartSpeed', 0, 0);
-                INSERT INTO loaded_mods VALUES (2, 'brrainz.cameraplus', 'CameraPlus', '1.0', 'C:\\CameraPlus', 0, 0);
-                INSERT INTO loaded_mods VALUES (3, 'erdelf.humanoidalienraces', 'HumanoidAlienRaces', '1.0', 'C:\\HumanoidAlienRaces', 0, 0);
-                INSERT INTO loaded_mods VALUES (4, 'trigger.logsyncmod', 'LogSync', '1.0', 'C:\\LogSync', 0, 0);
-                INSERT INTO loaded_mods VALUES (5, $projectPackageId, 'Current', '1.0', 'C:\\Current', 0, 0);
-                INSERT INTO loaded_mods VALUES (6, 'kearril.rimsearcherdatamod', 'RimSearcher', $exporterVersion, 'C:\\RimSearcher', 0, 1);
+                INSERT INTO loaded_mods VALUES (1, 'ludeon.rimworld', 'Core', '1.6', 'C:\\RimWorld\\Data\\Core', 1, 0);
+                INSERT INTO loaded_mods VALUES (2, 'sarg.smartspeed', 'SmartSpeed', '1.0', 'C:\\SmartSpeed', 0, 0);
+                INSERT INTO loaded_mods VALUES (3, 'brrainz.cameraplus', 'CameraPlus', '1.0', 'C:\\CameraPlus', 0, 0);
+                INSERT INTO loaded_mods VALUES (4, 'erdelf.humanoidalienraces', 'HumanoidAlienRaces', '1.0', 'C:\\HumanoidAlienRaces', 0, 0);
+                INSERT INTO loaded_mods VALUES (5, 'trigger.logsyncmod', 'LogSync', '1.0', 'C:\\LogSync', 0, 0);
+                INSERT INTO loaded_mods VALUES (6, $projectPackageId, 'Current', '1.0', 'C:\\Current', 0, 0);
+                INSERT INTO loaded_mods VALUES (7, 'kearril.rimsearcherdatamod', 'RimSearcher', $exporterVersion, 'C:\\RimSearcher', 0, 1);
                 PRAGMA user_version = {userVersion};";
             command.Parameters.AddWithValue("$runId", request.RunId);
             command.Parameters.AddWithValue("$exporterVersion", exporterVersion);
@@ -225,6 +229,7 @@ internal sealed class TestSuite
         try
         {
             TestJsoncAndDiscovery();
+            TestEnvironmentDiscovery();
             await TestInitAsync();
             await TestHelpAsync();
             TestModListParser();
@@ -380,6 +385,88 @@ internal sealed class TestSuite
 
         var unknown = await CaptureAsync(() => CliApplication.RunAsync(["unknown", "--help"]));
         Assert(unknown.ExitCode == ExitCodes.InvalidArguments && JsonErrorCode(unknown.Output) == "UNKNOWN_COMMAND", "unknown command with help remains a structured error");
+    }
+
+    private void TestEnvironmentDiscovery()
+    {
+        var valve = ValveKeyValues.Parse("\"root\" { \"path\" \"D:\\\\SteamLibrary\" \"nested\" { \"value\" \"ok\" } }").Single();
+        Assert(valve.Scalar("path") == @"D:\SteamLibrary" && valve.Child("nested")?.Scalar("value") == "ok", "Valve KeyValues parser handles nested objects and escaped paths");
+        AssertThrows<InvalidDataException>(() => ValveKeyValues.Parse("\"root\" { \"path\" \"unterminated"), "Valve KeyValues parser rejects malformed input");
+
+        var steam = NewDirectory(Path.Combine("discovery", "Steam"));
+        File.WriteAllText(Path.Combine(steam, "steam.exe"), "steam");
+        var library = NewDirectory(Path.Combine("discovery", "Library With Space"));
+        Directory.CreateDirectory(Path.Combine(steam, "steamapps"));
+        File.WriteAllText(Path.Combine(steam, "steamapps", "libraryfolders.vdf"), $"\"libraryfolders\" {{ \"0\" {{ \"path\" \"{Escape(steam)}\" }} \"1\" {{ \"path\" \"{Escape(library)}\" }} }}");
+        Directory.CreateDirectory(Path.Combine(library, "steamapps"));
+        File.WriteAllText(Path.Combine(library, "steamapps", "appmanifest_294100.acf"), "\"AppState\" { \"appid\" \"294100\" \"installdir\" \"RimWorld\" \"StateFlags\" \"4\" }");
+        var discoveredGame = Path.Combine(library, "steamapps", "common", "RimWorld");
+        CreateGameStructure(discoveredGame);
+        var workshop = NewDirectory(Path.Combine("discovery", "Library With Space", "steamapps", "workshop", "content", "294100"));
+        var resolved = SteamInstallationResolver.Resolve(null, [], new SteamResolverInput([steam], []));
+        Assert(resolved.RimWorldDirectory == discoveredGame && resolved.RimWorldSource == "steam" && resolved.WorkshopPaths.SequenceEqual([workshop], StringComparer.OrdinalIgnoreCase), "Steam resolver reads multiple libraries, appmanifest 294100, and Workshop paths");
+
+        File.WriteAllText(Path.Combine(library, "steamapps", "appmanifest_294100.acf"), "\"AppState\" { \"appid\" \"294100\" \"installdir\" \"RimWorld\" \"StateFlags\" \"2\" }");
+        var incompleteApp = SteamInstallationResolver.Resolve(null, [], new SteamResolverInput([steam], []));
+        Assert(incompleteApp.RimWorldDirectory is null && incompleteApp.Diagnostics.Any(diagnostic => diagnostic.Message.Contains("完整安装", StringComparison.Ordinal)), "Steam resolver rejects appmanifest entries not marked as fully installed");
+        File.Delete(Path.Combine(library, "steamapps", "appmanifest_294100.acf"));
+        var missingApp = SteamInstallationResolver.Resolve(null, [], new SteamResolverInput([steam], []));
+        Assert(missingApp.AppManifestPath is null && missingApp.RimWorldDirectory is null, "Steam resolver reports a missing RimWorld appmanifest without guessing an installation");
+        File.WriteAllText(Path.Combine(library, "steamapps", "appmanifest_294100.acf"), "\"AppState\" { \"appid\" \"294100\" \"installdir\" \"RimWorld\" \"StateFlags\" \"4\" }");
+
+        var configuredGame = NewDirectory(Path.Combine("discovery", "ConfiguredGame"));
+        CreateGameStructure(configuredGame);
+        var configured = SteamInstallationResolver.Resolve(configuredGame, [workshop, workshop], new SteamResolverInput([steam], []));
+        Assert(configured.RimWorldDirectory == configuredGame && configured.RimWorldSource == "configured" && configured.WorkshopPaths.Count == 1, "valid configured paths take priority and Workshop paths are deduplicated");
+
+        var modsRoot = Path.Combine(configuredGame, "Mods");
+        var harmony = CreateModAt(modsRoot, "Harmony", "brrainz.harmony");
+        Directory.CreateDirectory(Path.Combine(harmony, "1.5", "Assemblies"));
+        File.WriteAllText(Path.Combine(harmony, "1.5", "Assemblies", "0Harmony.dll"), "old");
+        Directory.CreateDirectory(Path.Combine(harmony, "Current", "Assemblies"));
+        File.WriteAllText(Path.Combine(harmony, "Current", "Assemblies", "0Harmony.dll"), "current");
+        File.WriteAllText(Path.Combine(harmony, "LoadFolders.xml"), "<loadFolders><v1.5><li>1.5</li></v1.5><v1.6><li>/</li><li>Current</li></v1.6></loadFolders>");
+        var official = CreateModAt(Path.Combine(configuredGame, "Data"), "Core", "ludeon.rimworld");
+        var workshopMod = CreateModAt(workshop, "MixedCase", "Demo.MixedCase");
+        var broken = Path.Combine(workshop, "Broken", "About");
+        Directory.CreateDirectory(broken);
+        File.WriteAllText(Path.Combine(broken, "About.xml"), "<broken>");
+        var currentProject = NewDirectory(Path.Combine("discovery", "CurrentProject"));
+        Directory.CreateDirectory(Path.Combine(currentProject, "About"));
+        File.WriteAllText(Path.Combine(currentProject, "About", "About.xml"), "<ModMetaData><packageId>demo.current-project</packageId></ModMetaData>");
+        var index = ModInstallationIndex.Build(configuredGame, [workshop], currentProject);
+        Assert(index.Find("LUDEON.RIMWORLD")?.Directory == official && index.Find("demo.mixedcase")?.Directory == workshopMod && index.Find("demo.current-project")?.Source == "project" && index.Diagnostics.Count == 1, "mod index scans official, local, Workshop, and current-project roots case-insensitively and aggregates broken metadata");
+        var harmonyAssembly = ModAssemblyResolver.Resolve(harmony, "1.6", "0Harmony.dll");
+        Assert(harmonyAssembly.AssemblyPath == Path.Combine(harmony, "Current", "Assemblies", "0Harmony.dll"), "Harmony resolver follows RimWorld 1.6 LoadFolders instead of selecting an older assembly");
+
+        var targetingPack = NewDirectory(Path.Combine("discovery", "Reference Assemblies", "v4.8"));
+        File.WriteAllText(Path.Combine(targetingPack, "mscorlib.dll"), "reference");
+        var fakeDotnet = Path.Combine(_temp, "discovery", "dotnet.exe");
+        File.WriteAllText(fakeDotnet, "dotnet");
+        var build = DotNetBuildEnvironmentInspector.Inspect(new DotNetBuildEnvironmentInput(fakeDotnet, ["10.0.100 [sdk]"], [targetingPack]));
+        Assert(build.HasDotNet && build.HasSdk && build.HasNetFramework48TargetingPack, "build environment inspector reports dotnet SDK and .NET Framework 4.8 targeting pack from explicit inputs");
+        var missingBuild = DotNetBuildEnvironmentInspector.Inspect(new DotNetBuildEnvironmentInput(null, [], [Path.Combine(_temp, "missing-pack")]));
+        Assert(!missingBuild.HasDotNet && !missingBuild.HasSdk && !missingBuild.HasNetFramework48TargetingPack, "build environment inspector reports each missing prerequisite independently");
+
+        var defaultSummary = DoctorCommand.Summarize(
+        [
+            new DoctorCheck("ok", "available", true, null),
+            new DoctorCheck("build.game_assembly.Assembly-CSharp", "available", true, @"H:\RimWorld\Managed\Assembly-CSharp.dll"),
+            new DoctorCheck("build.harmony_assembly", "available", true, @"H:\Workshop\Harmony\0Harmony.dll"),
+            new DoctorCheck("required", "missing", true, null),
+            new DoctorCheck("optional", "stale", false, null)
+        ], verbose: false);
+        var verboseSummary = DoctorCommand.Summarize([new DoctorCheck("ok", "available", true, null), new DoctorCheck("required", "missing", true, null)], verbose: true);
+        Assert(!defaultSummary.Ready && defaultSummary.IssueCount == 1 && defaultSummary.WarningCount == 1 && defaultSummary.Checks.Count == 4
+            && defaultSummary.Checks.Any(check => check.Id == "build.game_assembly.Assembly-CSharp" && check.Path == @"H:\RimWorld\Managed\Assembly-CSharp.dll")
+            && defaultSummary.Checks.Any(check => check.Id == "build.harmony_assembly" && check.Path == @"H:\Workshop\Harmony\0Harmony.dll"), "doctor default summary keeps both critical assembly paths visible while hiding unrelated successful checks");
+        Assert(verboseSummary.Checks.Count == 2, "doctor verbose summary includes successful checks");
+        var gitMissing = DoctorCommand.EvaluateGitChecks(currentProject, null, null);
+        var gitNotWorktree = DoctorCommand.EvaluateGitChecks(currentProject, fakeDotnet, null);
+        var gitNested = DoctorCommand.EvaluateGitChecks(currentProject, fakeDotnet, Path.GetDirectoryName(currentProject));
+        var gitExact = DoctorCommand.EvaluateGitChecks(currentProject, fakeDotnet, currentProject);
+        Assert(gitMissing.Single(check => check.Id == "git.command").Status == "missing" && gitMissing.Single(check => check.Id == "git.worktree").Status == "not_applicable", "doctor Git checks distinguish a missing command from worktree state");
+        Assert(gitNotWorktree.Single(check => check.Id == "git.worktree").Status == "missing" && gitNested.Single(check => check.Id == "git.worktree").Status == "invalid" && gitExact.Single(check => check.Id == "git.worktree").Status == "available", "doctor Git checks distinguish non-worktree, nested repository, and exact project root");
     }
 
     private void TestModListParser()
@@ -596,7 +683,7 @@ internal sealed class TestSuite
 
     private async Task TestDeployAsync()
     {
-        var environment = CreateProjectEnvironment("deploy");
+        var environment = CreateProjectEnvironment("deploy", createGameExecutable: true);
         var target = NewDirectory(Path.Combine("deploy", "game", "Mods", "Demo"));
         File.WriteAllText(Path.Combine(target, "PublishedFileId.txt"), "123");
         File.WriteAllText(Path.Combine(target, "stale.txt"), "stale");
@@ -607,7 +694,7 @@ internal sealed class TestSuite
 
         var dryRun = await DeployCommand.ExecuteAsync(["deploy", "--dry-run"]);
         var dryResult = (DeployResult)dryRun.Result!;
-        Assert(dryRun.Ok && dryResult.Plan.TargetActions.Any(x => x.Action == "protect") && dryResult.Plan.TargetActions.Any(x => x.Action == "replace"), "deploy dry-run reports protected and replaced targets");
+        Assert(dryRun.Ok && dryResult.Plan.TargetActions.Any(x => x.Action == "protect") && dryResult.Plan.TargetActions.Any(x => x.Action == "replace") && dryResult.Plan.References.ManagedDirectory == Path.Combine(environment.Game, "RimWorldWin64_Data", "Managed"), "deploy dry-run reports protected/replaced targets and resolved build references");
 
         var unknownArgument = await CaptureAsync(() => CliApplication.RunAsync(["deploy", "--dry-run", "--definitely-unknown"]));
         Assert(unknownArgument.ExitCode == ExitCodes.InvalidArguments && JsonErrorCode(unknownArgument.Output) == "INVALID_ARGUMENT", "unknown deploy options fail before execution");
@@ -674,12 +761,19 @@ internal sealed class TestSuite
 
     private async Task TestDoctorIsReadOnlyAsync()
     {
-        var environment = CreateProjectEnvironment("doctor", createConfigDirectory: false);
+        var environment = CreateProjectEnvironment("doctor", createConfigDirectory: false, createGameExecutable: true);
         File.WriteAllText(environment.ConfigPath, Config(environment));
         using var scope = UseEnvironment(environment);
         var result = await CaptureAsync(() => DoctorCommand.RunAsync(["doctor"]));
         Assert(result.ExitCode == 0 && !Directory.Exists(environment.ConfigDirectory), "doctor does not create RimWorld configuration directory");
-        Assert(result.Output.Contains("environment.transactions") && result.Output.Contains("deploy.dotnet"), "doctor reports transaction and tool capabilities");
+        using var compact = JsonDocument.Parse(result.Output);
+        var compactChecks = compact.RootElement.GetProperty("result").GetProperty("checks").EnumerateArray().ToArray();
+        Assert(compact.RootElement.GetProperty("result").TryGetProperty("ready", out _)
+            && !result.Output.Contains("project.discovery", StringComparison.Ordinal)
+            && compactChecks.Any(check => check.GetProperty("id").GetString() == "build.game_assembly.Assembly-CSharp" && check.GetProperty("path").GetString() == Path.Combine(environment.Game, "RimWorldWin64_Data", "Managed", "Assembly-CSharp.dll"))
+            && compactChecks.Any(check => check.GetProperty("id").GetString() == "build.harmony_assembly" && check.GetProperty("path").GetString() == Path.Combine(environment.Game, "Mods", "Harmony", "Current", "Assemblies", "0Harmony.dll")), "doctor returns a compact readiness summary with both critical resolved assembly paths visible by default");
+        var verbose = await CaptureAsync(() => DoctorCommand.RunAsync(["doctor", "--verbose"]));
+        Assert(verbose.Output.Contains("environment.transactions") && verbose.Output.Contains("build.dotnet") && verbose.Output.Contains("project.discovery"), "doctor --verbose reports the complete ordered capability list");
     }
 
     private async Task TestRunPreflightAsync()
@@ -811,7 +905,7 @@ internal sealed class TestSuite
         AssertConfigurationRestored(environment, "large-log data refresh restores exact configuration");
         var databasePath = Path.Combine(environment.Root, ".rimdev", "defs.db");
         var inspected = DatabaseInspector.Inspect(databasePath, "test");
-        Assert(inspected.Integrity == "ok" && inspected.VersionMatches && inspected.Metadata?.RunId is not null && inspected.LoadedMods.Count == 7, "database inspector validates metadata and ordered loaded mods");
+        Assert(inspected.Integrity == "ok" && inspected.VersionMatches && inspected.Metadata?.RunId is not null && inspected.LoadedMods.Count == 8, "database inspector validates metadata and ordered loaded mods");
         Assert(
             !File.Exists(Path.Combine(environment.ConfigDirectory, "RimDevTools.ExportRequest.json"))
             && !Directory.EnumerateFiles(environment.ConfigDirectory, "RimDevTools.ExportRequest.processing.*.json").Any()
@@ -819,7 +913,11 @@ internal sealed class TestSuite
             "data refresh cleans request and transaction state");
 
         var status = await CaptureAsync(() => DataCommand.StatusAsync(["data", "status"]));
-        Assert(status.ExitCode == 0 && status.Output.Contains("\"refreshRecommended\": false"), "data status reports a current valid database");
+        using (var statusJson = JsonDocument.Parse(status.Output))
+        {
+            var statusResult = statusJson.RootElement.GetProperty("result");
+            Assert(status.ExitCode == 0 && !statusResult.GetProperty("refreshRecommended").GetBoolean(), $"data status reports a current valid database; status={status.Output}");
+        }
 
         File.WriteAllText(Path.Combine(environment.ConfigDirectory, "RimDevTools.ExportRequest.json"), "{}");
         var orphanedRequest = await CaptureAsync(() => DataCommand.RefreshAsync(["data", "refresh", "--timeout-seconds", "5"]));
@@ -855,7 +953,13 @@ internal sealed class TestSuite
         if (createConfigDirectory) Directory.CreateDirectory(config);
         Directory.CreateDirectory(Path.Combine(root, "About"));
         File.WriteAllText(Path.Combine(root, "About", "About.xml"), "<ModMetaData><name>Current</name><packageId>demo.current</packageId></ModMetaData>");
-        CreateMod(game, "Harmony", "brrainz.harmony");
+        var projectDirectory = Path.Combine(root, "source", "TestProject");
+        Directory.CreateDirectory(projectDirectory);
+        File.WriteAllText(Path.Combine(projectDirectory, "TestProject.csproj"), "<Project ToolsVersion=\"15.0\" xmlns=\"http://schemas.microsoft.com/developer/msbuild/2003\"><PropertyGroup><OutputType>Library</OutputType><TargetFrameworkVersion>v4.8</TargetFrameworkVersion><AssemblyName>TestProject</AssemblyName><OutputPath>bin\\</OutputPath></PropertyGroup><Import Project=\"$(MSBuildToolsPath)\\Microsoft.CSharp.targets\" /></Project>");
+        var harmony = CreateMod(game, "Harmony", "brrainz.harmony");
+        Directory.CreateDirectory(Path.Combine(harmony, "Current", "Assemblies"));
+        File.WriteAllText(Path.Combine(harmony, "Current", "Assemblies", "0Harmony.dll"), "harmony");
+        File.WriteAllText(Path.Combine(harmony, "LoadFolders.xml"), "<loadFolders><v1.6><li>/</li><li>Current</li></v1.6></loadFolders>");
         CreateMod(game, "SmartSpeed", "sarg.smartspeed");
         CreateMod(game, "CameraPlus", "brrainz.cameraplus");
         CreateMod(game, "HumanoidAlienRaces", "erdelf.humanoidalienraces");
@@ -879,6 +983,7 @@ internal sealed class TestSuite
 
     private void InstallFakeGame(string gameDirectory)
     {
+        CreateGameStructure(gameDirectory);
         var output = AppContext.BaseDirectory;
         File.Copy(Path.Combine(output, "RimDevTools.Tests.exe"), Path.Combine(gameDirectory, "RimWorldWin64.exe"), true);
         foreach (var file in Directory.EnumerateFiles(output))
@@ -888,6 +993,18 @@ internal sealed class TestSuite
         }
         var windowsRuntime = Path.Combine(output, "runtimes", "win-x64");
         if (Directory.Exists(windowsRuntime)) CopyTestDirectory(windowsRuntime, Path.Combine(gameDirectory, "runtimes", "win-x64"));
+    }
+
+    private static void CreateGameStructure(string gameDirectory)
+    {
+        Directory.CreateDirectory(gameDirectory);
+        Directory.CreateDirectory(Path.Combine(gameDirectory, "Mods"));
+        Directory.CreateDirectory(Path.Combine(gameDirectory, "Data"));
+        var managed = Path.Combine(gameDirectory, "RimWorldWin64_Data", "Managed");
+        Directory.CreateDirectory(managed);
+        if (!File.Exists(Path.Combine(gameDirectory, "RimWorldWin64.exe"))) File.WriteAllText(Path.Combine(gameDirectory, "RimWorldWin64.exe"), "game");
+        foreach (var assembly in RimWorldEnvironmentResolver.RequiredManagedAssemblies)
+            if (!File.Exists(Path.Combine(managed, assembly))) File.WriteAllText(Path.Combine(managed, assembly), "assembly");
     }
 
     private static void CopyTestDirectory(string source, string destination)
@@ -905,6 +1022,8 @@ internal sealed class TestSuite
             $"\"mod_name\":\"{modName}\"",
             "\"game_version\":\"1.6\"",
             $"\"rimworld_dir\":\"{Escape(environment.Game)}\"",
+            "\"csproj_paths\":[\"source\\\\TestProject\\\\TestProject.csproj\"]",
+            $"\"log_keywords\":[\"{modName}\"]",
             $"\"min_active_mods\":{minMods}",
             "\"timeouts\":{\"existing_game_exit\":2,\"post_exit_delay\":0,\"max_wait\":5}",
             "\"retention\":{\"max_log_files\":3,\"max_auto_test_runs\":2}"

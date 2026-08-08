@@ -53,7 +53,7 @@ When a requested mod must be enabled but is absent from `min_active_mods`:
 
 Before testing, confirm the effective mod list still follows this order. An explicit user-supplied ModList may add further mods, but must retain the configured default mods and their dependency ordering.
 
-For domain patterns and reusable templates, invoke the `rimworld-modding` skill. For tool details, invoke `rimdevtools`, `rimsearcher`, or `decompiler-mcp` rather than duplicating their full manuals here.
+For tool details, invoke `rimdevtools`, `rimsearcher`, or `decompiler-mcp` rather than duplicating their full manuals here.
 
 ## Verify
 

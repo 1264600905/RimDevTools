@@ -64,7 +64,7 @@ public static class CliHelp
           are written to stderr. Help is stable plain text on stdout.
 
         Examples:
-          RimDevTools.exe doctor
+          RimDevTools.exe doctor [--verbose]
           RimDevTools.exe test run --mode quick
           RimDevTools.exe data refresh --timeout-seconds 180
           RimDevTools.exe ref pull "Harmony" --deps
@@ -85,6 +85,7 @@ public static class CliHelp
 
         Options:
           --output <path>     Required project root. Target must not exist or must be empty.
+          --verbose           Include successful, disabled, and not-applicable checks.
           -h, --help          Show this help.
 
         Behavior:
@@ -113,12 +114,14 @@ public static class CliHelp
           -h, --help          Show this help.
 
         Checks:
-          Project JSONC, RimWorld paths, dotnet/csproj, deployment, ILSpy, LogSync,
-          AutoTest, RimSearcher CLI/DataMod, database integrity/version, environment lock,
-          and recoverable transactions.
+          .NET Framework 4.8 build prerequisites, Steam libraries and RimWorld app 294100,
+          real game/Harmony assemblies, Unity, Git/worktree, required mods, ILSpy, LogSync,
+          AutoTest, RimSearcher CLI/DataMod, database, lock, and recoverable transactions.
 
         Output:
-          JSON capability checks with available/missing/invalid/disabled/busy status.
+          JSON ready/issueCount/warningCount summary. By default checks contains items that
+          need action plus resolved Assembly-CSharp.dll and 0Harmony.dll paths for AI context;
+          --verbose includes the complete ordered check list.
 
         Common errors:
           PROJECT_NOT_FOUND, CONFIG_INVALID, CONFIG_VERSION_UNSUPPORTED.

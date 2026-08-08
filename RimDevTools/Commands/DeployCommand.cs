@@ -31,16 +31,18 @@ public static class DeployCommand
         if (templateError is not null) return Failure(ExitCodes.InvalidArguments, templateError, context.Root);
         if (config.ConfigVersion != 2)
             return Failure(ExitCodes.InvalidArguments, new CliError("CONFIG_VERSION_UNSUPPORTED", $"需要 config_version=2，当前为 {config.ConfigVersion}"), context.Root);
-        if (string.IsNullOrWhiteSpace(config.RimWorldDir) || string.IsNullOrWhiteSpace(config.ModName))
-            return Failure(ExitCodes.InvalidArguments, new CliError("CONFIG_MISSING", "deploy 需要 rimworld_dir 和 mod_name"), context.Root);
-        if (!Directory.Exists(config.RimWorldDir))
-            return Failure(ExitCodes.MissingDependency, new CliError("RIMWORLD_DIR_NOT_FOUND", $"RimWorld 目录不存在: {config.RimWorldDir}"), context.Root);
+        if (string.IsNullOrWhiteSpace(config.ModName))
+            return Failure(ExitCodes.InvalidArguments, new CliError("CONFIG_MISSING", "deploy 需要 mod_name"), context.Root);
+        var environment = RimWorldEnvironmentResolver.Resolve(context);
+        var rimWorldDirectory = environment.References.RimWorldDirectory;
+        if (rimWorldDirectory is null)
+            return Failure(ExitCodes.MissingDependency, new CliError("RIMWORLD_DIR_NOT_FOUND", "未能从配置或 Steam 安装中解析结构完整的 RimWorld 目录", new { configured = config.RimWorldDir, diagnostics = environment.Steam.Diagnostics }), context.Root);
 
-        var targetRoot = Path.GetFullPath(Path.Combine(config.RimWorldDir, "Mods"));
+        var targetRoot = Path.GetFullPath(Path.Combine(rimWorldDirectory, "Mods"));
         var target = Path.GetFullPath(Path.Combine(targetRoot, config.ModName));
         if (!PathSafety.IsWithin(target, targetRoot))
             return Failure(ExitCodes.InvalidArguments, new CliError("DEPLOY_TARGET_OUTSIDE_MODS", "部署目标不在 RimWorld Mods 目录内", new { target, targetRoot }), context.Root);
-        try { PathSafety.EnsureNoReparsePoints(config.RimWorldDir, target); }
+        try { PathSafety.EnsureNoReparsePoints(rimWorldDirectory, target); }
         catch (Exception ex) { return Failure(ExitCodes.InvalidArguments, new CliError("DEPLOY_TARGET_UNSAFE", ex.Message), context.Root); }
 
         Regex? protectedRegex;
@@ -98,10 +100,12 @@ public static class DeployCommand
                 path,
                 protectedRegex?.IsMatch(Path.GetFileName(path)) == true ? "protect" : "replace")).ToArray()
             : [];
+        var referencePlan = new BuildReferencePlan(environment.References.RimWorldDirectory, environment.References.ManagedDirectory, environment.References.HarmonyDllPath);
         var preview = new DeployPlan(
             context.Root,
             target,
             new ShaderPlan(config.ShaderBundle.Enabled, config.ShaderBundle.UnityExePath, config.ShaderBundle.UnityProjectPath, config.ShaderBundle.BuildMethod),
+            referencePlan,
             projectFiles,
             plan,
             targetActions,
@@ -109,6 +113,16 @@ public static class DeployCommand
 
         if (CliArgs.Has(args, "--dry-run"))
             return new DeployExecution(true, ExitCodes.Success, new DeployResult(context.Root, true, null, target, [], preview, false), null, warnings);
+
+        if (projectFiles.Count > 0)
+        {
+            var missingReferences = environment.References.RequiredGameAssemblies
+                .Where(path => !File.Exists(path))
+                .Concat(environment.References.HarmonyDllPath is null ? ["0Harmony.dll"] : File.Exists(environment.References.HarmonyDllPath) ? [] : [environment.References.HarmonyDllPath])
+                .ToArray();
+            if (environment.References.ManagedDirectory is null || missingReferences.Length > 0)
+                return Failure(ExitCodes.MissingDependency, new CliError("BUILD_REFERENCES_NOT_FOUND", "构建所需的真实 RimWorld/Harmony 引用不完整", new { referencePlan, missingReferences }), context.Root);
+        }
 
         var missingRequired = plan.Where(x => !x.Exists && x.Severity == "error").Select(x => x.Item).ToArray();
         if (missingRequired.Length > 0)
@@ -141,7 +155,13 @@ public static class DeployCommand
         foreach (var project in projectFiles)
         {
             Console.Error.WriteLine($"构建 {project}");
-            if (!await ProcessUtil.RunAsync("dotnet", ["build", project, "--configuration", "Release"], context.Root, cancellationToken))
+            if (!await ProcessUtil.RunAsync("dotnet",
+            [
+                "build", project, "--configuration", "Release",
+                $"-p:RimWorldDir={environment.References.RimWorldDirectory}",
+                $"-p:RimWorldManagedDir={environment.References.ManagedDirectory}",
+                $"-p:HarmonyDllPath={environment.References.HarmonyDllPath}"
+            ], context.Root, cancellationToken))
                 return Failure(ExitCodes.TaskFailed, new CliError("BUILD_FAILED", $"dotnet build 失败: {project}"), context.Root);
         }
 
@@ -257,7 +277,8 @@ public sealed record DeployContextDetails(string ProjectRoot);
 public sealed record DeploySyncPlan(string Item, string Source, string Destination, bool Exists, string Severity);
 public sealed record DeployTargetAction(string Path, string Action);
 public sealed record ShaderPlan(bool Enabled, string? UnityPath, string? ProjectPath, string? BuildMethod);
-public sealed record DeployPlan(string ProjectRoot, string Target, ShaderPlan Shader, IReadOnlyList<string> Projects, IReadOnlyList<DeploySyncPlan> SyncItems, IReadOnlyList<DeployTargetAction> TargetActions, string? ProtectedPattern);
+public sealed record BuildReferencePlan(string? RimWorldDirectory, string? ManagedDirectory, string? HarmonyDllPath);
+public sealed record DeployPlan(string ProjectRoot, string Target, ShaderPlan Shader, BuildReferencePlan References, IReadOnlyList<string> Projects, IReadOnlyList<DeploySyncPlan> SyncItems, IReadOnlyList<DeployTargetAction> TargetActions, string? ProtectedPattern);
 public sealed record DeployResult(string ProjectRoot, bool DryRun, string? RunId, string Target, IReadOnlyList<string> BuiltProjects, DeployPlan Plan, bool RecoveredTransaction);
 public sealed record ProcessTerminationResult(bool Exited, string? Error = null);
 

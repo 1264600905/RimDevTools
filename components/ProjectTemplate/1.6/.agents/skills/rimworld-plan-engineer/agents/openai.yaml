@@ -1,0 +1,4 @@
+interface:
+  display_name: "RimWorld Plan Engineer"
+  short_description: "Research real code and produce implementation plans"
+  default_prompt: "Use $rimworld-plan-engineer to research this RimWorld request, confirm the planning scope, and write an evidence-backed Markdown implementation plan."

@@ -2,11 +2,15 @@
 
 RimDevTools 是本仓库内的 .NET 10 Windows CLI，统一承载模组部署、参考模组处理和 RimWorld 测试准备/运行。
 
+## 环境要求
+
+RimDevTools、RimSearcher 和 DecompilerServer 均要求 Windows x64 .NET 10 Runtime。仅运行工具不要求 .NET 10 SDK；由于缺少 Runtime 时 RimDevTools 本身无法启动，`doctor` 不检查该前提。编译 .NET Framework 4.8 模组还需要 dotnet SDK 和 .NET Framework 4.8 Developer/Targeting Pack。
+
 ## 构建
 
 ```powershell
 dotnet build RimDevTools\RimDevTools.csproj -c Release
-dotnet publish RimDevTools\RimDevTools.csproj -c Release -r win-x64 --self-contained true
+dotnet publish RimDevTools\RimDevTools.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true
 .\.tools\publish-rimdevtools.ps1
 ```
 
@@ -43,6 +47,7 @@ RimDevTools-Package/
 RimDevTools.exe --version
 RimDevTools.exe init 1.6 --output D:\RimWorldMods\NewMod
 RimDevTools.exe doctor
+RimDevTools.exe doctor --verbose
 RimDevTools.exe deploy --dry-run
 RimDevTools.exe ref search <keyword>
 RimDevTools.exe ref pull <query> --deps
@@ -53,6 +58,8 @@ RimDevTools.exe data status
 ```
 
 项目命令从当前目录或直接父目录发现 `mod_config.jsonc`。正常结果写入 stdout 的单个 JSON 对象，诊断信息写入 stderr。
+
+`doctor` 默认在 `result.checks` 中输出需要处理的 missing/invalid/stale/busy/unsupported 项，并始终输出解析后的 `Assembly-CSharp.dll` 与 `0Harmony.dll` 绝对路径，方便 AI 直接了解真实编译引用；同时提供 `ready`、`issueCount` 和 `warningCount` 摘要。`doctor --verbose` 输出全部有序检查。它检查 .NET Framework 4.8 编译前提、Steam/RimWorld/Workshop、真实游戏与 Harmony DLL、Unity、Git、必需模组和既有工具状态，但不执行 build，也不检查 .NET 10 Runtime 或账号许可证。
 
 `init` 不需要已有项目。`--output` 是将直接包含 `mod_config.jsonc`、`1.6` 和 `.tools` 的项目根目录，不是配置文件、版本目录、工具目录或 `source` 目录。版本模板来自 `components/ProjectTemplate/<version>`，共享工具目录只复制一次到目标 `.tools` 并排除 `components`；目标必须不存在或为空。项目模板不嵌入 RimDevTools 程序集，修改组件文件无需改动 InitCommand。
 

@@ -96,13 +96,21 @@ using (var manifestDocument = JsonDocument.Parse(File.ReadAllText(Path.Combine(p
                 Assert(config.RootElement.GetProperty("game_version").GetString() == version && config.RootElement.GetProperty("isolated_desktop").GetBoolean(), $"init {version} keeps its version-specific JSONC");
             Assert(XDocument.Load(Path.Combine(output, "LoadFolders.xml")).Root?.Element($"v{version}") is not null, $"init {version} keeps its version-specific LoadFolders XML");
             Assert(XDocument.Load(Path.Combine(output, "About", "About.xml")).Root?.Element("supportedVersions")?.Elements("li").Single().Value == version, $"init {version} keeps its version-specific About XML");
-            Assert(XDocument.Load(Path.Combine(output, "source", "MyCustomMod", "MyCustomMod.csproj")).Root is not null, $"init {version} produces parseable csproj XML");
+            var projectPath = Path.Combine(output, "source", "MyCustomMod", "MyCustomMod.csproj");
+            var projectXml = XDocument.Load(projectPath);
+            Assert(projectXml.Root is not null, $"init {version} produces parseable csproj XML");
+            var projectText = File.ReadAllText(projectPath);
+            Assert(projectText.Contains("<TargetFrameworkVersion>v4.8</TargetFrameworkVersion>", StringComparison.Ordinal)
+                && projectText.Contains("$(RimWorldManagedDir)\\Assembly-CSharp.dll", StringComparison.Ordinal)
+                && projectText.Contains("$(HarmonyDllPath)", StringComparison.Ordinal)
+                && projectText.Contains("Compile Include=\"**\\*.cs\" Exclude=\"obj\\**;bin\\**\"", StringComparison.Ordinal)
+                && !projectText.Contains("参考文档\\gamedll", StringComparison.Ordinal), $"init {version} targets .NET Framework 4.8 with real overridable references and recursive source inclusion");
             Assert(File.ReadAllText(Path.Combine(output, "source", "MyCustomMod", "MyCustomMod.sln")).Contains("MyCustomMod.csproj", StringComparison.Ordinal), $"init {version} produces a valid solution contract");
             Assert(File.Exists(Path.Combine(output, ".decompilerserver", "DecompilerServer.exe")), $"init {version} includes DecompilerServer");
             var codexConfig = File.ReadAllText(Path.Combine(output, ".codex", "config.toml"));
             Assert(codexConfig.Contains("command = \".decompilerserver/DecompilerServer.exe\"", StringComparison.Ordinal)
                 && codexConfig.Contains("default_tools_approval_mode = \"approve\"", StringComparison.Ordinal), $"init {version} configures the relative read-only DecompilerServer MCP with default tool approval");
-            foreach (var skill in new[] { "rimdevtools", "rimsearcher", "decompiler-mcp", "about-write-description", "rimworld-modding", "rimworld-development-engineer" })
+            foreach (var skill in new[] { "rimdevtools", "rimsearcher", "decompiler-mcp", "about-write-description", "rimworld-development-engineer", "rimworld-plan-engineer" })
             {
                 var skillRoot = Path.Combine(output, ".agents", "skills", skill);
                 Assert(File.Exists(Path.Combine(skillRoot, "SKILL.md")), $"init {version} includes the discoverable {skill} skill");
@@ -114,13 +122,33 @@ using (var manifestDocument = JsonDocument.Parse(File.ReadAllText(Path.Combine(p
                 && engineerSkill.Contains("Do not research or edit", StringComparison.Ordinal)
                 && engineerSkill.IndexOf("RimSearcher before inspecting C# behavior", StringComparison.Ordinal) < engineerSkill.IndexOf("For C# and binary behavior", StringComparison.Ordinal)
                 && engineerSkill.Contains("Never run `ref pull` merely to inspect code", StringComparison.Ordinal), $"init {version} enforces the database and RimSearcher gates before decompilation, with ref pull as fallback");
-            var moddingSkillRoot = Path.Combine(output, ".agents", "skills", "rimworld-modding");
-            Assert(File.Exists(Path.Combine(moddingSkillRoot, "LICENSE")), $"init {version} preserves the imported modding skill license");
-            using (JsonDocument.Parse(File.ReadAllText(Path.Combine(moddingSkillRoot, "tests", "evals.json")))) { }
-            Assert(Directory.EnumerateFiles(Path.Combine(moddingSkillRoot, "assets", "templates"), "*.xml").All(path => XDocument.Load(path).Root is not null), $"init {version} includes parseable RimWorld XML skill templates");
+            var codexPlan = Path.Combine(output, ".agents", "skills", "rimworld-plan-engineer");
+            var claudePlan = Path.Combine(output, ".claude", "skills", "rimworld-plan-engineer");
+            Assert(File.Exists(Path.Combine(claudePlan, "SKILL.md")) && File.Exists(Path.Combine(claudePlan, "references", "planning-contract.md")), $"init {version} includes the Claude planning skill");
+            static string NormalizedText(string path) => File.ReadAllText(path).Replace("\r\n", "\n", StringComparison.Ordinal);
+            Assert(NormalizedText(Path.Combine(codexPlan, "SKILL.md")) == NormalizedText(Path.Combine(claudePlan, "SKILL.md"))
+                && NormalizedText(Path.Combine(codexPlan, "references", "planning-contract.md")) == NormalizedText(Path.Combine(claudePlan, "references", "planning-contract.md")), $"init {version} keeps Codex and Claude planning contracts text-identical");
+            Assert(!Directory.Exists(Path.Combine(output, ".agents", "skills", "rimworld-modding"))
+                && !Directory.Exists(Path.Combine(output, ".claude", "skills", "rimworld-modding"))
+                && !File.ReadAllText(Path.Combine(output, "README.md")).Contains("rimworld-modding", StringComparison.Ordinal), $"init {version} removes both rimworld-modding skills and README references");
 
             var doctor = RunResult(Path.Combine(output, ".tools", "RimDevTools.exe"), output, "doctor");
             Assert(doctor.ExitCode == 0 && JsonDocument.Parse(doctor.Stdout).RootElement.GetProperty("ok").GetBoolean(), $"doctor discovers initialized {version} project");
+            var defaultDoctorChecks = JsonDocument.Parse(doctor.Stdout).RootElement.GetProperty("result").GetProperty("checks").EnumerateArray().ToArray();
+            Assert(defaultDoctorChecks.Any(check => check.GetProperty("id").GetString() == "build.game_assembly.Assembly-CSharp" && !string.IsNullOrWhiteSpace(check.GetProperty("path").GetString()))
+                && defaultDoctorChecks.Any(check => check.GetProperty("id").GetString() == "build.harmony_assembly" && !string.IsNullOrWhiteSpace(check.GetProperty("path").GetString())), $"doctor default output exposes real Assembly-CSharp and Harmony paths");
+            var verboseDoctor = RunResult(Path.Combine(output, ".tools", "RimDevTools.exe"), output, "doctor", "--verbose");
+            var verboseChecks = JsonDocument.Parse(verboseDoctor.Stdout).RootElement.GetProperty("result").GetProperty("checks").EnumerateArray().ToArray();
+            string RequiredPath(string id) => verboseChecks.Single(check => check.GetProperty("id").GetString() == id).GetProperty("path").GetString() ?? throw new InvalidOperationException($"{id} did not resolve a path");
+            var rimWorldDirectory = RequiredPath("game.directory");
+            var managedDirectory = RequiredPath("game.managed_directory");
+            var harmonyPath = RequiredPath("build.harmony_assembly");
+            var nestedSource = Path.Combine(output, "source", "MyCustomMod", "Nested", "IncludedByGlob.cs");
+            Directory.CreateDirectory(Path.GetDirectoryName(nestedSource)!);
+            File.WriteAllText(nestedSource, "namespace MyCustomMod.Nested { internal static class IncludedByGlob { public const int Value = 1; } }");
+            var build = RunResult("dotnet", output, "build", projectPath, "--configuration", "Release", $"-p:RimWorldDir={rimWorldDirectory}", $"-p:RimWorldManagedDir={managedDirectory}", $"-p:HarmonyDllPath={harmonyPath}");
+            var builtAssembly = Path.Combine(output, "source", "MyCustomMod", "bin", "Release", "MyCustomMod.dll");
+            Assert(build.ExitCode == 0 && File.Exists(builtAssembly) && Assembly.Load(File.ReadAllBytes(builtAssembly)).GetType("MyCustomMod.Nested.IncludedByGlob", throwOnError: false) is not null, $"init {version} template compiles against real RimWorld/Harmony DLLs with nested source included");
             var initializedVersion = RunResult(Path.Combine(output, ".tools", "RimDevTools.exe"), output, "--version");
             Assert(initializedVersion.ExitCode == 0 && JsonDocument.Parse(initializedVersion.Stdout).RootElement.GetProperty("componentsCompatible").GetBoolean(), $"initialized {version} tools start with compatible components");
             Assert(!Directory.EnumerateFileSystemEntries(Path.Combine(output, ".tools", "db")).Any(), $"init {version} does not contain a database");
