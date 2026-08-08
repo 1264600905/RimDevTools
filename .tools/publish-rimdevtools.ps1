@@ -88,22 +88,15 @@ try {
     $toolRoot = Join-Path $output ".tools"
     $dataRoot = Join-Path $toolRoot "Data"
     $logSyncComponent = Join-Path $dataRoot "LogSyncMod"
-    $rimSearcherComponent = Join-Path $dataRoot "RimSearcher_DataMod"
     $logRoot = Join-Path $toolRoot "log"
     $autoTestOutput = Join-Path $logRoot "AutoTestOutput"
     $modListRoot = Join-Path $toolRoot "modlist"
-    $databaseRoot = Join-Path $toolRoot "db"
-    New-Item -ItemType Directory -Path $toolRoot, $dataRoot, $logSyncComponent, $rimSearcherComponent, $autoTestOutput, $modListRoot, $databaseRoot -Force | Out-Null
+    New-Item -ItemType Directory -Path $toolRoot, $dataRoot, $logSyncComponent, $autoTestOutput, $modListRoot -Force | Out-Null
 
     $rimDevToolsPublish = Join-Path $temporary "RimDevTools"
     dotnet publish (Join-Path $projectRoot "RimDevTools\RimDevTools.csproj") -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -o $rimDevToolsPublish
     if ($LASTEXITCODE -ne 0) { throw "RimDevTools publish 失败" }
     Copy-Item -LiteralPath (Join-Path $rimDevToolsPublish "RimDevTools.exe") -Destination (Join-Path $toolRoot "RimDevTools.exe") -Force
-
-    $rimSearcherPublish = Join-Path $temporary "RimSearcher"
-    dotnet publish (Join-Path $projectRoot "RimSearcher\Sources\RimSearcher.Cli\RimSearcher.Cli.csproj") -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -o $rimSearcherPublish
-    if ($LASTEXITCODE -ne 0) { throw "RimSearcher publish 失败" }
-    Copy-Item -LiteralPath (Join-Path $rimSearcherPublish "rimsearcher.exe") -Destination (Join-Path $toolRoot "rimsearcher.exe") -Force
 
     dotnet build (Join-Path $projectRoot "source\TempProject\TempProject.csproj") -c Release -t:Rebuild
     if ($LASTEXITCODE -ne 0) { throw "LogSyncMod build 失败" }
@@ -122,18 +115,11 @@ try {
         Copy-Item -LiteralPath (Join-Path $projectRoot "1.6\Defs") -Destination (Join-Path $logSyncComponent "1.6\Defs") -Recurse -Force
     }
 
-    dotnet build (Join-Path $projectRoot "RimSearcher\Sources\RimSearcher.DataMod\RimSearcher.DataMod.csproj") -c Release --no-restore
-    if ($LASTEXITCODE -ne 0) { throw "RimSearcher DataMod build 失败" }
-    foreach ($folder in @("About", "Assemblies", "Languages", "Native")) {
-        Copy-Item -LiteralPath (Join-Path $projectRoot "RimSearcher\RimSearcher_DataMod\$folder") -Destination (Join-Path $rimSearcherComponent $folder) -Recurse -Force
-    }
-
     $logSyncVersion = Get-ModVersion $logSyncComponent "1.6\Assemblies\LogSyncMod.dll"
     $autoTestVersion = [System.Reflection.AssemblyName]::GetAssemblyName((Join-Path $logSyncComponent "1.6\Assemblies\LogSyncMod.AutoTest.dll")).Version.ToString()
     $logSyncVersionParsed = [System.Version]$logSyncVersion
     $autoTestVersionParsed = [System.Version]$autoTestVersion
     if ($logSyncVersionParsed.Major -ne $autoTestVersionParsed.Major -or $logSyncVersionParsed.Minor -ne $autoTestVersionParsed.Minor -or $logSyncVersionParsed.Build -ne $autoTestVersionParsed.Build) { throw "LogSyncMod 与 AutoTest 程序集版本不一致" }
-    $rimSearcherVersion = Get-ModVersion $rimSearcherComponent "Assemblies\RimSearcher.DataMod.dll"
     $manifest = [ordered]@{
         schemaVersion = 1
         components = @(
@@ -143,13 +129,6 @@ try {
                 version = $logSyncVersion
                 primaryAssembly = "1.6/Assemblies/LogSyncMod.dll"
                 contentHash = Get-DirectoryContentHash $logSyncComponent
-            },
-            [ordered]@{
-                folder = "RimSearcher_DataMod"
-                packageId = "kearril.rimsearcherdatamod"
-                version = $rimSearcherVersion
-                primaryAssembly = "Assemblies/RimSearcher.DataMod.dll"
-                contentHash = Get-DirectoryContentHash $rimSearcherComponent
             }
         )
     }
@@ -161,7 +140,6 @@ try {
 
     $licenses = Join-Path $dataRoot "licenses"
     New-Item -ItemType Directory -Path $licenses -Force | Out-Null
-    Copy-Item -LiteralPath (Join-Path $projectRoot "RimSearcher\LICENSE") -Destination (Join-Path $licenses "RimSearcher-LICENSE.txt") -Force
     Copy-Item -LiteralPath (Join-Path $projectRoot "RimDevTools\Packaging\licenses\ILSpy-LICENSE.txt") -Destination $licenses -Force
     Copy-Item -LiteralPath (Join-Path $projectRoot "RimDevTools\Packaging\licenses\third-party-notices.txt") -Destination $licenses -Force
 
@@ -183,7 +161,7 @@ try {
     $versionJson = (& (Join-Path $toolRoot "RimDevTools.exe") --version | Out-String)
     if ($LASTEXITCODE -ne 0) { throw "发布后的 RimDevTools --version 验证失败" }
     $version = $versionJson | ConvertFrom-Json
-    if (-not $version.componentsCompatible) { throw "发布组件版本不兼容: $versionJson" }
+    if (-not $version.ok -or [string]::IsNullOrWhiteSpace([string]$version.rimDevToolsVersion)) { throw "发布后的 RimDevTools 版本输出无效: $versionJson" }
     Write-Host $versionJson.Trim()
 }
 finally {

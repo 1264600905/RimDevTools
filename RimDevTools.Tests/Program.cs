@@ -344,8 +344,7 @@ internal sealed class TestSuite
         var assemblySource = typeof(TestSuite).Assembly.Location;
         var definitions = new[]
         {
-            (Folder: "LogSyncMod", PackageId: "trigger.logsyncmod", PrimaryAssembly: "1.6/Assemblies/LogSyncMod.dll"),
-            (Folder: "RimSearcher_DataMod", PackageId: "kearril.rimsearcherdatamod", PrimaryAssembly: "Assemblies/RimSearcher.DataMod.dll")
+            (Folder: "LogSyncMod", PackageId: "trigger.logsyncmod", PrimaryAssembly: "1.6/Assemblies/LogSyncMod.dll")
         };
         var manifestComponents = new List<object>();
         foreach (var definition in definitions)
@@ -360,34 +359,47 @@ internal sealed class TestSuite
             manifestComponents.Add(new { folder = definition.Folder, packageId = definition.PackageId, version = "1.0.0.0", primaryAssembly = definition.PrimaryAssembly, contentHash = hash });
         }
         File.WriteAllText(Path.Combine(dataRoot, "tool-mods.manifest.json"), JsonSerializer.Serialize(new { schemaVersion = 1, components = manifestComponents }));
+        var extraManifest = JsonSerializer.Serialize(new
+        {
+            schemaVersion = 1,
+            components = new object[]
+            {
+                manifestComponents.Single(),
+                new { folder = "Extra", packageId = "demo.extra", version = "1.0.0.0", primaryAssembly = "Extra.dll", contentHash = "sha256:00" }
+            }
+        });
+        File.WriteAllText(Path.Combine(dataRoot, "tool-mods.manifest.json"), extraManifest);
+        AssertThrows<InvalidDataException>(() => ToolModManifestReader.Load(Path.Combine(dataRoot, "tool-mods.manifest.json")), "tool Mod manifest rejects additional components");
+        File.WriteAllText(Path.Combine(dataRoot, "tool-mods.manifest.json"), JsonSerializer.Serialize(new { schemaVersion = 1, components = manifestComponents }));
+
+        File.WriteAllText(Path.Combine(dataRoot, "LogSyncMod", "unexpected.txt"), "changed");
+        AssertThrows<ToolModDeploymentException>(() => ToolModInstaller.Plan(dataRoot, modsRoot), "tool Mod planning rejects a source hash mismatch");
+        File.Delete(Path.Combine(dataRoot, "LogSyncMod", "unexpected.txt"));
 
         var firstPlan = ToolModInstaller.Plan(dataRoot, modsRoot);
-        Assert(firstPlan.Components.All(component => component.Action == "installed"), "tool Mod plan installs both missing components");
+        Assert(firstPlan.Components is [var firstComponent] && firstComponent.Action == "installed", "tool Mod plan installs the missing LogSyncMod component");
         var installed = ToolModInstaller.Install(firstPlan, "first-install");
-        Assert(installed.Count == 2 && installed.All(result => result.Action == "installed"), "tool Mod batch installation completes both components");
-        Assert(Directory.Exists(Path.Combine(modsRoot, "LogSyncMod")) && Directory.Exists(Path.Combine(modsRoot, "RimSearcher_DataMod")), "tool Mod installation creates standard component directories");
+        Assert(installed is [var installedComponent] && installedComponent.Action == "installed", "tool Mod installation completes the single component");
+        Assert(Directory.Exists(Path.Combine(modsRoot, "LogSyncMod")), "tool Mod installation creates the LogSyncMod directory");
 
         var rollbackMods = NewDirectory(Path.Combine("tool-mods", "rollback-Mods"));
         var rollbackPlan = ToolModInstaller.Plan(dataRoot, rollbackMods);
-        File.WriteAllText(Path.Combine(rollbackMods, "RimSearcher_DataMod"), "block second replacement");
-        AssertThrows<IOException>(() => ToolModInstaller.Install(rollbackPlan, "rollback"), "tool Mod batch surfaces a second-component replacement failure");
-        Assert(!Directory.Exists(Path.Combine(rollbackMods, "LogSyncMod"))
-            && File.Exists(Path.Combine(rollbackMods, "RimSearcher_DataMod"))
-            && !Directory.EnumerateFileSystemEntries(rollbackMods).Any(path => Path.GetFileName(path).StartsWith(".rimdev-tools-", StringComparison.OrdinalIgnoreCase)), "tool Mod batch rolls back the first component and cleans transaction directories");
+        File.WriteAllText(Path.Combine(rollbackMods, "LogSyncMod"), "block replacement");
+        AssertThrows<IOException>(() => ToolModInstaller.Install(rollbackPlan, "rollback"), "tool Mod installation surfaces a target replacement failure");
+        Assert(File.Exists(Path.Combine(rollbackMods, "LogSyncMod"))
+            && !Directory.EnumerateFileSystemEntries(rollbackMods).Any(path => Path.GetFileName(path).StartsWith(".rimdev-tools-", StringComparison.OrdinalIgnoreCase)), "failed tool Mod installation preserves the target and cleans transaction directories");
 
         var stableHash = DirectoryHasher.Compute(Path.Combine(modsRoot, "LogSyncMod"), ["PublishedFileId.txt"]);
         File.SetLastWriteTimeUtc(Path.Combine(modsRoot, "LogSyncMod", "About", "About.xml"), DateTime.UtcNow.AddDays(-3));
         Assert(stableHash == DirectoryHasher.Compute(Path.Combine(modsRoot, "LogSyncMod"), ["PublishedFileId.txt"]), "tool Mod hash ignores file timestamps");
 
         File.WriteAllText(Path.Combine(modsRoot, "LogSyncMod", "PublishedFileId.txt"), "published");
-        File.WriteAllText(Path.Combine(modsRoot, "RimSearcher_DataMod", "defs.db"), "database");
         File.WriteAllText(Path.Combine(modsRoot, "LogSyncMod", "payload.txt"), "local-old");
         File.WriteAllText(Path.Combine(modsRoot, "LogSyncMod", "About", "About.xml"), "<ModMetaData><name>LogSyncMod</name><modVersion>0.9.0.0</modVersion><packageId>trigger.logsyncmod</packageId></ModMetaData>");
         var updatePlan = ToolModInstaller.Plan(dataRoot, modsRoot);
         Assert(updatePlan.Components.Single(x => x.Source.PackageId == "trigger.logsyncmod").Action == "updated", "older installed tool Mod is eligible for upgrade");
         ToolModInstaller.Install(updatePlan, "upgrade");
-        Assert(File.ReadAllText(Path.Combine(modsRoot, "LogSyncMod", "PublishedFileId.txt")) == "published"
-            && File.ReadAllText(Path.Combine(modsRoot, "RimSearcher_DataMod", "defs.db")) == "database", "tool Mod upgrade preserves protected files");
+        Assert(File.ReadAllText(Path.Combine(modsRoot, "LogSyncMod", "PublishedFileId.txt")) == "published", "tool Mod upgrade preserves PublishedFileId.txt");
         var unchangedPlan = ToolModInstaller.Plan(dataRoot, modsRoot);
         Assert(unchangedPlan.Components.All(x => x.Action == "unchanged"), "identical tool Mod content is skipped after upgrade");
 
@@ -410,7 +422,7 @@ internal sealed class TestSuite
 
         CreateModAt(modsRoot, "UnrelatedDuplicateA", "demo.unrelated-duplicate");
         CreateModAt(modsRoot, "UnrelatedDuplicateB", "demo.unrelated-duplicate");
-        Assert(ToolModInstaller.Plan(dataRoot, modsRoot).Components.Count == 2, "duplicate packageIds for unrelated Mods do not block tool Mod planning");
+        Assert(ToolModInstaller.Plan(dataRoot, modsRoot).Components.Count == 1, "duplicate packageIds for unrelated Mods do not block tool Mod planning");
 
         var duplicate = Path.Combine(modsRoot, "LogSyncDuplicate");
         CopyDirectoryForTest(Path.Combine(modsRoot, "LogSyncMod"), duplicate);

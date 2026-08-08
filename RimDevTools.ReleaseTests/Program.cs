@@ -16,25 +16,18 @@ var passed = 0;
 
 RequireFile("mod_config.jsonc");
 RequireFile(Path.Combine(".tools", "RimDevTools.exe"));
-RequireFile(Path.Combine(".tools", "rimsearcher.exe"));
 RequireFile(Path.Combine(".tools", "Data", "tool-mods.manifest.json"));
 RequireFile(Path.Combine(".tools", "Data", "LogSyncMod", "About", "About.xml"));
 RequireFile(Path.Combine(".tools", "Data", "LogSyncMod", "1.6", "Assemblies", "LogSyncMod.dll"));
 RequireFile(Path.Combine(".tools", "Data", "LogSyncMod", "1.6", "Assemblies", "LogSyncMod.AutoTest.dll"));
-RequireFile(Path.Combine(".tools", "Data", "RimSearcher_DataMod", "About", "About.xml"));
-RequireFile(Path.Combine(".tools", "Data", "RimSearcher_DataMod", "Assemblies", "RimSearcher.DataMod.dll"));
-RequireFile(Path.Combine(".tools", "Data", "RimSearcher_DataMod", "Native", "e_sqlite3.dll"));
 RequireFile(Path.Combine(".tools", "Ilspy", "ilspycmd.exe"));
-RequireFile(Path.Combine(".tools", "Data", "licenses", "RimSearcher-LICENSE.txt"));
 RequireFile(Path.Combine(".tools", "Data", "licenses", "ILSpy-LICENSE.txt"));
 RequireFile(Path.Combine(".tools", "Data", "licenses", "third-party-notices.txt"));
 RequireFile(Path.Combine(".tools", "modlist", "defaultMods.xml"));
 Assert(File.Exists(Path.Combine(tools, "log", "精选日志.log")) && new FileInfo(Path.Combine(tools, "log", "精选日志.log")).Length == 0, "release starts with an empty selected log");
 RequireDirectory(Path.Combine(".tools", "log", "AutoTestOutput"));
-RequireDirectory(Path.Combine(".tools", "db"));
 Assert(!Directory.Exists(Path.Combine(tools, "components", "ProjectTemplate")), "release does not contain a nested project template");
 Assert(!File.Exists(Path.Combine(release, "components", "ProjectTemplate", "manifest.json")), "release does not copy the build manifest into the project");
-Assert(!Directory.EnumerateFileSystemEntries(Path.Combine(tools, "db")).Any(), "release does not copy project databases");
 Assert(!Directory.EnumerateFileSystemEntries(Path.Combine(tools, "log", "AutoTestOutput")).Any(), "release does not copy automatic test history");
 Assert(File.ReadAllBytes(Path.Combine(release, "mod_config.jsonc")).SequenceEqual(File.ReadAllBytes(templateConfig)), "release uses the single shared template mod_config.jsonc");
 Assert(!File.Exists(Path.Combine(template, "mod_config.jsonc")), "1.6 template does not contain a duplicate mod_config.jsonc");
@@ -51,7 +44,7 @@ Assert(expectedRootFiles.SequenceEqual(releaseFiles, StringComparer.OrdinalIgnor
 using (var manifestDocument = JsonDocument.Parse(File.ReadAllText(Path.Combine(data, "tool-mods.manifest.json"))))
 {
     var manifest = manifestDocument.RootElement;
-    Assert(manifest.GetProperty("schemaVersion").GetInt32() == 1 && manifest.GetProperty("components").GetArrayLength() == 2, "tool Mod manifest declares both components");
+    Assert(manifest.GetProperty("schemaVersion").GetInt32() == 1 && manifest.GetProperty("components").GetArrayLength() == 1, "tool Mod manifest declares one component");
     foreach (var component in manifest.GetProperty("components").EnumerateArray())
     {
         var root = Path.Combine(data, component.GetProperty("folder").GetString()!);
@@ -66,16 +59,9 @@ var logSyncAssembly = AssemblyName.GetAssemblyName(Path.Combine(data, "LogSyncMo
 var autoTestAssembly = AssemblyName.GetAssemblyName(Path.Combine(data, "LogSyncMod", "1.6", "Assemblies", "LogSyncMod.AutoTest.dll")).Version;
 Assert(logSyncAssembly is not null && autoTestAssembly is not null && logSyncAssembly.Major == autoTestAssembly.Major && logSyncAssembly.Minor == autoTestAssembly.Minor && logSyncAssembly.Build == autoTestAssembly.Build, "packaged LogSync assemblies share a product version");
 
-var dataModAbout = XDocument.Load(Path.Combine(data, "RimSearcher_DataMod", "About", "About.xml"));
-Assert(dataModAbout.Root?.Element("packageId")?.Value.Equals("kearril.RimSearcherDataMod", StringComparison.OrdinalIgnoreCase) == true, "packaged DataMod has the expected packageId");
-var dataModVersion = AssemblyName.GetAssemblyName(Path.Combine(data, "RimSearcher_DataMod", "Assemblies", "RimSearcher.DataMod.dll")).Version;
-var rimSearcherVersion = FileVersionInfo.GetVersionInfo(Path.Combine(tools, "rimsearcher.exe")).FileVersion;
-Assert(SameProductVersion(dataModVersion, rimSearcherVersion), "packaged RimSearcher and DataMod versions match");
-
 using (var config = JsonDocument.Parse(File.ReadAllText(Path.Combine(release, "mod_config.jsonc")), new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true }))
 {
     var root = config.RootElement;
-    Assert(root.GetProperty("rimsearcher_db_path").GetString() == ".tools\\db\\defs.db", "packaged configuration points at the isolated database directory");
     Assert(root.GetProperty("ilspycmd_path").GetString() == "Ilspy\\ilspycmd.exe", "packaged configuration points at the packaged ILSpy directory");
     Assert(!root.GetProperty("isolated_desktop").GetBoolean(), "packaged configuration uses the normal desktop by default");
 }
@@ -84,8 +70,9 @@ var versionOutput = Run(Path.Combine(tools, "RimDevTools.exe"), release, "--vers
 using (var document = JsonDocument.Parse(versionOutput))
 {
     var root = document.RootElement;
-    Assert(root.GetProperty("ok").GetBoolean() && root.GetProperty("componentsCompatible").GetBoolean(), "packaged RimDevTools starts with compatible CLI/DataMod components");
-    Assert(!string.IsNullOrWhiteSpace(root.GetProperty("rimSearcherVersion").GetString()) && !string.IsNullOrWhiteSpace(root.GetProperty("dataModVersion").GetString()), "version output reads actual packaged component versions");
+    Assert(root.GetProperty("ok").GetBoolean()
+        && !string.IsNullOrWhiteSpace(root.GetProperty("rimDevToolsVersion").GetString())
+        && root.EnumerateObject().Select(property => property.Name).SequenceEqual(["ok", "command", "rimDevToolsVersion"]), "packaged version output only reports RimDevTools");
 }
 
 var help = Run(Path.Combine(tools, "RimDevTools.exe"), release, "mods", "install-tools", "--help");
@@ -99,7 +86,7 @@ try
 {
     var dryRun = Run(Path.Combine(tools, "RimDevTools.exe"), release, "mods", "install-tools", "--mods-path", temporaryMods, "--dry-run");
     using var dryJson = JsonDocument.Parse(dryRun);
-    Assert(dryJson.RootElement.GetProperty("ok").GetBoolean() && dryJson.RootElement.GetProperty("result").GetProperty("components").GetArrayLength() == 2, "packaged tool Mod dry-run plans both components in an explicit Mods directory");
+    Assert(dryJson.RootElement.GetProperty("ok").GetBoolean() && dryJson.RootElement.GetProperty("result").GetProperty("components").GetArrayLength() == 1, "packaged tool Mod dry-run plans one component in an explicit Mods directory");
 }
 finally
 {
@@ -141,10 +128,6 @@ string[] RelativeEntries(string root, bool files)
         .Select(path => Path.GetRelativePath(root, path))
         .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
         .ToArray();
-
-bool SameProductVersion(Version? assemblyVersion, string? fileVersion)
-    => assemblyVersion is not null && Version.TryParse(fileVersion, out var parsed)
-        && assemblyVersion.Major == parsed.Major && assemblyVersion.Minor == parsed.Minor && assemblyVersion.Build == parsed.Build;
 
 void Assert(bool condition, string name)
 {

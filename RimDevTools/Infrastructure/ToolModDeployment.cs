@@ -47,8 +47,7 @@ public static class ToolModManifestReader
 {
     private static readonly HashSet<string> ExpectedPackageIds = new(StringComparer.OrdinalIgnoreCase)
     {
-        "trigger.logsyncmod",
-        "kearril.rimsearcherdatamod"
+        "trigger.logsyncmod"
     };
     private static readonly JsonSerializerOptions Options = new()
     {
@@ -81,7 +80,7 @@ public static class ToolModManifestReader
                 throw new InvalidDataException($"工具 Mod 主程序集路径无效: {component.PrimaryAssembly}");
         }
         if (packageIds.Count != ExpectedPackageIds.Count || !packageIds.SetEquals(ExpectedPackageIds))
-            throw new InvalidDataException("工具 Mod 清单必须且只能包含 LogSyncMod 与 RimSearcher DataMod");
+            throw new InvalidDataException("工具 Mod 清单必须且只能包含 LogSyncMod");
         return manifest;
     }
 }
@@ -180,7 +179,7 @@ public static class ToolModVersion
 
 public static class ToolModInstaller
 {
-    private static readonly string[] ExcludedTargetFiles = ["PublishedFileId.txt", "defs.db"];
+    private static readonly string[] ExcludedTargetFiles = ["PublishedFileId.txt"];
 
     public static ToolModDeploymentPlan Plan(string dataRoot, string modsPath)
     {
@@ -279,7 +278,7 @@ public static class ToolModInstaller
                 CopyDirectory(item.SourceDirectory, staging);
                 var stagedHash = DirectoryHasher.Compute(staging);
                 if (!stagedHash.Equals(item.SourceHash, StringComparison.OrdinalIgnoreCase)) throw new IOException($"暂存哈希校验失败: {item.Source.Folder}");
-                PreserveTargetFiles(item.TargetDirectory, staging, item.Source.PackageId);
+                PreserveTargetFiles(item.TargetDirectory, staging);
             }
 
             foreach (var item in actionable)
@@ -348,12 +347,10 @@ public static class ToolModInstaller
         }
     }
 
-    private static void PreserveTargetFiles(string targetDirectory, string stagingDirectory, string packageId)
+    private static void PreserveTargetFiles(string targetDirectory, string stagingDirectory)
     {
         if (!Directory.Exists(targetDirectory)) return;
-        foreach (var relative in packageId.Equals("kearril.rimsearcherdatamod", StringComparison.OrdinalIgnoreCase)
-                     ? ExcludedTargetFiles
-                     : ["PublishedFileId.txt"])
+        foreach (var relative in ExcludedTargetFiles)
         {
             var source = Path.Combine(targetDirectory, relative);
             if (!File.Exists(source)) continue;
