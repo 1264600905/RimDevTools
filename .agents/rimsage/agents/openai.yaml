@@ -1,0 +1,4 @@
+interface:
+  display_name: "RimSage"
+  short_description: "研究官方 RimWorld Def 和 C# API"
+  default_prompt: "实现前使用 $rimsage 验证官方 RimWorld Def 或 C# API。"
