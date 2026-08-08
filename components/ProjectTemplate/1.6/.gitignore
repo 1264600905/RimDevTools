@@ -3,7 +3,6 @@ bin/
 obj/
 artifacts/
 .rimdev/
-.tools/db/
 .tools/log/*.log
 .tools/log/AutoTestOutput/
 参考文档/

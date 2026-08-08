@@ -1,38 +1,61 @@
 # MyCustomMod
 
-RimWorld 1.6 模组开发模板。
+RimWorld 1.6 模组开发模板。首次使用时修改：
+
+- `About/About.xml` 中的名称、作者和 packageId。
+- `mod_config.jsonc` 中的模组名、本机 RimWorld 路径和 Workshop 路径。
+- `source/MyCustomMod` 中的程序集名称、命名空间和工程文件名。
 
 ## 环境要求
 
-Windows x64 上的 RimDevTools、RimSearcher 和 DecompilerServer 均需要安装 .NET 10 Runtime。仅运行这些工具不需要 .NET 10 SDK；缺少 Runtime 时工具自身无法启动，因此 `doctor` 不检查这个前提。使用 `dotnet build` 编译模组还需要 dotnet SDK，并推荐安装 .NET Framework 4.8 Developer/Targeting Pack，也可使用 4.7.2 作为兼容替代。
+- 运行 `.tools/RimDevTools.exe`：Windows x64 与 .NET 10 Runtime。
+- 使用 `ref pull` 的 ILSpy：.NET 8 Runtime。
+- 编译模组：dotnet SDK 与 .NET Framework 4.8 Developer/Targeting Pack；4.7.2 可作为兼容替代。
+- 运行游戏测试：RimWorld 1.6 与已登录的 Steam 会话。
 
-首次使用时请修改：
+## RimSage
 
-- `About/About.xml` 中的名称、作者和 packageId。
-- `mod_config.jsonc` 中的模组名、RimWorld 路径和 Workshop 路径。
-- `source/MyCustomMod` 中的程序集名称和命名空间。
+模板为三种客户端配置同一个只读服务：
 
-Codex 会从项目内的 `.codex/config.toml` 启动随模板提供的 DecompilerServer MCP；该配置使用相对于项目根目录的路径，并默认批准这个只读服务器的全部工具调用。
+- Codex CLI：`.codex/config.toml`
+- Claude Code：`.mcp.json`
+- opencode：`opencode.jsonc`
 
-项目级 Codex skill 位于 `.agents/skills`：
+默认端点是 `https://mcp.rimsage.com/mcp`。Codex 默认批准该只读服务的工具调用。
 
-- `rimdevtools`：项目检查、部署、参考模组、测试和 Def 数据库管理。
-- `rimsearcher`：查询运行时合并后的 RimWorld Def 数据并建立数据证据链。
-- `decompiler-mcp`：使用 DecompilerServer 检查真实游戏或模组程序集。
-- `rimworld-development-engineer`：按证据实施、部署并完成游戏内验证。
-- `rimworld-plan-engineer`：先建立 RimSearcher/真实程序集证据，再输出不修改源码的实施计划。
-- `about-write-description`：基于已验证功能更新双语 Workshop 描述。
+`.agents/skills/rimsage` 与 `.claude/skills/rimsage` 规定：
 
-常用命令：
+- 涉及官方 Def、XML、C# API、实现行为或 Harmony 目标时，RimSage 是研究前置。
+- 当前项目已有代码、翻译、资源、构建、部署、测试和日志诊断不强制连接。
+- 配置缺失或损坏时安全修复并重试一次；仍不可用时停止依赖它的研究并请求用户处理。
+- 用户自行配置的同名本地服务与默认远程服务等同使用。
+
+RimSage 不读取当前项目或第三方模组。当前项目直接读取工作树；第三方模组先检查 `参考文档`，缺少时使用 `ref search/ref pull`。
+
+## Skills
+
+项目级 Codex skill 位于 `.agents/skills`，Claude skill 位于 `.claude/skills`：
+
+- `rimsage`：官方 Def、XML 与 C# 研究。
+- `rimdevtools`：项目检查、部署、参考模组、测试和工具 Mod 安装。
+- `rimworld-development-engineer`：从证据到实现和验证。
+- `rimworld-plan-engineer`：只产出基于证据的实施计划。
+- `about-write-description`：基于已实现功能更新双语 Workshop 描述。
+
+## 常用命令
 
 ```powershell
+.\.tools\RimDevTools.exe --version
 .\.tools\RimDevTools.exe doctor
-.\.tools\RimDevTools.exe doctor --verbose
-.\.tools\RimDevTools.exe data status
 .\.tools\RimDevTools.exe deploy --dry-run
+.\.tools\RimDevTools.exe ref search "<keyword>"
+.\.tools\RimDevTools.exe ref pull "<exact-query>"
 .\.tools\RimDevTools.exe test run --mode quick
+.\.tools\RimDevTools.exe mods install-tools --dry-run
 ```
 
-开始实际开发前必须先运行 `data status`；若结果建议刷新，则运行 `data refresh` 并再次确认状态有效。先用 RimSearcher 获取运行时 Def 证据，只有需要确认 C# 行为时才使用 DecompilerServer。
+`mods install-tools` 只安装随包 LogSyncMod。`ref pull` 保持选项显式，不会自动使用 `--deps`、`--all` 或 `--force`。
 
-模板 C# 工程默认目标为推荐的 .NET Framework 4.8，也允许改为 4.7.2，并递归包含 `source/MyCustomMod` 下除 `bin`/`obj` 外的 `.cs` 文件。游戏、Unity 和 Harmony 引用由 RimDevTools 从本机真实 RimWorld/Steam Workshop 安装解析；直接构建时必须传入 `RimWorldDir`、`RimWorldManagedDir` 和 `HarmonyDllPath`。
+模板 C# 工程默认目标为 .NET Framework 4.8，并递归包含 `source/MyCustomMod` 下除 `bin/obj` 外的 C# 文件。游戏、Unity 和 Harmony 引用由 RimDevTools 从真实安装解析。
+
+quick、auto 和 XML 使用 `mod_config.jsonc.isolated_desktop`；模板默认值为 `false`。manual 默认使用当前桌面。运行中的临时 ModList 和 LogSync 设置由事务恢复，不要手工并发修改。

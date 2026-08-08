@@ -169,9 +169,15 @@ internal sealed class TestSuite
         Assert(manual is { Enabled: false, Source: "mode_default" }, "manual isolation ignores the enabled project default");
         var steamLoggedIn = SteamSessionGuard.Evaluate(true, "C:\\Steam", "\"users\" { \"76561198000000000\" { \"AccountName\" \"tester\" \"MostRecent\" \"1\" \"WantsOfflineMode\" \"0\" } }");
         var steamOffline = SteamSessionGuard.Evaluate(true, "C:\\Steam", "\"users\" { \"76561198000000000\" { \"AccountName\" \"tester\" \"MostRecent\" \"1\" \"WantsOfflineMode\" \"1\" } }");
+        var steamLoggedInNewFormat = SteamSessionGuard.Evaluate(true, "C:\\Steam", "\"users\" { \"1\" { \"AccountName\" \"older\" \"RememberPassword\" \"1\" \"WantsOfflineMode\" \"0\" \"Timestamp\" \"10\" } \"2\" { \"AccountName\" \"current\" \"RememberPassword\" \"1\" \"WantsOfflineMode\" \"0\" \"Timestamp\" \"20\" } }");
+        var steamOfflineNewFormat = SteamSessionGuard.Evaluate(true, "C:\\Steam", "\"users\" { \"1\" { \"AccountName\" \"older\" \"RememberPassword\" \"1\" \"WantsOfflineMode\" \"0\" \"Timestamp\" \"10\" } \"2\" { \"AccountName\" \"current\" \"RememberPassword\" \"1\" \"WantsOfflineMode\" \"1\" \"Timestamp\" \"20\" } }");
+        var steamHistoricalAccount = SteamSessionGuard.Evaluate(true, "C:\\Steam", "\"users\" { \"1\" { \"AccountName\" \"historical\" \"RememberPassword\" \"1\" \"WantsOfflineMode\" \"0\" } }");
         var steamStopped = SteamSessionGuard.Evaluate(false, "C:\\Steam", null);
         Assert(steamLoggedIn.IsLoggedIn && steamLoggedIn.Code == "STEAM_LOGGED_IN", "Steam session guard accepts a running online account");
         Assert(!steamOffline.IsLoggedIn && steamOffline.Code == "STEAM_NOT_LOGGED_IN", "Steam session guard rejects offline mode");
+        Assert(steamLoggedInNewFormat.IsLoggedIn && steamLoggedInNewFormat.Code == "STEAM_LOGGED_IN", "Steam session guard accepts the newest remembered account in the current Steam format");
+        Assert(!steamOfflineNewFormat.IsLoggedIn && steamOfflineNewFormat.Code == "STEAM_NOT_LOGGED_IN", "Steam session guard rejects the newest current-format account when it requests offline mode");
+        Assert(!steamHistoricalAccount.IsLoggedIn && steamHistoricalAccount.Code == "STEAM_NOT_LOGGED_IN", "Steam session guard does not treat an undated remembered account as an active session");
         Assert(!steamStopped.IsLoggedIn && steamStopped.Code == "STEAM_NOT_RUNNING", "Steam session guard rejects a stopped client");
         var child = NewDirectory(Path.Combine("discovery-project", "source"));
         Assert(ProjectDiscovery.Find(child, out _)?.Root == root, "project discovery checks direct parent");

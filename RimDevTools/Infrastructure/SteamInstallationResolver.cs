@@ -55,16 +55,27 @@ public static class SteamSessionGuard
         try
         {
             var users = ValveKeyValues.Parse(loginUsersVdf).FirstOrDefault(value => value.Name.Equals("users", StringComparison.OrdinalIgnoreCase));
-            var loggedIn = users?.Children.Any(user => user.IsObject
-                && user.Scalar("MostRecent") == "1"
-                && user.Scalar("WantsOfflineMode") != "1"
-                && !string.IsNullOrWhiteSpace(user.Scalar("AccountName"))) == true;
+            var accounts = users?.Children
+                .Where(user => user.IsObject && !string.IsNullOrWhiteSpace(user.Scalar("AccountName")))
+                .ToArray() ?? [];
+            var explicitlyRecent = accounts.Where(user => user.Scalar("MostRecent") == "1").ToArray();
+            var candidates = explicitlyRecent.Length > 0
+                ? explicitlyRecent
+                : accounts
+                    .Where(user => user.Scalar("RememberPassword") == "1" && ParseTimestamp(user.Scalar("Timestamp")) != long.MinValue)
+                    .OrderByDescending(user => ParseTimestamp(user.Scalar("Timestamp")))
+                    .Take(1)
+                    .ToArray();
+            var loggedIn = candidates.Any(user => user.Scalar("WantsOfflineMode") != "1");
             return loggedIn
                 ? new(true, true, steamRoot, null, "STEAM_LOGGED_IN", "Steam 已运行且已登录")
                 : new(true, false, steamRoot, null, "STEAM_NOT_LOGGED_IN", "Steam 未登录或处于离线模式，拒绝启动 RimWorld");
         }
         catch (Exception ex) { return new(true, false, steamRoot, null, "STEAM_LOGIN_STATE_INVALID", $"无法解析 Steam 登录状态: {ex.Message}"); }
     }
+
+    private static long ParseTimestamp(string? value)
+        => long.TryParse(value, out var timestamp) ? timestamp : long.MinValue;
 
     private static bool IsSteamRunning()
     {
