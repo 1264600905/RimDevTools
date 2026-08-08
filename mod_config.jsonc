@@ -64,6 +64,9 @@
         "LoadFolders.xml"
     ],
 
+    // 是否默认在 deploy 时附带 source/；可用 --sync-source 单次覆盖。
+    "sync_source": false,
+
     // 部署时清空目标目录需要保留的文件（正则表达式）
     // PublishedFileId.txt 是 Steam 识别已发布模组的关键文件，删除会导致无法更新
     "protected_files_regex": "^(PublishedFileId\\.txt)$",

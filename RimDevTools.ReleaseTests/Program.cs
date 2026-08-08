@@ -89,6 +89,7 @@ using (var config = JsonDocument.Parse(File.ReadAllText(Path.Combine(release, "m
     var root = config.RootElement;
     Assert(root.GetProperty("ilspycmd_path").GetString() == "Ilspy\\ilspycmd.exe", "packaged configuration points at the packaged ILSpy directory");
     Assert(!root.GetProperty("isolated_desktop").GetBoolean(), "packaged configuration uses the normal desktop by default");
+    Assert(!root.GetProperty("sync_source").GetBoolean(), "packaged configuration disables source synchronization by default");
 }
 
 var versionOutput = Run(Path.Combine(tools, "RimDevTools.exe"), release, "--version");

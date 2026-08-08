@@ -10,16 +10,16 @@
 
 ### `doctor [--verbose]`
 
-检查构建前提条件、Steam/RimWorld/创意工坊发现、游戏与 Harmony 程序集、Unity、Git/工作树状态、必需模组、ILSpy、LogSync、AutoTest、打包的工具模组、锁和事务。它是只读的，不探测 RimSage。默认输出包含可操作检查项和关键程序集路径，默认会自动隐藏满足条件的选项；`--verbose` 显示所有检查结果，包括已经满足选项。
+检查构建前提条件、Steam/RimWorld/创意工坊发现、项目目录安全性、游戏与 Harmony 程序集、Unity、Git/工作树状态、必需模组、ILSpy、LogSync、AutoTest、打包的工具模组、锁和事务。项目不能位于 RimWorld `Mods` 或 Steam Workshop 内容目录。它是只读的，不探测 RimSage。默认输出包含可操作检查项和关键程序集路径，默认会自动隐藏满足条件的选项；`--verbose` 显示所有检查结果，包括已经满足选项。
 
 ### `deploy [--sync-source] [--dry-run]`
 
 构建已配置的 C# 项目，并将 `sync_items` 原子部署到 `rimworld_dir/Mods/mod_name`。
 
 - `--dry-run`：不构建或部署，仅返回不可变计划。
-- `--sync-source`：在部署中包含 `source/`。
+- `--sync-source`：在部署中包含 `source/`；`sync_source: true` 时默认包含。
 
-常见错误：`ENVIRONMENT_BUSY`、`GAME_EXIT_TIMEOUT`、`BUILD_FAILED`、`SHADER_BUILD_FAILED`、`SYNC_ITEM_NOT_FOUND`、`DEPLOY_FAILED`。
+常见错误：`PROJECT_DEPLOYMENT_LOCATION_INVALID`、`ENVIRONMENT_BUSY`、`GAME_EXIT_TIMEOUT`、`BUILD_FAILED`、`SHADER_BUILD_FAILED`、`SYNC_ITEM_NOT_FOUND`、`DEPLOY_FAILED`。
 
 ### 参考命令
 
@@ -69,6 +69,7 @@ quick 是启动冒烟测试。manual 是用户手动的。auto 和 XML 验证结
 - `workshop_paths`：参考命令搜索的创意工坊根目录。
 - `csproj_paths`：由部署构建的 C# 项目。
 - `sync_items`：部署期间复制的项目文件/目录。
+- `sync_source`：为 `true` 时，部署默认附带 `source/`；默认 `false`。
 - `protected_files_regex`：替换时保留的已部署相对路径。
 - `pull_ignore_folders`：除非使用 `--all`，否则参考拉取省略的文件夹。
 - `ilspycmd_path`：相对 `.tools` 的路径，通常为 `Ilspy\ilspycmd.exe`。

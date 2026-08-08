@@ -161,6 +161,7 @@ internal sealed class TestSuite
         Assert(context is not null && error is null && context.Config.ModName == "Demo//Name", "JSONC preserves // inside strings");
         Assert(context!.Config.Retention.MaxAutoTestRuns == 3, "automatic test retention defaults to three runs");
         Assert(!context.Config.IsolatedDesktop, "isolated desktop defaults to disabled when omitted from JSONC");
+        Assert(!context.Config.SyncSource, "source synchronization defaults to disabled when omitted from JSONC");
         var disabledConfig = new ProjectConfig { IsolatedDesktop = false };
         var configured = IsolatedDesktopOptions.Resolve(disabledConfig, "auto", [], out _);
         var overridden = IsolatedDesktopOptions.Resolve(disabledConfig, "auto", ["--isolated-desktop"], out _);
@@ -264,6 +265,10 @@ internal sealed class TestSuite
         Assert(configured.RimWorldDirectory == configuredGame && configured.RimWorldSource == "configured" && configured.WorkshopPaths.Count == 1, "valid configured paths take priority and Workshop paths are deduplicated");
 
         var modsRoot = Path.Combine(configuredGame, "Mods");
+        var prohibitedModsProject = Path.Combine(modsRoot, "UnsafeProject");
+        var prohibitedWorkshopProject = Path.Combine(workshop, "UnsafeProject");
+        Assert(ProjectLocationGuard.FindDeploymentLocations(prohibitedModsProject, configuredGame, [workshop]).Single().Kind == "rimworld_mods", "project location guard rejects projects inside RimWorld Mods");
+        Assert(ProjectLocationGuard.FindDeploymentLocations(prohibitedWorkshopProject, configuredGame, [workshop]).Single().Kind == "steam_workshop", "project location guard rejects projects inside Steam Workshop content");
         var harmony = CreateModAt(modsRoot, "Harmony", "brrainz.harmony");
         Directory.CreateDirectory(Path.Combine(harmony, "1.5", "Assemblies"));
         File.WriteAllText(Path.Combine(harmony, "1.5", "Assemblies", "0Harmony.dll"), "old");
@@ -278,6 +283,7 @@ internal sealed class TestSuite
         var currentProject = NewDirectory(Path.Combine("discovery", "CurrentProject"));
         Directory.CreateDirectory(Path.Combine(currentProject, "About"));
         File.WriteAllText(Path.Combine(currentProject, "About", "About.xml"), "<ModMetaData><packageId>demo.current-project</packageId></ModMetaData>");
+        Assert(ProjectLocationGuard.FindDeploymentLocations(currentProject, configuredGame, [workshop]).Count == 0, "project location guard accepts an independent working directory");
         var index = ModInstallationIndex.Build(configuredGame, [workshop], currentProject);
         Assert(index.Find("LUDEON.RIMWORLD")?.Directory == official && index.Find("demo.mixedcase")?.Directory == workshopMod && index.Find("demo.current-project")?.Source == "project" && index.Diagnostics.Count == 1, "mod index scans official, local, Workshop, and current-project roots case-insensitively and aggregates broken metadata");
         var harmonyAssembly = ModAssemblyResolver.Resolve(harmony, "1.6", "0Harmony.dll");
@@ -691,7 +697,12 @@ internal sealed class TestSuite
 
         var dryRun = await DeployCommand.ExecuteAsync(["deploy", "--dry-run"]);
         var dryResult = (DeployResult)dryRun.Result!;
-        Assert(dryRun.Ok && dryResult.Plan.TargetActions.Any(x => x.Action == "protect") && dryResult.Plan.TargetActions.Any(x => x.Action == "replace") && dryResult.Plan.References.ManagedDirectory == Path.Combine(environment.Game, "RimWorldWin64_Data", "Managed"), "deploy dry-run reports protected/replaced targets and resolved build references");
+        Assert(dryRun.Ok && dryResult.Plan.TargetActions.Any(x => x.Action == "protect") && dryResult.Plan.TargetActions.Any(x => x.Action == "replace") && dryResult.Plan.References.ManagedDirectory == Path.Combine(environment.Game, "RimWorldWin64_Data", "Managed") && !dryResult.Plan.SyncItems.Any(item => item.Item.Equals("source", StringComparison.OrdinalIgnoreCase)), "deploy dry-run reports protected/replaced targets, resolved build references, and disabled source synchronization");
+
+        File.WriteAllText(environment.ConfigPath, Config(environment, modName: "Demo", extra: "\"sync_items\":[\"About\"],\"sync_source\":true,\"protected_files_regex\":\"^(PublishedFileId\\\\.txt)$\""));
+        var configuredSource = await DeployCommand.ExecuteAsync(["deploy", "--dry-run"]);
+        var configuredSourceResult = (DeployResult)configuredSource.Result!;
+        Assert(configuredSource.Ok && configuredSourceResult.Plan.SyncItems.Any(item => item.Item.Equals("source", StringComparison.OrdinalIgnoreCase)), "deploy includes source when sync_source is enabled in project configuration");
 
         var unknownArgument = await CaptureAsync(() => CliApplication.RunAsync(["deploy", "--dry-run", "--definitely-unknown"]));
         Assert(unknownArgument.ExitCode == ExitCodes.InvalidArguments && JsonErrorCode(unknownArgument.Output) == "INVALID_ARGUMENT", "unknown deploy options fail before execution");
@@ -721,6 +732,22 @@ internal sealed class TestSuite
         File.WriteAllText(environment.ConfigPath, Config(environment, modName: "Demo", extra: "\"sync_items\":[\"About\"],\"shader_bundle\":{\"enabled\":true,\"unity_exe_path\":\"missing-unity.exe\",\"unity_project_path\":\"missing-project\",\"build_method\":\"Build.Run\"}"));
         var failedShader = await DeployCommand.ExecuteAsync(["deploy"]);
         Assert(!failedShader.Ok && failedShader.Error?.Code == "SHADER_BUILD_FAILED" && File.Exists(Path.Combine(target, "still-here.txt")), "enabled shader failure prevents deployment and preserves the existing target");
+
+        var unsafeRoot = NewDirectory(Path.Combine("deploy", "game", "Mods", "UnsafeProject"));
+        Directory.CreateDirectory(Path.Combine(unsafeRoot, "About"));
+        File.WriteAllText(Path.Combine(unsafeRoot, "About", "About.xml"), "<ModMetaData><name>Unsafe</name><packageId>demo.unsafe</packageId></ModMetaData>");
+        var unsafeEnvironment = environment with { Root = unsafeRoot, ConfigPath = Path.Combine(unsafeRoot, "mod_config.jsonc") };
+        File.WriteAllText(unsafeEnvironment.ConfigPath, Config(unsafeEnvironment, modName: "Unsafe"));
+        using (UseEnvironment(unsafeEnvironment))
+        {
+            var unsafeDeploy = await DeployCommand.ExecuteAsync(["deploy", "--dry-run"]);
+            Assert(!unsafeDeploy.Ok && unsafeDeploy.ExitCode == ExitCodes.InvalidArguments && unsafeDeploy.Error?.Code == "PROJECT_DEPLOYMENT_LOCATION_INVALID", "deploy rejects a project located inside RimWorld Mods before dry-run or mutation");
+
+            var unsafeDoctor = await CaptureAsync(() => DoctorCommand.RunAsync(["doctor"]));
+            using var unsafeDoctorJson = JsonDocument.Parse(unsafeDoctor.Output);
+            var locationCheck = unsafeDoctorJson.RootElement.GetProperty("result").GetProperty("checks").EnumerateArray().Single(check => check.GetProperty("id").GetString() == "project.deployment_location");
+            Assert(unsafeDoctor.ExitCode == 0 && !unsafeDoctorJson.RootElement.GetProperty("result").GetProperty("ready").GetBoolean() && locationCheck.GetProperty("status").GetString() == "invalid", "doctor marks projects inside RimWorld Mods as an invalid required location");
+        }
     }
 
     private void TestAutoResultValidator()

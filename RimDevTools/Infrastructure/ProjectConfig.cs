@@ -13,6 +13,7 @@ public sealed class ProjectConfig
     [JsonPropertyName("workshop_paths")] public List<string> WorkshopPaths { get; set; } = [];
     [JsonPropertyName("csproj_paths")] public List<string> CsprojPaths { get; set; } = [];
     [JsonPropertyName("sync_items")] public List<string> SyncItems { get; set; } = [];
+    [JsonPropertyName("sync_source")] public bool SyncSource { get; set; }
     [JsonPropertyName("protected_files_regex")] public string? ProtectedFilesRegex { get; set; }
     [JsonPropertyName("pull_ignore_folders")] public List<string> PullIgnoreFolders { get; set; } = [];
     [JsonPropertyName("ilspycmd_path")] public string? IlspycmdPath { get; set; }

@@ -22,7 +22,6 @@
     ".agents/skills/rimsage/references/tool-reference.md",
     ".agents/skills/about-write-description/SKILL.md",
     ".agents/skills/about-write-description/agents/openai.yaml",
-    ".agents/skills/about-write-description/references/evidence-and-format.md",
     ".agents/skills/rimworld-development-engineer/SKILL.md",
     ".agents/skills/rimworld-development-engineer/agents/openai.yaml",
     ".agents/skills/rimworld-development-engineer/references/tool-priority.md",

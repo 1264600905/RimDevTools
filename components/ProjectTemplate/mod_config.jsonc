@@ -42,6 +42,8 @@
         "About",
         "LoadFolders.xml"
     ],
+    // 启用后 deploy 默认包含 source/；也可用 --sync-source 单次启用。
+    "sync_source": false,
     // 部署时清空目标目录需要保留的文件（正则表达式）。
     "protected_files_regex": "^(PublishedFileId\\.txt)$",
 

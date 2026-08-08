@@ -40,7 +40,7 @@ description: 操作项目本地的 RimDevTools CLI，处理 RimWorld 1.6 模组�
 2. 填写正确的项目 `mod_name`、`rimworld_dir`、`csproj_paths` 和 `sync_items`。
 3. 运行 `deploy --dry-run` 并检查部署项目是否符合预期,确认包含所有预期程序集和内容根目录。
 4. 仅在计划正确后运行 `deploy`。
-5. 仅当有意分发源代码时添加 `--sync-source`。
+5. 仅当有意分发源代码时启用 `sync_source: true`，或对单次部署添加 `--sync-source`。
 
 部署会在替换目标前构建已配置项目，并使用原子暂存。不要为绕过失败部署而手动将部分输出复制进活动模组目录。若启用着色器构建，着色器失败即为部署阻塞项。
 

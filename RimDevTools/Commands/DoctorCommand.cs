@@ -55,6 +55,14 @@ public static class DoctorCommand
 
         var environment = RimWorldEnvironmentResolver.Resolve(context);
         var steam = environment.Steam;
+        var prohibitedLocations = ProjectLocationGuard.FindDeploymentLocations(context.Root, environment.References.RimWorldDirectory, steam.WorkshopPaths);
+        checks.Add(new DoctorCheck(
+            "project.deployment_location",
+            prohibitedLocations.Count == 0 ? "available" : "invalid",
+            true,
+            context.Root,
+            prohibitedLocations.Count == 0 ? null : "项目位于 RimWorld Mods 或 Steam Workshop 内容目录中；请移动到独立工作目录，deploy 会自动同步到 RimWorld/Mods。",
+            prohibitedLocations.Count == 0 ? null : new { locations = prohibitedLocations }));
         checks.Add(new DoctorCheck("steam.installation", steam.SteamRoot is null ? "missing" : "available", true, steam.SteamRoot, steam.SteamRoot is null ? "未发现 Steam 安装" : null));
         checks.Add(new DoctorCheck("steam.libraries", steam.LibraryRoots.Count == 0 ? "missing" : "available", true, steam.SteamRoot, steam.LibraryRoots.Count == 0 ? "未发现 Steam Library" : null, new { libraries = steam.LibraryRoots, diagnostics = steam.Diagnostics }));
         checks.Add(new DoctorCheck("steam.rimworld_app", steam.AppManifestPath is null ? "missing" : "available", true, steam.AppManifestPath, steam.AppManifestPath is null ? "未发现结构完整的 Steam RimWorld app 294100 安装" : null));

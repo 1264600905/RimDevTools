@@ -37,6 +37,9 @@ public static class DeployCommand
         var rimWorldDirectory = environment.References.RimWorldDirectory;
         if (rimWorldDirectory is null)
             return Failure(ExitCodes.MissingDependency, new CliError("RIMWORLD_DIR_NOT_FOUND", "未能从配置或 Steam 安装中解析结构完整的 RimWorld 目录", new { configured = config.RimWorldDir, diagnostics = environment.Steam.Diagnostics }), context.Root);
+        var locationError = ProjectLocationGuard.CreateDeploymentError(context.Root, rimWorldDirectory, environment.Steam.WorkshopPaths);
+        if (locationError is not null)
+            return Failure(ExitCodes.InvalidArguments, locationError, context.Root);
 
         var targetRoot = Path.GetFullPath(Path.Combine(rimWorldDirectory, "Mods"));
         var target = Path.GetFullPath(Path.Combine(targetRoot, config.ModName));
@@ -58,7 +61,7 @@ public static class DeployCommand
         }
 
         var syncItems = config.SyncItems.ToList();
-        if (CliArgs.Has(args, "--sync-source") && !syncItems.Contains("source", StringComparer.OrdinalIgnoreCase)) syncItems.Add("source");
+        if ((config.SyncSource || CliArgs.Has(args, "--sync-source")) && !syncItems.Contains("source", StringComparer.OrdinalIgnoreCase)) syncItems.Add("source");
         if (syncItems.Count == 0)
             return Failure(ExitCodes.InvalidArguments, new CliError("SYNC_ITEMS_EMPTY", "deploy 至少需要一个 sync_items"), context.Root);
 

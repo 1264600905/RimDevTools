@@ -64,7 +64,7 @@ RimDevTools.exe mods install-tools [--mods-path <path>] [--dry-run]
 
 ### 部署
 
-先运行 `deploy --dry-run` 检查不可变计划。实际部署会构建配置中的项目，以暂存目录和备份目录原子替换目标，并保留 `protected_files_regex` 匹配的文件。
+先运行 `deploy --dry-run` 检查不可变计划。项目必须位于独立工作目录，不能位于 RimWorld `Mods` 或 Steam Workshop 内容目录；部署会自动同步到 `RimWorld/Mods`。实际部署会构建配置中的项目，以暂存目录和备份目录原子替换目标，并保留 `protected_files_regex` 匹配的文件。配置 `sync_source: true` 可让每次部署默认包含 `source/`，`--sync-source` 仍可单次启用。
 
 ### 第三方参考
 

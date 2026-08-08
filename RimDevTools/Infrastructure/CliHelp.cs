@@ -106,14 +106,14 @@ public static class CliHelp
           -h, --help          Show this help.
 
         Configuration:
-          mod_name, rimworld_dir, csproj_paths, sync_items, protected_files_regex,
+          mod_name, rimworld_dir, csproj_paths, sync_items, sync_source, protected_files_regex,
           timeouts, and shader_bundle. Shader settings are required only when enabled.
 
         Example:
           RimDevTools.exe deploy --dry-run
 
         Common errors:
-          ENVIRONMENT_BUSY, GAME_EXIT_TIMEOUT, BUILD_FAILED, SHADER_BUILD_FAILED,
+          PROJECT_DEPLOYMENT_LOCATION_INVALID, ENVIRONMENT_BUSY, GAME_EXIT_TIMEOUT, BUILD_FAILED, SHADER_BUILD_FAILED,
           SYNC_ITEM_NOT_FOUND, DEPLOY_FAILED.
         """;
 
