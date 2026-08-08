@@ -5,14 +5,14 @@
 1. Confirm `mod_config.jsonc` paths and target identity.
 2. Run `doctor` if prerequisites or recovery state are uncertain.
 3. Keep RimWorld closed unless the selected command owns launching it.
-4. Avoid simultaneous deploy/test/data operations.
+4. Avoid simultaneous deploy and test operations.
 
 ## Static Checks
 
 - Parse XML after every edit.
 - Check duplicate Def names and unresolved translation keys.
 - Build changed C# projects with the configured project path.
-- Verify Harmony targets with DecompilerServer signatures and call paths.
+- Verify official Harmony targets with focused RimSage C# symbol and source evidence.
 - Check `LoadFolders.xml` and `sync_items` agree with edited locations.
 
 ## Runtime Checks

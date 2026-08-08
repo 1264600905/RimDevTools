@@ -8,8 +8,8 @@ Use current implementation evidence in this order:
 2. `1.6/Defs` and `1.6/Patches` for shipped content and data changes.
 3. `source` for settings and player-visible behavior.
 4. `Languages` for established player-facing terminology.
-5. RimSearcher for effective runtime Def values after inheritance and patches.
-6. DecompilerServer for behavior implemented in compiled game or mod assemblies.
+5. RimSage for official Def values, terminology, APIs, and behavior.
+6. Existing `参考文档` or an explicitly acquired reference for third-party compatibility behavior.
 7. Git history and `策划案` only as leads that must be reverified.
 
 Absence matters. Do not say an item is craftable without a recipe or inherited recipe path, research-gated without a verified prerequisite, configurable without a visible setting, or compatible with a mod without a patch/dependency/code path.

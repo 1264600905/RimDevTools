@@ -1,35 +1,27 @@
 # RimDevTools Command And Configuration Reference
 
-## Contents
-
-- Invocation and output
-- Commands
-- Configuration fields
-- Exit and error handling
-- Recommended sequences
-
 ## Invocation And Output
 
-Run `./.tools/RimDevTools.exe` from the project root or one direct child. Project commands discover `mod_config.jsonc` only at those two levels. Help, `--version`, and `mods install-tools --mods-path` do not require a project.
+Run `.\.tools\RimDevTools.exe` from the project root or one direct child. Project commands discover `mod_config.jsonc` only at those levels. Help, `--version`, and `mods install-tools --mods-path` do not require a project.
 
-Successful and expected failure results end with one JSON object on stdout. Progress goes to stderr. Exit codes are: `0` success, `2` invalid arguments/config, `3` missing dependency, `4` busy, `5` task failure, `6` timeout, `7` game/test/export failure, and `130` cancellation.
+Commands end with one JSON object on stdout; progress goes to stderr. Exit codes are `0` success, `2` invalid arguments/config, `3` missing dependency, `4` busy, `5` task failure, `6` timeout, `7` game/test failure, and `130` cancellation. `--version` returns only `ok`, `command`, and `rimDevToolsVersion`.
 
 ## Commands
 
 ### `doctor [--verbose]`
 
-Inspect .NET Framework 4.8 build prerequisites, Steam/RimWorld/Workshop, real game/Harmony assemblies, Unity, Git/worktree, required mods, ILSpy, LogSync, AutoTest, RimSearcher data, locks, and transactions. This command is read-only and never runs a build. Default output contains actionable problems, readiness/counts, and the resolved `Assembly-CSharp.dll` and `0Harmony.dll` absolute paths; `--verbose` includes every check. It does not check .NET 10 Runtime or Steam account licensing.
+Inspect build prerequisites, Steam/RimWorld/Workshop discovery, game and Harmony assemblies, Unity, Git/worktree state, required mods, ILSpy, LogSync, AutoTest, packaged tool mods, locks, and transactions. It is read-only and does not probe RimSage. Default output contains actionable checks and critical assembly paths; `--verbose` includes all checks.
 
 ### `deploy [--sync-source] [--dry-run]`
 
-Build every configured C# project and atomically deploy `sync_items` to `rimworld_dir/Mods/mod_name`.
+Build configured C# projects and atomically deploy `sync_items` to `rimworld_dir/Mods/mod_name`.
 
-- `--dry-run`: return the plan without build/deploy mutation.
+- `--dry-run`: return the immutable plan without building or deploying.
 - `--sync-source`: include `source/` in deployment.
 
 Common errors: `ENVIRONMENT_BUSY`, `GAME_EXIT_TIMEOUT`, `BUILD_FAILED`, `SHADER_BUILD_FAILED`, `SYNC_ITEM_NOT_FOUND`, `DEPLOY_FAILED`.
 
-### Reference commands
+### Reference Commands
 
 ```text
 ref search <keyword> [--fuzzy]
@@ -38,9 +30,17 @@ ref deps <query> [--version <value>] [--fuzzy]
 ref related <query> [--version <value>] [--fuzzy]
 ```
 
-Search scans the game Mods directory and `workshop_paths`. Pull accepts an absolute directory, exact package ID/name/folder, or a search match. It names targets from sanitized `About.xml` names, copies into `参考文档`, and decompiles assemblies. `--all` disables `pull_ignore_folders`; `--deps` resolves hard dependencies; `--force` replaces all preflighted conflicts. Ambiguity and target collisions fail before copying.
+Search scans the game Mods directory and `workshop_paths`. Pull accepts an absolute directory, exact package ID/name/folder, or search match. It names targets from sanitized About names, copies into `参考文档`, and decompiles assemblies with packaged ILSpy.
 
-### Test commands
+- `--deps`: pull the complete hard-dependency closure.
+- `--all`: disable `pull_ignore_folders`.
+- `--force`: replace all preflighted conflicts.
+- `--fuzzy`: allow fuzzy candidate matching.
+- `--version`: select version-specific dependency metadata.
+
+Do not add these options implicitly. Ambiguity, dependency cycles, target conflicts, and sanitized-name collisions fail before copying. Common errors include `MOD_NOT_FOUND`, `MOD_AMBIGUOUS`, `DEPENDENCY_CYCLE`, `TARGET_COLLISION`, `TARGET_CONFLICT`, and `PULL_FAILED`.
+
+### Test Commands
 
 ```text
 test settings
@@ -50,69 +50,43 @@ test run [--deploy] [--sync-source] [--mode quick|manual|auto|xml]
          [--isolated-desktop|--no-isolated-desktop]
 ```
 
-`test settings` persistently writes LogSync output and keyword settings. `test run` owns a transaction and restores global configuration even after most failure/cancellation paths.
+`test settings` persistently writes LogSync output and keyword settings. `test run` owns a transaction and restores global configuration after success, failure, timeout, or cancellation when restoration remains possible.
 
-- `--mods-file`: external XML containing an `activeMods` list.
-- `--target-package-id`: auto/XML target; defaults to current `About.xml` package ID.
-- `--capture-screenshots`: valid for auto/XML only.
-- `--timeout-seconds`: positive run limit; otherwise `timeouts.max_wait`.
-- Isolation precedence: explicit flag, project `isolated_desktop`, then mode default.
-
-Common errors: `MODE_INVALID`, `MOD_NOT_RESOLVED`, `ENVIRONMENT_BUSY`, `GAME_EXIT_TIMEOUT`, `TEST_TIMEOUT`, `GAME_EXITED_EARLY`, `AUTO_RESULT_FAILED`, `TRANSACTION_RESTORE_FAILED`.
-
-### Data commands
-
-```text
-data status
-data refresh [--mods-file <path>] [--output <path>]
-             [--timeout-seconds <n>]
-             [--isolated-desktop|--no-isolated-desktop]
-```
-
-`data status` is read-only and reports path source, file size/time, SQLite integrity, component/user version, export run ID, game/language, mod hashes, loaded mods, and refresh recommendations. `data refresh` transactionally launches RimWorld and validates the DataMod export.
-
-Common errors: `DATABASE_PATH_MISSING`, `EXPORT_REQUEST_CONFLICT`, `DATA_REFRESH_TIMEOUT`, `EXPORT_SIGNAL_MISMATCH`, `DATABASE_INVALID`, `VERSION_MISMATCH`.
+Quick is the startup smoke test. Manual is interactive. Auto and XML validate structured AutoTest results. `--capture-screenshots` applies only to auto/XML. Isolation precedence is explicit flag, project setting, then mode default.
 
 ### `mods install-tools [--mods-path <path>] [--dry-run]`
 
-Install the packaged LogSyncMod and RimSearcher DataMod as one validated batch. Without `--mods-path`, the command resolves the RimWorld `Mods` directory from project configuration. Use `--dry-run` to inspect package IDs, versions, hashes, target paths, and actions without writing.
+Install the packaged LogSyncMod. The manifest must contain exactly the `trigger.logsyncmod` component. The installer verifies package ID, version, directory hash, staging, backup, rollback, and downgrade rules; only `PublishedFileId.txt` is preserved during upgrade.
+
+Without `--mods-path`, resolve the RimWorld Mods directory from project configuration. Use `--dry-run` to inspect the single-component plan without writing.
 
 ## Configuration Fields
 
 - `config_version`: must be `2`.
-- `mod_name`: deployed folder name; keep it filesystem-safe and aligned with the real mod.
-- `game_version`: currently `1.6`.
-- `rimworld_dir`: RimWorld installation root containing the executable and `Mods`.
-- `workshop_paths`: zero or more Workshop content roots searched by `ref` commands.
-- `csproj_paths`: project-relative C# project paths built during deployment.
-- `sync_items`: project-relative files/directories copied to the deployed mod.
-- `protected_files_regex`: deployed relative filenames preserved across replacement, such as `PublishedFileId.txt`.
-- `pull_ignore_folders`: folders omitted from reference pulls unless `--all` is used.
-- `ilspycmd_path`: path relative to `.tools`; normally `Ilspy\ilspycmd.exe`.
-- `log_keywords`: strings persisted to LogSync by `test settings` or applied transactionally by tests.
+- `mod_name`: deployed folder name.
+- `game_version`: target version, currently `1.6`.
+- `rimworld_dir`: RimWorld installation root.
+- `workshop_paths`: Workshop roots searched by reference commands.
+- `csproj_paths`: C# projects built by deployment.
+- `sync_items`: project files/directories copied during deployment.
+- `protected_files_regex`: deployed relative paths preserved across replacement.
+- `pull_ignore_folders`: folders omitted by reference pulls unless `--all` is used.
+- `ilspycmd_path`: path relative to `.tools`, normally `Ilspy\ilspycmd.exe`.
+- `log_keywords`: strings applied to LogSync settings.
 - `min_active_mods`: package IDs always included in temporary test mod lists.
-- `rimsearcher_db_path`: project-relative or absolute Def database path.
-- `isolated_desktop`: default isolation for quick/auto/XML and data refresh.
-- `timeouts.steam_launch_detect`: Steam/game process appearance timeout.
-- `timeouts.max_wait`: default test/export completion timeout.
-- `timeouts.existing_game_exit`: wait for a pre-existing game process to exit.
-- `timeouts.post_exit_delay`: stabilization delay after process exit.
+- `isolated_desktop`: default isolation for quick/auto/XML.
+- `timeouts.steam_launch_detect`: Steam/game appearance timeout.
+- `timeouts.max_wait`: default test completion timeout.
+- `timeouts.existing_game_exit`: wait for an existing game process.
+- `timeouts.post_exit_delay`: stabilization delay after exit.
 - `retention.max_log_files`: selected-log archive limit.
-- `retention.max_auto_test_runs`: automatic test artifact run limit.
-- `shader_bundle.enabled`: enable Unity batch shader build before deployment.
-- `shader_bundle.unity_project_path`: Unity project directory.
-- `shader_bundle.unity_exe_path`: Unity Editor executable; required when enabled.
-- `shader_bundle.build_method`: fully qualified static Unity build method.
-- `shader_bundle.bundle_name`: expected output bundle name.
+- `retention.max_auto_test_runs`: automatic test run retention.
+- `shader_bundle.*`: optional Unity batch shader build settings.
 
 ## Recommended Sequences
 
-Configuration/setup: `doctor` -> repair reported prerequisites -> `doctor`.
-
-Deploy: `doctor` -> `deploy --dry-run` -> inspect plan -> `deploy`.
-
-Smoke test current code: `test run --deploy --mode quick`.
-
-Automated verification: `test run --deploy --mode auto --target-package-id <id> --capture-screenshots`.
-
-Def research: `data status` -> `data refresh` only if stale/invalid -> invoke the RimSearcher skill.
+- Setup: `doctor` -> repair prerequisites -> `doctor`.
+- Deploy: `doctor` -> `deploy --dry-run` -> inspect -> `deploy`.
+- Smoke: `test run --deploy --mode quick`.
+- Automated: `test run --deploy --mode auto --target-package-id <id>`.
+- Third-party evidence: `ref search` -> exact `ref pull` -> inspect local XML and ILSpy source.

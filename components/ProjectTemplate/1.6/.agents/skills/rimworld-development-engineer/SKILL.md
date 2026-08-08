@@ -1,6 +1,6 @@
 ---
 name: rimworld-development-engineer
-description: Implement, diagnose, and verify RimWorld 1.6 mod changes end to end in this template. Use when a request requires actual C#/XML/assets work, evidence-backed API or Def research, build/deploy decisions, Harmony targeting, game tests, log diagnosis, or repeated repair-and-retest cycles across the project-local RimDevTools, RimSearcher, and DecompilerServer tools.
+description: Implement, diagnose, and verify RimWorld 1.6 mod changes end to end in this template. Use when a request requires C#/XML/assets work, evidence-backed official API or Def research through RimSage, third-party reference research, build/deploy decisions, Harmony targeting, game tests, log diagnosis, or repeated repair-and-retest cycles.
 ---
 
 # RimWorld Development Engineer
@@ -9,51 +9,38 @@ Own the implementation through verification. Do not stop after editing when a sa
 
 Read [references/tool-priority.md](references/tool-priority.md) before researching game/mod behavior. Read [references/verification-loop.md](references/verification-loop.md) before deploying or launching RimWorld.
 
-## Pass The Database Gate Before Development
+## Research Before Implementation
 
-Do not research or edit the requested feature until the project has a current, valid runtime Def database:
+1. Read the nearest current-project source, Defs, patches, configuration, and tests first.
+2. Decide whether the task needs new facts about official RimWorld/DLC Defs, APIs, source behavior, or Harmony targets.
+3. When it does, invoke `rimsage` and follow its availability, one-retry, official research, and failure rules before choosing fields, types, methods, or targets.
+4. When the subject is a third-party mod, inspect an existing copy in `参考文档` or use `RimDevTools.exe ref search/ref pull` as documented by `rimsage` and `rimdevtools`.
+5. If required RimSage evidence remains unavailable after the allowed repair and retry, stop only the dependent research and ask the user to restore access. Do not replace evidence with guesses.
 
-1. Run `RimDevTools.exe doctor` first when project paths, tool availability, or recovery state are uncertain.
-2. Always run `RimDevTools.exe data status` from the project root and read its structured JSON.
-3. Proceed only when `refreshRecommended` is `false`, `reasonCodes` is empty, and the database exists, opens, passes integrity, and matches the current RimSearcher version, game version, project package ID, and requested mod set.
-4. If status reports missing, stale, invalid, mismatched, or otherwise recommends refresh, run `RimDevTools.exe data refresh`. This launches RimWorld; obtain authorization first when the user's request does not already authorize that workflow.
-5. Run `data status` again after refresh. If a current valid database still cannot be established, stop before implementation and report the exact blocker. Do not substitute decompilation or raw XML guesses for this gate.
-
-After the gate passes, establish runtime Def evidence with RimSearcher before inspecting C# behavior. Use DecompilerServer only for behavior that Def data cannot establish, such as implementation classes, methods, signatures, call paths, and Harmony targets.
-
-For C# and binary behavior:
-
-1. Locate the actual game or mod assembly from `mod_config.jsonc`, the project, the deployed mod, or a known local mod path.
-2. Load it directly with DecompilerServer and verify its context identity.
-3. Search canonical types/members, inspect signatures, decompile focused source, then expand to IL/callers/callees/usages as needed.
-4. Use `RimDevTools ref pull` only as a fallback when the assembly cannot be located or loaded directly, when dependencies must be collected, or when the task explicitly requires a durable reference copy under `参考文档`.
-
-Never run `ref pull` merely to inspect code that DecompilerServer can load directly. A pulled ILSpy tree is secondary evidence; DecompilerServer against the real assembly is authoritative.
-
-Use raw installed Core XML only for source constructs absent from the runtime database, especially abstract `ParentName` definitions, and label such evidence as source XML rather than effective runtime data.
+Current project files remain authoritative for this project's behavior. RimSage is authoritative only for the official content it exposes; pulled XML and ILSpy source are the evidence for third-party mods.
 
 ## Implement
 
-1. Pass the mandatory database gate above.
-2. Read the nearest project files and existing conventions.
-3. Establish the relevant RimSearcher evidence, then any required code evidence, before choosing fields, APIs, overloads, or Harmony targets.
+1. Complete the applicable research steps above.
+2. Read existing conventions at the edit location.
+3. Record the relevant Def/API/member evidence before choosing fields, overloads, or Harmony targets.
 4. Make the smallest coherent change in `1.6`, `Languages`, `About`, `source`, or approved asset directories.
 5. Keep package IDs, namespaces, assembly names, translation keys, Def names, and config paths consistent.
 6. Preserve user changes and avoid unrelated refactors.
 
 ## Mod Activation Order
 
-Treat `mod_config.jsonc.min_active_mods` as the authoritative default mod list for development, data, and test workflows. Prefer that list over an ad hoc ModList so the project starts with its known working baseline.
+Treat `mod_config.jsonc.min_active_mods` as the authoritative default mod list for development and test workflows. Prefer that list over an ad hoc ModList so the project starts with its known working baseline.
 
 When a requested mod must be enabled but is absent from `min_active_mods`:
 
-1. Add it immediately before `kearril.rimsearcherdatamod`.
-2. When it has dependencies that are also absent, add the complete dependency chain in dependency order immediately before `kearril.rimsearcherdatamod`, followed by the requested mod. Dependencies must load before the mod that requires them.
-3. Preserve the existing order of every unrelated entry. Do not move `kearril.rimsearcherdatamod` or use an arbitrary append position.
+1. Add its missing dependencies in dependency order immediately before `trigger.logsyncmod`.
+2. Add the requested mod after its dependencies and before `trigger.logsyncmod`.
+3. Preserve every unrelated entry's order and keep `trigger.logsyncmod` as the insertion anchor.
 
 Before testing, confirm the effective mod list still follows this order. An explicit user-supplied ModList may add further mods, but must retain the configured default mods and their dependency ordering.
 
-For tool details, invoke `rimdevtools`, `rimsearcher`, or `decompiler-mcp` rather than duplicating their full manuals here.
+For tool details, invoke `rimdevtools` or `rimsage` rather than duplicating their manuals here.
 
 ## Verify
 
@@ -83,9 +70,9 @@ Do not use global warning whitelists. Messages such as numeric parse warnings or
 
 ## Safety And Delivery
 
-- Do not run deployment, tests, or data refresh concurrently; they share the RimWorld environment lock.
+- Do not run deployment and game tests concurrently; they share the RimWorld environment lock.
 - Do not manually edit live global RimWorld configuration during a RimDevTools transaction.
-- Do not delete `.rimdev` recovery state, databases, logs, or user files to force a pass.
+- Do not delete `.rimdev` recovery state, logs, or user files to force a pass.
 - Do not use `git clean`.
 - Do not commit unless the user requests it.
 - Match code comments and user-facing language to the surrounding project and the user's language.

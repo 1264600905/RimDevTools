@@ -1,3 +1,4 @@
-[mcp_servers.decompiler]
-command = ".decompilerserver/DecompilerServer.exe"
+[mcp_servers.rimsage]
+enabled = true
+url = "https://mcp.rimsage.com/mcp"
 default_tools_approval_mode = "approve"

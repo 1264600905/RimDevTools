@@ -1,0 +1,4 @@
+interface:
+  display_name: "RimSage"
+  short_description: "Research official RimWorld Defs and C# APIs"
+  default_prompt: "Use $rimsage to verify an official RimWorld Def or C# API before implementation."

@@ -14,8 +14,8 @@ Read [references/evidence-and-format.md](references/evidence-and-format.md) befo
 1. Parse `About/About.xml` and record `name`, `packageId`, `supportedVersions`, dependencies, load ordering, URL, and the current description.
 2. Read `mod_config.jsonc`, `LoadFolders.xml`, `1.6/Defs`, `1.6/Patches`, `Languages`, and `source` as applicable.
 3. Identify player-visible settings, commands, gizmos, incidents, items, buildings, mechanics, restrictions, costs, and feedback.
-4. Use RimSearcher when runtime-merged Def values or mod origins matter.
-5. Use DecompilerServer when a compiled game/mod behavior or Harmony target must be verified. Do not use `ref pull` merely to inspect an assembly.
+4. Use RimSage when an advertised statement depends on an official Def, term, API, or behavior.
+5. For third-party compatibility claims, inspect existing `参考文档` or use `ref search/ref pull` when acquiring evidence is in scope.
 6. Treat git history and planning documents only as discovery hints. Confirm every advertised feature in current files or tool evidence.
 
 Ask for a missing Chinese or English product name only when the requested bilingual title cannot be derived safely. Do not invent dependencies, compatibility, recipes, research, controls, settings, or credits.

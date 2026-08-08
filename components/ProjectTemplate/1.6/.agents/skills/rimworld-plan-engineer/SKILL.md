@@ -13,11 +13,10 @@ Read [references/planning-contract.md](references/planning-contract.md) before g
 
 1. Record every effective user requirement verbatim before interpreting it.
 2. Run `RimDevTools.exe doctor` when paths, tools, or recovery state are uncertain; use `doctor --verbose` only when successful checks are needed.
-3. Run `RimDevTools.exe data status` from the project root.
-4. If the database is missing, invalid, or stale, run `data refresh`, then `data status` again. Refresh launches RimWorld and writes the project database; follow host permission requirements.
-5. Query effective runtime Defs with RimSearcher before reasoning from raw XML.
-6. Use DecompilerServer against real assemblies for types, signatures, behavior, call paths, and Harmony targets that Def evidence cannot establish.
-7. Inspect current editable project files and tests before selecting implementation locations.
+3. Inspect current editable project files and tests before selecting implementation locations.
+4. Decide whether the plan needs official RimWorld/DLC Def, API, source behavior, or Harmony target facts. When it does, invoke `rimsage` and follow its availability and evidence workflow.
+5. For third-party mod facts, inspect `参考文档` first. Running `ref search/ref pull` is allowed when needed to establish planning evidence; choose options explicitly and do not force replacement without user direction.
+6. If required RimSage evidence remains unavailable after its repair and retry flow, stop the dependent conclusions and ask the user to restore access.
 
 Do not invent evidence when a tool or source is unavailable. Separate verified facts, inferences, and unresolved assumptions.
 

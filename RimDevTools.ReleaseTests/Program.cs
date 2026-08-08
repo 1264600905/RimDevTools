@@ -15,6 +15,14 @@ var templateConfig = Path.GetFullPath(Path.Combine(Environment.CurrentDirectory,
 var passed = 0;
 
 RequireFile("mod_config.jsonc");
+RequireFile(Path.Combine(".codex", "config.toml"));
+RequireFile(".mcp.json");
+RequireFile("opencode.jsonc");
+RequireFile(Path.Combine(".agents", "skills", "rimsage", "SKILL.md"));
+RequireFile(Path.Combine(".agents", "skills", "rimsage", "agents", "openai.yaml"));
+RequireFile(Path.Combine(".agents", "skills", "rimsage", "references", "tool-reference.md"));
+RequireFile(Path.Combine(".claude", "skills", "rimsage", "SKILL.md"));
+RequireFile(Path.Combine(".claude", "skills", "rimsage", "references", "tool-reference.md"));
 RequireFile(Path.Combine(".tools", "RimDevTools.exe"));
 RequireFile(Path.Combine(".tools", "Data", "tool-mods.manifest.json"));
 RequireFile(Path.Combine(".tools", "Data", "LogSyncMod", "About", "About.xml"));
@@ -29,6 +37,7 @@ RequireDirectory(Path.Combine(".tools", "log", "AutoTestOutput"));
 Assert(!Directory.Exists(Path.Combine(tools, "components", "ProjectTemplate")), "release does not contain a nested project template");
 Assert(!File.Exists(Path.Combine(release, "components", "ProjectTemplate", "manifest.json")), "release does not copy the build manifest into the project");
 Assert(!Directory.EnumerateFileSystemEntries(Path.Combine(tools, "log", "AutoTestOutput")).Any(), "release does not copy automatic test history");
+Assert(!Directory.EnumerateFileSystemEntries(Path.Combine(release, "参考文档")).Any(), "release does not copy local reference material");
 Assert(File.ReadAllBytes(Path.Combine(release, "mod_config.jsonc")).SequenceEqual(File.ReadAllBytes(templateConfig)), "release uses the single shared template mod_config.jsonc");
 Assert(!File.Exists(Path.Combine(template, "mod_config.jsonc")), "1.6 template does not contain a duplicate mod_config.jsonc");
 
@@ -40,6 +49,22 @@ var releaseFiles = RelativeEntries(release, files: true)
     .OrderBy(path => path, StringComparer.OrdinalIgnoreCase).ToArray();
 var expectedRootFiles = templateFiles.Append("mod_config.jsonc").OrderBy(path => path, StringComparer.OrdinalIgnoreCase).ToArray();
 Assert(expectedRootFiles.SequenceEqual(releaseFiles, StringComparer.OrdinalIgnoreCase), "release root equals the 1.6 template plus one config file");
+
+const string endpoint = "https://mcp.rimsage.com/mcp";
+var codexConfig = File.ReadAllText(Path.Combine(release, ".codex", "config.toml")).Replace("\r\n", "\n").Trim();
+Assert(codexConfig == $"[mcp_servers.rimsage]\nenabled = true\nurl = \"{endpoint}\"\ndefault_tools_approval_mode = \"approve\"", "Codex config declares the approved RimSage service");
+using (var claudeConfig = JsonDocument.Parse(File.ReadAllText(Path.Combine(release, ".mcp.json"))))
+{
+    var server = claudeConfig.RootElement.GetProperty("mcpServers").GetProperty("rimsage");
+    Assert(server.GetProperty("type").GetString() == "http" && server.GetProperty("url").GetString() == endpoint, "Claude config declares the RimSage HTTP service");
+}
+using (var opencodeConfig = JsonDocument.Parse(File.ReadAllText(Path.Combine(release, "opencode.jsonc")), new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true }))
+{
+    var server = opencodeConfig.RootElement.GetProperty("mcp").GetProperty("rimsage");
+    Assert(server.GetProperty("type").GetString() == "remote" && server.GetProperty("url").GetString() == endpoint && server.GetProperty("enabled").GetBoolean(), "opencode config declares the enabled RimSage remote service");
+}
+Assert(File.ReadAllBytes(Path.Combine(release, ".agents", "skills", "rimsage", "SKILL.md")).SequenceEqual(File.ReadAllBytes(Path.Combine(release, ".claude", "skills", "rimsage", "SKILL.md"))), "RimSage skill instructions stay synchronized across clients");
+Assert(File.ReadAllBytes(Path.Combine(release, ".agents", "skills", "rimsage", "references", "tool-reference.md")).SequenceEqual(File.ReadAllBytes(Path.Combine(release, ".claude", "skills", "rimsage", "references", "tool-reference.md"))), "RimSage tool references stay synchronized across clients");
 
 using (var manifestDocument = JsonDocument.Parse(File.ReadAllText(Path.Combine(data, "tool-mods.manifest.json"))))
 {
