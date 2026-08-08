@@ -1,49 +1,49 @@
-# Verification Loop
+# 验证循环
 
-## Before Mutation
+## 变更前
 
-1. Confirm `mod_config.jsonc` paths and target identity.
-2. Run `doctor` if prerequisites or recovery state are uncertain.
-3. Keep RimWorld closed unless the selected command owns launching it.
-4. Avoid simultaneous deploy and test operations.
+1. 确认 `mod_config.jsonc` 路径和目标身份。
+2. 前提条件或恢复状态不确定时运行 `doctor`。
+3. 保持 RimWorld 关闭，除非所选命令负责启动它。
+4. 避免并发进行部署和测试操作。
 
-## Static Checks
+## 静态检查
 
-- Parse XML after every edit.
-- Check duplicate Def names and unresolved translation keys.
-- Build changed C# projects with the configured project path.
-- Verify official Harmony targets with focused RimSage C# symbol and source evidence.
-- Check `LoadFolders.xml` and `sync_items` agree with edited locations.
+- 每次编辑后解析 XML。
+- 检查重复的 Def 名称和未解析的翻译键。
+- 使用配置的项目路径构建变更的 C# 项目。
+- 用聚焦的 RimSage C# 符号和源码证据验证官方的 Harmony 目标。
+- 检查 `LoadFolders.xml` 和 `sync_items` 与编辑的位置一致。
 
-## Runtime Checks
+## 运行时检查
 
-Start with:
+从以下开始：
 
 ```powershell
 .\.tools\RimDevTools.exe deploy --dry-run
 .\.tools\RimDevTools.exe test run --deploy --mode quick
 ```
 
-Use `--sync-source` only when source deployment is intended. Use auto or XML modes when cases exist; request screenshots only for those modes. Manual mode is for interactions automation cannot represent.
+仅在打算部署源码时使用 `--sync-source`。存在用例时使用 auto 或 XML 模式；仅为这些模式请求截图。manual 模式用于自动化无法表示的交互。
 
-## Result Review
+## 结果审查
 
-Require all of the following:
+要求满足以下全部：
 
-- Final JSON has `ok: true`.
-- Expected readiness/completion signal belongs to the current run.
-- Auto/XML result manifest is complete with no missing/failed cases.
-- Selected log has no attributable new error/warning.
-- Transaction restoration succeeded.
+- 最终 JSON 具有 `ok: true`。
+- 预期的就绪/完成信号属于当前运行。
+- Auto/XML 结果清单完整，无缺失/失败用例。
+- 精选日志中没有可归因的新错误/警告。
+- 事务恢复成功。
 
-When a known ambient warning appears, record why it is unrelated using mod identity, stack, path, or unchanged baseline. Never ignore by text pattern alone.
+当已知的环境性警告出现时，使用模组身份、堆栈、路径或未变更的基线记录它为何不相关。绝不要仅按文本模式忽略。
 
-## Failure Report
+## 失败报告
 
-Report:
+报告：
 
-1. Stable error code and command/mode.
-2. Small decisive log excerpt.
-3. Def/member/file evidence identifying ownership.
-4. Changes attempted and what each retest proved.
-5. Remaining blocker and next evidence needed.
+1. 稳定的错误代码和命令/模式。
+2. 少量决定性的日志摘录。
+3. 标识归属的 Def/成员/文件证据。
+4. 尝试过的变更以及每次重测证明了什么。
+5. 剩余的阻塞项和下一步所需证据。

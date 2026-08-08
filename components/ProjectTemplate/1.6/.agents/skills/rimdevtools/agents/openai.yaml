@@ -1,4 +1,4 @@
 interface:
   display_name: "RimDevTools"
-  short_description: "Build, deploy, test, and inspect RimWorld mods"
-  default_prompt: "Use $rimdevtools to diagnose and run the appropriate project workflow."
+  short_description: "构建、部署、测试和检查 RimWorld 模组"
+  default_prompt: "使用 $rimdevtools 诊断并运行适当的项目工作流。"

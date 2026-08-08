@@ -1,11 +1,11 @@
 interface:
-  display_name: "RimWorld Development Engineer"
-  short_description: "Research, implement, and verify RimWorld changes"
-  default_prompt: "Use $rimworld-development-engineer to research, implement, and verify this RimWorld mod change end to end."
+  display_name: "RimWorld 开发工程师"
+  short_description: "研究、实现并验证 RimWorld 变更"
+  default_prompt: "使用 $rimworld-development-engineer 端到端地研究、实现并验证此 RimWorld 模组变更。"
 
 dependencies:
   tools:
     - type: "mcp"
       value: "decompiler"
-      description: "Primary code evidence source for game and mod assemblies"
+      description: "游戏与模组程序集的主要代码证据来源"
       transport: "stdio"

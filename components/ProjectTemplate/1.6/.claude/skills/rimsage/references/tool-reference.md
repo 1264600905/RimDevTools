@@ -1,36 +1,36 @@
-# RimSage Tool Reference
+# RimSage 工具参考
 
-RimSage exposes six read-only research tools. Treat service paths returned by search and listing calls as authoritative.
+RimSage 提供六个只读研究工具。将搜索和列表调用返回的服务路径视为权威。
 
 ## `search_defs`
 
-Search official RimWorld and DLC Defs by `defName` or label. Supply the search text and use `defType` when the result set must be narrowed. Use this for discovery; confirm the selected result with `get_def_details`.
+按 `defName` 或标签搜索官方 RimWorld 和 DLC 的 Def。提供搜索文本，当结果集需要收窄时使用 `defType`。用于发现；用 `get_def_details` 确认选中的结果。
 
 ## `get_def_details`
 
-Read a Def by exact `defName`. Request raw XML when source structure, inheritance, or declared values matter. Request merged XML when resolved inherited values matter. Do not substitute a label or partial name for the exact identifier.
+按精确 `defName` 读取 Def。当源结构、继承或声明值重要时请求原始 XML。当已解析的继承值重要时请求合并后的 XML。不要用标签或部分名称替代精确标识符。
 
 ## `search_source`
 
-Run a regular-expression search over indexed official Def/XML and C# source. Use a glob when the file family is known. Search canonical type/member names and XML bridge fields, then open decisive results rather than treating snippets alone as full context.
+对索引的官方 Def/XML 和 C# 源码执行正则表达式搜索。当文件族已知时使用 glob。搜索规范的类型/成员名称和 XML 桥接字段，然后打开决定性的结果，而不是仅凭片段当作完整上下文。
 
 ## `read_file`
 
-Read a server-side source file by the path returned from RimSage. Use start/end line ranges for focused context and split long files into bounded reads.
+按 RimSage 返回的路径读取服务器端源文件。对聚焦的上下文使用起止行范围，并将长文件拆分为有界的读取。
 
 ## `list_directory`
 
-List a server-side Def or source directory. Use it to discover paths when search results are incomplete or the directory layout is unknown.
+列出服务器端的 Def 或源码目录。当搜索结果不完整或目录布局未知时，用它发现路径。
 
 ## `read_csharp_symbol`
 
-Read an official C# type by its exact type name. Supply an exact member name when only a method or member is needed. Prefer this focused view before reading an entire source file.
+按精确类型名称读取官方 C# 类型。当只需要一个方法或成员时，提供精确的成员名称。在读取整个源文件前，优先使用此聚焦视图。
 
-## Evidence Rules
+## 证据规则
 
-- Cross-check a discovered Def with details before relying on it.
-- Follow XML class fields into C# symbols explicitly.
-- Distinguish raw declarations from merged values.
-- Cite the exact tool, query/identifier, returned path, and symbol in working notes.
-- Do not add index-version or freshness gates.
-- Treat remote and user-configured local services as capability-equivalent.
+- 依赖某个发现的 Def 前，先与 details 交叉核对。
+- 显式地将 XML 类字段跟随到 C# 符号。
+- 区分原始声明与合并值。
+- 在工作笔记中引用确切的工具、查询/标识符、返回路径和符号。
+- 不要添加索引版本或新鲜度门槛。
+- 将远程服务与用户配置的本地服务视为能力等价。

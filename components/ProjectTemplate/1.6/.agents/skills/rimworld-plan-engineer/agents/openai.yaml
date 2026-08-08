@@ -1,4 +1,4 @@
 interface:
-  display_name: "RimWorld Plan Engineer"
-  short_description: "Research real code and produce implementation plans"
-  default_prompt: "Use $rimworld-plan-engineer to research this RimWorld request, confirm the planning scope, and write an evidence-backed Markdown implementation plan."
+  display_name: "RimWorld 计划工程师"
+  short_description: "研究真实代码并产出实施计划"
+  default_prompt: "使用 $rimworld-plan-engineer 研究此 RimWorld 请求，确认计划范围，并编写有证据支撑的 Markdown 实施计划。"

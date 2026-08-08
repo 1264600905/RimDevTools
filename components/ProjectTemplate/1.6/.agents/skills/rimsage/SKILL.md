@@ -1,49 +1,50 @@
 ---
 name: rimsage
-description: Research official RimWorld and DLC Defs, XML inheritance, C# types, members, signatures, implementations, and Harmony targets through the RimSage MCP. Use when a task needs evidence about official game APIs or behavior, when bridging Defs to implementation classes, or when deciding whether third-party mod research must move to local reference files and RimDevTools ref pull.
+description: 通过 RimSage MCP 研究官方 RimWorld 和 DLC 的 Def、XML 继承、C# 类型、成员、签名、实现和 Harmony 目标。当任务需要官方游戏 API 或行为证据、需要将 Def 关联到实现类，或需决定第三方模组研究是否应转入本地参考文件和 RimDevTools ref pull 时使用。
 ---
 
 # RimSage
 
-Use RimSage as the evidence source for official RimWorld and official DLC content. Read [references/tool-reference.md](references/tool-reference.md) before the first tool call in a task.
+将 RimSage 用作官方 RimWorld 与官方 DLC 内容的证据来源。每项任务首次调用工具前，阅读 [references/tool-reference.md](references/tool-reference.md)。
 
-## Decide Whether RimSage Is Required
+## 判断是否需要 RimSage
 
-Require RimSage when confirming official Defs, XML inheritance, game classes, fields, methods, signatures, implementations, or Harmony targets. Also require it before making a claim about official behavior that depends on source or Def evidence.
+确认官方 Def、XML 继承、游戏类、字段、方法、签名、实现或 Harmony 目标时，必须使用 RimSage。对依赖源代码或 Def 证据的官方行为作出声明前，也必须使用它。
 
-Do not require RimSage for changes confined to existing project files, translations, formatting, assets, builds, deployments, tests, or log diagnosis that introduce no new official API or Def assumptions.
+仅涉及既有项目文件、翻译、格式、资产、构建、部署、测试或日志诊断，且未引入新的官方 API 或 Def 假设时，不需要 RimSage。
 
-Read current project files directly. RimSage cannot establish facts about the current project or third-party mods.
+直接读取当前项目文件。RimSage 无法证实当前项目或第三方模组的事实。
 
-## Establish Availability
+## 确认可用性
 
-When RimSage is required:
+需要 RimSage 时：
 
-1. Check whether the current client exposes an MCP service named `rimsage` and its tools.
-2. If absent, inspect the current project's client configuration and validate its syntax and service name.
-3. Safely repair an obvious missing entry, wrong service name, or damaged template-default configuration.
-4. Retry discovery or one representative call exactly once.
-5. If the remote endpoint is unreachable, a configured local process cannot start, the client must restart, or credentials/environment work is needed, stop the RimSage-dependent research and ask the user to restore access.
-6. Never present memory, filenames, unrelated local documents, or guesses as RimSage evidence.
+1. 检查当前客户端是否公开了名为 `rimsage` 的 MCP 服务及其工具。
+2. 若不存在，检查当前项目客户端配置，并验证语法和服务名。
+3. 安全修复明显缺失的条目、错误服务名或损坏的模板默认配置。
+4. 仅重试一次发现或一个代表性调用。
+5. 远程端点不可达、已配置的本地进程无法启动、客户端必须重启，或需要凭据/环境处理时，停止依赖 RimSage 的研究并请用户恢复访问。
+6. 绝不将记忆、文件名、无关本地文档或猜测作为 RimSage 证据。
 
-Accept a working local MCP service named `rimsage` exactly like the template's remote service. Do not reject it because its transport or endpoint differs. Do not inspect index versions, game patch versions, or freshness metadata.
+正常工作的本地 MCP 服务 `rimsage` 应与模板远程服务同等接受，不要因传输方式或端点不同而拒绝。不要检查索引版本、游戏补丁版本或新鲜度元数据。
+如果rimsage服务不可用或没有本地替代，应该向用户说明此情况。
 
-## Research Official Content
+## 研究官方内容
 
-1. Use `search_defs` to find the exact Def and Def type.
-2. Use `get_def_details` to inspect raw or merged XML as the question requires.
-3. Follow bridge fields such as `thingClass`, `compClass`, `workerClass`, and `jobClass` to implementation types.
-4. Use `search_source` to locate types, members, field access, and related XML.
-5. Use `read_csharp_symbol` for the focused type or method.
-6. Use `read_file` in line ranges when a long type, missing index entry, or surrounding context requires it. Use `list_directory` to discover server paths rather than guessing them.
-7. Record exact Def names, types, members, paths, and decisive snippets. Validate the eventual implementation with this project's build and quick/auto/XML or real-game tests.
+1. 用 `search_defs` 找到精确的 Def 和 Def 类型。
+2. 按问题需要，用 `get_def_details` 检查原始或合并后的 XML。
+3. 通过 `thingClass`、`compClass`、`workerClass` 和 `jobClass` 等桥接字段定位实现类型。
+4. 用 `search_source` 定位类型、成员、字段访问和相关 XML。
+5. 对聚焦的类型或方法使用 `read_csharp_symbol`。
+6. 长类型、缺失索引条目或需上下文时，用 `read_file` 按行范围读取。用 `list_directory` 发现服务器路径，不要猜测。
+7. 记录准确的 Def 名称、类型、成员、路径和决定性片段。以本项目的构建及 quick/auto/XML 或真实游戏测试验证最终实现。
 
-## Research Third-Party Mods
+## 研究第三方模组
 
-1. Identify that the subject is a third-party mod rather than official content.
-2. Check `参考文档` for an existing local copy.
-3. If absent, use `.\.tools\RimDevTools.exe ref search <query>` to disambiguate it.
-4. Run `ref pull` only with the options the task needs. Do not add `--deps`, `--all`, or `--force` implicitly.
-5. If the target conflicts with an existing reference directory, report it and ask the user whether replacement is intended.
-6. Inspect the pulled About metadata, LoadFolders, XML, patches, assemblies, and ILSpy source locally.
-7. Use RimSage only for official APIs called by that mod; never claim RimSage inspected the third-party mod itself.
+1. 确认对象是第三方模组而非官方内容。
+2. 在 `参考文档` 中查找现有本地副本。
+3. 若不存在，用 `.\.tools\RimDevTools.exe ref search <query>` 消除歧义。
+4. 仅带任务所需选项运行 `ref pull`。不要隐式添加 `--deps`、`--all` 或 `--force`。
+5. 若目标与现有参考目录冲突，报告冲突并询问用户是否意图替换。
+6. 在本地检查拉取的 About 元数据、LoadFolders、XML、补丁、程序集和 ILSpy 源码。
+7. RimSage 仅用于该模组调用的官方 API；绝不声称 RimSage 检查过第三方模组本身。

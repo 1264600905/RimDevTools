@@ -1,27 +1,27 @@
-# RimDevTools Command And Configuration Reference
+# RimDevTools 命令与配置参考
 
-## Invocation And Output
+## 调用与输出
 
-Run `.\.tools\RimDevTools.exe` from the project root or one direct child. Project commands discover `mod_config.jsonc` only at those levels. Help, `--version`, and `mods install-tools --mods-path` do not require a project.
+从项目根目录或其直属子目录运行 `.\.tools\RimDevTools.exe`。项目命令仅在这些层级发现 `mod_config.jsonc`。`help`、`--version` 和 `mods install-tools --mods-path` 不需要项目。
 
-Commands end with one JSON object on stdout; progress goes to stderr. Exit codes are `0` success, `2` invalid arguments/config, `3` missing dependency, `4` busy, `5` task failure, `6` timeout, `7` game/test failure, and `130` cancellation. `--version` returns only `ok`, `command`, and `rimDevToolsVersion`.
+命令以 stdout 上的一个 JSON 对象结束；进度输出到 stderr。退出码为 `0` 成功、`2` 无效参数/配置、`3` 缺少依赖、`4` 忙、`5` 任务失败、`6` 超时、`7` 游戏/测试失败、`130` 取消。`--version` 仅返回 `ok`、`command` 和 `rimDevToolsVersion`。
 
-## Commands
+## 命令
 
 ### `doctor [--verbose]`
 
-Inspect build prerequisites, Steam/RimWorld/Workshop discovery, game and Harmony assemblies, Unity, Git/worktree state, required mods, ILSpy, LogSync, AutoTest, packaged tool mods, locks, and transactions. It is read-only and does not probe RimSage. Default output contains actionable checks and critical assembly paths; `--verbose` includes all checks.
+检查构建前提条件、Steam/RimWorld/创意工坊发现、游戏与 Harmony 程序集、Unity、Git/工作树状态、必需模组、ILSpy、LogSync、AutoTest、打包的工具模组、锁和事务。它是只读的，不探测 RimSage。默认输出包含可操作检查项和关键程序集路径，默认会自动隐藏满足条件的选项；`--verbose` 显示所有检查结果，包括已经满足选项。
 
 ### `deploy [--sync-source] [--dry-run]`
 
-Build configured C# projects and atomically deploy `sync_items` to `rimworld_dir/Mods/mod_name`.
+构建已配置的 C# 项目，并将 `sync_items` 原子部署到 `rimworld_dir/Mods/mod_name`。
 
-- `--dry-run`: return the immutable plan without building or deploying.
-- `--sync-source`: include `source/` in deployment.
+- `--dry-run`：不构建或部署，仅返回不可变计划。
+- `--sync-source`：在部署中包含 `source/`。
 
-Common errors: `ENVIRONMENT_BUSY`, `GAME_EXIT_TIMEOUT`, `BUILD_FAILED`, `SHADER_BUILD_FAILED`, `SYNC_ITEM_NOT_FOUND`, `DEPLOY_FAILED`.
+常见错误：`ENVIRONMENT_BUSY`、`GAME_EXIT_TIMEOUT`、`BUILD_FAILED`、`SHADER_BUILD_FAILED`、`SYNC_ITEM_NOT_FOUND`、`DEPLOY_FAILED`。
 
-### Reference Commands
+### 参考命令
 
 ```text
 ref search <keyword> [--fuzzy]
@@ -30,17 +30,17 @@ ref deps <query> [--version <value>] [--fuzzy]
 ref related <query> [--version <value>] [--fuzzy]
 ```
 
-Search scans the game Mods directory and `workshop_paths`. Pull accepts an absolute directory, exact package ID/name/folder, or search match. It names targets from sanitized About names, copies into `参考文档`, and decompiles assemblies with packaged ILSpy.
+搜索会扫描游戏 Mods 目录和 `workshop_paths`。`ref pull` 接受绝对目录、精确的 package ID/名称/文件夹或搜索匹配项。它以净化后的 About 名称命名目标，复制到 `参考文档`，并使用打包的 ILSpy 反编译程序集。
 
-- `--deps`: pull the complete hard-dependency closure.
-- `--all`: disable `pull_ignore_folders`.
-- `--force`: replace all preflighted conflicts.
-- `--fuzzy`: allow fuzzy candidate matching.
-- `--version`: select version-specific dependency metadata.
+- `--deps`：拉取完整的硬依赖闭包。
+- `--all`：禁用 `pull_ignore_folders`。
+- `--force`：替换所有预先检查过的冲突。
+- `--fuzzy`：允许模糊候选匹配。
+- `--version`：选择特定版本的依赖元数据。
 
-Do not add these options implicitly. Ambiguity, dependency cycles, target conflicts, and sanitized-name collisions fail before copying. Common errors include `MOD_NOT_FOUND`, `MOD_AMBIGUOUS`, `DEPENDENCY_CYCLE`, `TARGET_COLLISION`, `TARGET_CONFLICT`, and `PULL_FAILED`.
+不要隐式添加这些选项。歧义、依赖循环、目标冲突和净化名称碰撞会在复制前失败。常见错误包括 `MOD_NOT_FOUND`、`MOD_AMBIGUOUS`、`DEPENDENCY_CYCLE`、`TARGET_COLLISION`、`TARGET_CONFLICT` 和 `PULL_FAILED`。
 
-### Test Commands
+### 测试命令
 
 ```text
 test settings
@@ -50,43 +50,43 @@ test run [--deploy] [--sync-source] [--mode quick|manual|auto|xml]
          [--isolated-desktop|--no-isolated-desktop]
 ```
 
-`test settings` persistently writes LogSync output and keyword settings. `test run` owns a transaction and restores global configuration after success, failure, timeout, or cancellation when restoration remains possible.
+`test settings` 持久化写入 LogSync 输出和关键字设置,但是一般不建议使用。`test run` 拥有一个事务，并在成功、失败、超时或取消后仍可恢复时恢复全局配置。
 
-Quick is the startup smoke test. Manual is interactive. Auto and XML validate structured AutoTest results. `--capture-screenshots` applies only to auto/XML. Isolation precedence is explicit flag, project setting, then mode default.
+quick 是启动冒烟测试。manual 是用户手动的。auto 和 XML 验证结构化的 AutoTest 结果。`--capture-screenshots` 仅适用于 auto/XML。隔离优先级为显式标志、项目设置，然后是模式默认值。
 
 ### `mods install-tools [--mods-path <path>] [--dry-run]`
 
-Install the packaged LogSyncMod. The manifest must contain exactly the `trigger.logsyncmod` component. The installer verifies package ID, version, directory hash, staging, backup, rollback, and downgrade rules; only `PublishedFileId.txt` is preserved during upgrade.
+安装打包的 LogSyncMod。清单必须恰好包含 `trigger.logsyncmod` 组件。安装器会验证 package ID、版本、目录哈希、暂存、备份、回滚和降级规则；升级时仅保留 `PublishedFileId.txt`。
 
-Without `--mods-path`, resolve the RimWorld Mods directory from project configuration. Use `--dry-run` to inspect the single-component plan without writing.
+不带 `--mods-path` 时，从项目配置解析 RimWorld Mods 目录。使用 `--dry-run` 在不写入的情况下检查单组件计划。
 
-## Configuration Fields
+## 配置字段
 
-- `config_version`: must be `2`.
-- `mod_name`: deployed folder name.
-- `game_version`: target version, currently `1.6`.
-- `rimworld_dir`: RimWorld installation root.
-- `workshop_paths`: Workshop roots searched by reference commands.
-- `csproj_paths`: C# projects built by deployment.
-- `sync_items`: project files/directories copied during deployment.
-- `protected_files_regex`: deployed relative paths preserved across replacement.
-- `pull_ignore_folders`: folders omitted by reference pulls unless `--all` is used.
-- `ilspycmd_path`: path relative to `.tools`, normally `Ilspy\ilspycmd.exe`.
-- `log_keywords`: strings applied to LogSync settings.
-- `min_active_mods`: package IDs always included in temporary test mod lists.
-- `isolated_desktop`: default isolation for quick/auto/XML.
-- `timeouts.steam_launch_detect`: Steam/game appearance timeout.
-- `timeouts.max_wait`: default test completion timeout.
-- `timeouts.existing_game_exit`: wait for an existing game process.
-- `timeouts.post_exit_delay`: stabilization delay after exit.
-- `retention.max_log_files`: selected-log archive limit.
-- `retention.max_auto_test_runs`: automatic test run retention.
-- `shader_bundle.*`: optional Unity batch shader build settings.
+- `config_version`：必须为 `2`。
+- `mod_name`：部署的文件夹名称。
+- `game_version`：目标版本，当前为 `1.6`。
+- `rimworld_dir`：RimWorld 安装根目录。
+- `workshop_paths`：参考命令搜索的创意工坊根目录。
+- `csproj_paths`：由部署构建的 C# 项目。
+- `sync_items`：部署期间复制的项目文件/目录。
+- `protected_files_regex`：替换时保留的已部署相对路径。
+- `pull_ignore_folders`：除非使用 `--all`，否则参考拉取省略的文件夹。
+- `ilspycmd_path`：相对 `.tools` 的路径，通常为 `Ilspy\ilspycmd.exe`。
+- `log_keywords`：应用于 LogSync 设置的字符串。
+- `min_active_mods`：始终包含在临时测试模组列表中的 package ID。
+- `isolated_desktop`：quick/auto/XML 的默认隔离。
+- `timeouts.steam_launch_detect`：Steam/游戏出现超时。
+- `timeouts.max_wait`：默认测试完成超时。
+- `timeouts.existing_game_exit`：等待现有游戏进程退出。
+- `timeouts.post_exit_delay`：退出后的稳定延迟。
+- `retention.max_log_files`：精选日志的存档限制。
+- `retention.max_auto_test_runs`：自动测试运行的保留数。
+- `shader_bundle.*`：可选的 Unity 批处理着色器构建设置。
 
-## Recommended Sequences
+## 推荐序列
 
-- Setup: `doctor` -> repair prerequisites -> `doctor`.
-- Deploy: `doctor` -> `deploy --dry-run` -> inspect -> `deploy`.
-- Smoke: `test run --deploy --mode quick`.
-- Automated: `test run --deploy --mode auto --target-package-id <id>`.
-- Third-party evidence: `ref search` -> exact `ref pull` -> inspect local XML and ILSpy source.
+- 设置：`doctor` -> 修复前提条件 -> `doctor`。
+- 部署：`doctor` -> `deploy --dry-run` -> 检查 -> `deploy`。
+- 冒烟：`test run --deploy --mode quick`。
+- 自动化：`test run --deploy --mode auto --target-package-id <id>`。
+- 第三方证据：`ref search` -> 精确 `ref pull` -> 检查本地 XML 和 ILSpy 源码。

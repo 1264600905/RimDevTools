@@ -1,73 +1,73 @@
 ---
 name: rimdevtools
-description: Operate the project-local RimDevTools CLI for RimWorld 1.6 mod configuration, health checks, builds, atomic deployment, reference-mod discovery and ILSpy decompilation, LogSync-backed quick/manual/auto/XML tests, and packaged LogSyncMod installation. Use when working with mod_config.jsonc, .tools/RimDevTools.exe, deployment, tests, reference mods, or tool-mod installation.
+description: 操作项目本地的 RimDevTools CLI，处理 RimWorld 1.6 模组配置、健康检查、构建、原子部署、参考模组发现与 ILSpy 反编译、由 LogSync 支持的 quick/manual/auto/XML 测试，以及打包的 LogSyncMod 安装。处理 mod_config.jsonc、.tools/RimDevTools.exe、部署、测试、参考模组或工具模组安装时使用。
 ---
 
-# RimDevTools
+# RimDevTools 工具
 
-Use the project-local Windows CLI from the mod root:
+在模组根目录使用项目本地 Windows CLI：
 
 ```powershell
 .\.tools\RimDevTools.exe <command> [options]
 ```
 
-Treat `mod_config.jsonc` as the project contract. Run commands from the directory containing it, or from its direct child. Read [references/commands-and-config.md](references/commands-and-config.md) before changing configuration or using a command whose flags, mutation behavior, or error contract matter.
+将 `mod_config.jsonc` 视为项目契约。应在其所在目录或直属子目录运行命令。修改配置，或使用参数、变更行为或错误契约重要的命令前，阅读 [references/commands-and-config.md](references/commands-and-config.md)。
 
-## Select The Workflow
+## 选择工作流
 
-1. Use `doctor` first for setup failures, unclear state, or capability questions. It is read-only.
-2. Use `deploy --dry-run` to inspect build and synchronization plans. Run mutating `deploy` only when the user asked to deploy or the requested workflow explicitly requires it.
-3. Use `ref search`, `ref deps`, or `ref related` for read-only reference-mod discovery. Use `ref pull` only when copying/decompiling reference mods is in scope.
-4. Use `test run --mode quick` for startup and runtime-ready validation; use `manual` for user-observed play; use `auto` or `xml` for LogSync AutoTest cases.
-5. Use `mods install-tools --dry-run` to inspect the packaged LogSyncMod installation plan; run without `--dry-run` only when installation is in scope.
-6. Use `test settings` only when persistent LogSync settings are desired. Normal test runs apply and restore settings transactionally.
+1. 遇到环境失败、状态不清或能力疑问，先用只读的 `doctor`。
+2. 用 `deploy --dry-run` 检查构建和同步计划。仅当用户要求部署或工作流明确需要时，才运行会修改内容的 `deploy`。
+3. 用 `ref search`、`ref deps` 或 `ref related` 只读发现参考模组。仅在任务范围包含复制/反编译参考模组时使用 `ref pull`。
+4. 用 `test run --mode quick` 验证启动和运行就绪；用 `manual` 进行用户观察的游玩；对 LogSync AutoTest 用 `auto` 或 `xml`。
+5. 用 `mods install-tools --dry-run` 检查打包的 LogSyncMod 安装计划；仅在任务范围包含安装时才去掉 `--dry-run`。
+6. 仅在需要持久化 LogSync 设置时使用 `test settings`。正常测试会以事务方式应用并还原设置。
 
-## Diagnose
+## 诊断
 
-Run:
+运行：
 
 ```powershell
-.\.tools\RimDevTools.exe doctor
-.\.tools\RimDevTools.exe doctor --verbose
+.\.tools\RimDevTools.exe doctor          （一般使用这个，已经满足的验证项目不会显示）
+.\.tools\RimDevTools.exe doctor --verbose   （只有当doctor命令解决仍存在问题时使用这个，会显示大量的验证项目状态）
 .\.tools\RimDevTools.exe --version
 ```
 
-Read the final JSON object on stdout. The default `checks` array contains actionable problems plus the resolved `Assembly-CSharp.dll` and `0Harmony.dll` absolute paths; use `ready`, `issueCount`, and `warningCount` for the summary, and `--verbose` for every other successful/disabled/not-applicable check. Fix the narrowest failing prerequisite, then rerun `doctor`. It does not run a build or check the .NET 10 Runtime required to start the tools.
+读取 stdout 的最后一个 JSON 对象。默认的 `checks` 数组包含可操作问题及已解析的 `Assembly-CSharp.dll` 和 `0Harmony.dll` 绝对路径；用 `ready`、`issueCount` 和 `warningCount` 总结，其他成功/已禁用/不适用检查则使用 `--verbose` 查看。修复范围最小的失败前提条件后重新运行 `doctor`。它不会构建，也不会检查启动工具所需的 .NET 10 Runtime。
 
-## Deploy
+## 部署
 
-1. Validate `mod_name`, `rimworld_dir`, `csproj_paths`, and `sync_items`.
-2. Run `deploy --dry-run` and inspect the immutable plan.
-3. Confirm all expected assemblies and content roots are included and protected files remain protected.
-4. Run `deploy` only after the plan is correct.
-5. Add `--sync-source` only when source distribution is intentional.
+1. 根据doctor的路径探测，尝试修复 `mod_config.jsonc` 中的 游戏路径，工坊路径，完成后重新执行 `doctor` 验证,检查状态是否更新。
+2. 填写正确的项目 `mod_name`、`rimworld_dir`、`csproj_paths` 和 `sync_items`。
+3. 运行 `deploy --dry-run` 并检查部署项目是否符合预期,确认包含所有预期程序集和内容根目录。
+4. 仅在计划正确后运行 `deploy`。
+5. 仅当有意分发源代码时添加 `--sync-source`。
 
-Deployment builds configured projects before replacing the target and uses atomic staging. Do not manually copy partial output into the live mod directory to work around a failed deployment. If shader building is enabled, treat a shader failure as a deployment blocker.
+部署会在替换目标前构建已配置项目，并使用原子暂存。不要为绕过失败部署而手动将部分输出复制进活动模组目录。若启用着色器构建，着色器失败即为部署阻塞项。
 
-## Test
+## 测试
 
-Choose the smallest suitable mode:
+选择范围最小的合适模式：
 
-- `quick`: automated launch and runtime-ready signal; default for smoke tests.
-- `manual`: visible interactive session; defaults to the current desktop.
-- `auto`: executes AutoTest cases and validates structured results.
-- `xml`: executes XML-driven AutoTest cases and rejects failed result JSON.
+- `quick`：自动启动并等待运行就绪信号；冒烟测试默认模式。此测试速度最快，只会检查游戏启动报错。
+- `manual`：提供人工手动测试的游戏窗口；默认使用当前桌面。
+- `auto`：执行 自动化测试，会自动包含可能的测试物品，不需要手动设置，耗时最长，建议作为最终收尾测试。
+- `xml`：执行 XML 驱动的 AutoTest 用例, 此功能暂时不推荐使用。
 
-Use `--deploy` when the test must exercise current source changes. `--sync-source` requires `--deploy`. Quick, auto, and XML use the configured desktop isolation default; manual uses the current desktop unless explicitly overridden.
+测试必须覆盖当前源代码变更时使用 `--deploy`。`--sync-source` 需要 `--deploy`。quick、auto 和 XML 使用配置的桌面隔离默认值；manual 除非明确覆盖，否则使用当前桌面。
 
-Never edit live RimWorld `ModsConfig.xml`, LogSync settings, transaction manifests, or request/result files during a run. RimDevTools owns their transactional restoration. On failure, report the stable error code and preserve recovery artifacts.
+运行期间绝不编辑活动 RimWorld 的 `ModsConfig.xml`、LogSync 设置、事务清单或请求/结果文件。RimDevTools 负责事务性还原。失败时报告稳定错误代码并保留恢复产物。
 
-## References And Tool Installation
+## 参考资料与工具安装
 
-Use `ref pull` to copy a local/Workshop mod into `参考文档` and decompile its assemblies with packaged ILSpy. Resolve ambiguity with an exact package ID, name, folder, or absolute path. Use `--deps` for a complete hard-dependency closure and `--force` only after reviewing replacement targets.
+使用 `ref pull` 将本地/创意工坊模组复制到 `参考文档`，并通过打包的 ILSpy 反编译其程序集。用精确 package ID、名称、目录或绝对路径消除歧义。以 `--deps` 获取完整硬依赖闭包；仅在审查替换目标后使用 `--force`。
 
-Use `mods install-tools` to install the single packaged LogSyncMod component. The installer validates the manifest, package ID, version, and content hash, preserves `PublishedFileId.txt`, prevents downgrade, and uses staging/backup rollback.
+使用 `mods install-tools` 安装单个打包的 LogSyncMod 组件。安装器会验证清单、package ID、版本和内容哈希，保留 `PublishedFileId.txt`，阻止降级，并通过暂存/备份回滚。
 
-## Guardrails
+## 防护规则
 
-- Do not infer success from process exit alone; parse the final JSON and required artifacts.
-- Do not retry `ENVIRONMENT_BUSY`; identify or wait for the owning operation.
-- Do not delete `.rimdev` transactions to silence recovery errors.
-- Do not deploy with a generic template assembly/mod name after starting real development.
-- Do not mutate game or Workshop installations during diagnosis unless the user authorized the mutating workflow.
-- Keep conclusions tied to command output, config values, or generated reports.
+- 不要仅从进程退出推断成功；应解析最后的 JSON 和 产物。
+- 不要重试 `ENVIRONMENT_BUSY`；识别或等待占用操作。
+- 不要删除 `.rimdev` 事务来掩盖恢复错误。
+- 开始实际开发后，不要以通用模板程序集/模组名称部署。
+- 测试进行期间，不要并发执行测试指令，因为环世界是单线程游戏，日志只有一个文件，并发执行后果不可控。
+- 结论应关联命令输出、配置值或生成报告。

@@ -1,27 +1,27 @@
 ---
 name: rimworld-plan-engineer
-description: Research and produce evidence-backed implementation plans for RimWorld mods without changing source code. Use for RimWorld feature planning, feasibility analysis, implementation design, risk assessment, architecture decisions, or requests for a Markdown development plan.
+description: 在不修改源代码的前提下，为 RimWorld 模组研究并产出有证据支撑的实施计划。适用于 RimWorld 功能规划、可行性分析、实施设计、风险评估、架构决策或要求 Markdown 开发计划的请求。
 ---
 
-# RimWorld Plan Engineer
+# RimWorld 计划工程师
 
-Produce an executable plan only. Do not modify source code, assets, configuration, or tests. If asked to implement, state: "此 agent 只负责计划，不进行代码修改操作。"
+仅产出可执行计划。不得修改源代码、资产、配置或测试。被要求实施时，说明：“此 agent 只负责计划，不进行代码修改操作。”
 
-Read [references/planning-contract.md](references/planning-contract.md) before gathering evidence or writing the plan.
+收集证据或编写计划前，阅读 [references/planning-contract.md](references/planning-contract.md)。
 
-## Establish Evidence
+## 建立证据
 
-1. Record every effective user requirement verbatim before interpreting it.
-2. Run `RimDevTools.exe doctor` when paths, tools, or recovery state are uncertain; use `doctor --verbose` only when successful checks are needed.
-3. Inspect current editable project files and tests before selecting implementation locations.
-4. Decide whether the plan needs official RimWorld/DLC Def, API, source behavior, or Harmony target facts. When it does, invoke `rimsage` and follow its availability and evidence workflow.
-5. For third-party mod facts, inspect `参考文档` first. Running `ref search/ref pull` is allowed when needed to establish planning evidence; choose options explicitly and do not force replacement without user direction.
-6. If required RimSage evidence remains unavailable after its repair and retry flow, stop the dependent conclusions and ask the user to restore access.
+1. 解读前逐字记录每一项有效用户需求。
+2. 路径、工具或恢复状态不确定时运行 `RimDevTools.exe doctor`；仅在需要成功检查项时使用 `doctor --verbose`。
+3. 选择实施位置前检查当前可编辑项目文件和测试。
+4. 判断计划是否需要官方 RimWorld/DLC Def、API、源代码行为或 Harmony 目标事实。需要时调用 `rimsage` 并遵循其可用性与证据工作流。
+5. 第三方模组事实先检查 `参考文档`。建立计划证据确有需要时可运行 `ref search/ref pull`；显式选择选项，未经用户指示不得强制替换。
+6. RimSage 修复和重试流程后所需证据仍不可用时，停止依赖它的结论，并请用户恢复访问。
 
-Do not invent evidence when a tool or source is unavailable. Separate verified facts, inferences, and unresolved assumptions.
+工具或来源不可用时不得虚构证据。区分已验证事实、推断和未解决假设。
 
-## Deliver The Plan
+## 交付计划
 
-Name concrete files, symbols or XML locations, ordered implementation steps, tests, risks, alternatives, and rollback considerations. Rate difficulty from 1 to 5 stars. End with non-obvious questions that materially affect implementation.
+列出具体文件、符号或 XML 位置、有序实施步骤、测试、风险、替代方案和回滚考虑。用 1 至 5 星评定难度。结尾列出会实质影响实施的非显而易见问题。
 
-When the user requests a Markdown file, write only that planning document. Creating the plan document is allowed; changing implementation files is not.
+用户要求 Markdown 文件时，仅写入该计划文档。允许创建计划文档，不允许改动实现文件。

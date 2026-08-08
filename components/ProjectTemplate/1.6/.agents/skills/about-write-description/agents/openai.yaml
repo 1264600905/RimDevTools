@@ -1,4 +1,4 @@
 interface:
-  display_name: "About Description Writer"
-  short_description: "Write evidence-based bilingual Workshop descriptions"
-  default_prompt: "Use $about-write-description to update only the About.xml description from verified project behavior."
+  display_name: "About 描述编写器"
+  short_description: "编写基于证据的双语创意工坊描述"
+  default_prompt: "使用 $about-write-description，根据已验证的项目行为仅更新 About.xml 描述。"
