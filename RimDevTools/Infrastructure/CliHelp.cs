@@ -7,7 +7,6 @@ public static class CliHelp
         var text = command.ToLowerInvariant() switch
         {
             "help" => TopLevel,
-            "init" => Init,
             "doctor" => Doctor,
             "deploy" => Deploy,
             "ref" => Ref,
@@ -21,6 +20,8 @@ public static class CliHelp
             "data" => Data,
             "data refresh" => DataRefresh,
             "data status" => DataStatus,
+            "mods" => Mods,
+            "mods install-tools" => ModsInstallTools,
             _ => null
         };
         if (text is null) return false;
@@ -31,7 +32,7 @@ public static class CliHelp
     public static string Path(string[] args)
     {
         if (args.Length == 0 || args[0] is "--help" or "-h") return "help";
-        if (args[0] is "ref" or "test" or "data" && args.Length > 1 && !args[1].StartsWith('-'))
+        if (args[0] is "ref" or "test" or "data" or "mods" && args.Length > 1 && !args[1].StartsWith('-'))
             return $"{args[0]} {args[1]}";
         return args[0];
     }
@@ -44,12 +45,12 @@ public static class CliHelp
           RimDevTools.exe <command> --help
 
         Commands:
-          init <version>       Create a project from the packaged components template.
           doctor              Inspect project, game, tools, transactions, and database status.
           deploy              Build and atomically deploy the current mod.
           ref                 Search, pull, and inspect local reference mods.
           test                Configure or run quick, manual, automatic, and XML tests.
           data                Refresh or inspect the project RimSearcher database.
+          mods                Install the packaged LogSync and RimSearcher tool mods.
 
         Global options:
           -h, --help          Show top-level or command-specific help.
@@ -57,7 +58,8 @@ public static class CliHelp
 
         Project discovery:
           Project commands look for mod_config.jsonc in the current directory, then its
-          direct parent. init, --help, and --version do not require an existing project.
+          direct parent. The release directory itself is the project template.
+          --help, --version, and mods install-tools with --mods-path need no project discovery.
 
         Output contract:
           Final command results are one JSON object on stdout. Progress and diagnostics
@@ -72,36 +74,6 @@ public static class CliHelp
         Exit codes:
           0 success; 2 invalid arguments/config; 3 missing dependency; 4 busy;
           5 task failure; 6 timeout; 7 game/test/export failure; 130 cancelled.
-        """;
-
-    private const string Init = """
-        Create a RimWorld mod project from a packaged components template.
-
-        Usage:
-          RimDevTools.exe init <version> --output <project-root>
-
-        Arguments:
-          version             Currently supported: 1.6.
-
-        Options:
-          --output <path>     Required project root. Target must not exist or must be empty.
-          --verbose           Include successful, disabled, and not-applicable checks.
-          -h, --help          Show this help.
-
-        Behavior:
-          Reads components/ProjectTemplate/manifest.json beside RimDevTools.exe and copies
-          components/ProjectTemplate/<version> verbatim. Shared tooling is installed once
-          from the executable directory as .tools, excluding components. Only missing empty
-          directories declared by the manifest are created. The output root directly contains
-          mod_config.jsonc, 1.6, and .tools as siblings. Do not pass a config-file, version,
-          .tools, or source path. No existing project is required.
-
-        Example:
-          RimDevTools.exe init 1.6 --output D:\RimWorldMods\MyMod
-
-        Common errors:
-          VERSION_UNSUPPORTED, INIT_TARGET_NOT_EMPTY, INIT_TEMPLATE_MISSING,
-          INIT_TEMPLATE_INVALID, INIT_FAILED.
         """;
 
     private const string Doctor = """
@@ -376,5 +348,36 @@ public static class CliHelp
 
         Common errors:
           DATABASE_PATH_MISSING, PROJECT_NOT_FOUND, CONFIG_INVALID.
+        """;
+
+    private const string Mods = """
+        Install or inspect the tool mods packaged beside RimDevTools.
+
+        Usage:
+          RimDevTools.exe mods install-tools [options]
+
+        The command manages trigger.logsyncmod and kearril.rimsearcherdatamod as one batch.
+        """;
+
+    private const string ModsInstallTools = """
+        Install the packaged LogSyncMod and RimSearcher DataMod into RimWorld/Mods.
+
+        Usage:
+          RimDevTools.exe mods install-tools [--mods-path <path>] [--dry-run]
+
+        Options:
+          --mods-path <path>  Explicit RimWorld Mods directory. Without it, resolve rimworld_dir.
+          --dry-run           Validate components and print the immutable install plan only.
+          -h, --help          Show this help.
+
+        Behavior:
+          Validates the packaged manifest, versions, packageIds, and SHA-256 content hashes.
+          Identical targets are skipped, older targets are atomically upgraded, newer targets
+          are preserved, and same-version content conflicts are rejected. PublishedFileId.txt
+          and RimSearcher defs.db are preserved during upgrades.
+
+        Common errors:
+          MODS_PATH_NOT_FOUND, SOURCE_HASH_MISMATCH, SOURCE_VERSION_MISMATCH,
+          DUPLICATE_PACKAGE_ID, INSTALL_PLAN_CONFLICT, TOOL_MOD_INSTALL_FAILED.
         """;
 }

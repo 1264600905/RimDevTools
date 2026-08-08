@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "supportedVersions": ["1.6"],
   "requiredFiles": [
     ".gitignore",
@@ -36,6 +36,11 @@
     ".claude/skills/rimworld-plan-engineer/references/planning-contract.md",
     ".tools/RimDevTools.exe",
     ".tools/rimsearcher.exe",
+    ".tools/Data/tool-mods.manifest.json",
+    ".tools/Data/LogSyncMod/About/About.xml",
+    ".tools/Data/LogSyncMod/1.6/Assemblies/LogSyncMod.dll",
+    ".tools/Data/LogSyncMod/1.6/Assemblies/LogSyncMod.AutoTest.dll",
+    ".tools/Data/RimSearcher_DataMod/About/About.xml",
     ".tools/Data/RimSearcher_DataMod/Assemblies/RimSearcher.DataMod.dll",
     ".tools/Data/RimSearcher_DataMod/Native/e_sqlite3.dll",
     ".tools/Ilspy/ilspycmd.exe",
@@ -45,10 +50,17 @@
   "requiredDirectories": [
     ".tools/db",
     ".tools/log/AutoTestOutput",
-    "{version}/Assemblies",
-    "{version}/Defs",
-    "{version}/Patches",
+    "1.6/Assemblies",
+    "1.6/Defs",
+    "1.6/Patches",
     "Languages",
     "参考文档"
+  ],
+  "forbiddenPaths": [
+    ".tools/components/ProjectTemplate",
+    ".tools/Data/LogSyncMod/source",
+    ".tools/Data/LogSyncMod/.tools",
+    ".tools/Data/LogSyncMod/参考文档",
+    ".tools/Data/LogSyncMod/策划案"
   ]
 }

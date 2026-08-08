@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using System.Xml.Linq;
 using System.Runtime.Versioning;
@@ -230,8 +231,8 @@ internal sealed class TestSuite
         {
             TestJsoncAndDiscovery();
             TestEnvironmentDiscovery();
-            await TestInitAsync();
             await TestHelpAsync();
+            await TestToolModDeploymentAsync();
             TestModListParser();
             TestIncrementalLogSignalScanner();
             await TestSettingsAsync();
@@ -252,88 +253,6 @@ internal sealed class TestSuite
             Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", null);
             if (Directory.Exists(_temp)) Directory.Delete(_temp, true);
         }
-    }
-
-    private async Task TestInitAsync()
-    {
-        var templateRoot = NewDirectory(Path.Combine("init", "components", "ProjectTemplate"));
-        var toolRoot = NewDirectory(Path.Combine("init", "shared-tools"));
-        File.WriteAllText(Path.Combine(toolRoot, "RimDevTools.exe"), "shared-tool");
-        Directory.CreateDirectory(Path.Combine(toolRoot, "components", "must-not-copy"));
-        WriteInitManifest(templateRoot);
-        var versionRoot = NewDirectory(Path.Combine("init", "components", "ProjectTemplate", "1.6"));
-        File.WriteAllText(Path.Combine(versionRoot, "marker.txt"), "template-1.6");
-        var nested = Directory.CreateDirectory(Path.Combine(versionRoot, "nested")).FullName;
-        File.WriteAllBytes(Path.Combine(nested, "bytes.bin"), [0, 1, 2, 255]);
-
-        var output = Path.Combine(_temp, "init-output-1.6");
-        var success = await CaptureAsync(() => InitCommand.RunAsync(["init", "1.6", "--output", output], templateRoot, toolRoot));
-        Assert(success.ExitCode == 0 && File.ReadAllText(Path.Combine(output, "marker.txt")) == "template-1.6", "init selects and copies the requested filesystem template");
-        using (var successJson = JsonDocument.Parse(success.Output))
-        {
-            var result = successJson.RootElement.GetProperty("result");
-            Assert(result.GetProperty("projectRoot").GetString() == output && result.GetProperty("configPath").GetString() == Path.Combine(output, "mod_config.jsonc"), "init identifies output as the project root and reports its config path");
-        }
-        Assert(File.ReadAllBytes(Path.Combine(output, "nested", "bytes.bin")).SequenceEqual(new byte[] { 0, 1, 2, 255 }), "init copies template files byte-for-byte");
-        Assert(Directory.Exists(Path.Combine(output, "1.6", "Assemblies")) && Directory.Exists(Path.Combine(output, "empty-runtime")), "init creates only manifest-declared missing directories");
-        Assert(File.ReadAllText(Path.Combine(output, ".tools", "RimDevTools.exe")) == "shared-tool" && !Directory.Exists(Path.Combine(output, ".tools", "components")), "init installs shared tooling once and excludes components");
-
-        File.WriteAllText(Path.Combine(templateRoot, "1.6", "marker.txt"), "template-updated-without-code-change");
-        var updatedOutput = Path.Combine(_temp, "init-output-1.6-updated");
-        var updated = await CaptureAsync(() => InitCommand.RunAsync(["init", "1.6", "--output", updatedOutput], templateRoot, toolRoot));
-        Assert(updated.ExitCode == 0 && File.ReadAllText(Path.Combine(updatedOutput, "marker.txt")) == "template-updated-without-code-change", "init reflects component template updates without hardcoded project content");
-        Assert(Directory.Exists(Path.Combine(updatedOutput, "1.6", "Assemblies")), "init keeps the declared 1.6 runtime directory");
-
-        var unsupportedOutput = Path.Combine(_temp, "init-unsupported");
-        var unsupported = await CaptureAsync(() => InitCommand.RunAsync(["init", "1.5", "--output", unsupportedOutput], templateRoot, toolRoot));
-        Assert(unsupported.ExitCode == ExitCodes.InvalidArguments && JsonErrorCode(unsupported.Output) == "VERSION_UNSUPPORTED" && !Directory.Exists(unsupportedOutput), "init rejects unsupported versions before writing the target");
-
-        var nonempty = NewDirectory("init-nonempty");
-        File.WriteAllText(Path.Combine(nonempty, "keep.txt"), "user");
-        var nonemptyResult = await CaptureAsync(() => InitCommand.RunAsync(["init", "1.6", "--output", nonempty], templateRoot, toolRoot));
-        Assert(nonemptyResult.ExitCode == ExitCodes.InvalidArguments && JsonErrorCode(nonemptyResult.Output) == "INIT_TARGET_NOT_EMPTY" && File.ReadAllText(Path.Combine(nonempty, "keep.txt")) == "user", "init rejects a nonempty target without changing it");
-
-        var missingManifestRoot = NewDirectory(Path.Combine("init", "missing-manifest"));
-        var missingManifestOutput = Path.Combine(_temp, "init-missing-manifest-output");
-        var missingManifest = await CaptureAsync(() => InitCommand.RunAsync(["init", "1.6", "--output", missingManifestOutput], missingManifestRoot, toolRoot));
-        Assert(missingManifest.ExitCode == ExitCodes.MissingDependency && JsonErrorCode(missingManifest.Output) == "INIT_TEMPLATE_MISSING" && !Directory.Exists(missingManifestOutput), "init fails atomically when the manifest is missing");
-
-        var invalidRoot = NewDirectory(Path.Combine("init", "invalid-schema"));
-        File.WriteAllText(Path.Combine(invalidRoot, "manifest.json"), "{\"schemaVersion\":2,\"supportedVersions\":[\"1.6\"],\"requiredFiles\":[],\"requiredDirectories\":[]}");
-        var invalidOutput = Path.Combine(_temp, "init-invalid-schema-output");
-        var invalid = await CaptureAsync(() => InitCommand.RunAsync(["init", "1.6", "--output", invalidOutput], invalidRoot, toolRoot));
-        Assert(invalid.ExitCode == ExitCodes.TaskFailed && JsonErrorCode(invalid.Output) == "INIT_TEMPLATE_INVALID" && !Directory.Exists(invalidOutput), "init rejects an unsupported manifest schema before installation");
-
-        var missingFileRoot = NewDirectory(Path.Combine("init", "missing-file"));
-        WriteInitManifest(missingFileRoot, requiredFiles: ["required.txt"]);
-        Directory.CreateDirectory(Path.Combine(missingFileRoot, "1.6"));
-        var missingFileOutput = Path.Combine(_temp, "init-missing-file-output");
-        var missingFile = await CaptureAsync(() => InitCommand.RunAsync(["init", "1.6", "--output", missingFileOutput], missingFileRoot, toolRoot));
-        Assert(missingFile.ExitCode == ExitCodes.TaskFailed && JsonErrorCode(missingFile.Output) == "INIT_TEMPLATE_INVALID" && !Directory.Exists(missingFileOutput), "init does not synthesize a missing required file");
-
-        var traversalRoot = NewDirectory(Path.Combine("init", "traversal"));
-        WriteInitManifest(traversalRoot, requiredDirectories: ["..\\escape"]);
-        Directory.CreateDirectory(Path.Combine(traversalRoot, "1.6"));
-        var traversalOutput = Path.Combine(_temp, "init-traversal-output");
-        var traversal = await CaptureAsync(() => InitCommand.RunAsync(["init", "1.6", "--output", traversalOutput], traversalRoot, toolRoot));
-        Assert(traversal.ExitCode == ExitCodes.TaskFailed && JsonErrorCode(traversal.Output) == "INIT_TEMPLATE_INVALID" && !Directory.Exists(traversalOutput), "init rejects manifest path traversal before installation");
-
-        Directory.CreateDirectory(Path.Combine(templateRoot, "1.6", ".tools"));
-        var duplicateToolsOutput = Path.Combine(_temp, "init-duplicate-tools-output");
-        var duplicateTools = await CaptureAsync(() => InitCommand.RunAsync(["init", "1.6", "--output", duplicateToolsOutput], templateRoot, toolRoot));
-        Assert(duplicateTools.ExitCode == ExitCodes.TaskFailed && JsonErrorCode(duplicateTools.Output) == "INIT_TEMPLATE_INVALID" && !Directory.Exists(duplicateToolsOutput), "init rejects version templates that duplicate shared tooling");
-    }
-
-    private static void WriteInitManifest(string root, string[]? requiredFiles = null, string[]? requiredDirectories = null)
-    {
-        var manifest = new
-        {
-            schemaVersion = 1,
-            supportedVersions = new[] { "1.6" },
-            requiredFiles = requiredFiles ?? new[] { "marker.txt", "nested/bytes.bin" },
-            requiredDirectories = requiredDirectories ?? new[] { "{version}/Assemblies", "empty-runtime" }
-        };
-        File.WriteAllText(Path.Combine(root, "manifest.json"), JsonSerializer.Serialize(manifest));
     }
 
     private void TestJsoncAndDiscovery()
@@ -360,10 +279,11 @@ internal sealed class TestSuite
     {
         var paths = new[]
         {
-            Array.Empty<string>(), ["--help"], ["init", "--help"], ["doctor", "--help"], ["deploy", "--help"],
+            Array.Empty<string>(), ["--help"], ["doctor", "--help"], ["deploy", "--help"],
             ["ref", "--help"], ["ref", "search", "--help"], ["ref", "pull", "--help"], ["ref", "deps", "--help"], ["ref", "related", "--help"],
             ["test", "--help"], ["test", "run", "--help"], ["test", "settings", "--help"],
-            ["data", "--help"], ["data", "refresh", "--help"], ["data", "status", "--help"]
+            ["data", "--help"], ["data", "refresh", "--help"], ["data", "status", "--help"],
+            ["mods", "--help"], ["mods", "install-tools", "--help"]
         };
         foreach (var args in paths)
         {
@@ -371,7 +291,7 @@ internal sealed class TestSuite
             Assert(result.ExitCode == 0 && result.Output.Contains("Usage:", StringComparison.Ordinal), $"help succeeds without project discovery: {string.Join(' ', args)}");
         }
 
-        foreach (var command in new[] { "init", "deploy", "ref search", "ref pull", "ref deps", "ref related", "test run", "data refresh" })
+        foreach (var command in new[] { "deploy", "ref search", "ref pull", "ref deps", "ref related", "test run", "data refresh", "mods install-tools" })
         {
             using var writer = new StringWriter();
             var original = Console.Out;
@@ -385,6 +305,8 @@ internal sealed class TestSuite
 
         var unknown = await CaptureAsync(() => CliApplication.RunAsync(["unknown", "--help"]));
         Assert(unknown.ExitCode == ExitCodes.InvalidArguments && JsonErrorCode(unknown.Output) == "UNKNOWN_COMMAND", "unknown command with help remains a structured error");
+        var removedInit = await CaptureAsync(() => CliApplication.RunAsync(["init", "1.6", "--output", "unused"]));
+        Assert(removedInit.ExitCode == ExitCodes.InvalidArguments && JsonErrorCode(removedInit.Output) == "UNKNOWN_COMMAND", "removed init command returns the standard unknown-command error");
     }
 
     private void TestEnvironmentDiscovery()
@@ -467,6 +389,146 @@ internal sealed class TestSuite
         var gitExact = DoctorCommand.EvaluateGitChecks(currentProject, fakeDotnet, currentProject);
         Assert(gitMissing.Single(check => check.Id == "git.command").Status == "missing" && gitMissing.Single(check => check.Id == "git.worktree").Status == "not_applicable", "doctor Git checks distinguish a missing command from worktree state");
         Assert(gitNotWorktree.Single(check => check.Id == "git.worktree").Status == "missing" && gitNested.Single(check => check.Id == "git.worktree").Status == "invalid" && gitExact.Single(check => check.Id == "git.worktree").Status == "available", "doctor Git checks distinguish non-worktree, nested repository, and exact project root");
+    }
+
+    private async Task TestToolModDeploymentAsync()
+    {
+        var dataRoot = NewDirectory(Path.Combine("tool-mods", "data"));
+        var modsRoot = NewDirectory(Path.Combine("tool-mods", "Mods"));
+        var hashFixture = NewDirectory(Path.Combine("tool-mods", "hash-fixture"));
+        File.WriteAllText(Path.Combine(hashFixture, "value.txt"), "first");
+        var firstFixtureHash = DirectoryHasher.Compute(hashFixture);
+        File.WriteAllText(Path.Combine(hashFixture, "value.txt"), "second");
+        Assert(firstFixtureHash != DirectoryHasher.Compute(hashFixture), "tool Mod hash changes when file content changes");
+        File.Move(Path.Combine(hashFixture, "value.txt"), Path.Combine(hashFixture, "renamed.txt"));
+        Assert(firstFixtureHash != DirectoryHasher.Compute(hashFixture), "tool Mod hash includes normalized relative paths");
+        var externalHashTarget = NewDirectory(Path.Combine("tool-mods", "hash-external"));
+        var hashJunction = Path.Combine(hashFixture, "junction");
+        var junctionProcess = Process.Start(new ProcessStartInfo("cmd.exe")
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            ArgumentList = { "/c", "mklink", "/J", hashJunction, externalHashTarget }
+        })!;
+        await junctionProcess.WaitForExitAsync();
+        Assert(junctionProcess.ExitCode == 0, "test fixture creates tool Mod hash junction");
+        junctionProcess.Dispose();
+        try { AssertThrows<IOException>(() => DirectoryHasher.Compute(hashFixture), "tool Mod hash rejects Reparse Points"); }
+        finally { if (Directory.Exists(hashJunction)) Directory.Delete(hashJunction); }
+        var assemblySource = typeof(TestSuite).Assembly.Location;
+        var definitions = new[]
+        {
+            (Folder: "LogSyncMod", PackageId: "trigger.logsyncmod", PrimaryAssembly: "1.6/Assemblies/LogSyncMod.dll"),
+            (Folder: "RimSearcher_DataMod", PackageId: "kearril.rimsearcherdatamod", PrimaryAssembly: "Assemblies/RimSearcher.DataMod.dll")
+        };
+        var manifestComponents = new List<object>();
+        foreach (var definition in definitions)
+        {
+            var root = NewDirectory(Path.Combine("tool-mods", "data", definition.Folder));
+            Directory.CreateDirectory(Path.Combine(root, "About"));
+            var assemblyPath = Path.Combine(root, definition.PrimaryAssembly.Replace('/', Path.DirectorySeparatorChar));
+            Directory.CreateDirectory(Path.GetDirectoryName(assemblyPath)!);
+            File.Copy(assemblySource, assemblyPath, true);
+            File.WriteAllText(Path.Combine(root, "About", "About.xml"), $"<ModMetaData><name>{definition.Folder}</name><modVersion>1.0.0.0</modVersion><packageId>{definition.PackageId}</packageId></ModMetaData>");
+            var hash = DirectoryHasher.Compute(root);
+            manifestComponents.Add(new { folder = definition.Folder, packageId = definition.PackageId, version = "1.0.0.0", primaryAssembly = definition.PrimaryAssembly, contentHash = hash });
+        }
+        File.WriteAllText(Path.Combine(dataRoot, "tool-mods.manifest.json"), JsonSerializer.Serialize(new { schemaVersion = 1, components = manifestComponents }));
+
+        var firstPlan = ToolModInstaller.Plan(dataRoot, modsRoot);
+        Assert(firstPlan.Components.All(component => component.Action == "installed"), "tool Mod plan installs both missing components");
+        var installed = ToolModInstaller.Install(firstPlan, "first-install");
+        Assert(installed.Count == 2 && installed.All(result => result.Action == "installed"), "tool Mod batch installation completes both components");
+        Assert(Directory.Exists(Path.Combine(modsRoot, "LogSyncMod")) && Directory.Exists(Path.Combine(modsRoot, "RimSearcher_DataMod")), "tool Mod installation creates standard component directories");
+
+        var rollbackMods = NewDirectory(Path.Combine("tool-mods", "rollback-Mods"));
+        var rollbackPlan = ToolModInstaller.Plan(dataRoot, rollbackMods);
+        File.WriteAllText(Path.Combine(rollbackMods, "RimSearcher_DataMod"), "block second replacement");
+        AssertThrows<IOException>(() => ToolModInstaller.Install(rollbackPlan, "rollback"), "tool Mod batch surfaces a second-component replacement failure");
+        Assert(!Directory.Exists(Path.Combine(rollbackMods, "LogSyncMod"))
+            && File.Exists(Path.Combine(rollbackMods, "RimSearcher_DataMod"))
+            && !Directory.EnumerateFileSystemEntries(rollbackMods).Any(path => Path.GetFileName(path).StartsWith(".rimdev-tools-", StringComparison.OrdinalIgnoreCase)), "tool Mod batch rolls back the first component and cleans transaction directories");
+
+        var stableHash = DirectoryHasher.Compute(Path.Combine(modsRoot, "LogSyncMod"), ["PublishedFileId.txt"]);
+        File.SetLastWriteTimeUtc(Path.Combine(modsRoot, "LogSyncMod", "About", "About.xml"), DateTime.UtcNow.AddDays(-3));
+        Assert(stableHash == DirectoryHasher.Compute(Path.Combine(modsRoot, "LogSyncMod"), ["PublishedFileId.txt"]), "tool Mod hash ignores file timestamps");
+
+        File.WriteAllText(Path.Combine(modsRoot, "LogSyncMod", "PublishedFileId.txt"), "published");
+        File.WriteAllText(Path.Combine(modsRoot, "RimSearcher_DataMod", "defs.db"), "database");
+        File.WriteAllText(Path.Combine(modsRoot, "LogSyncMod", "payload.txt"), "local-old");
+        File.WriteAllText(Path.Combine(modsRoot, "LogSyncMod", "About", "About.xml"), "<ModMetaData><name>LogSyncMod</name><modVersion>0.9.0.0</modVersion><packageId>trigger.logsyncmod</packageId></ModMetaData>");
+        var updatePlan = ToolModInstaller.Plan(dataRoot, modsRoot);
+        Assert(updatePlan.Components.Single(x => x.Source.PackageId == "trigger.logsyncmod").Action == "updated", "older installed tool Mod is eligible for upgrade");
+        ToolModInstaller.Install(updatePlan, "upgrade");
+        Assert(File.ReadAllText(Path.Combine(modsRoot, "LogSyncMod", "PublishedFileId.txt")) == "published"
+            && File.ReadAllText(Path.Combine(modsRoot, "RimSearcher_DataMod", "defs.db")) == "database", "tool Mod upgrade preserves protected files");
+        var unchangedPlan = ToolModInstaller.Plan(dataRoot, modsRoot);
+        Assert(unchangedPlan.Components.All(x => x.Action == "unchanged"), "identical tool Mod content is skipped after upgrade");
+
+        File.WriteAllText(Path.Combine(modsRoot, "LogSyncMod", "payload.txt"), "local-new");
+        File.WriteAllText(Path.Combine(modsRoot, "LogSyncMod", "About", "About.xml"), "<ModMetaData><name>LogSyncMod</name><modVersion>2.0.0.0</modVersion><packageId>trigger.logsyncmod</packageId></ModMetaData>");
+        var newerPlan = ToolModInstaller.Plan(dataRoot, modsRoot);
+        Assert(newerPlan.Components.Single(x => x.Source.PackageId == "trigger.logsyncmod").Action == "target_newer", "newer installed tool Mod is not downgraded");
+        ToolModInstaller.Install(newerPlan, "newer-target");
+        Assert(File.ReadAllText(Path.Combine(modsRoot, "LogSyncMod", "payload.txt")) == "local-new", "newer target remains unchanged");
+
+        File.WriteAllText(Path.Combine(modsRoot, "LogSyncMod", "About", "About.xml"), "<ModMetaData><name>LogSyncMod</name><modVersion>1.0.0.0</modVersion><packageId>trigger.logsyncmod</packageId></ModMetaData>");
+        var conflictPlan = ToolModInstaller.Plan(dataRoot, modsRoot);
+        Assert(conflictPlan.Components.Single(x => x.Source.PackageId == "trigger.logsyncmod").Action == "same_version_conflict", "same-version different tool Mod content is rejected");
+        AssertThrows<ToolModDeploymentException>(() => ToolModInstaller.Install(conflictPlan, "same-version-conflict"), "same-version tool Mod conflict blocks the batch");
+
+        File.WriteAllText(Path.Combine(modsRoot, "LogSyncMod", "About", "About.xml"), "<ModMetaData><name>LogSyncMod</name><packageId>trigger.logsyncmod</packageId></ModMetaData>");
+        File.Delete(Path.Combine(modsRoot, "LogSyncMod", "1.6", "Assemblies", "LogSyncMod.dll"));
+        var unknownPlan = ToolModInstaller.Plan(dataRoot, modsRoot);
+        Assert(unknownPlan.Components.Single(x => x.Source.PackageId == "trigger.logsyncmod").Action == "unknown_target_version", "unversioned installed tool Mod is not overwritten");
+
+        CreateModAt(modsRoot, "UnrelatedDuplicateA", "demo.unrelated-duplicate");
+        CreateModAt(modsRoot, "UnrelatedDuplicateB", "demo.unrelated-duplicate");
+        Assert(ToolModInstaller.Plan(dataRoot, modsRoot).Components.Count == 2, "duplicate packageIds for unrelated Mods do not block tool Mod planning");
+
+        var duplicate = Path.Combine(modsRoot, "LogSyncDuplicate");
+        CopyDirectoryForTest(Path.Combine(modsRoot, "LogSyncMod"), duplicate);
+        AssertThrows<ToolModDeploymentException>(() => ToolModInstaller.Plan(dataRoot, modsRoot), "duplicate tool Mod packageId blocks planning");
+
+        var oldDataPath = Environment.GetEnvironmentVariable("RIMDEVTOOLS_DATA_PATH");
+        try
+        {
+            Environment.SetEnvironmentVariable("RIMDEVTOOLS_DATA_PATH", dataRoot);
+            var dryRun = await CaptureAsync(() => ModsCommand.InstallToolsAsync(["mods", "install-tools", "--mods-path", Path.Combine(_temp, "tool-mods", "empty-mods"), "--dry-run"]));
+            Assert(dryRun.ExitCode == ExitCodes.MissingDependency && JsonErrorCode(dryRun.Output) == "MODS_PATH_NOT_FOUND", "tool Mod command validates explicit Mods paths before mutation");
+            var wrongName = NewDirectory(Path.Combine("tool-mods", "not-a-mods-root"));
+            var wrongNameResult = await CaptureAsync(() => ModsCommand.InstallToolsAsync(["mods", "install-tools", "--mods-path", wrongName, "--dry-run"]));
+            Assert(wrongNameResult.ExitCode == ExitCodes.InvalidArguments && JsonErrorCode(wrongNameResult.Output) == "MODS_PATH_INVALID", "tool Mod command rejects directories that are not named Mods");
+            var duplicateResult = await CaptureAsync(() => ModsCommand.InstallToolsAsync(["mods", "install-tools", "--mods-path", modsRoot, "--dry-run"]));
+            Assert(duplicateResult.ExitCode == ExitCodes.TaskFailed && JsonErrorCode(duplicateResult.Output) == "DUPLICATE_PACKAGE_ID", "tool Mod command reports duplicate packageIds as structured errors");
+            Directory.Delete(duplicate, true);
+            var validDryRun = await CaptureAsync(() => ModsCommand.InstallToolsAsync(["mods", "install-tools", "--mods-path", modsRoot, "--dry-run"]));
+            Assert(validDryRun.ExitCode == 0 && JsonDocument.Parse(validDryRun.Output).RootElement.GetProperty("result").GetProperty("modsPath").GetString() == modsRoot, "tool Mod command accepts an explicit Mods path without project discovery");
+
+            var configuredEnvironment = CreateProjectEnvironment("tool-mods-configured", createGameExecutable: true);
+            var workshopRoot = NewDirectory(Path.Combine("tool-mods-configured", "Workshop"));
+            CreateModAt(workshopRoot, "WorkshopLogSync", "trigger.logsyncmod");
+            File.WriteAllText(configuredEnvironment.ConfigPath, Config(configuredEnvironment, extra: $"\"workshop_paths\":[\"{Escape(workshopRoot)}\"]"));
+            using (UseEnvironment(configuredEnvironment))
+            {
+                var configuredDryRun = await CaptureAsync(() => ModsCommand.InstallToolsAsync(["mods", "install-tools", "--dry-run"]));
+                Assert(configuredDryRun.ExitCode == 0
+                    && JsonDocument.Parse(configuredDryRun.Output).RootElement.GetProperty("result").GetProperty("modsPath").GetString() == Path.Combine(configuredEnvironment.Game, "Mods"), "tool Mod command resolves Mods from project configuration when no explicit path is supplied");
+                Assert(JsonDocument.Parse(configuredDryRun.Output).RootElement.GetProperty("result").GetProperty("warnings").GetArrayLength() == 1, "tool Mod command warns when a packaged tool Mod also exists in Workshop");
+            }
+        }
+        finally { Environment.SetEnvironmentVariable("RIMDEVTOOLS_DATA_PATH", oldDataPath); }
+    }
+
+    private static void CopyDirectoryForTest(string source, string destination)
+    {
+        Directory.CreateDirectory(destination);
+        foreach (var entry in Directory.EnumerateFileSystemEntries(source))
+        {
+            var target = Path.Combine(destination, Path.GetFileName(entry));
+            if (Directory.Exists(entry)) CopyDirectoryForTest(entry, target);
+            else File.Copy(entry, target, true);
+        }
     }
 
     private void TestModListParser()

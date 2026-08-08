@@ -103,15 +103,16 @@ RimDevTools.exe test run --mode auto --target-package-id aoba.deadmanswitch.core
 
 quick、auto、xml 和 `data refresh` 默认在 Windows 隔离桌面运行；可用 `--no-isolated-desktop` 覆盖单次运行。manual 默认使用当前桌面。quick、auto 和 xml 会在游戏进程内临时静音，并在完成信号前恢复原音量。
 
-## RimDevTools 项目初始化
+## RimDevTools 发布模板
 
-发布包当前提供 1.6 项目模板：
+`artifacts/RimDevTools-Package` 本身就是完整的 RimWorld 1.6 项目模板，根目录直接包含 `mod_config.jsonc`、`1.6`、`source` 和 `.tools`。复制整个目录作为新项目后，修改模板名称、packageId、本机路径和工程名称即可开始开发。
+
+随包的 LogSyncMod 与 RimSearcher DataMod 可统一安装：
 
 ```powershell
-RimDevTools.exe init 1.6 --output D:\RimWorldMods\NewMod
+.\.tools\RimDevTools.exe mods install-tools --dry-run
+.\.tools\RimDevTools.exe mods install-tools
 ```
-
-`--output` 必须指向新模组的项目根目录，而不是 `mod_config.jsonc` 文件、`1.6`、`.tools` 或 `source` 目录。生成后该根目录会直接包含同级的 `mod_config.jsonc`、`1.6` 和 `.tools`。项目文件来自 `.tools/components/ProjectTemplate/<version>`，共享工具只复制一份到新项目 `.tools`，且不会递归复制 `components`。目标目录必须不存在或为空。
 
 祝模组开发顺利！
 

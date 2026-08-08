@@ -19,11 +19,16 @@ dotnet publish RimDevTools\RimDevTools.csproj -c Release -r win-x64 --self-conta
 ```text
 RimDevTools-Package/
 ├── mod_config.jsonc
+├── 1.6/
+├── About/
+├── source/
 └── .tools/
     ├── RimDevTools.exe
     ├── rimsearcher.exe
     ├── Data/
+    │   ├── LogSyncMod/
     │   ├── RimSearcher_DataMod/
+    │   ├── tool-mods.manifest.json
     │   └── licenses/
     ├── Ilspy/
     ├── log/
@@ -32,10 +37,6 @@ RimDevTools-Package/
     ├── modlist/
     │   ├── defaultMods.xml
     │   └── deadmanswitch-core.xml
-    ├── components/
-    │   └── ProjectTemplate/
-    │       ├── manifest.json
-    │       └── 1.6/
     └── db/
 ```
 
@@ -45,7 +46,6 @@ RimDevTools-Package/
 
 ```powershell
 RimDevTools.exe --version
-RimDevTools.exe init 1.6 --output D:\RimWorldMods\NewMod
 RimDevTools.exe doctor
 RimDevTools.exe doctor --verbose
 RimDevTools.exe deploy --dry-run
@@ -55,13 +55,15 @@ RimDevTools.exe test settings
 RimDevTools.exe test run --mode quick
 RimDevTools.exe data refresh
 RimDevTools.exe data status
+RimDevTools.exe mods install-tools --dry-run
+RimDevTools.exe mods install-tools
 ```
 
 项目命令从当前目录或直接父目录发现 `mod_config.jsonc`。正常结果写入 stdout 的单个 JSON 对象，诊断信息写入 stderr。
 
 `doctor` 默认在 `result.checks` 中输出需要处理的 missing/invalid/stale/busy/unsupported 项，并始终输出解析后的 `Assembly-CSharp.dll` 与 `0Harmony.dll` 绝对路径，方便 AI 直接了解真实编译引用；同时提供 `ready`、`issueCount` 和 `warningCount` 摘要。`doctor --verbose` 输出全部有序检查。它检查 .NET Framework 4.8 编译前提、Steam/RimWorld/Workshop、真实游戏与 Harmony DLL、Unity、Git、必需模组和既有工具状态，但不执行 build，也不检查 .NET 10 Runtime 或账号许可证。
 
-`init` 不需要已有项目。`--output` 是将直接包含 `mod_config.jsonc`、`1.6` 和 `.tools` 的项目根目录，不是配置文件、版本目录、工具目录或 `source` 目录。版本模板来自 `components/ProjectTemplate/<version>`，共享工具目录只复制一次到目标 `.tools` 并排除 `components`；目标必须不存在或为空。项目模板不嵌入 RimDevTools 程序集，修改组件文件无需改动 InitCommand。
+发布目录本身就是可复制使用的 1.6 项目模板，不再提供 `init` 命令，也不在 `.tools` 中嵌套第二份模板。`mods install-tools` 会校验随包组件的版本与目录哈希，再将 LogSyncMod 和 RimSearcher DataMod 作为一个批次安装到 RimWorld `Mods`；可用 `--mods-path` 显式指定目标。
 
 quick、auto、xml 和 `data refresh` 默认使用隔离桌面，manual 默认使用当前桌面。`--isolated-desktop` 与 `--no-isolated-desktop` 可覆盖单次运行。quick、auto、xml 会在游戏进程内临时设置 `AudioListener.volume=0`，完成前恢复，不修改 Windows 或玩家持久音量。
 

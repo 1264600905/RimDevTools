@@ -56,6 +56,14 @@ public static class ComponentLocator
             : Path.GetFullPath(overridePath);
     }
 
+    public static string ToolDataPath()
+    {
+        var overridePath = Environment.GetEnvironmentVariable("RIMDEVTOOLS_DATA_PATH");
+        return string.IsNullOrWhiteSpace(overridePath)
+            ? Path.Combine(ExecutableDirectory(), "Data")
+            : Path.GetFullPath(overridePath);
+    }
+
     public static string? FileVersion(string path)
         => File.Exists(path) ? FileVersionInfo.GetVersionInfo(path).FileVersion : null;
 

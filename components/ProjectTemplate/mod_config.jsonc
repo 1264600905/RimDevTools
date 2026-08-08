@@ -3,7 +3,6 @@
 
     // ============================================================
     // 项目信息 — 每个模组项目必须修改的核心字段
-    // init 运行后会自动更新这些值
     // ============================================================
     // 模组名称（英文，不含空格）。部署目标、日志关键词和程序集名称会使用它。
     "mod_name": "MyCustomMod",
@@ -58,7 +57,7 @@
     // 日志同步关键词。测试启动时会写入 LogSyncMod 的配置文件。
     "log_keywords": ["MyCustomMod"],
     // 默认的最小测试模组集（无 --mods-file 时使用）。
-    // 启动 RimWorld 前必须包含这五个基础模组；data refresh 还需要 RimSearcherDataMod。
+    // 启动 RimWorld 前必须包含基础模组；data refresh 还需要 RimSearcherDataMod。
     "min_active_mods": [
         "brrainz.harmony",
         "sarg.smartspeed",

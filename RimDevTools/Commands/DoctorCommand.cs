@@ -77,6 +77,7 @@ public static class DoctorCommand
         checks.Add(new DoctorCheck("test.autotest_extension", autoTestAssembly is null ? "missing" : "available", true, autoTestAssembly, autoTestAssembly is null ? "LogSync 模组中未发现 AutoTest 程序集" : null));
 
         AddDataChecks(checks, context, environment.Mods, out var rimSearcherVersion, out var dataModVersion);
+        AddToolModChecks(checks, environment.Mods);
         var lockPath = Path.Combine(GameEnvironment.ConfigDirectory(), "RimDevTools.lock.json");
         var lockBusy = EnvironmentLock.IsBusy(GameEnvironment.ConfigDirectory());
         checks.Add(new DoctorCheck("environment.lock", lockBusy ? "busy" : File.Exists(lockPath) ? "stale" : "available", false, lockPath, lockBusy ? "RimWorld 环境互斥锁正被占用" : File.Exists(lockPath) ? "互斥锁未占用，但存在遗留诊断文件" : null));
@@ -206,6 +207,54 @@ public static class DoctorCommand
         {
             var status = DatabaseInspector.Inspect(databasePath, "project_config", context.Config.GameVersion, context.Config.CurrentPackageId(context.Root));
             checks.Add(new DoctorCheck("data.database", !status.CanOpen || status.Integrity != "ok" ? "invalid" : status.RefreshRecommended ? "stale" : "available", false, databasePath, status.RefreshRecommended ? "数据库需要重新导出" : null, status));
+        }
+    }
+
+    private static void AddToolModChecks(List<DoctorCheck> checks, ModInstallationIndex mods)
+    {
+        var dataRoot = ComponentLocator.ToolDataPath();
+        var manifestPath = Path.Combine(dataRoot, "tool-mods.manifest.json");
+        if (!File.Exists(manifestPath))
+        {
+            checks.Add(new DoctorCheck("tools.mod_components", "missing", false, manifestPath, "未发现随包工具 Mod 清单"));
+            return;
+        }
+        try
+        {
+            var manifest = ToolModManifestReader.Load(manifestPath);
+            checks.Add(new DoctorCheck("tools.mod_components", "available", false, manifestPath, Details: new { count = manifest.Components.Count }));
+            foreach (var component in manifest.Components)
+            {
+                var source = Path.Combine(dataRoot, component.Folder);
+                var sourceHash = Directory.Exists(source) ? DirectoryHasher.Compute(source) : null;
+                var sourceAvailable = sourceHash?.Equals(component.ContentHash, StringComparison.OrdinalIgnoreCase) == true;
+                checks.Add(new DoctorCheck(
+                    $"tools.component.{component.PackageId.ToLowerInvariant()}",
+                    sourceAvailable ? "available" : Directory.Exists(source) ? "invalid" : "missing",
+                    false,
+                    source,
+                    sourceAvailable ? null : "随包工具 Mod 缺失或内容哈希不匹配",
+                    new { component.Version, expectedHash = component.ContentHash, actualHash = sourceHash }));
+
+                var installed = mods.Find(component.PackageId);
+                var installedVersion = installed is null ? null : ToolModVersion.Read(installed.Directory, component.PrimaryAssembly);
+                var installedStatus = installed is null
+                    ? "missing"
+                    : installedVersion is null
+                        ? "invalid"
+                        : ToolModVersion.Compare(installedVersion, component.Version) < 0 ? "stale" : "available";
+                checks.Add(new DoctorCheck(
+                    $"mods.tool.{component.PackageId.ToLowerInvariant()}",
+                    installedStatus,
+                    false,
+                    installed?.Directory,
+                    installed is null ? "工具 Mod 尚未安装；可运行 mods install-tools" : installedStatus == "stale" ? "已安装版本低于随包版本" : null,
+                    new { packagedVersion = component.Version, installedVersion }));
+            }
+        }
+        catch (Exception ex)
+        {
+            checks.Add(new DoctorCheck("tools.mod_components", "invalid", false, manifestPath, ex.Message));
         }
     }
 

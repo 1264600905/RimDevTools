@@ -51,7 +51,6 @@ public static class CliApplication
         {
             return command switch
             {
-                "init" => await InitCommand.RunAsync(args, cancellation.Token),
                 "doctor" => await DoctorCommand.RunAsync(args),
                 "deploy" => await DeployCommand.RunAsync(args, cancellation.Token),
                 "ref search" => await RefCommand.SearchAsync(args),
@@ -62,6 +61,7 @@ public static class CliApplication
                 "test settings" => await TestCommand.SettingsAsync(args, cancellation.Token),
                 "data refresh" => await DataCommand.RefreshAsync(args, cancellation.Token),
                 "data status" => await DataCommand.StatusAsync(args),
+                "mods install-tools" => await ModsCommand.InstallToolsAsync(args, cancellation.Token),
                 _ => CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "UNKNOWN_COMMAND", $"未知命令: {command}")
             };
         }
@@ -87,7 +87,7 @@ public static class CliApplication
     public static string CommandPath(string[] args)
     {
         if (args.Length == 0) return "help";
-        if (args[0] is "ref" or "test" or "data" && args.Length > 1 && !args[1].StartsWith('-')) return $"{args[0]} {args[1]}";
+        if (args[0] is "ref" or "test" or "data" or "mods" && args.Length > 1 && !args[1].StartsWith('-')) return $"{args[0]} {args[1]}";
         return args[0];
     }
 
@@ -121,7 +121,6 @@ public static class CliArgs
     private static readonly IReadOnlyDictionary<string, (int PrefixLength, int Positionals, Option[] Options)> Contracts
         = new Dictionary<string, (int, int, Option[])>(StringComparer.OrdinalIgnoreCase)
         {
-            ["init"] = (1, 1, [new("--output", true)]),
             ["doctor"] = (1, 0, [new("--verbose", false)]),
             ["deploy"] = (1, 0, [new("--sync-source", false), new("--dry-run", false)]),
             ["ref search"] = (2, 1, [new("--fuzzy", false)]),
@@ -131,7 +130,8 @@ public static class CliArgs
             ["test run"] = (2, 0, [new("--deploy", false), new("--sync-source", false), new("--mode", true), new("--mods-file", true), new("--timeout-seconds", true), new("--target-package-id", true), new("--capture-screenshots", false), new("--isolated-desktop", false), new("--no-isolated-desktop", false)]),
             ["test settings"] = (2, 0, []),
             ["data refresh"] = (2, 0, [new("--mods-file", true), new("--output", true), new("--timeout-seconds", true), new("--isolated-desktop", false), new("--no-isolated-desktop", false)]),
-            ["data status"] = (2, 0, [])
+            ["data status"] = (2, 0, []),
+            ["mods install-tools"] = (2, 0, [new("--mods-path", true), new("--dry-run", false)])
         };
 
     public static string? Validate(string command, string[] args)

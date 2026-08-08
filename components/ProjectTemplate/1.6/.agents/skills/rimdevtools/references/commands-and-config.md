@@ -10,7 +10,7 @@
 
 ## Invocation And Output
 
-Run `./.tools/RimDevTools.exe` from the project root or one direct child. Project commands discover `mod_config.jsonc` only at those two levels. `init`, help, and `--version` do not require a project.
+Run `./.tools/RimDevTools.exe` from the project root or one direct child. Project commands discover `mod_config.jsonc` only at those two levels. Help, `--version`, and `mods install-tools --mods-path` do not require a project.
 
 Successful and expected failure results end with one JSON object on stdout. Progress goes to stderr. Exit codes are: `0` success, `2` invalid arguments/config, `3` missing dependency, `4` busy, `5` task failure, `6` timeout, `7` game/test/export failure, and `130` cancellation.
 
@@ -73,9 +73,9 @@ data refresh [--mods-file <path>] [--output <path>]
 
 Common errors: `DATABASE_PATH_MISSING`, `EXPORT_REQUEST_CONFLICT`, `DATA_REFRESH_TIMEOUT`, `EXPORT_SIGNAL_MISMATCH`, `DATABASE_INVALID`, `VERSION_MISMATCH`.
 
-### `init 1.6 --output <project-root>`
+### `mods install-tools [--mods-path <path>] [--dry-run]`
 
-Create a project from the packaged 1.6 template. `--output` is the new project root directory, not a path to `mod_config.jsonc`, `1.6`, `.tools`, or `source`. The target must not exist or be empty. The generated root directly contains `mod_config.jsonc`, `1.6`, and `.tools` as siblings. This is mainly a distribution-root command; an initialized project normally does not initialize itself.
+Install the packaged LogSyncMod and RimSearcher DataMod as one validated batch. Without `--mods-path`, the command resolves the RimWorld `Mods` directory from project configuration. Use `--dry-run` to inspect package IDs, versions, hashes, target paths, and actions without writing.
 
 ## Configuration Fields
 
