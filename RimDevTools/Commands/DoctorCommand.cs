@@ -86,7 +86,6 @@ public static class DoctorCommand
         var autoTestAssembly = logSync is null ? null : SafeFind(logSync.Directory, "*AutoTest*.dll");
         checks.Add(new DoctorCheck("test.autotest_extension", autoTestAssembly is null ? "missing" : "available", true, autoTestAssembly, autoTestAssembly is null ? "LogSync 模组中未发现 AutoTest 程序集" : null));
 
-        AddDataChecks(checks, context, environment.Mods, out var rimSearcherVersion, out var dataModVersion);
         AddToolModChecks(checks, environment.Mods);
         var lockPath = Path.Combine(GameEnvironment.ConfigDirectory(), "RimDevTools.lock.json");
         var lockBusy = EnvironmentLock.IsBusy(GameEnvironment.ConfigDirectory());
@@ -100,8 +99,6 @@ public static class DoctorCommand
             projectRoot = context.Root,
             configVersion = config.ConfigVersion,
             rimDevToolsVersion = typeof(DoctorCommand).Assembly.GetName().Version?.ToString(),
-            rimSearcherVersion,
-            dataModVersion,
             ready = summary.Ready,
             issueCount = summary.IssueCount,
             warningCount = summary.WarningCount,
@@ -118,13 +115,10 @@ public static class DoctorCommand
         return new DoctorSummary(requiredIssues == 0, requiredIssues, warnings, verbose ? all : all.Where(check => ProblemStatuses.Contains(check.Status) || AlwaysVisibleChecks.Contains(check.Id)).ToArray());
     }
 
-    internal static string? ResolveDbPath(ProjectContext context)
-        => string.IsNullOrWhiteSpace(context.Config.RimSearcherDbPath) ? null : Path.GetFullPath(context.Config.RimSearcherDbPath, context.Root);
-
     internal static string? ResolveIlspyPath(ProjectContext context)
         => !string.IsNullOrWhiteSpace(context.Config.IlspycmdPath)
             ? Path.GetFullPath(context.Config.IlspycmdPath, Path.Combine(context.Root, ".tools"))
-            : Path.Combine(ComponentLocator.ExecutableDirectory(), "Ilspy", "ilspycmd.exe");
+            : Path.Combine(ToolComponentLocator.ExecutableDirectory(), "Ilspy", "ilspycmd.exe");
 
     private static void AddProjectChecks(List<DoctorCheck> checks, ProjectContext context)
     {
@@ -205,29 +199,9 @@ public static class DoctorCommand
         checks.Add(new DoctorCheck("mods.required", missing.Length == 0 ? "available" : "missing", true, null, missing.Length == 0 ? null : "部分 min_active_mods 无法解析", new { missingPackageIds = missing }));
     }
 
-    private static void AddDataChecks(List<DoctorCheck> checks, ProjectContext context, ModInstallationIndex mods, out string? rimSearcherVersion, out string? dataModVersion)
-    {
-        var dataMod = mods.Find("kearril.RimSearcherDataMod");
-        checks.Add(new DoctorCheck("data.rimsearcher_datamod", dataMod is null ? "not_applicable" : "available", false, dataMod?.Directory));
-        var rimSearcher = ComponentLocator.RimSearcherPath();
-        AddPathCheck(checks, "data.rimsearcher_cli", rimSearcher, false, PathKind.File);
-        rimSearcherVersion = File.Exists(rimSearcher) ? FileVersionInfo.GetVersionInfo(rimSearcher).FileVersion : null;
-        var dataModAssembly = dataMod is null ? null : Path.Combine(dataMod.Directory, "Assemblies", "RimSearcher.DataMod.dll");
-        dataModVersion = dataModAssembly is null ? null : ComponentLocator.AssemblyVersion(dataModAssembly);
-        checks.Add(new DoctorCheck("data.component_version", dataModVersion is null ? "missing" : CliApplication.VersionsEqual(rimSearcherVersion, dataModVersion) ? "available" : "stale", false, dataModAssembly, dataModVersion is null ? "未发现 DataMod 程序集版本" : CliApplication.VersionsEqual(rimSearcherVersion, dataModVersion) ? null : "RimSearcher CLI 与 DataMod 版本不一致", new { rimSearcherVersion, dataModVersion }));
-        var databasePath = ResolveDbPath(context);
-        if (databasePath is null) checks.Add(new DoctorCheck("data.database", "not_applicable", false, null, "rimsearcher_db_path 未配置"));
-        else if (!File.Exists(databasePath)) checks.Add(new DoctorCheck("data.database", "missing", false, databasePath, "数据库不存在；建议运行 RimDevTools data refresh"));
-        else
-        {
-            var status = DatabaseInspector.Inspect(databasePath, "project_config", context.Config.GameVersion, context.Config.CurrentPackageId(context.Root));
-            checks.Add(new DoctorCheck("data.database", !status.CanOpen || status.Integrity != "ok" ? "invalid" : status.RefreshRecommended ? "stale" : "available", false, databasePath, status.RefreshRecommended ? "数据库需要重新导出" : null, status));
-        }
-    }
-
     private static void AddToolModChecks(List<DoctorCheck> checks, ModInstallationIndex mods)
     {
-        var dataRoot = ComponentLocator.ToolDataPath();
+        var dataRoot = ToolComponentLocator.ToolDataPath();
         var manifestPath = Path.Combine(dataRoot, "tool-mods.manifest.json");
         if (!File.Exists(manifestPath))
         {

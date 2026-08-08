@@ -265,9 +265,6 @@ public static class ModListParser
     public static ModListResolution? Resolve(ProjectContext context, string? path, string? targetPackageId, out CliError? error)
         => ResolveCore(context, path, "trigger.logsyncmod", "logsync_tooling", targetPackageId, "target_mod", out error);
 
-    public static ModListResolution? ResolveData(ProjectContext context, string? path, out CliError? error)
-        => ResolveCore(context, path, "kearril.rimsearcherdatamod", "rimsearcher_tooling", context.Config.CurrentPackageId(context.Root), "current_project", out error);
-
     private static ModListResolution? ResolveCore(ProjectContext context, string? path, string toolingPackageId, string toolingReason, string? targetPackageId, string targetReason, out CliError? error)
     {
         error = null;

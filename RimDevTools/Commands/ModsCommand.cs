@@ -33,7 +33,7 @@ public static class ModsCommand
             return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "MODS_PATH_UNSAFE", ex.Message, context?.Root);
         }
 
-        var dataRoot = ComponentLocator.ToolDataPath();
+        var dataRoot = ToolComponentLocator.ToolDataPath();
         ToolModDeploymentPlan plan;
         try { plan = AddWorkshopWarnings(ToolModInstaller.Plan(dataRoot, modsPath), context); }
         catch (ToolModDeploymentException ex)

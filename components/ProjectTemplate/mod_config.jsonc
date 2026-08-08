@@ -8,10 +8,8 @@
     "mod_name": "MyCustomMod",
     // 目标 RimWorld 版本号；用于定位版本化 Assemblies 和 Defs 目录。
     "game_version": "1.6",
-    // quick/auto/xml 和 data refresh 默认使用当前桌面；需要隔离桌面时显式传入命令行参数。
+    // quick/auto/xml 默认使用当前桌面；需要隔离桌面时显式传入命令行参数。
     "isolated_desktop": false,
-    // RimSearcher 当前项目数据库；相对路径以项目根目录为基准。
-    "rimsearcher_db_path": ".tools\\db\\defs.db",
 
     // ============================================================
     // 本机环境 — 需要根据开发者本机的 Steam 安装位置修改
@@ -57,7 +55,7 @@
     // 日志同步关键词。测试启动时会写入 LogSyncMod 的配置文件。
     "log_keywords": ["MyCustomMod"],
     // 默认的最小测试模组集（无 --mods-file 时使用）。
-    // 启动 RimWorld 前必须包含基础模组；data refresh 还需要 RimSearcherDataMod。
+    // 启动 RimWorld 前必须包含基础模组。
     "min_active_mods": [
         "brrainz.harmony",
 		"ludeon.rimworld",
@@ -69,7 +67,6 @@
         "ludeon.rimworld.anomaly",
         "ludeon.rimworld.odyssey",
         "erdelf.humanoidalienraces",
-        "kearril.rimsearcherdatamod",
         "trigger.logsyncmod"
     ],
     // 超时参数（单位: 秒）。

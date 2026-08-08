@@ -2,7 +2,6 @@ using System.Diagnostics;
 using System.Text.Json;
 using System.Xml.Linq;
 using System.Runtime.Versioning;
-using Microsoft.Data.Sqlite;
 using RimDevTools;
 
 [assembly: SupportedOSPlatform("windows")]
@@ -32,12 +31,6 @@ internal static class FakeRimWorld
         Directory.CreateDirectory(configDirectory);
         File.WriteAllText(Path.Combine(configDirectory, "fake-args.txt"), string.Join(" ", args));
         File.WriteAllText(Path.Combine(configDirectory, "fake-desktop.txt"), GameProcessLauncher.CurrentDesktopName() ?? "<unknown>");
-
-        if (mode.StartsWith("data", StringComparison.Ordinal))
-        {
-            await RunDataExportAsync(configDirectory, mode);
-            return;
-        }
 
         var settingsPath = Path.Combine(configDirectory, "Mod_LogSyncMod_LogSyncMod.xml");
         var settings = XDocument.Load(settingsPath);
@@ -123,100 +116,6 @@ internal static class FakeRimWorld
         await Task.Delay(TimeSpan.FromSeconds(30));
     }
 
-    private static async Task RunDataExportAsync(string configDirectory, string mode)
-    {
-        if (mode == "data-hang")
-        {
-            var hangingRequest = JsonSerializer.Deserialize<DataExportRequest>(File.ReadAllText(Path.Combine(configDirectory, "RimDevTools.ExportRequest.json")), new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
-            var hangingLog = Path.Combine(Directory.GetParent(configDirectory)!.FullName, "Player.log");
-            File.AppendAllText(hangingLog, $"[RimSearcher] EXPORT_STAGE runId={hangingRequest.RunId} stage=records\n");
-            await Task.Delay(TimeSpan.FromSeconds(30));
-            return;
-        }
-
-        var requestPath = Path.Combine(configDirectory, "RimDevTools.ExportRequest.json");
-        var request = JsonSerializer.Deserialize<DataExportRequest>(File.ReadAllText(requestPath), new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
-        var processingPath = Path.Combine(configDirectory, $"RimDevTools.ExportRequest.processing.{request.RunId}.json");
-        File.Move(requestPath, processingPath);
-        var resultPath = Path.Combine(configDirectory, $"RimDevTools.ExportResult.{request.RunId}.json");
-        var playerLog = Path.Combine(Directory.GetParent(configDirectory)!.FullName, "Player.log");
-        Directory.CreateDirectory(Path.GetDirectoryName(playerLog)!);
-        if (mode == "data-fail")
-        {
-            File.WriteAllText(resultPath, JsonSerializer.Serialize(new { schemaVersion = 1, runId = request.RunId, ok = false, errorCode = "FAKE_EXPORT_FAILED", errorMessage = "simulated failure" }));
-            File.AppendAllText(playerLog, $"[RimSearcher] EXPORT_FAILED runId={request.RunId} code=FAKE_EXPORT_FAILED\n");
-            return;
-        }
-
-        var rimSearcherPath = Environment.GetEnvironmentVariable("RIMDEVTOOLS_RIMSEARCHER_PATH")!;
-        var exporterVersion = System.Diagnostics.FileVersionInfo.GetVersionInfo(rimSearcherPath).FileVersion!;
-        var userVersion = ComponentLocator.EncodedVersion(exporterVersion)!.Value;
-        var effectiveHash = mode == "data-bad-hash" ? "sha256:bad" : request.RequestedModsHash;
-        WriteDatabase(request, exporterVersion, userVersion, effectiveHash);
-        var result = new
-        {
-            schemaVersion = 1,
-            runId = request.RunId,
-            ok = true,
-            databasePath = request.OutputPath,
-            databaseBytes = new FileInfo(request.OutputPath).Length,
-            exporterVersion,
-            gameVersion = "1.6.4871",
-            language = "ChineseSimplified",
-            effectiveModsHash = request.RequestedModsHash,
-            completedUtc = DateTimeOffset.UtcNow
-        };
-        File.WriteAllText(resultPath, JsonSerializer.Serialize(result));
-        var signal = mode == "data-signal-mismatch"
-            ? $"[RimSearcher] EXPORT_FAILED runId={request.RunId} code=WRONG_SIGNAL\n"
-            : $"[RimSearcher] EXPORT_COMPLETE runId={request.RunId}\n";
-        File.AppendAllText(playerLog, mode == "data-large-log"
-            ? signal + string.Concat(Enumerable.Repeat(new string('z', 96) + "\n", 600))
-            : signal);
-        await Task.Delay(100);
-    }
-
-    private static void WriteDatabase(DataExportRequest request, string exporterVersion, int userVersion, string effectiveHash)
-    {
-        Directory.CreateDirectory(Path.GetDirectoryName(request.OutputPath)!);
-        var temp = request.OutputPath + ".tmp";
-        if (File.Exists(temp)) File.Delete(temp);
-        using (var connection = new SqliteConnection($"Data Source={temp};Pooling=False"))
-        {
-            connection.Open();
-            using var command = connection.CreateCommand();
-            command.CommandText = $@"
-                CREATE TABLE defs (id INTEGER PRIMARY KEY, def_name TEXT NOT NULL);
-                CREATE TABLE export_metadata (
-                    schema_version INTEGER NOT NULL, run_id TEXT NOT NULL, exporter_version TEXT NOT NULL,
-                    sqlite_user_version INTEGER NOT NULL, game_version TEXT NOT NULL, language TEXT NOT NULL,
-                    exported_utc TEXT NOT NULL, input_mods_hash TEXT NOT NULL, requested_mods_hash TEXT NOT NULL,
-                    effective_mods_hash TEXT NOT NULL, project_package_id TEXT NOT NULL);
-                CREATE TABLE loaded_mods (
-                    load_order INTEGER NOT NULL, package_id TEXT NOT NULL, name TEXT NOT NULL, version TEXT NOT NULL,
-                    root_path TEXT NOT NULL, is_official INTEGER NOT NULL, is_tooling INTEGER NOT NULL);
-                INSERT INTO export_metadata VALUES (1, $runId, $exporterVersion, $userVersion, '1.6.4871', 'ChineseSimplified', $utc, $inputHash, $requestedHash, $effectiveHash, $projectPackageId);
-                INSERT INTO loaded_mods VALUES (0, 'brrainz.harmony', 'Harmony', '1.0', 'C:\\Harmony', 0, 0);
-                INSERT INTO loaded_mods VALUES (1, 'ludeon.rimworld', 'Core', '1.6', 'C:\\RimWorld\\Data\\Core', 1, 0);
-                INSERT INTO loaded_mods VALUES (2, 'sarg.smartspeed', 'SmartSpeed', '1.0', 'C:\\SmartSpeed', 0, 0);
-                INSERT INTO loaded_mods VALUES (3, 'brrainz.cameraplus', 'CameraPlus', '1.0', 'C:\\CameraPlus', 0, 0);
-                INSERT INTO loaded_mods VALUES (4, 'erdelf.humanoidalienraces', 'HumanoidAlienRaces', '1.0', 'C:\\HumanoidAlienRaces', 0, 0);
-                INSERT INTO loaded_mods VALUES (5, 'trigger.logsyncmod', 'LogSync', '1.0', 'C:\\LogSync', 0, 0);
-                INSERT INTO loaded_mods VALUES (6, $projectPackageId, 'Current', '1.0', 'C:\\Current', 0, 0);
-                INSERT INTO loaded_mods VALUES (7, 'kearril.rimsearcherdatamod', 'RimSearcher', $exporterVersion, 'C:\\RimSearcher', 0, 1);
-                PRAGMA user_version = {userVersion};";
-            command.Parameters.AddWithValue("$runId", request.RunId);
-            command.Parameters.AddWithValue("$exporterVersion", exporterVersion);
-            command.Parameters.AddWithValue("$userVersion", userVersion);
-            command.Parameters.AddWithValue("$utc", DateTimeOffset.UtcNow.ToString("O"));
-            command.Parameters.AddWithValue("$inputHash", request.InputModsHash);
-            command.Parameters.AddWithValue("$requestedHash", request.RequestedModsHash);
-            command.Parameters.AddWithValue("$effectiveHash", effectiveHash);
-            command.Parameters.AddWithValue("$projectPackageId", request.ProjectPackageId);
-            command.ExecuteNonQuery();
-        }
-        File.Move(temp, request.OutputPath, true);
-    }
 }
 
 internal sealed class TestSuite
@@ -245,7 +144,6 @@ internal sealed class TestSuite
             await TestDoctorIsReadOnlyAsync();
             await TestRunPreflightAsync();
             await TestGameWorkflowsAsync();
-            await TestDataWorkflowsAsync();
             Console.WriteLine($"PASS {_passed} tests");
         }
         finally
@@ -288,7 +186,6 @@ internal sealed class TestSuite
             Array.Empty<string>(), ["--help"], ["doctor", "--help"], ["deploy", "--help"],
             ["ref", "--help"], ["ref", "search", "--help"], ["ref", "pull", "--help"], ["ref", "deps", "--help"], ["ref", "related", "--help"],
             ["test", "--help"], ["test", "run", "--help"], ["test", "settings", "--help"],
-            ["data", "--help"], ["data", "refresh", "--help"], ["data", "status", "--help"],
             ["mods", "--help"], ["mods", "install-tools", "--help"]
         };
         foreach (var args in paths)
@@ -297,7 +194,7 @@ internal sealed class TestSuite
             Assert(result.ExitCode == 0 && result.Output.Contains("Usage:", StringComparison.Ordinal), $"help succeeds without project discovery: {string.Join(' ', args)}");
         }
 
-        foreach (var command in new[] { "deploy", "ref search", "ref pull", "ref deps", "ref related", "test run", "data refresh", "mods install-tools" })
+        foreach (var command in new[] { "deploy", "ref search", "ref pull", "ref deps", "ref related", "test run", "mods install-tools" })
         {
             using var writer = new StringWriter();
             var original = Console.Out;
@@ -313,6 +210,12 @@ internal sealed class TestSuite
         Assert(unknown.ExitCode == ExitCodes.InvalidArguments && JsonErrorCode(unknown.Output) == "UNKNOWN_COMMAND", "unknown command with help remains a structured error");
         var removedInit = await CaptureAsync(() => CliApplication.RunAsync(["init", "1.6", "--output", "unused"]));
         Assert(removedInit.ExitCode == ExitCodes.InvalidArguments && JsonErrorCode(removedInit.Output) == "UNKNOWN_COMMAND", "removed init command returns the standard unknown-command error");
+        var removedData = await CaptureAsync(() => CliApplication.RunAsync(["data", "status"]));
+        Assert(removedData.ExitCode == ExitCodes.InvalidArguments && JsonErrorCode(removedData.Output) == "UNKNOWN_COMMAND", "removed data command returns the standard unknown-command error");
+        var version = await CaptureAsync(() => CliApplication.RunAsync(["--version"]));
+        using var versionJson = JsonDocument.Parse(version.Output);
+        Assert(version.ExitCode == 0
+            && versionJson.RootElement.EnumerateObject().Select(property => property.Name).SequenceEqual(["ok", "command", "rimDevToolsVersion"]), "version output only reports the RimDevTools version");
     }
 
     private void TestEnvironmentDiscovery()
@@ -561,7 +464,6 @@ internal sealed class TestSuite
         CreateMod(environment.Game, "SmartSpeed", "sarg.smartspeed");
         CreateMod(environment.Game, "CameraPlus", "brrainz.cameraplus");
         CreateMod(environment.Game, "HumanoidAlienRaces", "erdelf.humanoidalienraces");
-        CreateMod(environment.Game, "RimSearcherDataMod", "kearril.rimsearcherdatamod");
         CreateMod(environment.Game, "LogSync", "trigger.logsyncmod");
         CreateMod(environment.Game, "Helper", "demo.helper");
         File.WriteAllText(environment.ConfigPath, Config(environment, minMods: "[\"brrainz.harmony\",\"sarg.smartspeed\",\"brrainz.cameraplus\",\"erdelf.humanoidalienraces\",\"trigger.logsyncmod\",\"demo.helper\"]"));
@@ -576,15 +478,6 @@ internal sealed class TestSuite
         var rejected = ModListParser.Resolve(context, modsFile, out var rejectedError);
         Assert(rejected is null && rejectedError?.Code == "REQUIRED_MODS_DISABLED", "ModList rejects game launches without all required mods enabled");
 
-        File.WriteAllText(modsFile, "<ModsConfigData><activeMods><li>brrainz.harmony</li><li>sarg.smartspeed</li><li>brrainz.cameraplus</li><li>erdelf.humanoidalienraces</li><li>trigger.logsyncmod</li></activeMods></ModsConfigData>");
-        var dataRejected = ModListParser.ResolveData(context, modsFile, out var dataRejectedError);
-        Assert(dataRejected is null && dataRejectedError?.Code == "REQUIRED_MODS_DISABLED", "Data workflows require RimSearcherDataMod to be enabled");
-
-        File.WriteAllText(environment.ConfigPath, Config(environment, minMods: "[\"brrainz.harmony\",\"sarg.smartspeed\",\"brrainz.cameraplus\",\"erdelf.humanoidalienraces\",\"kearril.rimsearcherdatamod\",\"trigger.logsyncmod\"]"));
-        File.WriteAllText(modsFile, "<ModsConfigData><activeMods><li>brrainz.harmony</li><li>sarg.smartspeed</li><li>brrainz.cameraplus</li><li>erdelf.humanoidalienraces</li><li>trigger.logsyncmod</li><li>kearril.rimsearcherdatamod</li></activeMods></ModsConfigData>");
-        var sortedContext = ProjectDiscovery.Find(environment.Root, out _)!;
-        var dataResolution = ModListParser.ResolveData(sortedContext, modsFile, out var dataOrderError);
-        Assert(dataOrderError is null && dataResolution!.Mods.SequenceEqual(["brrainz.harmony", "ludeon.rimworld", "sarg.smartspeed", "brrainz.cameraplus", "erdelf.humanoidalienraces", "demo.current", "kearril.rimsearcherdatamod", "trigger.logsyncmod"], StringComparer.OrdinalIgnoreCase), "Data workflows normalize default mods to min_active_mods order and keep the target before RimSearcherDataMod");
     }
 
     private void TestIncrementalLogSignalScanner()
@@ -597,12 +490,6 @@ internal sealed class TestSuite
         scanner.Reset();
         Assert(!scanner.HasSeen(signal), "incremental log scanner resets after log truncation");
 
-        var stageScanner = new IncrementalLogStageScanner("[RimSearcher] EXPORT_STAGE runId=current stage=");
-        stageScanner.Append("prefix [RimSearcher] EXPORT_STAGE runId=current sta");
-        stageScanner.Append("ge=records\n" + string.Concat(Enumerable.Repeat(new string('s', 96) + "\n", 600)));
-        Assert(stageScanner.LatestStage == "records", "incremental stage scanner recognizes a split stage before more than 32 KiB of trailing output");
-        stageScanner.Reset();
-        Assert(stageScanner.LatestStage is null, "incremental stage scanner resets after log truncation");
     }
 
     private async Task TestSettingsAsync()
@@ -968,75 +855,6 @@ internal sealed class TestSuite
         Assert(missingRun.ExitCode == 0 && !File.Exists(missingSettings.SettingsPath), "test run temporarily creates and then removes an originally missing settings file");
     }
 
-    private async Task TestDataWorkflowsAsync()
-    {
-        var environment = CreateProjectEnvironment("data-workflows", createGameExecutable: true);
-        CreateMod(environment.Game, "RimSearcherDataMod", "kearril.rimsearcherdatamod");
-        File.WriteAllText(environment.ConfigPath, Config(
-            environment,
-            minMods: "[\"brrainz.harmony\",\"sarg.smartspeed\",\"brrainz.cameraplus\",\"erdelf.humanoidalienraces\",\"trigger.logsyncmod\",\"kearril.rimsearcherdatamod\"]",
-            extra: "\"rimsearcher_db_path\":\".rimdev\\\\defs.db\""));
-        using var scope = UseEnvironment(environment);
-        Environment.SetEnvironmentVariable("RIMDEVTOOLS_RIMSEARCHER_PATH", Path.Combine(AppContext.BaseDirectory, "RimDevTools.Tests.exe"));
-
-        Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", "data-success");
-        var refresh = await CaptureAsync(() => DataCommand.RefreshAsync(["data", "refresh", "--timeout-seconds", "5"]));
-        Assert(refresh.ExitCode == 0 && refresh.Output.Contains("\"isolatedDesktop\": false") && File.ReadAllText(Path.Combine(environment.ConfigDirectory, "fake-desktop.txt")) == GameProcessLauncher.CurrentDesktopName(), "data refresh accepts matching result and defaults to the normal desktop");
-        AssertConfigurationRestored(environment, "data refresh restores exact ModsConfig and leaves LogSync settings unchanged");
-
-        Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", "data-success");
-        var visibleRefresh = await CaptureAsync(() => DataCommand.RefreshAsync(["data", "refresh", "--no-isolated-desktop", "--timeout-seconds", "5"]));
-        Assert(visibleRefresh.ExitCode == 0 && visibleRefresh.Output.Contains("\"isolatedDesktop\": false"), "data refresh CLI override disables isolation");
-
-        var conflictingIsolation = await CaptureAsync(() => DataCommand.RefreshAsync(["data", "refresh", "--isolated-desktop", "--no-isolated-desktop"]));
-        Assert(conflictingIsolation.ExitCode == ExitCodes.InvalidArguments && JsonErrorCode(conflictingIsolation.Output) == "ISOLATED_DESKTOP_OPTIONS_CONFLICT", "conflicting data isolation options fail before mutation");
-
-        Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", "data-large-log");
-        var largeRefresh = await CaptureAsync(() => DataCommand.RefreshAsync(["data", "refresh", "--timeout-seconds", "5"]));
-        Assert(largeRefresh.ExitCode == 0, "data refresh recognizes a completion signal before more than 32 KiB of trailing log output");
-        AssertConfigurationRestored(environment, "large-log data refresh restores exact configuration");
-        var databasePath = Path.Combine(environment.Root, ".rimdev", "defs.db");
-        var inspected = DatabaseInspector.Inspect(databasePath, "test");
-        Assert(inspected.Integrity == "ok" && inspected.VersionMatches && inspected.Metadata?.RunId is not null && inspected.LoadedMods.Count == 8, "database inspector validates metadata and ordered loaded mods");
-        Assert(
-            !File.Exists(Path.Combine(environment.ConfigDirectory, "RimDevTools.ExportRequest.json"))
-            && !Directory.EnumerateFiles(environment.ConfigDirectory, "RimDevTools.ExportRequest.processing.*.json").Any()
-            && TransactionRecovery.PendingDirectories(environment.ConfigDirectory).Count == 0,
-            "data refresh cleans request and transaction state");
-
-        var status = await CaptureAsync(() => DataCommand.StatusAsync(["data", "status"]));
-        using (var statusJson = JsonDocument.Parse(status.Output))
-        {
-            var statusResult = statusJson.RootElement.GetProperty("result");
-            Assert(status.ExitCode == 0 && !statusResult.GetProperty("refreshRecommended").GetBoolean(), $"data status reports a current valid database; status={status.Output}");
-        }
-
-        File.WriteAllText(Path.Combine(environment.ConfigDirectory, "RimDevTools.ExportRequest.json"), "{}");
-        var orphanedRequest = await CaptureAsync(() => DataCommand.RefreshAsync(["data", "refresh", "--timeout-seconds", "5"]));
-        Assert(orphanedRequest.ExitCode == ExitCodes.TaskFailed && JsonErrorCode(orphanedRequest.Output) == "EXPORT_REQUEST_CONFLICT", "data refresh refuses orphaned request files");
-        File.Delete(Path.Combine(environment.ConfigDirectory, "RimDevTools.ExportRequest.json"));
-
-        Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", "data-signal-mismatch");
-        var signalMismatch = await CaptureAsync(() => DataCommand.RefreshAsync(["data", "refresh", "--timeout-seconds", "5"]));
-        Assert(signalMismatch.ExitCode == ExitCodes.GameFailed && JsonErrorCode(signalMismatch.Output) == "EXPORT_SIGNAL_MISMATCH", "data refresh requires result and dedicated log to agree");
-        AssertConfigurationRestored(environment, "signal mismatch restores configuration");
-
-        Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", "data-bad-hash");
-        var badHash = await CaptureAsync(() => DataCommand.RefreshAsync(["data", "refresh", "--timeout-seconds", "5"]));
-        Assert(badHash.ExitCode == ExitCodes.GameFailed && JsonErrorCode(badHash.Output) == "EFFECTIVE_MODS_HASH_MISMATCH", "data refresh rejects inconsistent effective mod metadata");
-        AssertConfigurationRestored(environment, "metadata validation failure restores configuration");
-
-        Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", "data-fail");
-        var failed = await CaptureAsync(() => DataCommand.RefreshAsync(["data", "refresh", "--timeout-seconds", "5"]));
-        Assert(failed.ExitCode == ExitCodes.GameFailed && JsonErrorCode(failed.Output) == "FAKE_EXPORT_FAILED", "data refresh surfaces DataMod failure code");
-        AssertConfigurationRestored(environment, "DataMod failure restores configuration");
-
-        Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", "data-hang");
-        var timeout = await CaptureAsync(() => DataCommand.RefreshAsync(["data", "refresh", "--timeout-seconds", "1"]));
-        Assert(timeout.ExitCode == ExitCodes.Timeout && JsonErrorCode(timeout.Output) == "DATA_REFRESH_TIMEOUT" && timeout.Output.Contains("\"latestExportStage\": \"records\""), "data refresh timeout reports the latest export stage");
-        AssertConfigurationRestored(environment, "data timeout restores configuration");
-    }
-
     private ProjectEnvironment CreateProjectEnvironment(string name, bool createConfigDirectory = true, bool createGameExecutable = false, bool createSettings = true)
     {
         var root = NewDirectory(name);
@@ -1147,7 +965,6 @@ internal sealed class TestSuite
     {
         var oldDirectory = Environment.CurrentDirectory;
         var oldConfig = Environment.GetEnvironmentVariable("RIMDEVTOOLS_CONFIG_DIR");
-        var oldRimSearcher = Environment.GetEnvironmentVariable("RIMDEVTOOLS_RIMSEARCHER_PATH");
         var oldSteamProbe = SteamSessionGuard.ProbeOverride;
         Environment.CurrentDirectory = environment.Root;
         Environment.SetEnvironmentVariable("RIMDEVTOOLS_CONFIG_DIR", environment.ConfigDirectory);
@@ -1157,7 +974,6 @@ internal sealed class TestSuite
             Environment.CurrentDirectory = oldDirectory;
             Environment.SetEnvironmentVariable("RIMDEVTOOLS_CONFIG_DIR", oldConfig);
             Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", null);
-            Environment.SetEnvironmentVariable("RIMDEVTOOLS_RIMSEARCHER_PATH", oldRimSearcher);
             SteamSessionGuard.ProbeOverride = oldSteamProbe;
         });
     }

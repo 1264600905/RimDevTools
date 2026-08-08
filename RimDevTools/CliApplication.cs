@@ -1,6 +1,3 @@
-using System.Diagnostics;
-using System.Text.Json;
-
 namespace RimDevTools;
 
 public static class CliApplication
@@ -21,16 +18,11 @@ public static class CliApplication
 
         if (args.Length == 1 && args[0].Equals("--version", StringComparison.OrdinalIgnoreCase))
         {
-            var rimSearcherVersion = ComponentLocator.FileVersion(ComponentLocator.RimSearcherPath());
-            var dataModVersion = ComponentLocator.AssemblyVersion(ComponentLocator.DataModPath());
             CliResult.Write(new
             {
                 ok = true,
                 command = "version",
-                rimDevToolsVersion = typeof(CliApplication).Assembly.GetName().Version?.ToString() ?? "1.0.0",
-                rimSearcherVersion,
-                dataModVersion,
-                componentsCompatible = VersionsEqual(rimSearcherVersion, dataModVersion)
+                rimDevToolsVersion = typeof(CliApplication).Assembly.GetName().Version?.ToString() ?? "1.0.0"
             });
             return ExitCodes.Success;
         }
@@ -59,8 +51,6 @@ public static class CliApplication
                 "ref related" => await RefCommand.RelatedAsync(args),
                 "test run" => await TestCommand.RunAsync(args, cancellation.Token),
                 "test settings" => await TestCommand.SettingsAsync(args, cancellation.Token),
-                "data refresh" => await DataCommand.RefreshAsync(args, cancellation.Token),
-                "data status" => await DataCommand.StatusAsync(args),
                 "mods install-tools" => await ModsCommand.InstallToolsAsync(args, cancellation.Token),
                 _ => CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "UNKNOWN_COMMAND", $"未知命令: {command}")
             };
@@ -106,12 +96,6 @@ public static class CliApplication
         return null;
     }
 
-    internal static bool VersionsEqual(string? left, string? right)
-        => Version.TryParse(left, out var leftVersion) && Version.TryParse(right, out var rightVersion)
-            && leftVersion.Major == rightVersion.Major
-            && leftVersion.Minor == rightVersion.Minor
-            && leftVersion.Build == rightVersion.Build;
-
 }
 
 public static class CliArgs
@@ -129,8 +113,6 @@ public static class CliArgs
             ["ref related"] = (2, 1, [new("--version", true), new("--fuzzy", false)]),
             ["test run"] = (2, 0, [new("--deploy", false), new("--sync-source", false), new("--mode", true), new("--mods-file", true), new("--timeout-seconds", true), new("--target-package-id", true), new("--capture-screenshots", false), new("--isolated-desktop", false), new("--no-isolated-desktop", false)]),
             ["test settings"] = (2, 0, []),
-            ["data refresh"] = (2, 0, [new("--mods-file", true), new("--output", true), new("--timeout-seconds", true), new("--isolated-desktop", false), new("--no-isolated-desktop", false)]),
-            ["data status"] = (2, 0, []),
             ["mods install-tools"] = (2, 0, [new("--mods-path", true), new("--dry-run", false)])
         };
 

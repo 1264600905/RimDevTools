@@ -17,9 +17,6 @@ public static class CliHelp
             "test" => Test,
             "test run" => TestRun,
             "test settings" => TestSettings,
-            "data" => Data,
-            "data refresh" => DataRefresh,
-            "data status" => DataStatus,
             "mods" => Mods,
             "mods install-tools" => ModsInstallTools,
             _ => null
@@ -45,16 +42,15 @@ public static class CliHelp
           RimDevTools.exe <command> --help
 
         Commands:
-          doctor              Inspect project, game, tools, transactions, and database status.
+          doctor              Inspect project, game, tools, and transaction status.
           deploy              Build and atomically deploy the current mod.
           ref                 Search, pull, and inspect local reference mods.
           test                Configure or run quick, manual, automatic, and XML tests.
-          data                Refresh or inspect the project RimSearcher database.
-          mods                Install the packaged LogSync and RimSearcher tool mods.
+          mods                Install the packaged LogSync tool mod.
 
         Global options:
           -h, --help          Show top-level or command-specific help.
-          --version           Print component versions as JSON.
+          --version           Print the RimDevTools version as JSON.
 
         Project discovery:
           Project commands look for mod_config.jsonc in the current directory, then its
@@ -68,12 +64,11 @@ public static class CliHelp
         Examples:
           RimDevTools.exe doctor [--verbose]
           RimDevTools.exe test run --mode quick
-          RimDevTools.exe data refresh --timeout-seconds 180
           RimDevTools.exe ref pull "Harmony" --deps
 
         Exit codes:
           0 success; 2 invalid arguments/config; 3 missing dependency; 4 busy;
-          5 task failure; 6 timeout; 7 game/test/export failure; 130 cancelled.
+          5 task failure; 6 timeout; 7 game/test failure; 130 cancelled.
         """;
 
     private const string Doctor = """
@@ -88,7 +83,7 @@ public static class CliHelp
         Checks:
           .NET Framework 4.8 (preferred) or 4.7.2 build prerequisites, Steam libraries and RimWorld app 294100,
           real game/Harmony assemblies, Unity, Git/worktree, required mods, ILSpy, LogSync,
-          AutoTest, RimSearcher CLI/DataMod, database, lock, and recoverable transactions.
+          AutoTest, packaged tool mods, lock, and recoverable transactions.
 
         Output:
           JSON ready/issueCount/warningCount summary. By default checks contains items that
@@ -290,77 +285,17 @@ public static class CliHelp
           ENVIRONMENT_BUSY, GAME_EXIT_TIMEOUT, SETTINGS_UPDATE_FAILED.
         """;
 
-    private const string Data = """
-        Refresh or inspect the project-scoped RimSearcher Def database.
-
-        Usage:
-          RimDevTools.exe data <refresh|status> ...
-
-        Subcommands:
-          refresh             Launch RimWorld and export a validated SQLite database.
-          status              Inspect database integrity, version, and export metadata.
-
-        Run 'RimDevTools.exe data <subcommand> --help' for details.
-        """;
-
-    private const string DataRefresh = """
-        Launch RimWorld, export defs.db through DataMod, validate it, and restore config.
-
-        Usage:
-          RimDevTools.exe data refresh [options]
-
-        Options:
-          --mods-file <path>          External ModsConfig XML activeMods list.
-          --output <path>             Override rimsearcher_db_path for this run.
-          --timeout-seconds <n>       Positive wait limit; defaults to timeouts.max_wait.
-          --isolated-desktop          Force a private Windows desktop for this run.
-          --no-isolated-desktop       Force the current visible desktop for this run.
-          -h, --help                  Show this help.
-
-        Isolation precedence:
-          Explicit CLI flag > isolated_desktop project config > built-in false.
-
-        Example:
-          RimDevTools.exe data refresh --timeout-seconds 180
-
-        Success requires:
-          Matching runId result and log signal, valid path/size, SQLite integrity,
-          component version, game/language metadata, mod hashes, and config restoration.
-
-        Common errors:
-          ENVIRONMENT_BUSY, EXPORT_REQUEST_CONFLICT, DATA_REFRESH_TIMEOUT,
-          EXPORT_SIGNAL_MISMATCH, DATABASE_INVALID, VERSION_MISMATCH.
-        """;
-
-    private const string DataStatus = """
-        Inspect the configured RimSearcher database without launching or mutation.
-
-        Usage:
-          RimDevTools.exe data status
-
-        Options:
-          -h, --help          Show this help.
-
-        Output:
-          JSON path source, existence/size/time, integrity, user/component versions,
-          export runId/game/language, requested/effective mod hashes, loaded mods, and
-          refreshRecommended reason codes.
-
-        Common errors:
-          DATABASE_PATH_MISSING, PROJECT_NOT_FOUND, CONFIG_INVALID.
-        """;
-
     private const string Mods = """
         Install or inspect the tool mods packaged beside RimDevTools.
 
         Usage:
           RimDevTools.exe mods install-tools [options]
 
-        The command manages trigger.logsyncmod and kearril.rimsearcherdatamod as one batch.
+        The command manages the packaged trigger.logsyncmod component.
         """;
 
     private const string ModsInstallTools = """
-        Install the packaged LogSyncMod and RimSearcher DataMod into RimWorld/Mods.
+        Install the packaged LogSyncMod into RimWorld/Mods.
 
         Usage:
           RimDevTools.exe mods install-tools [--mods-path <path>] [--dry-run]
@@ -374,7 +309,7 @@ public static class CliHelp
           Validates the packaged manifest, versions, packageIds, and SHA-256 content hashes.
           Identical targets are skipped, older targets are atomically upgraded, newer targets
           are preserved, and same-version content conflicts are rejected. PublishedFileId.txt
-          and RimSearcher defs.db are preserved during upgrades.
+          is preserved during upgrades.
 
         Common errors:
           MODS_PATH_NOT_FOUND, SOURCE_HASH_MISMATCH, SOURCE_VERSION_MISMATCH,

@@ -15,11 +15,8 @@
     "game_version": "1.6",
 
     // 自动启动 RimWorld 时默认使用当前桌面；需要隔离桌面时显式传入命令行参数。
-    // quick/auto/xml 和 data refresh 使用此值，manual 默认仍使用普通桌面。
+    // quick/auto/xml 使用此值，manual 默认仍使用普通桌面。
     "isolated_desktop": false,
-
-    // RimSearcher 当前项目数据库；相对路径以项目根目录为基准。
-    "rimsearcher_db_path": ".tools\\db\\defs.db",
 
     // ============================================================
     // 本机环境 — 需要根据开发者本机的 Steam 安装位置修改
@@ -116,7 +113,6 @@
         "memegoddess.searchanddestroy",
         "rwzh.chinesepack.rimsaves",
         "trigger.universalblueprints",
-        "kearril.rimsearcherdatamod",
         "trigger.logsyncmod"
     ],
 
