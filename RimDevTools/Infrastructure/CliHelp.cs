@@ -86,7 +86,7 @@ public static class CliHelp
           -h, --help          Show this help.
 
         Checks:
-          .NET Framework 4.8 build prerequisites, Steam libraries and RimWorld app 294100,
+          .NET Framework 4.8 (preferred) or 4.7.2 build prerequisites, Steam libraries and RimWorld app 294100,
           real game/Harmony assemblies, Unity, Git/worktree, required mods, ILSpy, LogSync,
           AutoTest, RimSearcher CLI/DataMod, database, lock, and recoverable transactions.
 

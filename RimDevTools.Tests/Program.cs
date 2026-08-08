@@ -361,14 +361,31 @@ internal sealed class TestSuite
         var harmonyAssembly = ModAssemblyResolver.Resolve(harmony, "1.6", "0Harmony.dll");
         Assert(harmonyAssembly.AssemblyPath == Path.Combine(harmony, "Current", "Assemblies", "0Harmony.dll"), "Harmony resolver follows RimWorld 1.6 LoadFolders instead of selecting an older assembly");
 
-        var targetingPack = NewDirectory(Path.Combine("discovery", "Reference Assemblies", "v4.8"));
-        File.WriteAllText(Path.Combine(targetingPack, "mscorlib.dll"), "reference");
+        var targetingPack48 = NewDirectory(Path.Combine("discovery", "Reference Assemblies", "v4.8"));
+        var targetingPack472 = NewDirectory(Path.Combine("discovery", "Reference Assemblies", "v4.7.2"));
+        File.WriteAllText(Path.Combine(targetingPack48, "mscorlib.dll"), "reference");
+        File.WriteAllText(Path.Combine(targetingPack472, "mscorlib.dll"), "reference");
         var fakeDotnet = Path.Combine(_temp, "discovery", "dotnet.exe");
         File.WriteAllText(fakeDotnet, "dotnet");
-        var build = DotNetBuildEnvironmentInspector.Inspect(new DotNetBuildEnvironmentInput(fakeDotnet, ["10.0.100 [sdk]"], [targetingPack]));
-        Assert(build.HasDotNet && build.HasSdk && build.HasNetFramework48TargetingPack, "build environment inspector reports dotnet SDK and .NET Framework 4.8 targeting pack from explicit inputs");
+        var build = DotNetBuildEnvironmentInspector.Inspect(new DotNetBuildEnvironmentInput(fakeDotnet, ["10.0.100 [sdk]"], [targetingPack472, targetingPack48]));
+        Assert(build.HasDotNet && build.HasSdk && build.HasSupportedNetFrameworkTargetingPack && build.TargetFrameworkVersion == "v4.8" && build.TargetingPackPath == targetingPack48, "build environment inspector prefers .NET Framework 4.8 when both supported targeting packs are installed");
+        var fallbackBuild = DotNetBuildEnvironmentInspector.Inspect(new DotNetBuildEnvironmentInput(fakeDotnet, ["10.0.100 [sdk]"], [targetingPack472]));
+        Assert(fallbackBuild.HasSupportedNetFrameworkTargetingPack && fallbackBuild.TargetFrameworkVersion == "v4.7.2" && fallbackBuild.TargetingPackPath == targetingPack472, "build environment inspector accepts .NET Framework 4.7.2 as a compilation fallback");
         var missingBuild = DotNetBuildEnvironmentInspector.Inspect(new DotNetBuildEnvironmentInput(null, [], [Path.Combine(_temp, "missing-pack")]));
-        Assert(!missingBuild.HasDotNet && !missingBuild.HasSdk && !missingBuild.HasNetFramework48TargetingPack, "build environment inspector reports each missing prerequisite independently");
+        Assert(!missingBuild.HasDotNet && !missingBuild.HasSdk && !missingBuild.HasSupportedNetFrameworkTargetingPack, "build environment inspector reports each missing prerequisite independently");
+
+        var project48 = Path.Combine(currentProject, "net48.csproj");
+        var project472 = Path.Combine(currentProject, "net472.csproj");
+        var projectUnsupported = Path.Combine(currentProject, "net462.csproj");
+        File.WriteAllText(project48, "<Project><PropertyGroup><TargetFrameworkVersion>v4.8</TargetFrameworkVersion></PropertyGroup></Project>");
+        File.WriteAllText(project472, "<Project><PropertyGroup><TargetFrameworkVersion>v4.7.2</TargetFrameworkVersion></PropertyGroup></Project>");
+        File.WriteAllText(projectUnsupported, "<Project><PropertyGroup><TargetFrameworkVersion>v4.6.2</TargetFrameworkVersion></PropertyGroup></Project>");
+        Assert(DoctorCommand.EvaluateProjectCheck(currentProject, "net48.csproj").Status == "available" && DoctorCommand.EvaluateProjectCheck(currentProject, "net472.csproj").Status == "available", "doctor accepts projects targeting .NET Framework 4.8 or 4.7.2");
+        Assert(DoctorCommand.EvaluateProjectCheck(currentProject, "net462.csproj").Status == "unsupported", "doctor still rejects unsupported .NET Framework project targets");
+
+        var fallbackMessage = @"已找到 .NET Framework 4.7.2 Developer/Targeting Pack，可满足编译条件；仍建议安装 .NET Framework 4.8。AI 可能需要将 source\MyCustomMod\MyCustomMod.csproj 的 TargetFrameworkVersion 修改为 v4.7.2。";
+        var fallbackSummary = DoctorCommand.Summarize([new DoctorCheck("build.netfx_targeting_pack", "available", true, targetingPack472, fallbackMessage)], verbose: false);
+        Assert(fallbackSummary.Ready && fallbackSummary.IssueCount == 0 && fallbackSummary.Checks.Single().Message?.Contains(@"source\MyCustomMod\MyCustomMod.csproj", StringComparison.Ordinal) == true, "doctor keeps the .NET Framework 4.7.2 fallback ready while showing the AI repair hint by default");
 
         var defaultSummary = DoctorCommand.Summarize(
         [

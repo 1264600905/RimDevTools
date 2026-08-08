@@ -4,7 +4,7 @@ RimWorld 1.6 模组开发模板。
 
 ## 环境要求
 
-Windows x64 上的 RimDevTools、RimSearcher 和 DecompilerServer 均需要安装 .NET 10 Runtime。仅运行这些工具不需要 .NET 10 SDK；缺少 Runtime 时工具自身无法启动，因此 `doctor` 不检查这个前提。使用 `dotnet build` 编译模组还需要 dotnet SDK 和 .NET Framework 4.8 Developer/Targeting Pack。
+Windows x64 上的 RimDevTools、RimSearcher 和 DecompilerServer 均需要安装 .NET 10 Runtime。仅运行这些工具不需要 .NET 10 SDK；缺少 Runtime 时工具自身无法启动，因此 `doctor` 不检查这个前提。使用 `dotnet build` 编译模组还需要 dotnet SDK，并推荐安装 .NET Framework 4.8 Developer/Targeting Pack，也可使用 4.7.2 作为兼容替代。
 
 首次使用时请修改：
 
@@ -35,4 +35,4 @@ Codex 会从项目内的 `.codex/config.toml` 启动随模板提供的 Decompile
 
 开始实际开发前必须先运行 `data status`；若结果建议刷新，则运行 `data refresh` 并再次确认状态有效。先用 RimSearcher 获取运行时 Def 证据，只有需要确认 C# 行为时才使用 DecompilerServer。
 
-模板 C# 工程目标为 .NET Framework 4.8，并递归包含 `source/MyCustomMod` 下除 `bin`/`obj` 外的 `.cs` 文件。游戏、Unity 和 Harmony 引用由 RimDevTools 从本机真实 RimWorld/Steam Workshop 安装解析；直接构建时必须传入 `RimWorldDir`、`RimWorldManagedDir` 和 `HarmonyDllPath`。
+模板 C# 工程默认目标为推荐的 .NET Framework 4.8，也允许改为 4.7.2，并递归包含 `source/MyCustomMod` 下除 `bin`/`obj` 外的 `.cs` 文件。游戏、Unity 和 Harmony 引用由 RimDevTools 从本机真实 RimWorld/Steam Workshop 安装解析；直接构建时必须传入 `RimWorldDir`、`RimWorldManagedDir` 和 `HarmonyDllPath`。

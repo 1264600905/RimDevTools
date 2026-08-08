@@ -18,7 +18,7 @@ Successful and expected failure results end with one JSON object on stdout. Prog
 
 ### `doctor [--verbose]`
 
-Inspect .NET Framework 4.8 build prerequisites, Steam/RimWorld/Workshop, real game/Harmony assemblies, Unity, Git/worktree, required mods, ILSpy, LogSync, AutoTest, RimSearcher data, locks, and transactions. This command is read-only and never runs a build. Default output contains actionable problems, readiness/counts, and the resolved `Assembly-CSharp.dll` and `0Harmony.dll` absolute paths; `--verbose` includes every check. It does not check .NET 10 Runtime or Steam account licensing.
+Inspect .NET Framework 4.8 (preferred) or 4.7.2 build prerequisites, Steam/RimWorld/Workshop, real game/Harmony assemblies, Unity, Git/worktree, required mods, ILSpy, LogSync, AutoTest, RimSearcher data, locks, and transactions. Both targeting packs satisfy readiness; when only 4.7.2 is found, the output tells AI that `source/MyCustomMod/MyCustomMod.csproj` may need to target `v4.7.2`. This command is read-only and never runs a build. Default output contains actionable problems, readiness/counts, the selected targeting pack, and the resolved `Assembly-CSharp.dll` and `0Harmony.dll` absolute paths; `--verbose` includes every check. It does not check .NET 10 Runtime or Steam account licensing.
 
 ### `deploy [--sync-source] [--dry-run]`
 

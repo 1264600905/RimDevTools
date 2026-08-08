@@ -4,7 +4,7 @@ RimDevTools 是本仓库内的 .NET 10 Windows CLI，统一承载模组部署、
 
 ## 环境要求
 
-RimDevTools、RimSearcher 和 DecompilerServer 均要求 Windows x64 .NET 10 Runtime。仅运行工具不要求 .NET 10 SDK；由于缺少 Runtime 时 RimDevTools 本身无法启动，`doctor` 不检查该前提。编译 .NET Framework 4.8 模组还需要 dotnet SDK 和 .NET Framework 4.8 Developer/Targeting Pack。
+RimDevTools、RimSearcher 和 DecompilerServer 均要求 Windows x64 .NET 10 Runtime。仅运行工具不要求 .NET 10 SDK；由于缺少 Runtime 时 RimDevTools 本身无法启动，`doctor` 不检查该前提。编译模组还需要 dotnet SDK，并推荐安装 .NET Framework 4.8 Developer/Targeting Pack，也可使用 4.7.2 作为兼容替代。
 
 ## 构建
 
@@ -61,7 +61,7 @@ RimDevTools.exe mods install-tools
 
 项目命令从当前目录或直接父目录发现 `mod_config.jsonc`。正常结果写入 stdout 的单个 JSON 对象，诊断信息写入 stderr。
 
-`doctor` 默认在 `result.checks` 中输出需要处理的 missing/invalid/stale/busy/unsupported 项，并始终输出解析后的 `Assembly-CSharp.dll` 与 `0Harmony.dll` 绝对路径，方便 AI 直接了解真实编译引用；同时提供 `ready`、`issueCount` 和 `warningCount` 摘要。`doctor --verbose` 输出全部有序检查。它检查 .NET Framework 4.8 编译前提、Steam/RimWorld/Workshop、真实游戏与 Harmony DLL、Unity、Git、必需模组和既有工具状态，但不执行 build，也不检查 .NET 10 Runtime 或账号许可证。
+`doctor` 默认在 `result.checks` 中输出需要处理的 missing/invalid/stale/busy/unsupported 项，并始终输出 .NET Framework Targeting Pack、解析后的 `Assembly-CSharp.dll` 与 `0Harmony.dll` 信息，方便 AI 直接了解真实编译引用；同时提供 `ready`、`issueCount` 和 `warningCount` 摘要。`doctor --verbose` 输出全部有序检查。它将 .NET Framework 4.8（推荐）和 4.7.2 都视为满足编译前提；仅发现 4.7.2 时会提示 AI 可能需要把 `source\MyCustomMod\MyCustomMod.csproj` 的目标改为 `v4.7.2`，但不会阻止后续操作。它还检查 Steam/RimWorld/Workshop、真实游戏与 Harmony DLL、Unity、Git、必需模组和既有工具状态，但不执行 build，也不检查 .NET 10 Runtime 或账号许可证。
 
 发布目录本身就是可复制使用的 1.6 项目模板，不再提供 `init` 命令，也不在 `.tools` 中嵌套第二份模板。`mods install-tools` 会校验随包组件的版本与目录哈希，再将 LogSyncMod 和 RimSearcher DataMod 作为一个批次安装到 RimWorld `Mods`；可用 `--mods-path` 显式指定目标。
 

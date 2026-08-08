@@ -15,6 +15,7 @@ public static class DoctorCommand
     };
     private static readonly HashSet<string> AlwaysVisibleChecks = new(StringComparer.OrdinalIgnoreCase)
     {
+        "build.netfx_targeting_pack",
         "build.game_assembly.Assembly-CSharp",
         "build.harmony_assembly"
     };
@@ -38,7 +39,16 @@ public static class DoctorCommand
         };
 
         var build = DotNetBuildEnvironmentInspector.InspectCurrent();
-        checks.Add(new DoctorCheck("build.netfx48_targeting_pack", build.HasNetFramework48TargetingPack ? "available" : "missing", config.CsprojPaths.Count > 0, build.TargetingPackPath, build.HasNetFramework48TargetingPack ? null : "未找到 .NET Framework 4.8 Developer/Targeting Pack"));
+        var targetingPackMessage = build.TargetFrameworkVersion == "v4.7.2"
+            ? @"已找到 .NET Framework 4.7.2 Developer/Targeting Pack，可满足编译条件；仍建议安装 .NET Framework 4.8。AI 可能需要将 source\MyCustomMod\MyCustomMod.csproj 的 TargetFrameworkVersion 修改为 v4.7.2。"
+            : build.HasSupportedNetFrameworkTargetingPack ? null : "未找到 .NET Framework 4.8 或 4.7.2 Developer/Targeting Pack";
+        checks.Add(new DoctorCheck(
+            "build.netfx_targeting_pack",
+            build.HasSupportedNetFrameworkTargetingPack ? "available" : "missing",
+            config.CsprojPaths.Count > 0,
+            build.TargetingPackPath,
+            targetingPackMessage,
+            new { frameworkVersion = build.TargetFrameworkVersion, preferredFrameworkVersion = "v4.8", supportedFrameworkVersions = DotNetBuildEnvironmentInspector.SupportedTargetFrameworkVersions }));
         checks.Add(new DoctorCheck("build.dotnet", build.HasDotNet ? "available" : "missing", config.CsprojPaths.Count > 0, build.DotNetPath, build.HasDotNet ? null : "PATH 中未找到 dotnet.exe"));
         checks.Add(new DoctorCheck("build.dotnet_sdk", build.HasSdk ? "available" : "missing", config.CsprojPaths.Count > 0, build.DotNetPath, build.HasSdk ? null : "dotnet 可用，但没有已安装的 SDK", new { sdks = build.InstalledSdks }));
         AddProjectChecks(checks, context);
@@ -119,27 +129,32 @@ public static class DoctorCommand
     private static void AddProjectChecks(List<DoctorCheck> checks, ProjectContext context)
     {
         foreach (var projectFile in context.Config.CsprojPaths)
+            checks.Add(EvaluateProjectCheck(context.Root, projectFile));
+    }
+
+    internal static DoctorCheck EvaluateProjectCheck(string projectRoot, string projectFile)
+    {
+        var path = Path.GetFullPath(projectFile, projectRoot);
+        if (!PathSafety.IsWithin(path, projectRoot))
+            return new DoctorCheck($"build.csproj.{projectFile}", "invalid", true, path, "工程路径越出项目目录");
+        if (!File.Exists(path))
+            return new DoctorCheck($"build.csproj.{projectFile}", "missing", true, path, "工程文件不存在");
+
+        try
         {
-            var path = Path.GetFullPath(projectFile, context.Root);
-            if (!PathSafety.IsWithin(path, context.Root))
-            {
-                checks.Add(new DoctorCheck($"build.csproj.{projectFile}", "invalid", true, path, "工程路径越出项目目录"));
-                continue;
-            }
-            if (!File.Exists(path))
-            {
-                checks.Add(new DoctorCheck($"build.csproj.{projectFile}", "missing", true, path, "工程文件不存在"));
-                continue;
-            }
-            try
-            {
-                var target = XDocument.Load(path).Descendants().FirstOrDefault(element => element.Name.LocalName == "TargetFrameworkVersion")?.Value.Trim();
-                checks.Add(new DoctorCheck($"build.csproj.{projectFile}", target == "v4.8" ? "available" : "unsupported", true, path, target == "v4.8" ? null : $"工程必须目标为 .NET Framework 4.8，当前为 {target ?? "未声明"}"));
-            }
-            catch (Exception ex)
-            {
-                checks.Add(new DoctorCheck($"build.csproj.{projectFile}", "invalid", true, path, ex.Message));
-            }
+            var target = XDocument.Load(path).Descendants().FirstOrDefault(element => element.Name.LocalName == "TargetFrameworkVersion")?.Value.Trim();
+            var supported = DotNetBuildEnvironmentInspector.SupportedTargetFrameworkVersions.Contains(target, StringComparer.OrdinalIgnoreCase);
+            var message = target == "v4.7.2" ? "工程目标为 .NET Framework 4.7.2，满足编译条件；仍建议优先使用 .NET Framework 4.8" : null;
+            return new DoctorCheck(
+                $"build.csproj.{projectFile}",
+                supported ? "available" : "unsupported",
+                true,
+                path,
+                supported ? message : $"工程必须目标为 .NET Framework 4.8 或 4.7.2，当前为 {target ?? "未声明"}");
+        }
+        catch (Exception ex)
+        {
+            return new DoctorCheck($"build.csproj.{projectFile}", "invalid", true, path, ex.Message);
         }
     }
 
