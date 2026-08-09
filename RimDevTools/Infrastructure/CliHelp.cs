@@ -17,6 +17,7 @@ public static class CliHelp
             "test" => Test,
             "test run" => TestRun,
             "test settings" => TestSettings,
+            "test cleanup" => TestCleanup,
             "mods" => Mods,
             "mods install-tools" => ModsInstallTools,
             _ => null
@@ -82,7 +83,7 @@ public static class CliHelp
 
         Checks:
           .NET Framework 4.8 (preferred) or 4.7.2 build prerequisites, Steam libraries and RimWorld app 294100,
-          real game/Harmony assemblies, Unity, Git/worktree, required mods, ILSpy, LogSync,
+          real game/Harmony assemblies, Harmony DLL version, Unity, Git/worktree, required mods, ILSpy, LogSync,
           AutoTest, packaged tool mods, lock, and recoverable transactions.
 
         Output:
@@ -108,6 +109,7 @@ public static class CliHelp
         Configuration:
           mod_name, rimworld_dir, csproj_paths, sync_items, sync_source, protected_files_regex,
           timeouts, and shader_bundle. Shader settings are required only when enabled.
+          Pure XML mods may set csproj_paths to an empty array; deploy then skips C# builds.
 
         Example:
           RimDevTools.exe deploy --dry-run
@@ -229,6 +231,7 @@ public static class CliHelp
         Subcommands:
           run                 Run quick, manual, automatic, or XML testing.
           settings            Persist LogSync path and keyword settings without launching.
+          cleanup             Safely recover interrupted configuration transactions.
 
         Run 'RimDevTools.exe test <subcommand> --help' for details.
         """;
@@ -283,6 +286,24 @@ public static class CliHelp
 
         Common errors:
           ENVIRONMENT_BUSY, GAME_EXIT_TIMEOUT, SETTINGS_UPDATE_FAILED.
+        """;
+
+    private const string TestCleanup = """
+        Inspect or safely recover interrupted RimDevTools configuration transactions.
+
+        Usage:
+          RimDevTools.exe test cleanup [--dry-run]
+
+        Options:
+          --dry-run           Report recoverable transactions without changing files.
+          -h, --help          Show this help.
+
+        Behavior:
+          Mutation acquires the shared environment lock and refuses to run while RimWorld
+          is active. ModsConfig.xml recovery restores only the original activeMods list.
+
+        Common errors:
+          ENVIRONMENT_BUSY, GAME_RUNNING_CLEANUP_REFUSED, TRANSACTION_CLEANUP_INCOMPLETE.
         """;
 
     private const string Mods = """

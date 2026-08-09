@@ -83,6 +83,14 @@ public static class DoctorCommand
         var harmonyMod = environment.Mods.Find("brrainz.harmony");
         checks.Add(new DoctorCheck("mods.harmony", harmonyMod is null ? "missing" : "available", config.CsprojPaths.Count > 0, harmonyMod?.Directory, harmonyMod is null ? "未找到 brrainz.harmony" : null));
         checks.Add(new DoctorCheck("build.harmony_assembly", environment.References.HarmonyDllPath is null ? "missing" : "available", config.CsprojPaths.Count > 0, environment.References.HarmonyDllPath, environment.References.HarmonyDllPath is null ? environment.HarmonyResolution?.Error ?? "未找到 0Harmony.dll" : null, environment.HarmonyResolution));
+        var harmonyVersion = HarmonyVersionInspector.Inspect(environment.References.HarmonyDllPath);
+        checks.Add(new DoctorCheck(
+            "mods.harmony_version",
+            harmonyVersion.Status,
+            false,
+            harmonyVersion.Path,
+            harmonyVersion.Message,
+            new { installedVersion = harmonyVersion.InstalledVersion?.ToString(), requiredVersion = harmonyVersion.RequiredVersion.ToString() }));
         checks.Add(new DoctorCheck("mods.metadata", environment.Mods.Diagnostics.Count == 0 ? "available" : "invalid", false, null, environment.Mods.Diagnostics.Count == 0 ? null : "部分模组 About.xml 无法解析", new { diagnostics = environment.Mods.Diagnostics }));
 
         AddConfigPathChecks(checks, context, environment);
@@ -110,7 +118,7 @@ public static class DoctorCommand
         var lockBusy = configDirectory is not null && EnvironmentLock.IsBusy(configDirectory);
         checks.Add(new DoctorCheck("environment.lock", lockBusy ? "busy" : File.Exists(lockPath) ? "stale" : "available", false, lockPath, lockBusy ? "RimWorld 环境互斥锁正被占用" : File.Exists(lockPath) ? "互斥锁未占用，但存在遗留诊断文件" : null));
         var pendingTransactions = configDirectory is null ? [] : TransactionRecovery.PendingDirectories(configDirectory);
-        checks.Add(new DoctorCheck("environment.transactions", pendingTransactions.Count > 0 ? "stale" : "available", false, null, pendingTransactions.Count > 0 ? "存在未完成事务" : null, new { directories = pendingTransactions }));
+        checks.Add(new DoctorCheck("environment.transactions", pendingTransactions.Count > 0 ? "stale" : "available", false, null, pendingTransactions.Count > 0 ? "存在未完成事务；请在 RimWorld 完全退出后执行 RimDevTools.exe test cleanup" : null, new { directories = pendingTransactions, cleanupCommand = "RimDevTools.exe test cleanup" }));
 
         var summary = Summarize(checks, verbose);
         var result = new

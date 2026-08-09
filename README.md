@@ -63,10 +63,13 @@ RimSage 是半强制研究前置：
 .\.tools\RimDevTools.exe ref search "<keyword>"
 .\.tools\RimDevTools.exe ref pull "<exact-query>"
 .\.tools\RimDevTools.exe test run --mode quick
+.\.tools\RimDevTools.exe test cleanup --dry-run
 .\.tools\RimDevTools.exe mods install-tools --dry-run
 ```
 
 `mods install-tools` 只管理随包的 `trigger.logsyncmod`。安装器校验版本、packageId 和目录哈希，并保留 `PublishedFileId.txt`、防止降级、支持暂存/备份/回滚。
+
+纯 XML 模组可以将 `mod_config.jsonc` 的 `csproj_paths` 配置为空数组；部署会跳过 C# 构建，只同步配置的 XML、About、语言和其他 `sync_items`。
 
 quick、auto 和 XML 测试遵循 `mod_config.jsonc.isolated_desktop`；模板默认使用当前桌面。manual 默认使用当前桌面，除非显式传入 `--isolated-desktop`。测试会事务化修改并恢复 RimWorld 配置。
 

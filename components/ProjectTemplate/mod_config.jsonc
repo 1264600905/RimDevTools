@@ -33,6 +33,7 @@
     // ============================================================
     // C# 项目文件路径（相对于项目根目录），按编译顺序排列。
     // 单程序集项目通常为 source/{mod_name}/{mod_name}.csproj。
+    // 纯 XML 模组可以配置为空数组；为空时 deploy 跳过 C# 构建。
     "csproj_paths": ["source\\MyCustomMod\\MyCustomMod.csproj"],
     // 需要同步到游戏 Mods 目录的文件和文件夹（相对于项目根目录）。
     "sync_items": [

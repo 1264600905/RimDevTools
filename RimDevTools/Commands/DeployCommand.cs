@@ -107,6 +107,9 @@ public static class DeployCommand
                 path,
                 protectedRegex?.IsMatch(Path.GetFileName(path)) == true ? "protect" : "replace")).ToArray()
             : [];
+        var packageId = config.CurrentPackageId(context.Root);
+        var artifactPlan = DeploymentArtifactRecovery.Plan(targetRoot, target, packageId);
+        foreach (var artifact in artifactPlan.Where(x => x.Action == "retain")) warnings.Add($"部署残留需要人工确认: {artifact.Path}: {artifact.Reason}");
         var referencePlan = new BuildReferencePlan(environment.References.RimWorldDirectory, environment.References.ManagedDirectory, environment.References.HarmonyDllPath);
         var preview = new DeployPlan(
             context.Root,
@@ -116,10 +119,11 @@ public static class DeployCommand
             projectFiles,
             plan,
             targetActions,
+            artifactPlan,
             config.ProtectedFilesRegex);
 
         if (CliArgs.Has(args, "--dry-run"))
-            return new DeployExecution(true, ExitCodes.Success, new DeployResult(context.Root, true, null, target, [], preview, false), null, warnings);
+            return new DeployExecution(true, ExitCodes.Success, new DeployResult(context.Root, true, null, target, [], preview, false, artifactPlan), null, warnings);
 
         if (projectFiles.Count > 0)
         {
@@ -152,6 +156,11 @@ public static class DeployCommand
                 return Failure(ExitCodes.TaskFailed, recovery.Error!, context.Root);
         }
 
+        var currentArtifactPlan = DeploymentArtifactRecovery.Plan(targetRoot, target, packageId);
+        var artifactResults = DeploymentArtifactRecovery.Execute(targetRoot, target, currentArtifactPlan);
+        foreach (var artifact in artifactResults.Where(x => x.Action is "failed" or "retain"))
+            warnings.Add($"部署残留未清理: {artifact.Path}: {artifact.Reason}");
+
         if (config.ShaderBundle.Enabled)
         {
             var shaderResult = await BuildShaderAsync(context, config, cancellationToken);
@@ -180,7 +189,7 @@ public static class DeployCommand
             PreserveProtectedFiles(target, staging, protectedRegex);
             ValidateStaging(staging, plan);
             ReplaceDirectory(target, staging, targetRoot, runId);
-            return new DeployExecution(true, ExitCodes.Success, new DeployResult(context.Root, false, runId, target, projectFiles, preview, recovery.Found), null, warnings);
+            return new DeployExecution(true, ExitCodes.Success, new DeployResult(context.Root, false, runId, target, projectFiles, preview, recovery.Found, artifactResults), null, warnings);
         }
         catch (OperationCanceledException) { throw; }
         catch (Exception ex)
@@ -285,12 +294,14 @@ public sealed record DeploySyncPlan(string Item, string Source, string Destinati
 public sealed record DeployTargetAction(string Path, string Action);
 public sealed record ShaderPlan(bool Enabled, string? UnityPath, string? ProjectPath, string? BuildMethod);
 public sealed record BuildReferencePlan(string? RimWorldDirectory, string? ManagedDirectory, string? HarmonyDllPath);
-public sealed record DeployPlan(string ProjectRoot, string Target, ShaderPlan Shader, BuildReferencePlan References, IReadOnlyList<string> Projects, IReadOnlyList<DeploySyncPlan> SyncItems, IReadOnlyList<DeployTargetAction> TargetActions, string? ProtectedPattern);
-public sealed record DeployResult(string ProjectRoot, bool DryRun, string? RunId, string Target, IReadOnlyList<string> BuiltProjects, DeployPlan Plan, bool RecoveredTransaction);
+public sealed record DeployPlan(string ProjectRoot, string Target, ShaderPlan Shader, BuildReferencePlan References, IReadOnlyList<string> Projects, IReadOnlyList<DeploySyncPlan> SyncItems, IReadOnlyList<DeployTargetAction> TargetActions, IReadOnlyList<DeploymentArtifactAction> ArtifactActions, string? ProtectedPattern);
+public sealed record DeployResult(string ProjectRoot, bool DryRun, string? RunId, string Target, IReadOnlyList<string> BuiltProjects, DeployPlan Plan, bool RecoveredTransaction, IReadOnlyList<DeploymentArtifactAction> ArtifactActions);
 public sealed record ProcessTerminationResult(bool Exited, string? Error = null);
 
 internal static class ProcessUtil
 {
+    internal static Func<bool>? RimWorldRunningOverride { get; set; }
+
     public static async Task<bool> WaitForRimWorldExitAsync(int timeoutSeconds, int stableSeconds, CancellationToken cancellationToken = default)
     {
         var deadline = DateTime.UtcNow.AddSeconds(Math.Max(0, timeoutSeconds));
@@ -303,8 +314,9 @@ internal static class ProcessUtil
         return true;
     }
 
-    private static bool IsRimWorldRunning()
+    internal static bool IsRimWorldRunning()
     {
+        if (RimWorldRunningOverride is not null) return RimWorldRunningOverride();
         var processes = Process.GetProcessesByName("RimWorldWin64").Concat(Process.GetProcessesByName("RimWorld")).ToArray();
         try { return processes.Length > 0; }
         finally { foreach (var process in processes) process.Dispose(); }

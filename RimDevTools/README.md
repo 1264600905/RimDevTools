@@ -57,6 +57,7 @@ RimDevTools.exe ref deps <query> [--version <value>] [--fuzzy]
 RimDevTools.exe ref related <query> [--version <value>] [--fuzzy]
 RimDevTools.exe test settings
 RimDevTools.exe test run [--deploy] [--mode quick|manual|auto|xml]
+RimDevTools.exe test cleanup [--dry-run]
 RimDevTools.exe mods install-tools [--mods-path <path>] [--dry-run]
 ```
 
@@ -64,7 +65,7 @@ RimDevTools.exe mods install-tools [--mods-path <path>] [--dry-run]
 
 ### 部署
 
-先运行 `doctor --verbose`，再运行 `deploy --dry-run` 检查不可变计划。项目必须位于独立工作目录，不能位于 RimWorld `Mods` 或 Steam Workshop 内容目录；部署会自动同步到 `RimWorld/Mods`。实际部署会构建配置中的项目，以暂存目录和备份目录原子替换目标，并保留 `protected_files_regex` 匹配的文件。配置 `sync_source: true` 可让每次部署默认包含 `source/`，`--sync-source` 仍可单次启用。
+先运行 `doctor --verbose`，再运行 `deploy --dry-run` 检查不可变计划。项目必须位于独立工作目录，不能位于 RimWorld `Mods` 或 Steam Workshop 内容目录；部署会自动同步到 `RimWorld/Mods`。实际部署会构建配置中的项目，以暂存目录和备份目录原子替换目标，并保留 `protected_files_regex` 匹配的文件。纯 XML 模组可以将 `csproj_paths` 配置为空数组，此时 deploy 跳过 C# 构建但仍同步 `sync_items`。配置 `sync_source: true` 可让每次部署默认包含 `source/`，`--sync-source` 仍可单次启用。
 
 ### 第三方参考
 
@@ -72,7 +73,9 @@ RimDevTools.exe mods install-tools [--mods-path <path>] [--dry-run]
 
 ### 测试
 
-quick 是启动烟雾测试；manual 用于交互；auto/XML 验证结构化 AutoTest 结果。测试通过共享环境锁与配置事务恢复 `mods_config_path` 所在目录中的 RimWorld 配置。无论使用 `min_active_mods` 还是外部 `--mods-file`，都必须启用 `min_active_mods` 中的全部模组。`--deploy` 用于测试当前源码改动。
+quick 是启动烟雾测试；manual 用于交互；auto/XML 验证结构化 AutoTest 结果。测试通过共享环境锁与配置事务恢复 `mods_config_path` 所在目录中的 RimWorld 配置。无论使用 `min_active_mods` 还是外部 `--mods-file`，都必须启用 `min_active_mods` 中的全部模组。`--deploy` 用于测试当前源码改动。事务冲突后，可在 RimWorld 完全退出后运行 `test cleanup`；`--dry-run` 只检查不修改，清理 ModsConfig.xml 时只恢复原始 `<activeMods>`。
+
+`doctor` 还会读取已解析的 `0Harmony.dll` AssemblyVersion。低于工具要求版本时只给出 warning，并提示重新订阅 Harmony。
 
 ### 工具 Mod 安装
 

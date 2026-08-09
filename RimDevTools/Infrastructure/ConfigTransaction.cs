@@ -1,10 +1,13 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Xml.Linq;
 
 namespace RimDevTools;
 
 public sealed record TransactionRecoveryResult(bool Ok, bool Found, CliError? Error = null);
+public sealed record TransactionCleanupItem(string Directory, string Status, string? Message = null);
+public sealed record TransactionCleanupSummary(bool Ok, bool Found, IReadOnlyList<TransactionCleanupItem> Items);
 
 public sealed class ConfigTransaction : IAsyncDisposable
 {
@@ -152,8 +155,8 @@ public static class TransactionRecovery
             {
                 return Task.FromResult(Failure(
                     "TRANSACTION_CONFLICT",
-                    $"检测到用户修改，拒绝自动恢复: {entry.Path}",
-                    new { manifest.RunId, entry.Path, currentHash, entry.OriginalHash, entry.AppliedHash }));
+                    $"检测到用户修改，拒绝自动恢复: {entry.Path}。请在 RimWorld 完全退出后执行 RimDevTools.exe test cleanup",
+                    new { manifest.RunId, entry.Path, currentHash, entry.OriginalHash, entry.AppliedHash, cleanupCommand = "RimDevTools.exe test cleanup" }));
             }
         }
 
@@ -186,6 +189,135 @@ public static class TransactionRecovery
     {
         var root = Path.Combine(configDirectory, "RimDevToolsTransactions");
         return Directory.Exists(root) ? Directory.EnumerateDirectories(root).ToArray() : [];
+    }
+
+    public static async Task<TransactionCleanupSummary> CleanupAsync(string configDirectory, string modsConfigPath, bool dryRun)
+    {
+        var directories = PendingDirectories(configDirectory);
+        if (directories.Count == 0) return new(true, false, []);
+
+        var items = new List<TransactionCleanupItem>();
+        foreach (var directory in directories.OrderBy(x => x, StringComparer.OrdinalIgnoreCase))
+        {
+            var name = Path.GetFileName(directory);
+            if (name.StartsWith(".creating-", StringComparison.OrdinalIgnoreCase))
+            {
+                if (dryRun) items.Add(new(directory, "would_remove_creation_directory"));
+                else
+                {
+                    try { Directory.Delete(directory, true); items.Add(new(directory, "removed_creation_directory")); }
+                    catch (Exception ex) { items.Add(new(directory, "failed", ex.Message)); }
+                }
+                continue;
+            }
+
+            var result = await CleanupDirectoryAsync(directory, Path.GetFullPath(modsConfigPath), dryRun);
+            items.Add(result);
+        }
+
+        return new(items.All(x => x.Status is not "failed" and not "conflict"), true, items);
+    }
+
+    private static Task<TransactionCleanupItem> CleanupDirectoryAsync(string directory, string modsConfigPath, bool dryRun)
+    {
+        var manifestPath = Path.Combine(directory, "transaction.json");
+        if (!File.Exists(manifestPath)) return Task.FromResult(new TransactionCleanupItem(directory, "failed", "事务清单不存在"));
+
+        TransactionManifest manifest;
+        try
+        {
+            manifest = JsonSerializer.Deserialize<TransactionManifest>(File.ReadAllText(manifestPath), TransactionJson.Options)
+                ?? throw new InvalidDataException("事务清单为空");
+            if (manifest.SchemaVersion != 1) throw new InvalidDataException($"不支持事务版本: {manifest.SchemaVersion}");
+            var transactionRoot = Directory.GetParent(directory)?.Parent?.FullName
+                ?? throw new InvalidDataException("事务目录结构无效");
+            foreach (var entry in manifest.Entries)
+            {
+                if (!PathSafety.IsWithin(entry.Path, transactionRoot)) throw new InvalidDataException($"事务目标越出 RimWorld 配置目录: {entry.Path}");
+                if (!PathSafety.IsWithin(entry.Backup, directory)) throw new InvalidDataException($"事务备份越出事务目录: {entry.Backup}");
+            }
+        }
+        catch (Exception ex)
+        {
+            return Task.FromResult(new TransactionCleanupItem(directory, "failed", $"事务清单无效: {ex.Message}"));
+        }
+
+        var fullModsConfigPath = Path.GetFullPath(modsConfigPath);
+        var actions = new List<(TransactionEntry Entry, bool IsModsConfig, string CurrentHash, string BackupPath)>();
+        foreach (var entry in manifest.Entries)
+        {
+            var currentHash = File.Exists(entry.Path) ? ConfigTransaction.Hash(File.ReadAllBytes(entry.Path)) : "";
+            var isModsConfig = entry.Path.Equals(fullModsConfigPath, StringComparison.OrdinalIgnoreCase);
+            var backupExists = File.Exists(entry.Backup);
+            if (entry.Existed && !backupExists)
+                return Task.FromResult(new TransactionCleanupItem(directory, "failed", $"事务备份不存在: {entry.Backup}"));
+
+            if (!isModsConfig)
+            {
+                var isOriginal = currentHash.Equals(entry.OriginalHash, StringComparison.OrdinalIgnoreCase);
+                var isApplied = entry.AppliedHash is not null && currentHash.Equals(entry.AppliedHash, StringComparison.OrdinalIgnoreCase);
+                if (!isOriginal && !isApplied)
+                    return Task.FromResult(new TransactionCleanupItem(directory, "conflict", $"检测到用户或游戏修改，未恢复: {entry.Path}"));
+            }
+            actions.Add((entry, isModsConfig, currentHash, entry.Backup));
+        }
+
+        if (dryRun)
+        {
+            var hasChanges = actions.Any(action => !action.CurrentHash.Equals(action.Entry.OriginalHash, StringComparison.OrdinalIgnoreCase));
+            return Task.FromResult(new TransactionCleanupItem(directory, hasChanges ? "would_restore" : "already_original"));
+        }
+
+        try
+        {
+            foreach (var (entry, isModsConfig, currentHash, backupPath) in actions)
+            {
+                if (currentHash.Equals(entry.OriginalHash, StringComparison.OrdinalIgnoreCase)) continue;
+                if (isModsConfig)
+                    RestoreActiveMods(entry.Path, backupPath);
+                else if (entry.Existed)
+                    AtomicFile.WriteAllBytes(entry.Path, File.ReadAllBytes(backupPath));
+                else if (File.Exists(entry.Path))
+                    File.Delete(entry.Path);
+            }
+
+            Directory.Delete(directory, true);
+            return Task.FromResult(new TransactionCleanupItem(directory, "restored"));
+        }
+        catch (Exception ex)
+        {
+            return Task.FromResult(new TransactionCleanupItem(directory, "failed", ex.Message));
+        }
+    }
+
+    private static void RestoreActiveMods(string currentPath, string originalBackupPath)
+    {
+        var originalBytes = File.ReadAllBytes(originalBackupPath);
+        if (!File.Exists(currentPath))
+        {
+            AtomicFile.WriteAllBytes(currentPath, originalBytes);
+            return;
+        }
+
+        try
+        {
+            var original = XDocument.Parse(Encoding.UTF8.GetString(originalBytes));
+            var current = XDocument.Load(currentPath);
+            var originalRoot = original.Root ?? throw new InvalidDataException("原始 ModsConfig.xml 缺少根节点");
+            var currentRoot = current.Root ?? throw new InvalidDataException("当前 ModsConfig.xml 缺少根节点");
+            var originalActive = originalRoot.Elements().FirstOrDefault(x => x.Name.LocalName.Equals("activeMods", StringComparison.OrdinalIgnoreCase));
+            var currentActive = currentRoot.Elements().FirstOrDefault(x => x.Name.LocalName.Equals("activeMods", StringComparison.OrdinalIgnoreCase));
+            if (currentActive is not null && originalActive is not null) currentActive.ReplaceWith(new XElement(originalActive));
+            else if (currentActive is not null) currentActive.Remove();
+            else if (originalActive is not null) currentRoot.Add(new XElement(originalActive));
+            var content = current.Declaration is null ? current.ToString() : $"{current.Declaration}{Environment.NewLine}{current}";
+            AtomicFile.WriteAllText(currentPath, content);
+        }
+        catch (System.Xml.XmlException)
+        {
+            // If the game left an invalid or truncated config, the original backup is safer than keeping it.
+            AtomicFile.WriteAllBytes(currentPath, originalBytes);
+        }
     }
 
     private static TransactionRecoveryResult Failure(string code, string message, object? details = null)

@@ -51,6 +51,7 @@ public static class CliApplication
                 "ref related" => await RefCommand.RelatedAsync(args),
                 "test run" => await TestCommand.RunAsync(args, cancellation.Token),
                 "test settings" => await TestCommand.SettingsAsync(args, cancellation.Token),
+                "test cleanup" => await TestCommand.CleanupAsync(args, cancellation.Token),
                 "mods install-tools" => await ModsCommand.InstallToolsAsync(args, cancellation.Token),
                 _ => CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "UNKNOWN_COMMAND", $"未知命令: {command}")
             };
@@ -113,6 +114,7 @@ public static class CliArgs
             ["ref related"] = (2, 1, [new("--version", true), new("--fuzzy", false)]),
             ["test run"] = (2, 0, [new("--deploy", false), new("--sync-source", false), new("--mode", true), new("--mods-file", true), new("--timeout-seconds", true), new("--target-package-id", true), new("--capture-screenshots", false), new("--isolated-desktop", false), new("--no-isolated-desktop", false)]),
             ["test settings"] = (2, 0, []),
+            ["test cleanup"] = (2, 0, [new("--dry-run", false)]),
             ["mods install-tools"] = (2, 0, [new("--mods-path", true), new("--dry-run", false)])
         };
 

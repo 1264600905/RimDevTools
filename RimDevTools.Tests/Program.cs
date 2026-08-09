@@ -137,6 +137,8 @@ internal sealed class TestSuite
             TestIncrementalLogSignalScanner();
             await TestSettingsAsync();
             await TestTransactionsAsync();
+            await TestCleanupCommandAsync();
+            TestDeploymentArtifactRecovery();
             await TestEnvironmentLockAsync();
             await TestRefAsync();
             await TestDeployAsync();
@@ -193,7 +195,7 @@ internal sealed class TestSuite
         {
             Array.Empty<string>(), ["--help"], ["doctor", "--help"], ["deploy", "--help"],
             ["ref", "--help"], ["ref", "search", "--help"], ["ref", "pull", "--help"], ["ref", "deps", "--help"], ["ref", "related", "--help"],
-            ["test", "--help"], ["test", "run", "--help"], ["test", "settings", "--help"],
+            ["test", "--help"], ["test", "run", "--help"], ["test", "settings", "--help"], ["test", "cleanup", "--help"],
             ["mods", "--help"], ["mods", "install-tools", "--help"]
         };
         foreach (var args in paths)
@@ -202,7 +204,7 @@ internal sealed class TestSuite
             Assert(result.ExitCode == 0 && result.Output.Contains("Usage:", StringComparison.Ordinal), $"help succeeds without project discovery: {string.Join(' ', args)}");
         }
 
-        foreach (var command in new[] { "deploy", "ref search", "ref pull", "ref deps", "ref related", "test run", "mods install-tools" })
+        foreach (var command in new[] { "deploy", "ref search", "ref pull", "ref deps", "ref related", "test run", "test cleanup", "mods install-tools" })
         {
             using var writer = new StringWriter();
             var original = Console.Out;
@@ -361,6 +363,14 @@ internal sealed class TestSuite
             && defaultSummary.Checks.Any(check => check.Id == "build.game_assembly.Assembly-CSharp" && check.Path == @"H:\RimWorld\Managed\Assembly-CSharp.dll")
             && defaultSummary.Checks.Any(check => check.Id == "build.harmony_assembly" && check.Path == @"H:\Workshop\Harmony\0Harmony.dll"), "doctor default summary keeps both critical assembly paths visible while hiding unrelated successful checks");
         Assert(verboseSummary.Checks.Count == 2, "doctor verbose summary includes successful checks");
+        var harmonyLow = HarmonyVersionInspector.Inspect(typeof(TestSuite).Assembly.Location, new Version(99, 0, 0, 0));
+        var harmonyEqual = HarmonyVersionInspector.Inspect(typeof(TestSuite).Assembly.Location, new Version(1, 0, 0, 0));
+        var harmonyHigher = HarmonyVersionInspector.Inspect(typeof(TestSuite).Assembly.Location, new Version(0, 9, 0, 0));
+        var brokenHarmony = Path.Combine(currentProject, "broken-harmony.dll");
+        File.WriteAllText(brokenHarmony, "not-an-assembly");
+        Assert(harmonyLow.Status == "stale" && harmonyLow.Message!.Contains("请尝试重新订阅 Harmony"), "doctor warns when installed Harmony is below the required version");
+        Assert(harmonyEqual.Status == "available" && harmonyHigher.Status == "available", "doctor accepts an equal or newer Harmony version");
+        Assert(HarmonyVersionInspector.Inspect(brokenHarmony).Status == "invalid" && HarmonyVersionInspector.Inspect(Path.Combine(currentProject, "missing-harmony.dll")).Status == "missing", "doctor distinguishes invalid and missing Harmony DLL versions");
         var gitMissing = DoctorCommand.EvaluateGitChecks(currentProject, null, null);
         var gitNotWorktree = DoctorCommand.EvaluateGitChecks(currentProject, fakeDotnet, null);
         var gitNested = DoctorCommand.EvaluateGitChecks(currentProject, fakeDotnet, Path.GetDirectoryName(currentProject));
@@ -599,6 +609,120 @@ internal sealed class TestSuite
         File.WriteAllText(Path.Combine(creating, "partial"), "incomplete");
         var cleaned = await TransactionRecovery.RecoverAsync(directory);
         Assert(cleaned.Ok && !Directory.Exists(creating), "recovery removes transaction creation directories that never became active");
+
+        var modsConfig = Path.Combine(directory, "ModsConfig.xml");
+        File.WriteAllText(modsConfig, "<ModsConfigData><activeMods><li>original.mod</li></activeMods><other>before</other></ModsConfigData>");
+        var settings = Path.Combine(directory, "settings.xml");
+        File.WriteAllText(settings, "original-settings");
+        var semantic = await ConfigTransaction.CreateAsync(directory, "semantic", [modsConfig, settings]);
+        await semantic.WriteAllTextAsync(modsConfig, "<ModsConfigData><activeMods><li>temporary.mod</li></activeMods><other>before</other></ModsConfigData>");
+        await semantic.WriteAllTextAsync(settings, "temporary-settings");
+        File.WriteAllText(modsConfig, "<ModsConfigData><activeMods><li>game.mod</li></activeMods><other>after</other></ModsConfigData>");
+        var preview = await TransactionRecovery.CleanupAsync(directory, modsConfig, dryRun: true);
+        Assert(preview.Ok && File.ReadAllText(modsConfig).Contains("game.mod"), "transaction cleanup dry-run does not mutate ModsConfig");
+        var semanticCleanup = await TransactionRecovery.CleanupAsync(directory, modsConfig, dryRun: false);
+        var restoredModsConfig = XDocument.Load(modsConfig);
+        Assert(semanticCleanup.Ok && restoredModsConfig.Descendants("activeMods").Single().Descendants("li").Single().Value == "original.mod" && restoredModsConfig.Descendants("other").Single().Value == "after" && File.ReadAllText(settings) == "original-settings", "transaction cleanup restores only original activeMods and ordinary settings");
+        var repeatedCleanup = await TransactionRecovery.CleanupAsync(directory, modsConfig, dryRun: false);
+        Assert(repeatedCleanup.Ok && !repeatedCleanup.Found, "transaction cleanup is idempotent after successful recovery");
+
+        var malformedDirectory = NewDirectory("transactions-malformed");
+        var malformedModsConfig = Path.Combine(malformedDirectory, "ModsConfig.xml");
+        File.WriteAllText(malformedModsConfig, "<ModsConfigData><activeMods><li>original.mod</li></activeMods></ModsConfigData>");
+        var malformed = await ConfigTransaction.CreateAsync(malformedDirectory, "malformed", [malformedModsConfig]);
+        await malformed.WriteAllTextAsync(malformedModsConfig, "<ModsConfigData><activeMods><li>temporary.mod</li></activeMods></ModsConfigData>");
+        File.WriteAllText(malformedModsConfig, "<broken");
+        var malformedCleanup = await TransactionRecovery.CleanupAsync(malformedDirectory, malformedModsConfig, dryRun: false);
+        Assert(malformedCleanup.Ok && XDocument.Load(malformedModsConfig).Descendants("li").Single().Value == "original.mod", "transaction cleanup restores the original ModsConfig when the current XML is truncated");
+
+        var multiDirectory = NewDirectory("transactions-multiple");
+        var multiModsConfig = Path.Combine(multiDirectory, "ModsConfig.xml");
+        var multiSettings = Path.Combine(multiDirectory, "settings.xml");
+        File.WriteAllText(multiModsConfig, "<ModsConfigData><activeMods><li>original.mod</li></activeMods></ModsConfigData>");
+        File.WriteAllText(multiSettings, "original");
+        var multiOne = await ConfigTransaction.CreateAsync(multiDirectory, "one", [multiModsConfig]);
+        await multiOne.WriteAllTextAsync(multiModsConfig, "<ModsConfigData><activeMods><li>temporary.mod</li></activeMods></ModsConfigData>");
+        var multiTwo = await ConfigTransaction.CreateAsync(multiDirectory, "two", [multiSettings]);
+        await multiTwo.WriteAllTextAsync(multiSettings, "temporary");
+        var multiCleanup = await TransactionRecovery.CleanupAsync(multiDirectory, multiModsConfig, dryRun: false);
+        Assert(multiCleanup.Ok && multiCleanup.Items.Count == 2 && TransactionRecovery.PendingDirectories(multiDirectory).Count == 0, "transaction cleanup processes all safe pending transactions");
+
+        var cleanupConflictDirectory = NewDirectory("transactions-cleanup-conflict");
+        var cleanupConflictPath = Path.Combine(cleanupConflictDirectory, "settings.xml");
+        var cleanupModsConfig = Path.Combine(cleanupConflictDirectory, "ModsConfig.xml");
+        File.WriteAllText(cleanupModsConfig, "<ModsConfigData><activeMods /></ModsConfigData>");
+        File.WriteAllText(cleanupConflictPath, "original");
+        var cleanupConflict = await ConfigTransaction.CreateAsync(cleanupConflictDirectory, "conflict", [cleanupConflictPath]);
+        await cleanupConflict.WriteAllTextAsync(cleanupConflictPath, "temporary");
+        File.WriteAllText(cleanupConflictPath, "user-change");
+        var cleanupConflictResult = await TransactionRecovery.CleanupAsync(cleanupConflictDirectory, cleanupModsConfig, dryRun: false);
+        Assert(!cleanupConflictResult.Ok && cleanupConflictResult.Items.Single().Status == "conflict" && TransactionRecovery.PendingDirectories(cleanupConflictDirectory).Count == 1, "transaction cleanup retains ordinary files with user conflicts");
+
+        var missingBackupDirectory = NewDirectory("transactions-missing-backup");
+        var missingBackupPath = Path.Combine(missingBackupDirectory, "settings.xml");
+        var missingBackupModsConfig = Path.Combine(missingBackupDirectory, "ModsConfig.xml");
+        File.WriteAllText(missingBackupPath, "original");
+        File.WriteAllText(missingBackupModsConfig, "<ModsConfigData><activeMods /></ModsConfigData>");
+        var missingBackupTransaction = await ConfigTransaction.CreateAsync(missingBackupDirectory, "missing-backup", [missingBackupPath]);
+        await missingBackupTransaction.WriteAllTextAsync(missingBackupPath, "temporary");
+        var missingBackupDirectoryPath = TransactionRecovery.PendingDirectories(missingBackupDirectory).Single();
+        File.Delete(Directory.EnumerateFiles(missingBackupDirectoryPath, "*.original").Single());
+        var missingBackupResult = await TransactionRecovery.CleanupAsync(missingBackupDirectory, missingBackupModsConfig, dryRun: false);
+        Assert(!missingBackupResult.Ok && missingBackupResult.Items.Single().Status == "failed" && TransactionRecovery.PendingDirectories(missingBackupDirectory).Count == 1, "transaction cleanup retains a transaction when its backup is missing");
+    }
+
+    private async Task TestCleanupCommandAsync()
+    {
+        var environment = CreateProjectEnvironment("cleanup-command", createGameExecutable: true);
+        using var scope = UseEnvironment(environment);
+        var transaction = await ConfigTransaction.CreateAsync(environment.ConfigDirectory, "cleanup-command", [environment.ModsConfigPath]);
+        await transaction.WriteAllTextAsync(environment.ModsConfigPath, "<ModsConfigData><activeMods><li>temporary.mod</li></activeMods><other>tool</other></ModsConfigData>");
+        var staleStaging = Path.Combine(environment.Game, "Mods", ".rimdev-staging-cccccccccccccccccccccccccccccccc");
+        Directory.CreateDirectory(staleStaging);
+        ProcessUtil.RimWorldRunningOverride = () => true;
+        try
+        {
+            var refused = await CaptureAsync(() => TestCommand.CleanupAsync(["test", "cleanup"]));
+            Assert(refused.ExitCode == ExitCodes.Busy && JsonErrorCode(refused.Output) == "GAME_RUNNING_CLEANUP_REFUSED" && TransactionRecovery.PendingDirectories(environment.ConfigDirectory).Count == 1, "cleanup command refuses mutation while RimWorld is running");
+        }
+        finally { ProcessUtil.RimWorldRunningOverride = null; }
+
+        var preview = await CaptureAsync(() => TestCommand.CleanupAsync(["test", "cleanup", "--dry-run"]));
+        Assert(preview.ExitCode == 0 && preview.Output.Contains("deploymentArtifacts") && Directory.Exists(staleStaging), "cleanup dry-run reports deployment artifacts without removing them");
+        var cleaned = await CaptureAsync(() => TestCommand.CleanupAsync(["test", "cleanup"]));
+        Assert(cleaned.ExitCode == 0 && TransactionRecovery.PendingDirectories(environment.ConfigDirectory).Count == 0 && !Directory.Exists(staleStaging), "cleanup command restores transactions and removes stale deployment artifacts after RimWorld exits");
+    }
+
+    private void TestDeploymentArtifactRecovery()
+    {
+        var root = NewDirectory("artifact-recovery");
+        var mods = NewDirectory(Path.Combine("artifact-recovery", "Mods"));
+        var target = Path.Combine(mods, "Demo");
+        var backup = Path.Combine(mods, ".rimdev-backup-0123456789abcdef0123456789abcdef");
+        Directory.CreateDirectory(Path.Combine(backup, "About"));
+        File.WriteAllText(Path.Combine(backup, "About", "About.xml"), "<ModMetaData><packageId>demo.current</packageId></ModMetaData>");
+        File.WriteAllText(Path.Combine(backup, "sentinel.txt"), "old");
+        var plan = DeploymentArtifactRecovery.Plan(mods, target, "demo.current");
+        Assert(plan.Single().Action == "restore", "artifact recovery plans restoration when the target is missing");
+        var result = DeploymentArtifactRecovery.Execute(mods, target, plan);
+        Assert(result.Single().Action == "restored" && File.Exists(Path.Combine(target, "sentinel.txt")), "artifact recovery restores a unique backup");
+
+        var secondBackup = Path.Combine(mods, ".rimdev-backup-fedcba9876543210fedcba9876543210");
+        Directory.CreateDirectory(Path.Combine(secondBackup, "About"));
+        File.WriteAllText(Path.Combine(secondBackup, "About", "About.xml"), "<ModMetaData><packageId>demo.current</packageId></ModMetaData>");
+        var existingTargetPlan = DeploymentArtifactRecovery.Plan(mods, target, "demo.current");
+        Assert(existingTargetPlan.Any(x => x.Action == "remove"), "artifact recovery plans removal when the active target exists");
+
+        var ambiguousMods = NewDirectory(Path.Combine("artifact-recovery-ambiguous", "Mods"));
+        var ambiguousTarget = Path.Combine(ambiguousMods, "Demo");
+        foreach (var id in new[] { "11111111111111111111111111111111", "22222222222222222222222222222222" })
+        {
+            var candidate = Path.Combine(ambiguousMods, $".rimdev-backup-{id}");
+            Directory.CreateDirectory(Path.Combine(candidate, "About"));
+            File.WriteAllText(Path.Combine(candidate, "About", "About.xml"), "<ModMetaData><packageId>demo.current</packageId></ModMetaData>");
+        }
+        var ambiguousPlan = DeploymentArtifactRecovery.Plan(ambiguousMods, ambiguousTarget, "demo.current");
+        Assert(ambiguousPlan.Count == 2 && ambiguousPlan.All(x => x.Action == "retain"), "artifact recovery retains multiple backups when the target is missing");
     }
 
     private async Task TestEnvironmentLockAsync()
@@ -743,15 +867,30 @@ internal sealed class TestSuite
         var configuredSourceResult = (DeployResult)configuredSource.Result!;
         Assert(configuredSource.Ok && configuredSourceResult.Plan.SyncItems.Any(item => item.Item.Equals("source", StringComparison.OrdinalIgnoreCase)), "deploy includes source when sync_source is enabled in project configuration");
 
+        File.WriteAllText(environment.ConfigPath, Config(environment, modName: "Demo", extra: "\"csproj_paths\":[],\"sync_items\":[\"About\"],\"protected_files_regex\":\"^(PublishedFileId\\\\.txt)$\""));
+        var pureXmlDryRun = await DeployCommand.ExecuteAsync(["deploy", "--dry-run"]);
+        Assert(pureXmlDryRun.Ok && ((DeployResult)pureXmlDryRun.Result!).Plan.Projects.Count == 0, "pure XML deploy accepts an empty csproj_paths array and skips builds");
+
         var unknownArgument = await CaptureAsync(() => CliApplication.RunAsync(["deploy", "--dry-run", "--definitely-unknown"]));
         Assert(unknownArgument.ExitCode == ExitCodes.InvalidArguments && JsonErrorCode(unknownArgument.Output) == "INVALID_ARGUMENT", "unknown deploy options fail before execution");
 
         var pending = await ConfigTransaction.CreateAsync(environment.ConfigDirectory, "before-deploy", [environment.SettingsPath]);
         await pending.WriteAllTextAsync(environment.SettingsPath, "temporary");
         var deployed = await DeployCommand.ExecuteAsync(["deploy"]);
-        Assert(deployed.Ok && ((DeployResult)deployed.Result!).RecoveredTransaction && File.ReadAllText(environment.SettingsPath) == environment.OriginalSettings, "deploy restores interrupted configuration transaction before work");
+        Assert(deployed.Ok && ((DeployResult)deployed.Result!).RecoveredTransaction && ((DeployResult)deployed.Result!).BuiltProjects.Count == 0 && File.ReadAllText(environment.SettingsPath) == environment.OriginalSettings, "pure XML deploy skips builds and restores interrupted configuration before work");
         Assert(File.Exists(Path.Combine(target, "PublishedFileId.txt")) && !File.Exists(Path.Combine(target, "stale.txt")), "deploy preserves protected items and replaces stale target");
         Assert(File.Exists(Path.Combine(target, "About", "About.txt")) && !File.Exists(Path.Combine(target, "About", "About.html")), "deploy filters About html and svg files");
+
+        var staleBackup = Path.Combine(environment.Game, "Mods", ".rimdev-backup-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        Directory.CreateDirectory(Path.Combine(staleBackup, "About"));
+        File.WriteAllText(Path.Combine(staleBackup, "About", "About.xml"), "<ModMetaData><packageId>demo.current</packageId></ModMetaData>");
+        var staleStaging = Path.Combine(environment.Game, "Mods", ".rimdev-staging-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+        Directory.CreateDirectory(staleStaging);
+        File.WriteAllText(environment.ConfigPath, Config(environment, modName: "Demo", extra: "\"csproj_paths\":[],\"sync_items\":[\"About\"],\"protected_files_regex\":\"^(PublishedFileId\\\\.txt)$\""));
+        var artifactDryRun = await DeployCommand.ExecuteAsync(["deploy", "--dry-run"]);
+        Assert(artifactDryRun.Ok && ((DeployResult)artifactDryRun.Result!).Plan.ArtifactActions.Any(x => x.Action == "remove") && Directory.Exists(staleBackup), "deploy dry-run reports stale artifacts without removing them");
+        var artifactDeploy = await DeployCommand.ExecuteAsync(["deploy"]);
+        Assert(artifactDeploy.Ok && !Directory.Exists(staleBackup) && !Directory.Exists(staleStaging) && ((DeployResult)artifactDeploy.Result!).ArtifactActions.Count(x => x.Action == "removed") == 2, "next deploy removes stale backup and staging artifacts");
 
         File.WriteAllText(environment.ConfigPath, Config(environment, modName: "Demo", extra: "\"sync_items\":[\"..\\\\outside\"]"));
         var traversal = await DeployCommand.ExecuteAsync(["deploy", "--dry-run"]);

@@ -51,6 +51,7 @@
 
     // C# 项目文件路径（相对于项目根目录），按编译顺序排列
     // 如果是单 csproj 项目，格式为: source/{mod_name}/{mod_name}.csproj
+    // 纯 XML 模组可以配置为空数组；为空时 deploy 跳过 C# 构建。
     "csproj_paths": [
         "source\\TempProject\\TempProject.csproj",
         "source\\AutoTestProject\\AutoTestProject.csproj"

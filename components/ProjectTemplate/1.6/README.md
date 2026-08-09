@@ -6,6 +6,8 @@
 - `mod_config.jsonc` 中的模组名、日志关键词、本机 RimWorld 路径和 Workshop 路径。
 - `source/MyCustomMod` 中的程序集名称、命名空间和工程文件名。
 
+纯 XML 模组可以将 `mod_config.jsonc` 的 `csproj_paths` 配置为空数组；deploy 会跳过 C# 构建，只同步配置的 XML 和资源。
+
 `doctor`、`deploy` 和 `test` 会拒绝仍使用模板默认名称、packageId 或 `MyCustomMod.dll` 的项目。
 
 ## 环境要求
@@ -55,6 +57,7 @@ RimSage 不读取当前项目或第三方模组。当前项目直接读取工作
 .\.tools\RimDevTools.exe ref search "<keyword>"
 .\.tools\RimDevTools.exe ref pull "<exact-query>"
 .\.tools\RimDevTools.exe test run --mode quick
+.\.tools\RimDevTools.exe test cleanup --dry-run
 .\.tools\RimDevTools.exe mods install-tools --dry-run
 ```
 

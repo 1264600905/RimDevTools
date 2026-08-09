@@ -6,6 +6,59 @@ namespace RimDevTools;
 
 public static class TestCommand
 {
+    public static async Task<int> CleanupAsync(string[] args, CancellationToken cancellationToken = default)
+    {
+        const string command = "test cleanup";
+        var context = CliApplication.RequireProject(command, out var code);
+        if (context is null) return code;
+
+        var modsConfigValidation = GameEnvironment.ValidateModsConfig(context);
+        if (!modsConfigValidation.Ok)
+            return CliResult.WriteFailure(command, ExitCodes.MissingDependency, modsConfigValidation.Code!, modsConfigValidation.Message!, context.Root, modsConfigValidation.Details);
+
+        var dryRun = CliArgs.Has(args, "--dry-run");
+        var configDirectory = GameEnvironment.ConfigDirectory(context)!;
+        var runId = Guid.NewGuid().ToString("N");
+        EnvironmentLock? gate = null;
+        try
+        {
+            if (!dryRun)
+            {
+                gate = EnvironmentLock.TryAcquire(configDirectory, command, context.Root, runId, out var busyInfo);
+                if (gate is null)
+                    return CliResult.WriteFailure(command, ExitCodes.Busy, "ENVIRONMENT_BUSY", "RimWorld 环境正被占用", context.Root, new { busyInfo });
+
+                if (ProcessUtil.IsRimWorldRunning())
+                    return CliResult.WriteFailure(command, ExitCodes.Busy, "GAME_RUNNING_CLEANUP_REFUSED", "RimWorld 仍在运行，拒绝清理事务；请等待游戏完全退出后重试", context.Root);
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            var summary = await TransactionRecovery.CleanupAsync(configDirectory, modsConfigValidation.Path!, dryRun);
+            IReadOnlyList<DeploymentArtifactAction> artifactResults = [];
+            var environment = RimWorldEnvironmentResolver.Resolve(context);
+            if (environment.References.RimWorldDirectory is { } rimWorldDirectory && !string.IsNullOrWhiteSpace(context.Config.ModName))
+            {
+                var modsRoot = Path.GetFullPath(Path.Combine(rimWorldDirectory, "Mods"));
+                var target = Path.GetFullPath(Path.Combine(modsRoot, context.Config.ModName));
+                if (PathSafety.IsWithin(target, modsRoot))
+                {
+                    var artifactPlan = DeploymentArtifactRecovery.Plan(modsRoot, target, context.Config.CurrentPackageId(context.Root));
+                    artifactResults = dryRun ? artifactPlan : DeploymentArtifactRecovery.Execute(modsRoot, target, artifactPlan);
+                }
+            }
+
+            var allOk = summary.Ok && artifactResults.All(x => x.Action != "failed");
+            var result = new { dryRun, runId, found = summary.Found || artifactResults.Count > 0, ok = allOk, transactions = summary.Items, deploymentArtifacts = artifactResults };
+            return allOk
+                ? CliResult.WriteSuccess(command, context.Root, result)
+                : CliResult.WriteFailure(command, ExitCodes.TaskFailed, "TRANSACTION_CLEANUP_INCOMPLETE", "部分事务无法安全清理，已保留现场", context.Root, result);
+        }
+        finally
+        {
+            gate?.Dispose();
+        }
+    }
+
     public static async Task<int> SettingsAsync(string[] args, CancellationToken cancellationToken = default)
     {
         const string command = "test settings";
