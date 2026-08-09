@@ -12,6 +12,7 @@
 /obj/
 /artifacts/
 /.rimdev/
+RimDevTools/packages.lock.json
 
 # 日志和临时文件
 精选日志.log
