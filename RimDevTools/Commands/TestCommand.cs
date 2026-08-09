@@ -366,32 +366,6 @@ public static class ModListParser
     public static List<string>? Load(ProjectContext context, string? path, out CliError? error)
         => Resolve(context, path, out error)?.Mods.ToList();
 
-    internal static IReadOnlyList<string>? ReadActiveMods(string path, out string? error)
-    {
-        error = null;
-        try
-        {
-            var document = XDocument.Load(path);
-            var active = document.Root?.Elements().FirstOrDefault(x => x.Name.LocalName.Equals("activeMods", StringComparison.OrdinalIgnoreCase));
-            if (active is null)
-            {
-                error = "ModsConfig.xml 缺少 activeMods";
-                return null;
-            }
-            return active.Elements()
-                .Where(x => x.Name.LocalName.Equals("li", StringComparison.OrdinalIgnoreCase))
-                .Select(x => x.Value.Trim())
-                .Where(x => x.Length > 0)
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToArray();
-        }
-        catch (Exception ex)
-        {
-            error = ex.Message;
-            return null;
-        }
-    }
-
     public static string Render(string path, IReadOnlyList<string> mods)
     {
         var document = File.Exists(path) ? XDocument.Load(path) : new XDocument(new XDeclaration("1.0", "utf-8", null), new XElement("ModsConfigData"));

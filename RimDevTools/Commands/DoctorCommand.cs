@@ -205,31 +205,26 @@ public static class DoctorCommand
 
     private static void AddActiveModsCheck(List<DoctorCheck> checks, ProjectContext context)
     {
-        var validation = GameEnvironment.ValidateModsConfig(context);
-        if (!validation.Ok || validation.Path is null)
+        var resolution = ModListParser.Resolve(context, null, out var error);
+        if (resolution is null)
         {
-            checks.Add(new DoctorCheck("mods.min_active_enabled", "not_applicable", true, validation.Path, "ModsConfig.xml 不可用，无法检查实际启用模组"));
+            checks.Add(new DoctorCheck(
+                "mods.min_active_enabled",
+                "invalid",
+                true,
+                null,
+                error?.Message ?? "无法解析测试启用模组列表",
+                error?.Details));
             return;
         }
 
-        var activeMods = ModListParser.ReadActiveMods(validation.Path, out var readError);
-        if (activeMods is null)
-        {
-            checks.Add(new DoctorCheck("mods.min_active_enabled", "invalid", true, validation.Path, readError));
-            return;
-        }
-
-        var missing = context.Config.MinActiveMods
-            .Where(packageId => !activeMods.Contains(packageId, StringComparer.OrdinalIgnoreCase))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
         checks.Add(new DoctorCheck(
             "mods.min_active_enabled",
-            missing.Length == 0 ? "available" : "missing",
+            "available",
             true,
-            validation.Path,
-            missing.Length == 0 ? null : "ModsConfig.xml 未启用部分 min_active_mods",
-            new { missingPackageIds = missing, activeMods }));
+            null,
+            "测试会用此列表替换 ModsConfig.xml 的 activeMods",
+            new { activeMods = resolution.Mods, additions = resolution.Additions }));
     }
 
     private static object? SuggestedPathDetails(string? path)
@@ -330,13 +325,13 @@ public static class DoctorCommand
         var manifestPath = Path.Combine(dataRoot, "tool-mods.manifest.json");
         if (!File.Exists(manifestPath))
         {
-            checks.Add(new DoctorCheck("tools.mod_components", "missing", false, manifestPath, "未发现随包工具 Mod 清单"));
+            checks.Add(new DoctorCheck("tools.mod_components", "missing", true, manifestPath, "未发现随包工具 Mod 清单"));
             return;
         }
         try
         {
             var manifest = ToolModManifestReader.Load(manifestPath);
-            checks.Add(new DoctorCheck("tools.mod_components", "available", false, manifestPath, Details: new { count = manifest.Components.Count }));
+            checks.Add(new DoctorCheck("tools.mod_components", "available", true, manifestPath, Details: new { count = manifest.Components.Count }));
             foreach (var component in manifest.Components)
             {
                 var source = Path.Combine(dataRoot, component.Folder);
@@ -345,7 +340,7 @@ public static class DoctorCommand
                 checks.Add(new DoctorCheck(
                     $"tools.component.{component.PackageId.ToLowerInvariant()}",
                     sourceAvailable ? "available" : Directory.Exists(source) ? "invalid" : "missing",
-                    false,
+                    true,
                     source,
                     sourceAvailable ? null : "随包工具 Mod 缺失或内容哈希不匹配",
                     new { component.Version, expectedHash = component.ContentHash, actualHash = sourceHash }));
@@ -368,7 +363,7 @@ public static class DoctorCommand
         }
         catch (Exception ex)
         {
-            checks.Add(new DoctorCheck("tools.mod_components", "invalid", false, manifestPath, ex.Message));
+            checks.Add(new DoctorCheck("tools.mod_components", "invalid", true, manifestPath, ex.Message));
         }
     }
 

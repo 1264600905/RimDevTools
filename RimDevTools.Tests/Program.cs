@@ -834,6 +834,7 @@ internal sealed class TestSuite
         Assert(compact.RootElement.GetProperty("result").TryGetProperty("ready", out _)
             && !result.Output.Contains("project.discovery", StringComparison.Ordinal)
             && compactChecks.Any(check => check.GetProperty("id").GetString() == "game.mods_config" && check.GetProperty("status").GetString() == "missing")
+            && compactChecks.Any(check => check.GetProperty("id").GetString() == "tools.mod_components" && check.GetProperty("required").GetBoolean() && check.GetProperty("status").GetString() == "missing")
             && compactChecks.Any(check => check.GetProperty("id").GetString() == "build.game_assembly.Assembly-CSharp" && check.GetProperty("path").GetString() == Path.Combine(environment.Game, "RimWorldWin64_Data", "Managed", "Assembly-CSharp.dll"))
             && compactChecks.Any(check => check.GetProperty("id").GetString() == "build.harmony_assembly" && check.GetProperty("path").GetString() == Path.Combine(environment.Game, "Mods", "Harmony", "Current", "Assemblies", "0Harmony.dll")), "doctor returns a compact readiness summary with both critical resolved assembly paths visible by default");
         var verbose = await CaptureAsync(() => DoctorCommand.RunAsync(["doctor", "--verbose"]));
@@ -841,10 +842,23 @@ internal sealed class TestSuite
 
         var activeEnvironment = CreateProjectEnvironment("doctor-active", createGameExecutable: true);
         using var activeScope = UseEnvironment(activeEnvironment);
-        var activeResult = await CaptureAsync(() => DoctorCommand.RunAsync(["doctor", "--verbose"]));
-        using var activeJson = JsonDocument.Parse(activeResult.Output);
-        var activeCheck = activeJson.RootElement.GetProperty("result").GetProperty("checks").EnumerateArray().Single(check => check.GetProperty("id").GetString() == "mods.min_active_enabled");
-        Assert(!activeJson.RootElement.GetProperty("result").GetProperty("ready").GetBoolean() && activeCheck.GetProperty("status").GetString() == "missing", "doctor reports configured min_active_mods that are not enabled in ModsConfig.xml");
+        var dataRoot = NewDirectory("doctor-component-data");
+        File.WriteAllText(
+            Path.Combine(dataRoot, "tool-mods.manifest.json"),
+            "{\"schemaVersion\":1,\"components\":[{\"folder\":\"LogSyncMod\",\"packageId\":\"trigger.logsyncmod\",\"version\":\"1.0.0\",\"primaryAssembly\":\"1.6/Assemblies/LogSyncMod.dll\",\"contentHash\":\"sha256:00\"}]}");
+        var oldDataPath = Environment.GetEnvironmentVariable("RIMDEVTOOLS_DATA_PATH");
+        try
+        {
+            Environment.SetEnvironmentVariable("RIMDEVTOOLS_DATA_PATH", dataRoot);
+            var activeResult = await CaptureAsync(() => DoctorCommand.RunAsync(["doctor", "--verbose"]));
+            using var activeJson = JsonDocument.Parse(activeResult.Output);
+            var checks = activeJson.RootElement.GetProperty("result").GetProperty("checks").EnumerateArray().ToArray();
+            var activeCheck = checks.Single(check => check.GetProperty("id").GetString() == "mods.min_active_enabled");
+            var componentCheck = checks.Single(check => check.GetProperty("id").GetString() == "tools.component.trigger.logsyncmod");
+            Assert(activeCheck.GetProperty("status").GetString() == "available" && activeCheck.GetProperty("details").GetProperty("activeMods").GetArrayLength() > 0, "doctor validates the effective active mod list that test run will write");
+            Assert(componentCheck.GetProperty("required").GetBoolean() && componentCheck.GetProperty("status").GetString() == "missing", "doctor treats the bundled LogSyncMod component as a required dependency");
+        }
+        finally { Environment.SetEnvironmentVariable("RIMDEVTOOLS_DATA_PATH", oldDataPath); }
     }
 
     private async Task TestRunPreflightAsync()
