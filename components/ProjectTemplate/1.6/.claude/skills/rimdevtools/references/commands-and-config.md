@@ -48,7 +48,6 @@ test run [--deploy] [--sync-source] [--mode quick|manual|auto|xml]
          [--mods-file <path>] [--timeout-seconds <n>]
          [--target-package-id <id>] [--capture-screenshots]
          [--scope <value>]... [--defname <value>]...
-         [--auto-test-scope <value>] [--auto-test-defname <value>]
          [--isolated-desktop|--no-isolated-desktop]
 ```
 
@@ -58,7 +57,7 @@ quick 是启动冒烟测试。manual 是用户手动的。auto 和 XML 验证结
 
 `--scope` 可在 auto/XML 中重复，多个 scope 取并集。支持值：`standard`、`all`、`content`、`recipes`、`hediffs`、`turrets`、`rangedweapons`、`meleeweapons`、`threeviews`、`combatpawns`、`skillpocketmaps`。`all` 保持历史语义，只等于 `Standard`；Standard 不隐式启用 CombatPawns 或 SkillPocketMaps。
 
-`--defname` 仅适用于 auto，可重复且按不区分大小写去重。scope 选择测试类型，DefName 选择目标，两者取交集；不传 DefName 时枚举所选范围。任何请求的 DefName 未产生用例时，本轮失败并在 JSON/Markdown 中列出未命中名称。旧参数 `--auto-test-scope`、`--auto-test-defname` 仅允许单值，不能与对应的新参数混用。非 Standard 且不指定 DefName 时受设置项 `autoTestBatchSize` 限制。
+`--defname` 仅适用于 auto，可重复且按不区分大小写去重。scope 选择测试类型，DefName 选择目标，两者取交集；不传 DefName 时枚举所选范围。任何请求的 DefName 未产生用例时，本轮失败并在 JSON/Markdown 中列出未命中名称。非 Standard 且不指定 DefName 时受设置项 `autoTestBatchSize` 限制。
 
 例 1，只测试三视图：
 
