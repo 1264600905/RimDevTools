@@ -141,6 +141,14 @@ namespace LogSyncMod.AutoTest
         private bool? cameraPlusActive;
         private int nextDiscoverOrder = 1;
         private int nextPlannedOrder = 1;
+        private AutoTestGameClock evidenceClock;
+        private AutoTestOperationJournal operationJournal;
+        private AutoTestLogJournal logJournal;
+        private AutoTestOperationRunner operationRunner;
+        private AutoTestEvidenceBuilder evidenceBuilder;
+        private AutoTestEvidenceManifest evidenceManifest;
+        private AutoTestLogCaptureSubscription logCaptureSubscription;
+        private IDisposable runContextScope;
 
         public AutoTestRunner(LogSyncSettings settings, Map map)
         {
@@ -158,6 +166,22 @@ namespace LogSyncMod.AutoTest
             targetPackageId = (settings.autoTestTargetPackageId ?? string.Empty).Trim().ToLowerInvariant();
             runId = (settings.autoTestRunId ?? string.Empty).Trim();
             if (string.IsNullOrEmpty(runId)) runId = Guid.NewGuid().ToString("N");
+            evidenceClock = new AutoTestGameClock();
+            operationJournal = new AutoTestOperationJournal();
+            logJournal = new AutoTestLogJournal();
+            operationRunner = new AutoTestOperationRunner(runId, evidenceClock, operationJournal);
+            runContextScope = AutoTestOperationContext.PushRun(runId);
+            evidenceManifest = new AutoTestEvidenceManifest
+            {
+                RunId = runId,
+                PackageId = targetPackageId,
+                Suite = string.Join(",", settings.EffectiveAutoTestScopes()),
+                StartedAtUtc = evidenceClock.UtcNow,
+                Environment = AutoTestRuntimeObservation.Capture(targetPackageId, map)
+            };
+            evidenceBuilder = new AutoTestEvidenceBuilder(evidenceManifest, evidenceClock);
+            logCaptureSubscription = new AutoTestLogCaptureSubscription(runId, logJournal);
+            operationJournal.RecordEvent("run.started", runId, null, null, null, "autotest.run", "Auto-test run started.", evidenceClock.UtcNow);
             outputDirectory = ResolveOutputDirectory(settings);
             runArtifacts = AutoTestReportWriter.CreateRunArtifacts(outputDirectory, targetPackageId, runId);
             screenshotService = new AutoTestScreenshotService(runArtifacts, AppendNote, TrimForNote);
@@ -166,6 +190,7 @@ namespace LogSyncMod.AutoTest
 
             if (targetMod == null)
             {
+                evidenceBuilder.AddError(new AutoTestOperationError { Code = "runtime.not_ready", Message = "Target mod not found: " + targetPackageId });
                 Log.Error("[LogSyncAutoTest] Target mod not found: " + targetPackageId);
                 Finish();
                 return;
@@ -601,12 +626,21 @@ namespace LogSyncMod.AutoTest
             CleanupSharedHediffPawn();
 
             runSummary = BuildRunSummary();
+            AutoTestEvidenceManifest completedEvidence = null;
             try
             {
-                AutoTestReportWriter.Write(runArtifacts, targetPackageId ?? "unknown", runId, results, targetMod?.Name ?? "Unknown", discoveredManifest, plannedManifest, runSummary);
+                LegacyResultEvidenceAdapter.AddResults(evidenceBuilder, results);
+                operationJournal?.RecordEvent("run.completed", runId, null, null, null, "autotest.run", "Auto-test run completed.", evidenceClock?.UtcNow ?? DateTime.UtcNow);
+                logCaptureSubscription?.Dispose();
+                logCaptureSubscription = null;
+                completedEvidence = evidenceBuilder?.Complete(operationJournal, logJournal);
+                AutoTestReportWriter.Write(runArtifacts, targetPackageId ?? "unknown", runId, results, targetMod?.Name ?? "Unknown", discoveredManifest, plannedManifest, runSummary, completedEvidence);
             }
             finally
             {
+                logCaptureSubscription?.Dispose();
+                runContextScope?.Dispose();
+                runContextScope = null;
                 global::LogSyncMod.TestAudioController.Restore();
             }
             Log.Message(string.Format(

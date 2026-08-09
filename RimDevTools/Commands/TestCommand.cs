@@ -737,6 +737,36 @@ public static class AutoResultValidator
                 if (!string.Equals(packageId, expectedPackageId, StringComparison.OrdinalIgnoreCase)) continue;
                 var runId = root.TryGetProperty("runId", out var runIdNode) ? runIdNode.GetString() : null;
                 if (!string.Equals(runId, expectedRunId, StringComparison.Ordinal)) continue;
+                if (root.TryGetProperty("evidencePath", out var evidencePathNode))
+                {
+                    var evidencePathValue = evidencePathNode.GetString();
+                    if (string.IsNullOrWhiteSpace(evidencePathValue))
+                        return Failure("AUTO_EVIDENCE_MISSING", "结果声明了空的 Evidence 路径", new { path });
+                    var evidencePath = Path.IsPathRooted(evidencePathValue)
+                        ? evidencePathValue
+                        : Path.GetFullPath(Path.Combine(Path.GetDirectoryName(path)!, evidencePathValue));
+                    if (!File.Exists(evidencePath))
+                        return Failure("AUTO_EVIDENCE_MISSING", "未找到结构化 Evidence 文件", new { path, evidencePath });
+                    try
+                    {
+                        using var evidenceDocument = JsonDocument.Parse(File.ReadAllText(evidencePath));
+                        var evidenceRoot = evidenceDocument.RootElement;
+                        if (!evidenceRoot.TryGetProperty("schemaVersion", out var schemaNode) || !schemaNode.TryGetInt32(out var schemaVersion) || schemaVersion != 1)
+                            return Failure("AUTO_EVIDENCE_INVALID", "Evidence schemaVersion 不受支持", new { path, evidencePath });
+                        var evidenceRunId = evidenceRoot.TryGetProperty("runId", out var evidenceRunNode) ? evidenceRunNode.GetString() : null;
+                        var evidencePackageId = evidenceRoot.TryGetProperty("packageId", out var evidencePackageNode) ? evidencePackageNode.GetString() : null;
+                        if (!string.Equals(evidenceRunId, runId, StringComparison.Ordinal) || !string.Equals(evidencePackageId, packageId, StringComparison.OrdinalIgnoreCase))
+                            return Failure("AUTO_EVIDENCE_MISMATCH", "Evidence 与 Result 的 runId/packageId 不匹配", new { path, evidencePath, runId, evidenceRunId, packageId, evidencePackageId });
+                    }
+                    catch (JsonException ex)
+                    {
+                        return Failure("AUTO_EVIDENCE_INVALID", "Evidence JSON 无法解析: " + ex.Message, new { path, evidencePath });
+                    }
+                    catch (IOException ex)
+                    {
+                        return Failure("AUTO_EVIDENCE_INVALID", "无法读取 Evidence: " + ex.Message, new { path, evidencePath });
+                    }
+                }
                 if (!root.TryGetProperty("completeness", out var completeness) || completeness.GetString() != "Complete")
                     return Failure("AUTO_RESULT_INCOMPLETE", "自动测试结果不完整", new { path });
                 if (!ReadInt(root, "manifestMissing", out var missing) || missing != 0)
@@ -807,7 +837,7 @@ public static class LogArchive
     public static void PruneAutoTestRuns(string outputPath, int keepCount)
     {
         if (!Directory.Exists(outputPath)) return;
-        var suffixes = new[] { "_Result.json", "_Report.md", "_Manifest.json", "_Screenshots" };
+        var suffixes = new[] { "_Result.json", "_Report.md", "_Manifest.json", "_Evidence.json", "_Screenshots" };
         var groups = Directory.EnumerateFileSystemEntries(outputPath)
             .Select(path => new { Path = path, Key = suffixes.FirstOrDefault(suffix => Path.GetFileName(path).EndsWith(suffix, StringComparison.OrdinalIgnoreCase)) is { } suffix ? Path.GetFileName(path)[..^suffix.Length] : null })
             .Where(x => x.Key is not null)

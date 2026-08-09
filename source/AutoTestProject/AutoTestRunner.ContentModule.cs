@@ -35,68 +35,83 @@ namespace LogSyncMod.AutoTest
             AutoTestResult result = CreateResult(item.ManifestEntry, "ThingDef", item.ThingDef.defName, item.ThingDef.label);
             results.Add(result);
 
-            try
+            string caseId = item.CaseId ?? item.ManifestEntry?.CaseId ?? result.CaseId;
+            InfoCardOperationAdapter adapter = new InfoCardOperationAdapter(runId, caseId, operationRunner, operationJournal, logJournal, evidenceBuilder, evidenceClock);
+            IDisposable caseScope = adapter.BeginCase();
+            bool noSpace = false;
+            Thing preparedThing = null;
+            AutoTestOperationEnvelope prepare = adapter.Run("spawn_or_prepare_target", delegate
             {
                 ThingDef def = item.ThingDef;
                 ThingDef stuff = ResolveStuff(def);
                 Thing thing = ThingMaker.MakeThing(def, stuff);
+                preparedThing = thing;
                 result.Stage = "create";
 
                 IntVec2 size = def.Size;
                 int width = Math.Max(1, size.x);
                 int height = Math.Max(1, size.z);
-                if (!TryAllocateThingRoot(width, height, out IntVec3 rootCell))
+                IntVec3 rootCell;
+                if (!TryAllocateThingRoot(width, height, out rootCell))
                 {
-                    result.Status = "skipped";
-                    result.Stage = "layout";
-                    result.ErrorMessage = "No free layout space remained on the current map.";
-                    return;
+                    noSpace = true;
+                    return (Thing)null;
                 }
 
                 ClearArea(rootCell, width, height);
-
                 if (item.Kind == AutoTestKind.Building)
-                {
                     GenSpawn.Spawn(thing, rootCell, map, Rot4.North, WipeMode.Vanish, false, false);
-                }
                 else
-                {
                     GenSpawn.Spawn(thing, rootCell, map, WipeMode.Vanish);
-                }
 
                 result.Stage = "spawn";
                 result.Label = thing.LabelCap;
                 result.Notes = TrimForNote(thing.GetInspectString());
-
                 int gizmoCount = 0;
-                foreach (Gizmo gizmo in thing.GetGizmos())
-                {
-                    if (gizmo != null) gizmoCount++;
-                }
-
+                foreach (Gizmo gizmo in thing.GetGizmos()) if (gizmo != null) gizmoCount++;
                 result.Notes = AppendNote(result.Notes, "Gizmos=" + gizmoCount);
-
                 Find.Selector.ClearSelection();
                 Find.Selector.Select(thing, false, false);
+                return thing;
+            }, thing => thing == null ? "no_layout_space" : thing.def.defName);
+            adapter.AssertOperation("target.prepared", prepare);
 
-                activeSession = new ActiveSession
-                {
-                    Item = item,
-                    Result = result,
-                    SpawnedThing = thing,
-                    InfoCardDef = def,
-                    AllowScreenshots = ShouldCaptureScreenshots(item.SpecDef),
-                    RemainingUiFrames = PreOpenSettleRepaintFrames,
-                    Phase = SessionPhase.WaitingForPreOpenSettle
-                };
-                result.Stage = "info_open";
-            }
-            catch (Exception ex)
+            if (!prepare.Success)
             {
-                result.Status = result.Stage == "create" ? "failed_spawn" : "failed_create";
-                result.ErrorMessage = ex.ToString();
-                CleanupSelectionAndWindows();
+                result.Status = "failed_spawn";
+                result.Stage = "spawn_or_prepare_target";
+                result.ErrorMessage = prepare.Error == null ? "Target preparation failed." : prepare.Error.Message;
+                adapter.AssertTrue("target.preparation_assertion", false, result.ErrorMessage, prepare.OperationId);
+                adapter.CompleteCase(false, result.ErrorMessage);
+                caseScope.Dispose();
+                return;
             }
+
+            if (noSpace)
+            {
+                result.Status = "skipped";
+                result.Stage = "layout";
+                result.ErrorMessage = "No free layout space remained on the current map.";
+                adapter.AssertTrue("target.preparation_assertion", false, result.ErrorMessage, prepare.OperationId);
+                adapter.CompleteCase(false, result.ErrorMessage);
+                caseScope.Dispose();
+                return;
+            }
+
+            adapter.AssertTrue("target.preparation_assertion", true, item.ThingDef.defName, prepare.OperationId);
+            activeSession = new ActiveSession
+            {
+                Item = item,
+                Result = result,
+                SpawnedThing = preparedThing,
+                InfoCardDef = item.ThingDef,
+                AllowScreenshots = ShouldCaptureScreenshots(item.SpecDef),
+                RemainingUiFrames = PreOpenSettleRepaintFrames,
+                Phase = SessionPhase.WaitingForPreOpenSettle,
+                EvidenceAdapter = adapter,
+                EvidenceCaseScope = caseScope
+            };
+            result.Stage = "info_open";
         }
 
         private void StartTerrainSession(AutoTestWorkItem item)

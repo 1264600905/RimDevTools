@@ -16,6 +16,7 @@ namespace LogSyncMod.AutoTest
         public string ReportPath;
         public string ResultPath;
         public string ManifestPath;
+        public string EvidencePath;
         public string ScreenshotDirectory;
     }
 
@@ -40,6 +41,7 @@ namespace LogSyncMod.AutoTest
                 ReportPath = basePath + "_Report.md",
                 ResultPath = basePath + "_Result.json",
                 ManifestPath = basePath + "_Manifest.json",
+                EvidencePath = basePath + "_Evidence.json",
                 ScreenshotDirectory = basePath + "_Screenshots"
             };
         }
@@ -52,7 +54,8 @@ namespace LogSyncMod.AutoTest
             string modName,
             List<AutoTestManifestEntry> discoveredManifest,
             List<AutoTestManifestEntry> plannedManifest,
-            AutoTestRunSummary runSummary)
+            AutoTestRunSummary runSummary,
+            AutoTestEvidenceManifest evidence)
         {
             try
             {
@@ -62,8 +65,9 @@ namespace LogSyncMod.AutoTest
                 }
 
                 Directory.CreateDirectory(artifacts.OutputDirectory);
+                if (evidence != null) AutoTestEvidenceSerializer.Write(artifacts.EvidencePath, evidence);
                 File.WriteAllText(artifacts.ReportPath, BuildMarkdown(artifacts, packageId, modName, results, runSummary), Encoding.UTF8);
-                File.WriteAllText(artifacts.ResultPath, BuildJson(packageId, runId, modName, results, runSummary), Encoding.UTF8);
+                File.WriteAllText(artifacts.ResultPath, BuildJson(artifacts, packageId, runId, modName, results, runSummary, evidence), Encoding.UTF8);
                 File.WriteAllText(artifacts.ManifestPath, BuildManifestJson(packageId, modName, discoveredManifest, plannedManifest, runSummary), Encoding.UTF8);
                 PruneArchives(artifacts.OutputDirectory, artifacts.SafePackageId);
             }
@@ -190,7 +194,7 @@ namespace LogSyncMod.AutoTest
             return builder.ToString();
         }
 
-        private static string BuildJson(string packageId, string runId, string modName, List<AutoTestResult> results, AutoTestRunSummary runSummary)
+        private static string BuildJson(AutoTestRunArtifacts artifacts, string packageId, string runId, string modName, List<AutoTestResult> results, AutoTestRunSummary runSummary, AutoTestEvidenceManifest evidence)
         {
             StringBuilder builder = new StringBuilder();
             builder.AppendLine("{");
@@ -198,6 +202,18 @@ namespace LogSyncMod.AutoTest
             builder.AppendLine("  \"runId\": \"" + EscapeJson(runId) + "\",");
             builder.AppendLine("  \"modName\": \"" + EscapeJson(modName) + "\",");
             builder.AppendLine("  \"generatedAt\": \"" + DateTime.Now.ToString("o") + "\",");
+            if (evidence != null)
+            {
+                int failedAssertions = evidence.Assertions.Count(item => !item.Success);
+                int severeLogs = evidence.Logs.Count(item => item.Level == "error" || item.Level == "fatal");
+                builder.AppendLine("  \"evidenceSchemaVersion\": " + evidence.SchemaVersion + ",");
+                builder.AppendLine("  \"evidencePath\": \"" + EscapeJson(artifacts.EvidencePath) + "\",");
+                builder.AppendLine("  \"operationCount\": " + evidence.Operations.Count + ",");
+                builder.AppendLine("  \"assertionCount\": " + evidence.Assertions.Count + ",");
+                builder.AppendLine("  \"failedAssertionCount\": " + failedAssertions + ",");
+                builder.AppendLine("  \"capturedLogCount\": " + evidence.Logs.Count + ",");
+                builder.AppendLine("  \"severeLogCount\": " + severeLogs + ",");
+            }
             if (runSummary != null)
             {
                 builder.AppendLine("  \"runMode\": \"" + EscapeJson(runSummary.RunMode) + "\",");
@@ -418,7 +434,7 @@ namespace LogSyncMod.AutoTest
             }
 
             Regex runPattern = new Regex(
-                "^" + Regex.Escape(safePackageId) + "_(?<stamp>\\d{8}_\\d{6})(?:_(?:Report\\.md|Result\\.json|Manifest\\.json|Screenshots))$",
+                "^" + Regex.Escape(safePackageId) + "_(?<stamp>\\d{8}_\\d{6})(?:_(?:Report\\.md|Result\\.json|Manifest\\.json|Evidence\\.json|Screenshots))$",
                 RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
             Dictionary<string, List<string>> groupedPaths = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);

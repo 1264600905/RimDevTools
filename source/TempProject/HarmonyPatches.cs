@@ -14,6 +14,11 @@ namespace LogSyncMod
     [HarmonyPatch(typeof(Log))]
     public static class LogPatches
     {
+        public static event Action<LogSyncCapturedEntry> LogCaptured;
+
+        [ThreadStatic]
+        private static bool publishingCapturedLog;
+
         private sealed class QueuedLogEntry
         {
             public QueuedLogEntry(string dedupeKey, string outputLine)
@@ -86,6 +91,8 @@ namespace LogSyncMod
         private static void ProcessLog(string text, string type)
         {
             if (string.IsNullOrEmpty(text)) return;
+            string sourceMod = GetSourceModPackageId();
+            PublishCapturedLog(text, type, sourceMod);
             bool controlSignal = IsControlSignal(text);
             bool pendingSourceCandidate = pendingSourceReference != null && IsPotentialSourceReferenceLine(text);
 
@@ -109,7 +116,6 @@ namespace LogSyncMod
             if (type == "Error" && !LogSyncMod.settings.syncError) return;
 
             // 2. 识别模组来源
-            string sourceMod = GetSourceModPackageId();
             string sourceModLower = sourceMod?.ToLower();
             
             // 3. 过滤逻辑：
@@ -271,6 +277,35 @@ namespace LogSyncMod
                 {
                     UnityEngine.Debug.Log("[LogSyncMod] Write Error: " + ex.Message);
                 }
+            }
+        }
+
+        private static void PublishCapturedLog(string text, string type, string sourceMod)
+        {
+            if (publishingCapturedLog) return;
+            Action<LogSyncCapturedEntry> handlers = LogCaptured;
+            if (handlers == null) return;
+
+            publishingCapturedLog = true;
+            try
+            {
+                LogSyncCapturedEntry entry = new LogSyncCapturedEntry
+                {
+                    TimestampUtc = DateTime.UtcNow,
+                    Level = type,
+                    Text = text,
+                    SourcePackageId = sourceMod
+                };
+
+                foreach (Action<LogSyncCapturedEntry> handler in handlers.GetInvocationList())
+                {
+                    try { handler(entry); }
+                    catch (Exception ex) { UnityEngine.Debug.Log("[LogSyncMod] LogCaptured subscriber failed: " + ex.Message); }
+                }
+            }
+            finally
+            {
+                publishingCapturedLog = false;
             }
         }
 

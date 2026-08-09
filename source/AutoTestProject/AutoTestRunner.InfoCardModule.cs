@@ -45,6 +45,18 @@ namespace LogSyncMod.AutoTest
             public int OpenStableRepaintFrames;
             public int RemainingUiFrames;
             public SessionPhase Phase;
+            public InfoCardOperationAdapter EvidenceAdapter;
+            public IDisposable EvidenceCaseScope;
+            public AutoTestWaitHandle PreOpenWait;
+            public AutoTestWaitHandle OpenWait;
+            public AutoTestWaitHandle CloseWait;
+            public AutoTestOperationEnvelope OpenOperation;
+            public AutoTestOperationEnvelope CaptureOperation;
+            public AutoTestOperationEnvelope CloseOperation;
+            public AutoTestOperationEnvelope ForceCloseOperation;
+            public long CloseRequestedAtRealtimeMs;
+            public bool OpenAssertionRecorded;
+            public bool CloseAssertionRecorded;
         }
 
         public void ProcessUi()
@@ -112,6 +124,13 @@ namespace LogSyncMod.AutoTest
             catch (Exception ex)
             {
                 bool recipeMode = activeSession.Mode == ActiveSessionMode.RecipeBill;
+                if (!recipeMode)
+                {
+                    string status = activeSession.Phase == SessionPhase.WaitingForInfoCardClose ? "failed_info_card_close_request" : "failed_info_card_open_request";
+                    string stage = activeSession.Phase == SessionPhase.WaitingForInfoCardClose ? "info_close" : "info_open";
+                    FailActiveSession(status, stage, ex.ToString());
+                    return;
+                }
                 activeSession.Result.Status = recipeMode
                     ? (activeSession.Phase == SessionPhase.WaitingForRecipeBillConfigClose ? "failed_recipe_bill_config_close_request" : "failed_recipe_bill_config_open_request")
                     : (activeSession.Phase == SessionPhase.WaitingForInfoCardClose ? "failed_info_card_close_request" : "failed_info_card_open_request");
@@ -154,6 +173,38 @@ namespace LogSyncMod.AutoTest
         private void ProcessWaitingForPreOpenSettle()
         {
             if (activeSession == null) return;
+
+            if (activeSession.EvidenceAdapter != null && activeSession.Mode == ActiveSessionMode.InfoCard)
+            {
+                if (activeSession.PreOpenWait == null)
+                {
+                    activeSession.PreOpenWait = activeSession.EvidenceAdapter.CreateWait(
+                        "wait_pre_open_settle",
+                        new AutoTestWaitOptions
+                        {
+                            ConditionId = "ui.pre_open_settled",
+                            TimeoutMs = 10000,
+                            MinimumPollIntervalTicks = 0,
+                            RequiredStablePolls = PreOpenSettleRepaintFrames
+                        },
+                        delegate
+                        {
+                            return new AutoTestProbeResult { Satisfied = true, Message = "Repaint observed.", Snapshot = BuildWindowSummary() };
+                        });
+                }
+
+                AutoTestWaitOutcome settle = activeSession.PreOpenWait.Poll(Find.TickManager?.TicksGame ?? Time.frameCount);
+                if (!settle.Terminal) return;
+                if (!settle.Satisfied)
+                {
+                    FailActiveSession("failed_info_card_pre_open_timeout", "wait_pre_open_settle", AutoTestWaitHandle.Describe(settle));
+                    return;
+                }
+
+                activeSession.Phase = SessionPhase.WaitingForInfoCardOpen;
+                Log.Message("[LogSyncAutoTest] UI pre-open settle completed for " + activeSession.Result.DefName + " mode=" + activeSession.Mode);
+                return;
+            }
 
             activeSession.RemainingUiFrames--;
             if (activeSession.RemainingUiFrames > 0) return;
@@ -259,6 +310,47 @@ namespace LogSyncMod.AutoTest
         {
             if (activeSession == null) return;
 
+            if (activeSession.EvidenceAdapter != null)
+            {
+                if (activeSession.UiHandle == null)
+                {
+                    OpenInfoCardOnUiThread();
+                    if (activeSession == null) return;
+                }
+
+                if (activeSession.OpenWait == null)
+                {
+                    activeSession.OpenWait = activeSession.EvidenceAdapter.CreateWait(
+                        "wait_info_card_open",
+                        new AutoTestWaitOptions { ConditionId = "window.info_card_open", TimeoutMs = 15000, MinimumPollIntervalTicks = 0, RequiredStablePolls = OpenStableFrameRequirement },
+                        delegate
+                        {
+                            bool present = IsInfoCardPresent();
+                            return new AutoTestProbeResult { Satisfied = present, Message = present ? "InfoCard visible." : "InfoCard not visible.", Snapshot = BuildWindowSummary() };
+                        });
+                }
+
+                AutoTestWaitOutcome open = activeSession.OpenWait.Poll(Find.TickManager?.TicksGame ?? Time.frameCount);
+                if (!open.Terminal) return;
+                if (!open.Satisfied)
+                {
+                    activeSession.EvidenceAdapter.AssertTrue("info_card.stably_open", false, AutoTestWaitHandle.Describe(open), activeSession.OpenWait.OperationId);
+                    activeSession.OpenAssertionRecorded = true;
+                    FailActiveSession("failed_info_card_open", "wait_info_card_open", AutoTestWaitHandle.Describe(open));
+                    return;
+                }
+
+                if (!activeSession.OpenAssertionRecorded)
+                {
+                    activeSession.EvidenceAdapter.AssertTrue("info_card.stably_open", true, AutoTestWaitHandle.Describe(open), activeSession.OpenWait.OperationId);
+                    activeSession.OpenAssertionRecorded = true;
+                }
+                InfoCardCloseTrace.AddReason("OpenConfirmed.StablePolls=" + open.StablePolls);
+                activeSession.Phase = SessionPhase.WaitingForCaptureSettle;
+                activeSession.RemainingUiFrames = 2;
+                return;
+            }
+
             if (activeSession.UiHandle == null)
             {
                 OpenInfoCardOnUiThread();
@@ -350,6 +442,71 @@ namespace LogSyncMod.AutoTest
         private void ProcessWaitingForInfoCardClose()
         {
             if (activeSession == null) return;
+
+            if (activeSession.EvidenceAdapter != null)
+            {
+                if (activeSession.CloseOperation == null && IsInfoCardPresent())
+                {
+                    activeSession.CloseOperation = activeSession.EvidenceAdapter.Run("request_close", delegate
+                    {
+                        if (activeSession.UiHandle == null || !activeSession.UiHandle.IsOpen)
+                            throw new InvalidOperationException("InfoCard handle was not open when close was requested.");
+                        InfoCardCloseTrace.AddReason("CloseActionIssued.CloseXClick");
+                        activeSession.UiHandle.RequestClose();
+                        activeSession.CloseIssued = true;
+                        activeSession.CloseRequestedAtRealtimeMs = evidenceClock.RealtimeMilliseconds;
+                    });
+                    activeSession.EvidenceAdapter.AssertOperation("info_card.close_request", activeSession.CloseOperation);
+                    if (!activeSession.CloseOperation.Success)
+                    {
+                        FailActiveSession("failed_info_card_close_request", "request_close", activeSession.CloseOperation.Error?.Message ?? "Close request failed.");
+                        return;
+                    }
+                }
+
+                if (activeSession.CloseOperation != null && activeSession.ForceCloseOperation == null && IsInfoCardPresent() &&
+                    evidenceClock.RealtimeMilliseconds - activeSession.CloseRequestedAtRealtimeMs >= 500)
+                {
+                    activeSession.ForceCloseOperation = activeSession.EvidenceAdapter.Run("force_close_fallback", delegate
+                    {
+                        InfoCardCloseTrace.AddReason("CloseFallback.ForceClose");
+                        activeSession.UiHandle?.ForceClose();
+                    });
+                    activeSession.EvidenceAdapter.AssertOperation("info_card.force_close_fallback", activeSession.ForceCloseOperation);
+                    if (!activeSession.ForceCloseOperation.Success)
+                    {
+                        FailActiveSession("failed_info_card_close_request", "force_close_fallback", activeSession.ForceCloseOperation.Error?.Message ?? "Force close failed.");
+                        return;
+                    }
+                }
+
+                if (activeSession.CloseWait == null)
+                {
+                    activeSession.CloseWait = activeSession.EvidenceAdapter.CreateWait(
+                        "wait_info_card_closed",
+                        new AutoTestWaitOptions { ConditionId = "window.info_card_closed", TimeoutMs = 15000, MinimumPollIntervalTicks = 0, RequiredStablePolls = 1 },
+                        delegate
+                        {
+                            bool present = IsInfoCardPresent();
+                            return new AutoTestProbeResult { Satisfied = !present, Message = present ? "InfoCard still visible." : "InfoCard closed.", Snapshot = BuildWindowSummary() };
+                        });
+                }
+
+                AutoTestWaitOutcome closed = activeSession.CloseWait.Poll(Find.TickManager?.TicksGame ?? Time.frameCount);
+                if (!closed.Terminal) return;
+                if (!closed.Satisfied)
+                {
+                    activeSession.EvidenceAdapter.AssertTrue("info_card.closed", false, AutoTestWaitHandle.Describe(closed), activeSession.CloseWait.OperationId);
+                    activeSession.CloseAssertionRecorded = true;
+                    FailActiveSession("failed_info_card_close_timeout", "wait_info_card_closed", AutoTestWaitHandle.Describe(closed));
+                    return;
+                }
+
+                activeSession.EvidenceAdapter.AssertTrue("info_card.closed", true, AutoTestWaitHandle.Describe(closed), activeSession.CloseWait.OperationId);
+                activeSession.CloseAssertionRecorded = true;
+                CompleteActiveSession();
+                return;
+            }
 
             if (!IsInfoCardPresent())
             {
@@ -476,6 +633,7 @@ namespace LogSyncMod.AutoTest
             activeSession.Result.Notes = AppendNote(activeSession.Result.Notes, "Trace=" + InfoCardCloseTrace.Describe());
             CleanupSelectionAndWindows();
             InfoCardCloseTrace.Stop();
+            FinalizeInfoCardEvidence(false, errorMessage);
             activeSession = null;
         }
 
@@ -517,6 +675,7 @@ namespace LogSyncMod.AutoTest
             Log.Message("[LogSyncAutoTest] InfoCard close confirmed for " + activeSession.Result.DefName);
             CleanupSelectionAndWindows();
             InfoCardCloseTrace.Stop();
+            FinalizeInfoCardEvidence(true, "InfoCard case completed.");
             activeSession = null;
         }
 
@@ -533,6 +692,29 @@ namespace LogSyncMod.AutoTest
         private void OpenInfoCardOnUiThread()
         {
             if (activeSession == null || activeSession.InfoCardDef == null || activeSession.UiHandle != null) return;
+
+            if (activeSession.EvidenceAdapter != null)
+            {
+                ActiveSession session = activeSession;
+                session.OpenOperation = session.EvidenceAdapter.Run("open_info_card", delegate
+                {
+                    if (session.AttachedHediff != null)
+                        session.UiHandle = AutoTestInfoCardUiAdapter.Open(session.AttachedHediff);
+                    else
+                        session.UiHandle = session.SpawnedThing != null
+                            ? AutoTestInfoCardUiAdapter.Open(session.SpawnedThing)
+                            : AutoTestInfoCardUiAdapter.Open(session.InfoCardDef);
+
+                    InfoCardCloseTrace.Begin(session.Result.DefName);
+                    InfoCardCloseTrace.Attach(Find.WindowStack.WindowOfType<Dialog_InfoCard>());
+                    InfoCardCloseTrace.AddReason("OpenRequested");
+                    Log.Message("[LogSyncAutoTest] InfoCard requested for " + session.Result.DefName + " handle=" + session.UiHandle.DebugName + " windows=" + Find.WindowStack.Windows.Count + " summary=" + BuildWindowSummary());
+                });
+                session.EvidenceAdapter.AssertOperation("info_card.open_request", session.OpenOperation);
+                if (!session.OpenOperation.Success)
+                    FailActiveSession("failed_info_card_open_request", "open_info_card", session.OpenOperation.Error?.Message ?? "InfoCard open request failed.");
+                return;
+            }
 
             if (activeSession.AttachedHediff != null)
             {
@@ -592,13 +774,40 @@ namespace LogSyncMod.AutoTest
                 return;
             }
 
-            screenshotService.TryCaptureInfoCard(
-                activeSession.Result,
-                ref activeSession.ScreenshotCaptured,
-                activeSession.AllowScreenshots,
-                force,
-                results.Count,
-                IsInfoCardPresent);
+            if (activeSession.EvidenceAdapter != null && activeSession.CaptureOperation == null)
+            {
+                ActiveSession session = activeSession;
+                session.CaptureOperation = session.EvidenceAdapter.Run("capture_info_card", delegate
+                {
+                    bool capturedFlag = session.ScreenshotCaptured;
+                    bool captured = screenshotService.TryCaptureInfoCard(session.Result, ref capturedFlag, session.AllowScreenshots, force, results.Count, IsInfoCardPresent);
+                    session.ScreenshotCaptured = capturedFlag;
+                    return captured;
+                }, captured => captured ? "screenshot_requested" : "screenshot_not_requested");
+                if (session.CaptureOperation.Success && session.ScreenshotCaptured && !string.IsNullOrEmpty(session.Result.ScreenshotPath))
+                    session.EvidenceAdapter.AddCapture("InfoCard", session.Result.ScreenshotPath, session.CaptureOperation.OperationId, session.Result.DefName);
+                return;
+            }
+
+            screenshotService.TryCaptureInfoCard(activeSession.Result, ref activeSession.ScreenshotCaptured, activeSession.AllowScreenshots, force, results.Count, IsInfoCardPresent);
+        }
+
+        private void FinalizeInfoCardEvidence(bool success, string message)
+        {
+            if (activeSession?.EvidenceAdapter == null) return;
+            if (!activeSession.OpenAssertionRecorded)
+            {
+                activeSession.EvidenceAdapter.AssertTrue("info_card.stably_open", success, message);
+                activeSession.OpenAssertionRecorded = true;
+            }
+            if (!activeSession.CloseAssertionRecorded)
+            {
+                activeSession.EvidenceAdapter.AssertTrue("info_card.closed", success, message);
+                activeSession.CloseAssertionRecorded = true;
+            }
+            activeSession.EvidenceAdapter.CompleteCase(success, message);
+            activeSession.EvidenceCaseScope?.Dispose();
+            activeSession.EvidenceCaseScope = null;
         }
 
         private void TryCaptureRecipeBillScreenshot(bool force)

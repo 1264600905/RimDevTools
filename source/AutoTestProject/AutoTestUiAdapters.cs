@@ -2,7 +2,6 @@ using System;
 using System.Diagnostics;
 using RimWorld;
 using System.Runtime.InteropServices;
-using System.Threading;
 using UnityEngine;
 using Verse;
 
@@ -153,12 +152,10 @@ namespace LogSyncMod.AutoTest
             if (!SetCursorPos(screenPoint.X, screenPoint.Y)) return false;
 
             mouse_event(MouseEventLeftDown, 0, 0, 0, UIntPtr.Zero);
-            Thread.Sleep(16);
             mouse_event(MouseEventLeftUp, 0, 0, 0, UIntPtr.Zero);
 
             if (hadOriginalCursor)
             {
-                Thread.Sleep(16);
                 SetCursorPos(originalCursor.X, originalCursor.Y);
             }
 

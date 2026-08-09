@@ -1023,6 +1023,29 @@ internal sealed class TestSuite
         WriteResult(output, "demo.current", "old-run", "passed", "mismatch_Result.json");
         var mismatched = AutoResultValidator.Validate(output, "demo.current", "new-run", mismatchedSnapshot);
         Assert(!mismatched.Ok && mismatched.Code == "AUTO_RESULT_MISMATCH", "modified results with a stale runId cannot satisfy a new run");
+
+        var evidenceSnapshot = AutoResultValidator.Snapshot(output);
+        WriteEvidence(output, "demo.current", "run-evidence", "valid_Evidence.json");
+        WriteResultWithEvidence(output, "demo.current", "run-evidence", "valid_Evidence.json", "valid_Result.json");
+        var evidencePassed = AutoResultValidator.Validate(output, "demo.current", "run-evidence", evidenceSnapshot);
+        Assert(evidencePassed.Ok, "auto result validator accepts matching evidence");
+
+        var missingEvidenceSnapshot = AutoResultValidator.Snapshot(output);
+        WriteResultWithEvidence(output, "demo.current", "run-evidence-missing", "missing_Evidence.json", "missing_Result.json");
+        var missingEvidence = AutoResultValidator.Validate(output, "demo.current", "run-evidence-missing", missingEvidenceSnapshot);
+        Assert(!missingEvidence.Ok && missingEvidence.Code == "AUTO_EVIDENCE_MISSING", "auto result validator reports missing evidence");
+
+        var invalidEvidenceSnapshot = AutoResultValidator.Snapshot(output);
+        File.WriteAllText(Path.Combine(output, "invalid_Evidence.json"), "not-json");
+        WriteResultWithEvidence(output, "demo.current", "run-evidence-invalid", "invalid_Evidence.json", "invalid_Result.json");
+        var invalidEvidence = AutoResultValidator.Validate(output, "demo.current", "run-evidence-invalid", invalidEvidenceSnapshot);
+        Assert(!invalidEvidence.Ok && invalidEvidence.Code == "AUTO_EVIDENCE_INVALID", "auto result validator reports invalid evidence");
+
+        var evidenceMismatchSnapshot = AutoResultValidator.Snapshot(output);
+        WriteEvidence(output, "demo.current", "different-run", "mismatched_Evidence.json");
+        WriteResultWithEvidence(output, "demo.current", "run-evidence-mismatch", "mismatched_Evidence.json", "evidence-mismatch_Result.json");
+        var evidenceMismatch = AutoResultValidator.Validate(output, "demo.current", "run-evidence-mismatch", evidenceMismatchSnapshot);
+        Assert(!evidenceMismatch.Ok && evidenceMismatch.Code == "AUTO_EVIDENCE_MISMATCH", "auto result validator reports mismatched evidence");
     }
 
     private void TestLogArchive()
@@ -1336,6 +1359,29 @@ internal sealed class TestSuite
     private static void WriteResult(string output, string packageId, string runId, string status, string name = "first_Result.json")
     {
         var value = new { packageId, runId, completeness = "Complete", manifestPlanned = 1, manifestExecuted = 1, manifestMissing = 0, results = new[] { new { caseId = "case", status } } };
+        File.WriteAllText(Path.Combine(output, name), JsonSerializer.Serialize(value));
+    }
+
+    private static void WriteResultWithEvidence(string output, string packageId, string runId, string evidencePath, string name)
+    {
+        var value = new
+        {
+            packageId,
+            runId,
+            completeness = "Complete",
+            manifestPlanned = 1,
+            manifestExecuted = 1,
+            manifestMissing = 0,
+            evidenceSchemaVersion = 1,
+            evidencePath,
+            results = new[] { new { caseId = "case", status = "passed" } }
+        };
+        File.WriteAllText(Path.Combine(output, name), JsonSerializer.Serialize(value));
+    }
+
+    private static void WriteEvidence(string output, string packageId, string runId, string name)
+    {
+        var value = new { schemaVersion = 1, packageId, runId, success = true, operations = Array.Empty<object>(), assertions = Array.Empty<object>() };
         File.WriteAllText(Path.Combine(output, name), JsonSerializer.Serialize(value));
     }
 
