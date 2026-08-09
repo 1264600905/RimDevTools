@@ -6,7 +6,7 @@
 
 - Windows x64。
 - 运行 `RimDevTools.exe`：.NET 10 Runtime。
-- 使用随包 ILSpy 执行 `ref pull`：.NET 8 Runtime。
+- 使用随包 ILSpy 执行 `mod copy`：.NET 8 Runtime。
 - 编译 RimDevTools：.NET 10 SDK。
 - 编译 RimWorld 模组：dotnet SDK，以及 .NET Framework 4.8 Developer/Targeting Pack；4.7.2 可作为兼容替代。
 - 运行游戏测试：可用的 RimWorld 1.6 与已登录的 Steam 会话。
@@ -25,7 +25,7 @@ RimDevTools.Tests/           CLI 回归测试
 RimDevTools.ReleaseTests/    发布布局测试
 components/ProjectTemplate/  RimWorld 1.6 项目模板源
 .tools/                      开发、发布、测试与 ILSpy 工具
-参考文档/                    通过 ref pull 获取的第三方模组证据
+参考文档/                    通过 mod copy 获取的第三方模组证据
 ```
 
 ## 构建与测试
@@ -52,7 +52,7 @@ RimSage 是半强制研究前置：
 - 配置明显损坏时，skill 会安全修复并重试一次；服务仍不可用时停止依赖它的结论并要求用户恢复访问。
 - 已配置的同名本地服务与默认远程服务等同使用。
 
-当前项目始终直接读取工作树。第三方模组不由 RimSage 提供；先检查 `参考文档`，缺少时使用 `ref search/ref pull` 获取 XML、程序集和 ILSpy 源码。
+当前项目始终直接读取工作树。第三方模组不由 RimSage 提供；先检查 `参考文档`，缺少时使用 `mod search/mod copy` 获取 XML、程序集和 ILSpy 源码。
 
 ## 常用命令
 
@@ -60,8 +60,8 @@ RimSage 是半强制研究前置：
 .\.tools\RimDevTools.exe --version
 .\.tools\RimDevTools.exe doctor
 .\.tools\RimDevTools.exe deploy --dry-run
-.\.tools\RimDevTools.exe ref search "<keyword>"
-.\.tools\RimDevTools.exe ref pull "<exact-query>"
+.\.tools\RimDevTools.exe mod search "<keyword>"
+.\.tools\RimDevTools.exe mod copy "<exact-query>" --dry-run
 .\.tools\RimDevTools.exe test run --mode quick
 .\.tools\RimDevTools.exe test cleanup --dry-run
 .\.tools\RimDevTools.exe mods install-tools --dry-run
@@ -73,7 +73,7 @@ RimSage 是半强制研究前置：
 
 quick、auto 和 XML 测试遵循 `mod_config.jsonc.isolated_desktop`；模板默认使用当前桌面。manual 默认使用当前桌面，除非显式传入 `--isolated-desktop`。测试会事务化修改并恢复 RimWorld 配置。
 
-auto/xml 可重复传入 `--scope` 组合多个测试分类；`all` 保持历史语义，只映射为 Standard，不包含 CombatPawns 与 SkillPocketMaps。auto 还可重复传入 `--defname` 精确筛选目标，任何未命中的名称都会使本轮失败。兼容参数 `--auto-test-scope`、`--auto-test-defname` 仍为单值，且不能与对应的新参数混用。
+auto/xml 可重复传入 `--scope` 组合多个测试分类；未传 scope 时默认为 Standard。auto 还可重复传入 `--defname` 精确筛选目标，任何未命中的名称都会使本轮失败。外部 ModsConfig XML 使用 `--active-mods-file` 指定。
 
 `test run` 和 `doctor` 还会检查启用模组的必要上级依赖。缺失依赖只显示 warning，不阻挡测试；`doctor` 的检查项为 `mods.min_active_dependencies`。
 

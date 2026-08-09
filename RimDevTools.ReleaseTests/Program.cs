@@ -121,9 +121,15 @@ using (var document = JsonDocument.Parse(versionOutput))
 var help = Run(Path.Combine(tools, "RimDevTools.exe"), release, "mods", "install-tools", "--help");
 Assert(help.Contains("--mods-path", StringComparison.Ordinal) && help.Contains("--dry-run", StringComparison.Ordinal), "packaged tool Mod command exposes path and dry-run options");
 var cleanupHelp = Run(Path.Combine(tools, "RimDevTools.exe"), release, "test", "cleanup", "--help");
-Assert(cleanupHelp.Contains("--dry-run", StringComparison.Ordinal) && cleanupHelp.Contains("activeMods", StringComparison.Ordinal), "packaged CLI exposes safe transaction cleanup help");
+Assert(cleanupHelp.Contains("--dry-run", StringComparison.Ordinal) && cleanupHelp.Contains("--status", StringComparison.Ordinal) && cleanupHelp.Contains("activeMods", StringComparison.Ordinal), "packaged CLI exposes safe transaction cleanup and status help");
+var modCopyHelp = Run(Path.Combine(tools, "RimDevTools.exe"), release, "mod", "copy", "--help");
+Assert(modCopyHelp.Contains("--include-ignored", StringComparison.Ordinal)
+    && modCopyHelp.Contains("--overwrite-existing", StringComparison.Ordinal)
+    && modCopyHelp.Contains("--dry-run", StringComparison.Ordinal), "packaged CLI exposes the new reference mod copy options");
 var removedInit = RunResult(Path.Combine(tools, "RimDevTools.exe"), release, "init", "1.6", "--output", Path.Combine(Path.GetTempPath(), "removed-init"));
 Assert(removedInit.ExitCode == 2 && removedInit.Stdout.Contains("UNKNOWN_COMMAND", StringComparison.Ordinal), "packaged CLI no longer exposes init");
+var removedRef = RunResult(Path.Combine(tools, "RimDevTools.exe"), release, "ref", "search", "anything");
+Assert(removedRef.ExitCode == 2 && removedRef.Stdout.Contains("UNKNOWN_COMMAND", StringComparison.Ordinal), "packaged CLI no longer exposes the old reference command namespace");
 
 var temporaryMods = Path.Combine(Path.GetTempPath(), "RimDevToolsReleaseTests", Guid.NewGuid().ToString("N"), "Mods");
 Directory.CreateDirectory(temporaryMods);

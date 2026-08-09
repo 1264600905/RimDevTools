@@ -51,8 +51,8 @@
 
 [h2][b]参考模组与工具组件[/b][/h2]
 [list]
-[*] ref search、ref deps 和 ref related 用于发现本地或 Workshop 中的候选模组、依赖和关联项。确认目标后，ref pull 会复制到参考资料区，并使用随包 ILSpy 生成可读源码。
-[*] ref pull 的 --deps、--all、--force 和 --fuzzy 均需显式指定。名称歧义、依赖循环、目标冲突和不安全路径会在复制前失败，避免参考资料被误覆盖。
+[*] mod search、mod dependencies 和 mod dependents 用于发现本地或 Workshop 中的候选模组、依赖和反向依赖项。确认目标后，mod copy 会复制到参考资料区，并使用随包 ILSpy 生成可读源码。
+[*] mod copy 的 --deps、--include-ignored、--overwrite-existing 和 --fuzzy 均需显式指定；--dry-run 可先预览复制与反编译计划。名称歧义、依赖循环、目标冲突和不安全路径会在复制前失败，避免参考资料被误覆盖。
 [*] mods install-tools --dry-run 可预览随包 LogSyncMod 的安装计划。实际安装会校验 packageId、版本、目录哈希和暂存结果，保留 PublishedFileId.txt，不降级，也会在替换失败时回滚。
 [*] 随包的 LogSyncMod 用于日志同步和自动测试配合，不是模板项目的游戏功能。需要使用测试流程前，按安装计划将它安装到本地 Mods 目录。
 [/list]
@@ -61,14 +61,14 @@
 [h2][b]AI 研究与项目规则[/b][/h2]
 [list]
 [*] Codex CLI、Claude Code 和 opencode 均预置 RimSage 的只读服务配置。研究官方 Def、XML 继承、官方 C# API、实现行为或 Harmony 目标时，先使用 RimSage 获取证据。
-[*] RimSage 不读取当前项目或第三方模组。当前项目直接读取工作树；第三方模组先检查参考资料区，缺少时再使用 ref search 和 ref pull。
+[*] RimSage 不读取当前项目或第三方模组。当前项目直接读取工作树；第三方模组先检查参考资料区，缺少时再使用 mod search 和 mod copy。
 [*] 项目内的 rimdevtools、rimsage、rimworld-development-engineer、rimworld-plan-engineer 和 about-write-description skill 分别约束工具调用、官方研究、实现验证、计划和 Workshop 文案更新。
 [*] 推荐验证链路为 doctor -> deploy --dry-run -> test run --deploy --mode quick -> test run --deploy --mode auto。不要把游戏进程退出或无可见报错当作成功依据。
 [/list]
 [img]图片展示：AI 研究链路、项目 skill 与验证循环[/img]
 
 [b]兼容性与运行条件[/b]
-目标版本为 RimWorld 1.6，未声明官方 DLC 前置。模板的 incompatibleWith 列表故意包含 ludeon.rimworld，以阻止玩家或开发者直接启用未改名模板；复制后必须移除该条目。RimDevTools.exe 需要 Windows x64 和 .NET 10 Runtime；使用 ILSpy 进行 ref pull 需要 .NET 8 Runtime；编译模组需要 dotnet SDK 和 .NET Framework 4.8 Developer/Targeting Pack，4.7.2 可作为兼容替代。运行游戏测试需要可用的 RimWorld 1.6 与已登录 Steam 会话。
+目标版本为 RimWorld 1.6，未声明官方 DLC 前置。模板的 incompatibleWith 列表故意包含 ludeon.rimworld，以阻止玩家或开发者直接启用未改名模板；复制后必须移除该条目。RimDevTools.exe 需要 Windows x64 和 .NET 10 Runtime；使用 ILSpy 进行 mod copy 需要 .NET 8 Runtime；编译模组需要 dotnet SDK 和 .NET Framework 4.8 Developer/Targeting Pack，4.7.2 可作为兼容替代。运行游戏测试需要可用的 RimWorld 1.6 与已登录 Steam 会话。
 
 [b]致谢[/b]
 随附组件与配置包括 LogSyncMod、ILSpy 命令行反编译器和 RimSage 只读研究服务。

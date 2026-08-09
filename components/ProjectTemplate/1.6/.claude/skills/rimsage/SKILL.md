@@ -1,6 +1,6 @@
 ---
 name: rimsage
-description: 通过 RimSage MCP 研究官方 RimWorld 和 DLC 的 Def、XML 继承、C# 类型、成员、签名、实现和 Harmony 目标。当任务需要官方游戏 API 或行为证据、需要将 Def 关联到实现类，或需决定第三方模组研究是否应转入本地参考文件和 RimDevTools ref pull 时使用。
+description: 通过 RimSage MCP 研究官方 RimWorld 和 DLC 的 Def、XML 继承、C# 类型、成员、签名、实现和 Harmony 目标。当任务需要官方游戏 API 或行为证据、需要将 Def 关联到实现类，或需决定第三方模组研究是否应转入本地参考文件和 RimDevTools mod copy 时使用。
 ---
 
 # RimSage
@@ -43,8 +43,8 @@ description: 通过 RimSage MCP 研究官方 RimWorld 和 DLC 的 Def、XML 继�
 
 1. 确认对象是第三方模组而非官方内容。
 2. 在 `参考文档` 中查找现有本地副本。
-3. 若不存在，用 `.\.tools\RimDevTools.exe ref search <query>` 消除歧义。
-4. 仅带任务所需选项运行 `ref pull`。不要隐式添加 `--deps`、`--all` 或 `--force`。
+3. 若不存在，用 `.\.tools\RimDevTools.exe mod search <query>` 消除歧义。
+4. 先运行 `mod copy <query> --dry-run` 检查计划，再仅带任务所需选项运行 `mod copy`。不要隐式添加 `--deps`、`--include-ignored` 或 `--overwrite-existing`。
 5. 若目标与现有参考目录冲突，报告冲突并询问用户是否意图替换。
 6. 在本地检查拉取的 About 元数据、LoadFolders、XML、补丁、程序集和 ILSpy 源码。
 7. RimSage 仅用于该模组调用的官方 API；绝不声称 RimSage 检查过第三方模组本身。

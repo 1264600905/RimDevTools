@@ -141,7 +141,7 @@ internal sealed class TestSuite
             await TestCleanupCommandAsync();
             TestDeploymentArtifactRecovery();
             await TestEnvironmentLockAsync();
-            await TestRefAsync();
+            await TestModAsync();
             await TestDeployAsync();
             TestAutoResultValidator();
             TestLogArchive();
@@ -195,7 +195,7 @@ internal sealed class TestSuite
         var paths = new[]
         {
             Array.Empty<string>(), ["--help"], ["doctor", "--help"], ["deploy", "--help"],
-            ["ref", "--help"], ["ref", "search", "--help"], ["ref", "pull", "--help"], ["ref", "deps", "--help"], ["ref", "related", "--help"],
+            ["mod", "--help"], ["mod", "search", "--help"], ["mod", "copy", "--help"], ["mod", "dependencies", "--help"], ["mod", "dependents", "--help"],
             ["test", "--help"], ["test", "run", "--help"], ["test", "settings", "--help"], ["test", "cleanup", "--help"],
             ["mods", "--help"], ["mods", "install-tools", "--help"]
         };
@@ -204,8 +204,13 @@ internal sealed class TestSuite
             var result = await CaptureAsync(() => CliApplication.RunAsync(args));
             Assert(result.ExitCode == 0 && result.Output.Contains("Usage:", StringComparison.Ordinal), $"help succeeds without project discovery: {string.Join(' ', args)}");
         }
+        var topLevel = await CaptureAsync(() => CliApplication.RunAsync([]));
+        Assert(topLevel.Output.Contains("mod search", StringComparison.Ordinal)
+            && topLevel.Output.Contains("mod copy", StringComparison.Ordinal)
+            && topLevel.Output.Contains("test cleanup", StringComparison.Ordinal)
+            && topLevel.Output.Contains("mods install-tools", StringComparison.Ordinal), "top-level help lists concrete subcommands");
 
-        foreach (var command in new[] { "deploy", "ref search", "ref pull", "ref deps", "ref related", "test run", "test cleanup", "mods install-tools" })
+        foreach (var command in new[] { "deploy", "mod search", "mod copy", "mod dependencies", "mod dependents", "test run", "test cleanup", "mods install-tools" })
         {
             using var writer = new StringWriter();
             var original = Console.Out;
@@ -223,6 +228,21 @@ internal sealed class TestSuite
         Assert(removedInit.ExitCode == ExitCodes.InvalidArguments && JsonErrorCode(removedInit.Output) == "UNKNOWN_COMMAND", "removed init command returns the standard unknown-command error");
         var removedData = await CaptureAsync(() => CliApplication.RunAsync(["data", "status"]));
         Assert(removedData.ExitCode == ExitCodes.InvalidArguments && JsonErrorCode(removedData.Output) == "UNKNOWN_COMMAND", "removed data command returns the standard unknown-command error");
+        var removedRef = await CaptureAsync(() => CliApplication.RunAsync(["ref", "search", "anything"]));
+        Assert(removedRef.ExitCode == ExitCodes.InvalidArguments && JsonErrorCode(removedRef.Output) == "UNKNOWN_COMMAND", "reference command namespace is no longer exposed");
+        var removedOption = await CaptureAsync(() => CliApplication.RunAsync(["mod", "copy", "anything", "--force"]));
+        Assert(removedOption.ExitCode == ExitCodes.InvalidArguments && JsonErrorCode(removedOption.Output) == "INVALID_ARGUMENT", "old force option is no longer accepted");
+        foreach (var oldArgs in new[]
+        {
+            new[] { "mod", "copy", "anything", "--all" },
+            ["test", "run", "--mods-file", "ModsConfig.xml"],
+            ["test", "run", "--auto-test-scope", "standard"],
+            ["test", "run", "--auto-test-defname", "Demo_Coat"]
+        })
+        {
+            var removed = await CaptureAsync(() => CliApplication.RunAsync(oldArgs));
+            Assert(removed.ExitCode == ExitCodes.InvalidArguments && JsonErrorCode(removed.Output) == "INVALID_ARGUMENT", $"old option is no longer accepted: {string.Join(' ', oldArgs)}");
+        }
         var version = await CaptureAsync(() => CliApplication.RunAsync(["--version"]));
         using var versionJson = JsonDocument.Parse(version.Output);
         Assert(version.ExitCode == 0
@@ -585,12 +605,11 @@ internal sealed class TestSuite
         Assert(AutoTestSelectionParser.TryParse(["test", "run", "--mode", "auto", "--scope", "turrets", "--scope", "THREEVIEWS", "--scope", "turrets", "--defname", "Coat", "--defname", "coat"], "auto", out var selection, out _)
             && selection.Scopes.SequenceEqual(["Turrets", "ThreeViews"])
             && selection.DefNames.SequenceEqual(["Coat"]), "selection parser normalizes and preserves first-seen order");
-        Assert(AutoTestSelectionParser.TryParse(["test", "run", "--mode", "xml", "--auto-test-scope", "all"], "xml", out var legacy, out _)
-            && legacy.Scopes.SequenceEqual(["Standard"]), "legacy all scope maps to Standard");
+        Assert(!AutoTestSelectionParser.TryParse(["test", "run", "--mode", "xml", "--scope", "all"], "xml", out _, out _), "all scope alias is no longer accepted");
         Assert(!AutoTestSelectionParser.TryParse(["test", "run", "--mode", "quick", "--scope", "turrets"], "quick", out _, out _), "scope is rejected outside auto/xml modes");
         Assert(!AutoTestSelectionParser.TryParse(["test", "run", "--mode", "xml", "--defname", "Coat"], "xml", out _, out _), "defname is rejected outside auto mode");
         Assert(!AutoTestSelectionParser.TryParse(["test", "run", "--mode", "auto", "--scope", "unknown"], "auto", out _, out _), "unknown scope is rejected");
-        Assert(!AutoTestSelectionParser.TryParse(["test", "run", "--mode", "auto", "--scope", "turrets", "--auto-test-scope", "all"], "auto", out _, out _), "new and legacy scope options cannot be mixed");
+        Assert(CliArgs.Validate("test run", ["test", "run", "--active-mods-file", "ModsConfig.xml"]) is null, "active mods file option is accepted");
     }
 
     private async Task TestSettingsAsync()
@@ -719,6 +738,17 @@ internal sealed class TestSuite
         ProcessUtil.RimWorldRunningOverride = () => true;
         try
         {
+            using (var heldLock = EnvironmentLock.TryAcquire(environment.ConfigDirectory, "held-for-status", environment.Root, "held", out _))
+            {
+                Assert(heldLock is not null, "cleanup status fixture acquires the environment lock");
+                var status = await CaptureAsync(() => TestCommand.CleanupAsync(["test", "cleanup", "--status", "--dry-run"]));
+                Assert(status.ExitCode == 0
+                    && status.Output.Contains("cleanup-command", StringComparison.Ordinal)
+                    && status.Output.Contains("\"gameRunning\": true", StringComparison.Ordinal)
+                    && status.Output.Contains("\"environmentBusy\": true", StringComparison.Ordinal)
+                    && TransactionRecovery.PendingDirectories(environment.ConfigDirectory).Count == 1
+                    && Directory.Exists(staleStaging), "cleanup status reports the lock, transactions, game, and deployment artifacts without mutation");
+            }
             var refused = await CaptureAsync(() => TestCommand.CleanupAsync(["test", "cleanup"]));
             Assert(refused.ExitCode == ExitCodes.Busy && JsonErrorCode(refused.Output) == "GAME_RUNNING_CLEANUP_REFUSED" && TransactionRecovery.PendingDirectories(environment.ConfigDirectory).Count == 1, "cleanup command refuses mutation while RimWorld is running");
         }
@@ -789,11 +819,11 @@ internal sealed class TestSuite
         Assert(afterCrash is not null, "abandoned named mutex is acquired by the next writer");
     }
 
-    private async Task TestRefAsync()
+    private async Task TestModAsync()
     {
-        AssertThrows<InvalidDataException>(() => RefCommand.SafeFolderName(".."), "unsafe mod name is rejected");
-        Assert(RefCommand.SafeFolderName("CON") == "_CON", "Windows reserved mod name is sanitized");
-        Assert(RefCommand.SafeFolderName("联合重工-UF Heavy:Industries") == "联合重工-UF_Heavy_Industries", "mod name whitespace and invalid characters are sanitized");
+        AssertThrows<InvalidDataException>(() => ModCommand.SafeFolderName(".."), "unsafe mod name is rejected");
+        Assert(ModCommand.SafeFolderName("CON") == "_CON", "Windows reserved mod name is sanitized");
+        Assert(ModCommand.SafeFolderName("联合重工-UF Heavy:Industries") == "联合重工-UF_Heavy_Industries", "mod name whitespace and invalid characters are sanitized");
 
         var environment = CreateProjectEnvironment("ref");
         var workshop = NewDirectory(Path.Combine("ref", "workshop"));
@@ -801,21 +831,21 @@ internal sealed class TestSuite
         CreateMod(environment.Game, "DuplicateOne", "demo.duplicate");
         CreateModAt(workshop, "DuplicateTwo", "demo.duplicate");
         using var scope = UseEnvironment(environment);
-        var ambiguous = await CaptureAsync(() => RefCommand.DepsAsync(["ref", "deps", "demo.duplicate"]));
+        var ambiguous = await CaptureAsync(() => ModCommand.DependenciesAsync(["mod", "dependencies", "demo.duplicate"]));
         Assert(ambiguous.ExitCode == ExitCodes.InvalidArguments && JsonErrorCode(ambiguous.Output) == "MOD_AMBIGUOUS", "same-priority duplicate candidates fail explicitly");
-        var reorderedSearch = await CaptureAsync(() => RefCommand.SearchAsync(["ref", "search", "--fuzzy", "Duplicate"]));
-        Assert(reorderedSearch.ExitCode == 0, "ref query parsing accepts flags before the query");
+        var reorderedSearch = await CaptureAsync(() => ModCommand.SearchAsync(["mod", "search", "--fuzzy", "Duplicate"]));
+        Assert(reorderedSearch.ExitCode == 0, "mod query parsing accepts flags before the query");
 
         var cycleA = CreateMod(environment.Game, "CycleA", "demo.a", "demo.b");
         CreateMod(environment.Game, "CycleB", "demo.b", "demo.a");
-        var cycle = await CaptureAsync(() => RefCommand.PullAsync(["ref", "pull", "demo.a", "--deps"]));
+        var cycle = await CaptureAsync(() => ModCommand.CopyAsync(["mod", "copy", "demo.a", "--deps"]));
         Assert(cycle.ExitCode == ExitCodes.InvalidArguments && JsonErrorCode(cycle.Output) == "DEPENDENCY_CYCLE", "dependency cycles fail before writing targets");
         Assert(!Directory.Exists(Path.Combine(environment.Root, "参考文档", "CycleA")) && Directory.Exists(cycleA), "cycle failure leaves source and targets untouched");
 
         var versioned = CreateMod(environment.Game, "Versioned", "demo.versioned");
         File.WriteAllText(Path.Combine(versioned, "About", "About.xml"), "<ModMetaData><name>Versioned</name><packageId>demo.versioned</packageId><modDependenciesByVersion><v1.5><li><packageId>demo.old</packageId></li></v1.5><v1.6><li><packageId>demo.new</packageId></li></v1.6></modDependenciesByVersion></ModMetaData>");
-        var versionResult = await CaptureAsync(() => RefCommand.DepsAsync(["ref", "deps", "demo.versioned", "--version", "1.5"]));
-        Assert(versionResult.ExitCode == 0 && versionResult.Output.Contains("demo.old") && !versionResult.Output.Contains("demo.new"), "ref --version selects version-specific dependencies");
+        var versionResult = await CaptureAsync(() => ModCommand.DependenciesAsync(["mod", "dependencies", "demo.versioned", "--version", "1.5"]));
+        Assert(versionResult.ExitCode == 0 && versionResult.Output.Contains("demo.old") && !versionResult.Output.Contains("demo.new"), "mod --version selects version-specific dependencies");
 
         var collisionSlash = CreateMod(environment.Game, "CollisionSlash", "demo/x");
         var collisionBackslash = CreateMod(environment.Game, "CollisionBackslash", "demo\\x");
@@ -823,16 +853,25 @@ internal sealed class TestSuite
         File.WriteAllText(Path.Combine(collisionBackslash, "About", "About.xml"), "<ModMetaData><name>Same\\Name</name><packageId>demo\\x</packageId></ModMetaData>");
         var collisionRoot = CreateMod(environment.Game, "CollisionRoot", "demo.collision-root");
         File.WriteAllText(Path.Combine(collisionRoot, "About", "About.xml"), "<ModMetaData><name>Root</name><packageId>demo.collision-root</packageId><modDependencies><li><packageId>demo/x</packageId></li><li><packageId>demo\\x</packageId></li></modDependencies></ModMetaData>");
-        var collision = await CaptureAsync(() => RefCommand.PullAsync(["ref", "pull", "demo.collision-root", "--deps"]));
-        Assert(collision.ExitCode == ExitCodes.InvalidArguments && JsonErrorCode(collision.Output) == "TARGET_COLLISION", "ref pull rejects packageIds that map to the same safe target");
+        var collision = await CaptureAsync(() => ModCommand.CopyAsync(["mod", "copy", "demo.collision-root", "--deps"]));
+        Assert(collision.ExitCode == ExitCodes.InvalidArguments && JsonErrorCode(collision.Output) == "TARGET_COLLISION", "mod copy rejects packageIds that map to the same safe target");
 
-        CreateMod(environment.Game, "Reference", "demo.reference", content: "v1");
-        var pulled = await CaptureAsync(() => RefCommand.PullAsync(["ref", "pull", "demo.reference"]));
-        Assert(pulled.ExitCode == 0 && File.ReadAllText(Path.Combine(environment.Root, "参考文档", "Reference", "content.txt")) == "v1", "ref pull installs staged mod using its name");
+        var referenceMod = CreateMod(environment.Game, "Reference", "demo.reference", content: "v1");
+        Directory.CreateDirectory(Path.Combine(referenceMod, "Ignored"));
+        File.WriteAllText(Path.Combine(referenceMod, "Ignored", "ignored.txt"), "included on request");
+        File.WriteAllText(environment.ConfigPath, Config(environment, extra: $"\"workshop_paths\":[\"{Escape(workshop)}\"],\"pull_ignore_folders\":[\"Ignored\"]"));
+        var dryRun = await CaptureAsync(() => ModCommand.CopyAsync(["mod", "copy", "demo.reference", "--dry-run"]));
+        Assert(dryRun.ExitCode == 0 && dryRun.Output.Contains("dependencyClosure") && !Directory.Exists(Path.Combine(environment.Root, "参考文档")), "mod copy dry-run reports the plan without creating reference targets");
+        var pulled = await CaptureAsync(() => ModCommand.CopyAsync(["mod", "copy", "demo.reference"]));
+        Assert(pulled.ExitCode == 0
+            && File.ReadAllText(Path.Combine(environment.Root, "参考文档", "Reference", "content.txt")) == "v1"
+            && !Directory.Exists(Path.Combine(environment.Root, "参考文档", "Reference", "Ignored")), "mod copy installs staged mod and applies pull_ignore_folders");
+        var overwritten = await CaptureAsync(() => ModCommand.CopyAsync(["mod", "copy", "demo.reference", "--include-ignored", "--overwrite-existing"]));
+        Assert(overwritten.ExitCode == 0 && File.Exists(Path.Combine(environment.Root, "参考文档", "Reference", "Ignored", "ignored.txt")), "mod copy includes ignored folders and overwrites an existing target only when explicitly requested");
 
         CreateMod(environment.Game, "OfficialDependency", "demo.official-dependency", "ludeon.rimworld.royalty");
-        var officialDependency = await CaptureAsync(() => RefCommand.PullAsync(["ref", "pull", "demo.official-dependency", "--deps"]));
-        Assert(officialDependency.ExitCode == 0 && Directory.Exists(Path.Combine(environment.Root, "参考文档", "OfficialDependency")), "ref pull skips official RimWorld dependencies that are not stored under Mods");
+        var officialDependency = await CaptureAsync(() => ModCommand.CopyAsync(["mod", "copy", "demo.official-dependency", "--deps"]));
+        Assert(officialDependency.ExitCode == 0 && Directory.Exists(Path.Combine(environment.Root, "参考文档", "OfficialDependency")), "mod copy skips official RimWorld dependencies that are not stored under Mods");
 
         var unsafeEnvironment = CreateProjectEnvironment("ref-reparse");
         CreateMod(unsafeEnvironment.Game, "Reference", "demo.reference", content: "safe");
@@ -852,9 +891,9 @@ internal sealed class TestSuite
         try
         {
             using var unsafeScope = UseEnvironment(unsafeEnvironment);
-            var unsafePull = await CaptureAsync(() => RefCommand.PullAsync(["ref", "pull", "demo.reference"]));
-            Assert(unsafePull.ExitCode == ExitCodes.InvalidArguments && JsonErrorCode(unsafePull.Output) == "REFERENCE_TARGET_UNSAFE", "ref pull rejects reparse points in the target path");
-            Assert(File.ReadAllText(Path.Combine(externalTarget, "sentinel.txt")) == "outside", "unsafe ref target remains untouched");
+            var unsafeCopy = await CaptureAsync(() => ModCommand.CopyAsync(["mod", "copy", "demo.reference"]));
+            Assert(unsafeCopy.ExitCode == ExitCodes.InvalidArguments && JsonErrorCode(unsafeCopy.Output) == "REFERENCE_TARGET_UNSAFE", "mod copy rejects reparse points in the target path");
+            Assert(File.ReadAllText(Path.Combine(externalTarget, "sentinel.txt")) == "outside", "unsafe mod target remains untouched");
         }
         finally
         {
@@ -871,10 +910,10 @@ internal sealed class TestSuite
         var candidate = new ModCandidate("x", "x", "x", batch, false, null, []);
         var targets = new[]
         {
-            new RefCommand.PullTarget(candidate, target1, staging1, Path.Combine(batch, "backup1")),
-            new RefCommand.PullTarget(candidate, target2, Path.Combine(batch, "missing-staging"), Path.Combine(batch, "backup2"))
+            new ModCommand.CopyTarget(candidate, target1, staging1, Path.Combine(batch, "backup1")),
+            new ModCommand.CopyTarget(candidate, target2, Path.Combine(batch, "missing-staging"), Path.Combine(batch, "backup2"))
         };
-        AssertThrows<DirectoryNotFoundException>(() => RefCommand.InstallBatch(targets), "batch install surfaces replacement failure");
+        AssertThrows<DirectoryNotFoundException>(() => ModCommand.InstallBatch(targets), "batch install surfaces replacement failure");
         Assert(File.Exists(Path.Combine(target1, "old.txt")) && File.Exists(Path.Combine(target2, "old.txt")), "batch install rolls back all replaced targets");
     }
 
@@ -1011,10 +1050,23 @@ internal sealed class TestSuite
             && !result.Output.Contains("project.discovery", StringComparison.Ordinal)
             && compactChecks.Any(check => check.GetProperty("id").GetString() == "game.mods_config" && check.GetProperty("status").GetString() == "missing")
             && compactChecks.Any(check => check.GetProperty("id").GetString() == "tools.mod_components" && check.GetProperty("required").GetBoolean() && check.GetProperty("status").GetString() == "missing")
+            && compactChecks.Any(check => check.GetProperty("id").GetString() == "project.preview_image" && check.GetProperty("status").GetString() == "warning")
             && compactChecks.Any(check => check.GetProperty("id").GetString() == "build.game_assembly.Assembly-CSharp" && check.GetProperty("path").GetString() == Path.Combine(environment.Game, "RimWorldWin64_Data", "Managed", "Assembly-CSharp.dll"))
             && compactChecks.Any(check => check.GetProperty("id").GetString() == "build.harmony_assembly" && check.GetProperty("path").GetString() == Path.Combine(environment.Game, "Mods", "Harmony", "Current", "Assemblies", "0Harmony.dll")), "doctor returns a compact readiness summary with both critical resolved assembly paths visible by default");
         var verbose = await CaptureAsync(() => DoctorCommand.RunAsync(["doctor", "--verbose"]));
         Assert(verbose.Output.Contains("environment.transactions") && verbose.Output.Contains("build.dotnet") && verbose.Output.Contains("project.discovery"), "doctor --verbose reports the complete ordered capability list");
+
+        var aboutRoot = NewDirectory("doctor-about-checks");
+        var aboutChecks = new List<DoctorCheck>();
+        DoctorCommand.AddAboutChecks(aboutChecks, aboutRoot);
+        Assert(aboutChecks.Count == 2 && aboutChecks.All(check => check.Status == "warning" && !check.Required), "doctor reports missing About.xml and Preview.png as non-blocking warnings");
+        Directory.CreateDirectory(Path.Combine(aboutRoot, "About"));
+        File.WriteAllText(Path.Combine(aboutRoot, "About", "About.xml"), "<ModMetaData />");
+        File.WriteAllBytes(Path.Combine(aboutRoot, "About", "Preview.png"), new byte[1_048_576]);
+        aboutChecks.Clear();
+        DoctorCommand.AddAboutChecks(aboutChecks, aboutRoot);
+        Assert(aboutChecks.Single(check => check.Id == "project.about_xml").Status == "available"
+            && aboutChecks.Single(check => check.Id == "project.preview_image").Status == "warning", "doctor warns when Preview.png is not smaller than 1 MiB");
 
         var activeEnvironment = CreateProjectEnvironment("doctor-active", createGameExecutable: true);
         using var activeScope = UseEnvironment(activeEnvironment);
@@ -1053,8 +1105,10 @@ internal sealed class TestSuite
         Assert(File.ReadAllText(environment.ModsConfigPath) == environment.OriginalMods && File.ReadAllText(environment.SettingsPath) == environment.OriginalSettings, "preflight failure preserves global configuration");
         var invalidScopeMode = await CaptureAsync(() => CliApplication.RunAsync(["test", "run", "--mode", "quick", "--scope", "turrets"]));
         var invalidDefMode = await CaptureAsync(() => CliApplication.RunAsync(["test", "run", "--mode", "xml", "--defname", "Demo_Coat"]));
+        var invalidScreenshotMode = await CaptureAsync(() => CliApplication.RunAsync(["test", "run", "--mode", "quick", "--capture-screenshots"]));
         Assert(invalidScopeMode.ExitCode == ExitCodes.InvalidArguments && JsonErrorCode(invalidScopeMode.Output) == "INVALID_ARGUMENT", "quick/manual scope misuse returns stable INVALID_ARGUMENT");
         Assert(invalidDefMode.ExitCode == ExitCodes.InvalidArguments && JsonErrorCode(invalidDefMode.Output) == "INVALID_ARGUMENT", "non-auto DefName misuse returns stable INVALID_ARGUMENT");
+        Assert(invalidScreenshotMode.ExitCode == ExitCodes.InvalidArguments && JsonErrorCode(invalidScreenshotMode.Output) == "INVALID_ARGUMENT", "non-auto screenshot misuse returns stable INVALID_ARGUMENT");
 
         var steamBlocked = CreateProjectEnvironment("steam-blocked", createGameExecutable: true);
         using var blockedScope = UseEnvironment(steamBlocked);

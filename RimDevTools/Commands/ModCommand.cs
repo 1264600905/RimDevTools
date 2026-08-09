@@ -11,60 +11,63 @@ public sealed record ModCandidate(
     string? Author,
     List<string> Dependencies);
 
-public static class RefCommand
+public static class ModCommand
 {
     public static Task<int> SearchAsync(string[] args)
     {
-        var context = CliApplication.RequireProject("ref search", out var code);
+        const string command = "mod search";
+        var context = CliApplication.RequireProject(command, out var code);
         if (context is null) return Task.FromResult(code);
 
         var keyword = QueryArgument(args, "search");
         var fuzzy = CliArgs.Has(args, "--fuzzy");
         var candidates = FindCandidates(context, keyword, fuzzy, context.Config.GameVersion);
-        return Task.FromResult(CliResult.WriteSuccess("ref search", context.Root, new { keyword, fuzzy, candidates }));
+        return Task.FromResult(CliResult.WriteSuccess(command, context.Root, new { keyword, fuzzy, candidates }));
     }
 
-    public static Task<int> DepsAsync(string[] args)
+    public static Task<int> DependenciesAsync(string[] args)
     {
-        var context = CliApplication.RequireProject("ref deps", out var code);
+        const string command = "mod dependencies";
+        var context = CliApplication.RequireProject(command, out var code);
         if (context is null) return Task.FromResult(code);
 
-        var query = QueryArgument(args, "deps");
+        var query = QueryArgument(args, "dependencies");
         var version = CliArgs.Value(args, "--version") ?? context.Config.GameVersion;
         var resolved = ResolveUnique(context, query, CliArgs.Has(args, "--fuzzy"), version, out var error);
         if (resolved is null)
-            return Task.FromResult(CliResult.WriteFailure("ref deps", ExitCodes.InvalidArguments, error!.Code, error.Message, context.Root, error.Details));
+            return Task.FromResult(CliResult.WriteFailure(command, ExitCodes.InvalidArguments, error!.Code, error.Message, context.Root, error.Details));
 
-        return Task.FromResult(CliResult.WriteSuccess("ref deps", context.Root, new { target = resolved, version, dependencies = resolved.Dependencies }));
+        return Task.FromResult(CliResult.WriteSuccess(command, context.Root, new { target = resolved, version, dependencies = resolved.Dependencies }));
     }
 
-    public static Task<int> RelatedAsync(string[] args)
+    public static Task<int> DependentsAsync(string[] args)
     {
-        var context = CliApplication.RequireProject("ref related", out var code);
+        const string command = "mod dependents";
+        var context = CliApplication.RequireProject(command, out var code);
         if (context is null) return Task.FromResult(code);
 
-        var query = QueryArgument(args, "related");
+        var query = QueryArgument(args, "dependents");
         var version = CliArgs.Value(args, "--version") ?? context.Config.GameVersion;
         var resolved = ResolveUnique(context, query, CliArgs.Has(args, "--fuzzy"), version, out var error);
         if (resolved is null)
-            return Task.FromResult(CliResult.WriteFailure("ref related", ExitCodes.InvalidArguments, error!.Code, error.Message, context.Root, error.Details));
+            return Task.FromResult(CliResult.WriteFailure(command, ExitCodes.InvalidArguments, error!.Code, error.Message, context.Root, error.Details));
 
         var related = FindCandidates(context, "", false, version)
             .Where(x => x.Dependencies.Contains(resolved.PackageId, StringComparer.OrdinalIgnoreCase))
             .ToArray();
-        return Task.FromResult(CliResult.WriteSuccess("ref related", context.Root, new { target = resolved, version, related }));
+        return Task.FromResult(CliResult.WriteSuccess(command, context.Root, new { target = resolved, version, dependents = related }));
     }
 
-    public static async Task<int> PullAsync(string[] args, CancellationToken cancellationToken = default)
+    public static async Task<int> CopyAsync(string[] args, CancellationToken cancellationToken = default)
     {
-        const string command = "ref pull";
+        const string command = "mod copy";
         var context = CliApplication.RequireProject(command, out var code);
         if (context is null) return code;
 
-        var query = QueryArgument(args, "pull");
+        var query = QueryArgument(args, "copy");
         var version = CliArgs.Value(args, "--version") ?? context.Config.GameVersion;
         if (string.IsNullOrWhiteSpace(version))
-            return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "VERSION_MISSING", "ref pull 需要 --version 或 game_version", context.Root);
+            return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "VERSION_MISSING", "mod copy 需要 --version 或 game_version", context.Root);
 
         var selected = ResolveUnique(context, query, CliArgs.Has(args, "--fuzzy"), version, out var error);
         if (selected is null)
@@ -78,8 +81,6 @@ public static class RefCommand
         try
         {
             PathSafety.EnsureNoReparsePoints(context.Root, targetRoot);
-            Directory.CreateDirectory(targetRoot);
-            PathSafety.EnsureNoReparsePoints(context.Root, targetRoot);
         }
         catch (Exception ex)
         {
@@ -89,7 +90,7 @@ public static class RefCommand
         var stagingRoot = Path.Combine(targetRoot, ".rimdev-staging", runId);
         var backupRoot = Path.Combine(targetRoot, ".rimdev-backup", runId);
 
-        PullTarget[] targets;
+        CopyTarget[] targets;
         try
         {
             targets = closure.Select(mod => CreateTarget(targetRoot, stagingRoot, backupRoot, mod)).ToArray();
@@ -102,13 +103,46 @@ public static class RefCommand
             return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "MOD_NAME_INVALID", ex.Message, context.Root);
         }
 
+        var includeIgnored = CliArgs.Has(args, "--include-ignored");
+        var ignoredFolders = includeIgnored ? [] : context.Config.PullIgnoreFolders.ToArray();
+        var conflicts = targets.Where(x => Directory.Exists(x.Target) || File.Exists(x.Target)).Select(x => x.Target).ToArray();
+        var plan = targets.Select(entry => new
+        {
+            name = entry.Mod.Name,
+            packageId = entry.Mod.PackageId,
+            sourceDirectory = entry.Mod.SourceDirectory,
+            targetDirectory = entry.Target,
+            conflict = Directory.Exists(entry.Target) || File.Exists(entry.Target),
+            assemblies = PlannedAssemblies(entry.Mod.SourceDirectory, version)
+        }).ToArray();
+        if (CliArgs.Has(args, "--dry-run"))
+            return CliResult.WriteSuccess(command, context.Root, new
+            {
+                dryRun = true,
+                version,
+                selected,
+                dependencyClosure = closure.Select(mod => new { mod.Name, mod.PackageId, mod.SourceDirectory }).ToArray(),
+                ignoredFolders,
+                conflicts,
+                targets = plan
+            });
+
+        try
+        {
+            Directory.CreateDirectory(targetRoot);
+            PathSafety.EnsureNoReparsePoints(context.Root, targetRoot);
+        }
+        catch (Exception ex)
+        {
+            return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "REFERENCE_TARGET_UNSAFE", ex.Message, context.Root, new { targetRoot });
+        }
+
         using var targetLock = TargetDirectoryLock.Create(targetRoot, out var lockError);
         if (targetLock is null)
             return CliResult.WriteFailure(command, ExitCodes.Busy, "TARGET_BUSY", lockError!, context.Root);
 
-        var conflicts = targets.Where(x => Directory.Exists(x.Target) || File.Exists(x.Target)).Select(x => x.Target).ToArray();
-        if (conflicts.Length > 0 && !CliArgs.Has(args, "--force"))
-            return CliResult.WriteFailure(command, ExitCodes.TaskFailed, "TARGET_CONFLICT", "目标目录已存在，请使用 --force", context.Root, new { conflicts });
+        if (conflicts.Length > 0 && !CliArgs.Has(args, "--overwrite-existing"))
+            return CliResult.WriteFailure(command, ExitCodes.TaskFailed, "TARGET_CONFLICT", "目标目录已存在，请使用 --overwrite-existing", context.Root, new { conflicts });
 
         var results = new List<object>();
         try
@@ -116,7 +150,7 @@ public static class RefCommand
             foreach (var entry in targets)
             {
                 Directory.CreateDirectory(entry.Staging);
-                CopyReference(entry.Mod.SourceDirectory, entry.Staging, CliArgs.Has(args, "--all") ? [] : context.Config.PullIgnoreFolders, cancellationToken);
+                CopyReference(entry.Mod.SourceDirectory, entry.Staging, ignoredFolders, cancellationToken);
                 var decompiled = await DecompileAssembliesAsync(context, entry.Staging, version, cancellationToken);
                 results.Add(new
                 {
@@ -135,7 +169,7 @@ public static class RefCommand
         catch (OperationCanceledException) { throw; }
         catch (Exception ex)
         {
-            return CliResult.WriteFailure(command, ExitCodes.TaskFailed, "PULL_FAILED", ex.Message, context.Root, new { runId, version, results });
+            return CliResult.WriteFailure(command, ExitCodes.TaskFailed, "COPY_FAILED", ex.Message, context.Root, new { runId, version, results });
         }
         finally
         {
@@ -161,7 +195,7 @@ public static class RefCommand
         return reserved ? $"_{sanitized}" : sanitized;
     }
 
-    private static PullTarget CreateTarget(string targetRoot, string stagingRoot, string backupRoot, ModCandidate mod)
+    private static CopyTarget CreateTarget(string targetRoot, string stagingRoot, string backupRoot, ModCandidate mod)
     {
         var folder = SafeFolderName(mod.Name);
         var target = Path.GetFullPath(Path.Combine(targetRoot, folder));
@@ -171,7 +205,19 @@ public static class RefCommand
         PathSafety.EnsureNoReparsePoints(targetRoot, target);
         PathSafety.EnsureNoReparsePoints(targetRoot, staging);
         PathSafety.EnsureNoReparsePoints(targetRoot, backup);
-        return new PullTarget(mod, target, staging, backup);
+        return new CopyTarget(mod, target, staging, backup);
+    }
+
+    private static string[] PlannedAssemblies(string sourceDirectory, string version)
+    {
+        var versioned = Path.Combine(sourceDirectory, version, "Assemblies");
+        var fallback = Path.Combine(sourceDirectory, "Assemblies");
+        var assemblyRoot = Directory.Exists(versioned) ? versioned : Directory.Exists(fallback) ? fallback : null;
+        return assemblyRoot is null
+            ? []
+            : Directory.EnumerateFiles(assemblyRoot, "*.dll", SearchOption.TopDirectoryOnly)
+                .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
     }
 
     private static List<ModCandidate>? ResolveDependencyClosure(ProjectContext context, ModCandidate selected, bool includeDependencies, string version, out CliError? error)
@@ -247,9 +293,9 @@ public static class RefCommand
         return decompiled;
     }
 
-    internal static void InstallBatch(IReadOnlyList<PullTarget> targets)
+    internal static void InstallBatch(IReadOnlyList<CopyTarget> targets)
     {
-        var installed = new List<PullTarget>();
+        var installed = new List<CopyTarget>();
         try
         {
             foreach (var entry in targets)
@@ -291,7 +337,7 @@ public static class RefCommand
         }
     }
 
-    private static void RestoreTarget(PullTarget entry)
+    private static void RestoreTarget(CopyTarget entry)
     {
         if (Directory.Exists(entry.Target)) Directory.Delete(entry.Target, true);
         else if (File.Exists(entry.Target)) File.Delete(entry.Target);
@@ -307,7 +353,7 @@ public static class RefCommand
             if (args[index].Equals("--version", StringComparison.OrdinalIgnoreCase)) { index++; continue; }
             if (!args[index].StartsWith('-')) return args[index];
         }
-        throw new ArgumentException($"缺少查询参数: ref {command} <query>");
+        throw new ArgumentException($"缺少查询参数: mod {command} <query>");
     }
 
     private static List<ModCandidate> FindCandidates(ProjectContext context, string keyword, bool fuzzy, string? version)
@@ -488,7 +534,7 @@ public static class RefCommand
         catch (Exception ex) { Console.Error.WriteLine($"清理空目录失败: {path}: {ex.Message}"); }
     }
 
-    internal sealed record PullTarget(ModCandidate Mod, string Target, string Staging, string Backup);
+    internal sealed record CopyTarget(ModCandidate Mod, string Target, string Staging, string Backup);
 }
 
 internal sealed class TargetDirectoryLock : IDisposable

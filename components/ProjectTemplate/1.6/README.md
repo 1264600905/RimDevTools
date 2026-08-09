@@ -13,7 +13,7 @@
 ## 环境要求
 
 - 运行 `.tools/RimDevTools.exe`：Windows x64 与 .NET 10 Runtime。
-- 使用 `ref pull` 的 ILSpy：.NET 8 Runtime。
+- 使用 `mod copy` 的 ILSpy：.NET 8 Runtime。
 - 编译模组：dotnet SDK 与 .NET Framework 4.8 Developer/Targeting Pack；4.7.2 可作为兼容替代。
 - 运行游戏测试：RimWorld 1.6 与已登录的 Steam 会话。
 
@@ -34,7 +34,7 @@
 - 配置缺失或损坏时安全修复并重试一次；仍不可用时停止依赖它的研究并请求用户处理。
 - 用户自行配置的同名本地服务与默认远程服务等同使用。
 
-RimSage 不读取当前项目或第三方模组。当前项目直接读取工作树；第三方模组先检查 `参考文档`，缺少时使用 `ref search/ref pull`。
+RimSage 不读取当前项目或第三方模组。当前项目直接读取工作树；第三方模组先检查 `参考文档`，缺少时使用 `mod search/mod copy`。
 
 必须使用RimSage不要瞎猜源码！必须使用RimSage不要瞎猜源码！必须使用RimSage不要瞎猜源码！如果rimsage不能用要及时告诉用户。
 
@@ -54,14 +54,14 @@ RimSage 不读取当前项目或第三方模组。当前项目直接读取工作
 .\.tools\RimDevTools.exe --version
 .\.tools\RimDevTools.exe doctor
 .\.tools\RimDevTools.exe deploy --dry-run
-.\.tools\RimDevTools.exe ref search "<keyword>"
-.\.tools\RimDevTools.exe ref pull "<exact-query>"
+.\.tools\RimDevTools.exe mod search "<keyword>"
+.\.tools\RimDevTools.exe mod copy "<exact-query>" --dry-run
 .\.tools\RimDevTools.exe test run --mode quick
 .\.tools\RimDevTools.exe test cleanup --dry-run
 .\.tools\RimDevTools.exe mods install-tools --dry-run
 ```
 
-`mods install-tools` 只安装随包 LogSyncMod。`ref pull` 保持选项显式，不会自动使用 `--deps`、`--all` 或 `--force`。
+`mods install-tools` 只安装随包 LogSyncMod。`mod copy` 保持选项显式，不会自动使用 `--deps`、`--include-ignored` 或 `--overwrite-existing`。
 
 模板 C# 工程默认目标为 .NET Framework 4.8，并递归包含 `source/MyCustomMod` 下除 `bin/obj` 外的 C# 文件。游戏和 Harmony 引用由 RimDevTools 从真实安装解析。
 

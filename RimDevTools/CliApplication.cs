@@ -45,10 +45,10 @@ public static class CliApplication
             {
                 "doctor" => await DoctorCommand.RunAsync(args),
                 "deploy" => await DeployCommand.RunAsync(args, cancellation.Token),
-                "ref search" => await RefCommand.SearchAsync(args),
-                "ref pull" => await RefCommand.PullAsync(args, cancellation.Token),
-                "ref deps" => await RefCommand.DepsAsync(args),
-                "ref related" => await RefCommand.RelatedAsync(args),
+                "mod search" => await ModCommand.SearchAsync(args),
+                "mod copy" => await ModCommand.CopyAsync(args, cancellation.Token),
+                "mod dependencies" => await ModCommand.DependenciesAsync(args),
+                "mod dependents" => await ModCommand.DependentsAsync(args),
                 "test run" => await TestCommand.RunAsync(args, cancellation.Token),
                 "test settings" => await TestCommand.SettingsAsync(args, cancellation.Token),
                 "test cleanup" => await TestCommand.CleanupAsync(args, cancellation.Token),
@@ -78,7 +78,7 @@ public static class CliApplication
     public static string CommandPath(string[] args)
     {
         if (args.Length == 0) return "help";
-        if (args[0] is "ref" or "test" or "data" or "mods" && args.Length > 1 && !args[1].StartsWith('-')) return $"{args[0]} {args[1]}";
+        if (args[0] is "mod" or "test" or "mods" && args.Length > 1 && !args[1].StartsWith('-')) return $"{args[0]} {args[1]}";
         return args[0];
     }
 
@@ -108,13 +108,13 @@ public static class CliArgs
         {
             ["doctor"] = (1, 0, [new("--verbose", false)]),
             ["deploy"] = (1, 0, [new("--sync-source", false), new("--dry-run", false)]),
-            ["ref search"] = (2, 1, [new("--fuzzy", false)]),
-            ["ref pull"] = (2, 1, [new("--version", true), new("--deps", false), new("--all", false), new("--fuzzy", false), new("--force", false)]),
-            ["ref deps"] = (2, 1, [new("--version", true), new("--fuzzy", false)]),
-            ["ref related"] = (2, 1, [new("--version", true), new("--fuzzy", false)]),
-            ["test run"] = (2, 0, [new("--deploy", false), new("--sync-source", false), new("--mode", true), new("--mods-file", true), new("--timeout-seconds", true), new("--target-package-id", true), new("--scope", true, true), new("--auto-test-scope", true), new("--defname", true, true), new("--auto-test-defname", true), new("--capture-screenshots", false), new("--isolated-desktop", false), new("--no-isolated-desktop", false)]),
+            ["mod search"] = (2, 1, [new("--fuzzy", false)]),
+            ["mod copy"] = (2, 1, [new("--version", true), new("--deps", false), new("--include-ignored", false), new("--fuzzy", false), new("--overwrite-existing", false), new("--dry-run", false)]),
+            ["mod dependencies"] = (2, 1, [new("--version", true), new("--fuzzy", false)]),
+            ["mod dependents"] = (2, 1, [new("--version", true), new("--fuzzy", false)]),
+            ["test run"] = (2, 0, [new("--deploy", false), new("--sync-source", false), new("--mode", true), new("--active-mods-file", true), new("--timeout-seconds", true), new("--target-package-id", true), new("--scope", true, true), new("--defname", true, true), new("--capture-screenshots", false), new("--isolated-desktop", false), new("--no-isolated-desktop", false)]),
             ["test settings"] = (2, 0, []),
-            ["test cleanup"] = (2, 0, [new("--dry-run", false)]),
+            ["test cleanup"] = (2, 0, [new("--dry-run", false), new("--status", false)]),
             ["mods install-tools"] = (2, 0, [new("--mods-path", true), new("--dry-run", false)])
         };
 

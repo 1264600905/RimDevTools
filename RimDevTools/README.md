@@ -6,10 +6,10 @@ RimDevTools 是 Windows x64 的 .NET 10 CLI，负责 RimWorld 1.6 模组项目�
 
 - `RimDevTools.exe` 是 framework-dependent 单文件，需要 .NET 10 Runtime。
 - 源码构建需要 .NET 10 SDK。
-- `ref pull` 使用随包 ILSpy，目标机还需要 .NET 8 Runtime。
+- `mod copy` 使用随包 ILSpy，目标机还需要 .NET 8 Runtime。
 - 模组编译需要 .NET Framework 4.8 Developer/Targeting Pack；4.7.2 也受支持。
 
-`doctor` 检查项目、`mod_config.jsonc` 的路径、Steam/RimWorld、程序集、最小启用模组、ILSpy、LogSync、AutoTest、锁和事务。`mods_config_path` 必须指向游戏实际读取的现有 `ModsConfig.xml`；`deploy` 和 `test` 会拒绝在该项无效时继续。它不检查启动 CLI 所需的 Runtime，也不探测 RimSage 网络或进程。
+`doctor` 检查项目、About.xml/Preview.png、`mod_config.jsonc` 的路径、Steam/RimWorld、程序集、最小启用模组、ILSpy、LogSync、AutoTest、锁和事务。缺少 About 文件或 Preview.png 不小于 1 MiB 时只给出 warning。`mods_config_path` 必须指向游戏实际读取的现有 `ModsConfig.xml`；`deploy` 和 `test` 会拒绝在该项无效时继续。它不检查启动 CLI 所需的 Runtime，也不探测 RimSage 网络或进程。
 
 ## 构建与发布
 
@@ -43,7 +43,7 @@ artifacts/RimDevTools-Package/
     └── modlist/
 ```
 
-工具 Mod 清单必须且只能包含 `trigger.logsyncmod`。ILSpy 保留在发布包中，因为 `ref pull` 需要生成第三方程序集的可读源码。
+工具 Mod 清单必须且只能包含 `trigger.logsyncmod`。ILSpy 保留在发布包中，因为 `mod copy` 需要生成第三方程序集的可读源码。
 
 ## 命令
 
@@ -51,17 +51,17 @@ artifacts/RimDevTools-Package/
 RimDevTools.exe --version
 RimDevTools.exe doctor [--verbose]
 RimDevTools.exe deploy [--sync-source] [--dry-run]
-RimDevTools.exe ref search <keyword> [--fuzzy]
-RimDevTools.exe ref pull <query> [--version <value>] [--deps] [--all] [--fuzzy] [--force]
-RimDevTools.exe ref deps <query> [--version <value>] [--fuzzy]
-RimDevTools.exe ref related <query> [--version <value>] [--fuzzy]
+RimDevTools.exe mod search <keyword> [--fuzzy]
+RimDevTools.exe mod copy <query> [--version <value>] [--deps] [--include-ignored] [--fuzzy] [--overwrite-existing] [--dry-run]
+RimDevTools.exe mod dependencies <query> [--version <value>] [--fuzzy]
+RimDevTools.exe mod dependents <query> [--version <value>] [--fuzzy]
 RimDevTools.exe test settings
-RimDevTools.exe test run [--deploy] [--mode quick|manual|auto|xml] [--scope <value>]... [--defname <value>]...
-RimDevTools.exe test cleanup [--dry-run]
+RimDevTools.exe test run [--deploy] [--mode quick|manual|auto|xml] [--active-mods-file <path>] [--scope <value>]... [--defname <value>]...
+RimDevTools.exe test cleanup [--dry-run] [--status]
 RimDevTools.exe mods install-tools [--mods-path <path>] [--dry-run]
 ```
 
-项目命令从当前目录或直接父目录发现 `mod_config.jsonc`。最终结果是 stdout 上的单个 JSON 对象，进度与诊断写入 stderr。`--version` 只返回 RimDevTools 自身版本。
+项目命令从当前目录或直接父目录发现 `mod_config.jsonc`。最终结果是 stdout 上的单个 JSON 对象，进度与诊断写入 stderr。`--version` 必须作为唯一参数使用，并只返回 RimDevTools 自身版本。
 
 ### 部署
 
@@ -69,13 +69,15 @@ RimDevTools.exe mods install-tools [--mods-path <path>] [--dry-run]
 
 ### 第三方参考
 
-`ref search` 消除名称歧义；`ref pull` 将目标复制到 `参考文档` 并调用 ILSpy。`--deps`、`--all` 和 `--force` 均保持显式语义，不会自动启用。
+`mod search` 消除名称歧义；`mod copy` 将目标复制到 `参考文档` 并调用 ILSpy。`--deps`、`--include-ignored` 和 `--overwrite-existing` 均保持显式语义，不会自动启用。`--dry-run` 预览依赖闭包、目标、冲突和待反编译程序集，不修改文件。
 
 ### 测试
 
-quick 是启动烟雾测试；manual 用于交互；auto/XML 验证结构化 AutoTest 结果。auto/xml 支持可重复的 `--scope`，范围按首次出现顺序去重；`standard` 与历史别名 `all` 都只表示 Standard 套件，不会隐式启用 CombatPawns 或 SkillPocketMaps。`--defname` 仅适用于 auto，可重复指定精确目标；任何未命中目标都会使结果不完整并失败。旧脚本的单值 `--auto-test-scope` 与 `--auto-test-defname` 继续兼容，但不能与新参数混用。XML 模式的具体用例仍由 Spec 决定。测试会检查本轮 activeMods 中每个可解析模组的必要硬依赖；依赖已安装但未启用、或完全找不到时，会在成功/失败 JSON 的 `warnings` 或 `details.dependencyWarnings` 中提示，但不会阻挡执行。`doctor` 通过 `mods.min_active_dependencies` 以非必需 warning 检查 `min_active_mods`。测试通过共享环境锁与配置事务恢复 `mods_config_path` 所在目录中的 RimWorld 配置。无论使用 `min_active_mods` 还是外部 `--mods-file`，都必须启用 `min_active_mods` 中的全部模组。`--deploy` 用于测试当前源码改动。事务冲突后，可在 RimWorld 完全退出后运行 `test cleanup`；`--dry-run` 只检查不修改，清理 ModsConfig.xml 时只恢复原始 `<activeMods>`。
+`test settings` 用于给用户手动启动的 RimWorld 会话持久化 LogSync 设置。它会等待游戏退出、取得共享环境锁，写入当前项目的日志路径和 `log_keywords`，并保留这些设置；`test run` 则以事务方式应用等价设置并在运行后恢复。
 
-支持的 scope 值为：`standard`、`all`、`content`、`recipes`、`hediffs`、`turrets`、`rangedweapons`、`meleeweapons`、`threeviews`、`combatpawns`、`skillpocketmaps`。
+quick 是启动烟雾测试；manual 用于交互；auto/XML 验证结构化 AutoTest 结果。auto/xml 支持可重复的 `--scope`，范围按首次出现顺序去重，未传时默认为 Standard。`--defname` 仅适用于 auto，可重复指定精确目标；任何未命中目标都会使结果不完整并失败。XML 模式的具体用例仍由 Spec 决定。测试会检查本轮 activeMods 中每个可解析模组的必要硬依赖；依赖已安装但未启用、或完全找不到时，会在成功/失败 JSON 的 `warnings` 或 `details.dependencyWarnings` 中提示，但不会阻挡执行。`doctor` 通过 `mods.min_active_dependencies` 以非必需 warning 检查 `min_active_mods`。测试通过共享环境锁与配置事务恢复 `mods_config_path` 所在目录中的 RimWorld 配置。无论使用 `min_active_mods` 还是外部 `--active-mods-file`，都必须启用 `min_active_mods` 中的全部模组。`--deploy` 用于测试当前源码改动。事务冲突后，可在 RimWorld 完全退出后运行 `test cleanup`；`--dry-run` 只检查不修改，`--status` 只读报告锁、游戏、事务和部署现场。
+
+支持的 scope 值为：`standard`、`content`、`recipes`、`hediffs`、`turrets`、`rangedweapons`、`meleeweapons`、`threeviews`、`combatpawns`、`skillpocketmaps`。
 
 `doctor` 还会读取已解析的 `0Harmony.dll` AssemblyVersion。低于工具要求版本时只给出 warning，并提示重新订阅 Harmony。
 

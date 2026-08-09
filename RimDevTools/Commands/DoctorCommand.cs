@@ -45,6 +45,7 @@ public static class DoctorCommand
             context.Root,
             templateIssues.Count == 0 ? null : "检测到模板默认值；在替换名称、packageId、日志关键词和程序集名称前，项目不能部署或测试。",
             templateIssues.Count == 0 ? null : new { issues = templateIssues }));
+        AddAboutChecks(checks, context.Root);
 
         var build = DotNetBuildEnvironmentInspector.InspectCurrent();
         var targetingPackMessage = build.TargetFrameworkVersion == "v4.7.2"
@@ -104,7 +105,7 @@ public static class DoctorCommand
         AddActiveModsCheck(checks, context);
         var regexStatus = ValidateRegex(config.ProtectedFilesRegex, out var regexMessage);
         checks.Add(new DoctorCheck("deploy.protected_files_regex", regexStatus, true, null, regexMessage));
-        AddPathCheck(checks, "ref.ilspy", ResolveIlspyPath(context), false, PathKind.File);
+        AddPathCheck(checks, "mod.ilspy", ResolveIlspyPath(context), false, PathKind.File);
 
         var logSync = environment.Mods.Find("trigger.logsyncmod");
         checks.Add(new DoctorCheck("test.logsync_mod", logSync is null ? "missing" : "available", true, logSync?.Directory, logSync is null ? "未找到 trigger.logsyncmod" : null));
@@ -146,6 +147,40 @@ public static class DoctorCommand
         => !string.IsNullOrWhiteSpace(context.Config.IlspycmdPath)
             ? Path.GetFullPath(context.Config.IlspycmdPath, Path.Combine(context.Root, ".tools"))
             : Path.Combine(ToolComponentLocator.ExecutableDirectory(), "Ilspy", "ilspycmd.exe");
+
+    internal static void AddAboutChecks(List<DoctorCheck> checks, string projectRoot)
+    {
+        var aboutXml = Path.Combine(projectRoot, "About", "About.xml");
+        checks.Add(new DoctorCheck(
+            "project.about_xml",
+            File.Exists(aboutXml) ? "available" : "warning",
+            false,
+            aboutXml,
+            File.Exists(aboutXml) ? null : "缺少 About/About.xml；请补充模组元数据。"));
+
+        var preview = Path.Combine(projectRoot, "About", "Preview.png");
+        if (!File.Exists(preview))
+        {
+            checks.Add(new DoctorCheck("project.preview_image", "warning", false, preview, "缺少 About/Preview.png；请补充模组预览图。", new { maxBytes = 1_048_576 }));
+            return;
+        }
+
+        try
+        {
+            var size = new FileInfo(preview).Length;
+            checks.Add(new DoctorCheck(
+                "project.preview_image",
+                size < 1_048_576 ? "available" : "warning",
+                false,
+                preview,
+                size < 1_048_576 ? null : "About/Preview.png 必须小于 1 MiB（1,048,576 字节）。",
+                new { sizeBytes = size, maxBytes = 1_048_576 }));
+        }
+        catch (Exception ex)
+        {
+            checks.Add(new DoctorCheck("project.preview_image", "warning", false, preview, $"无法检查 About/Preview.png: {ex.Message}", new { maxBytes = 1_048_576 }));
+        }
+    }
 
     private static void AddProjectChecks(List<DoctorCheck> checks, ProjectContext context)
     {

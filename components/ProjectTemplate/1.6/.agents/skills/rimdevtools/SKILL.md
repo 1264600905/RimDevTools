@@ -17,7 +17,7 @@ description: 操作项目本地的 RimDevTools CLI，处理 RimWorld 1.6 模组�
 
 1. 遇到环境失败、状态不清或能力疑问，先用只读的 `doctor`。
 2. 用 `deploy --dry-run` 检查构建和同步计划。仅当用户要求部署或工作流明确需要时，才运行会修改内容的 `deploy`。
-3. 用 `ref search`、`ref deps` 或 `ref related` 只读发现参考模组。仅在任务范围包含复制/反编译参考模组时使用 `ref pull`。
+3. 用 `mod search`、`mod dependencies` 或 `mod dependents` 只读发现参考模组。仅在任务范围包含复制/反编译参考模组时使用 `mod copy`。
 4. 用 `test run --mode quick` 验证启动和运行就绪；用 `manual` 进行用户观察的游玩；对 LogSync AutoTest 用 `auto` 或 `xml`。
 5. 用 `mods install-tools --dry-run` 检查打包的 LogSyncMod 安装计划；仅在任务范围包含安装时才去掉 `--dry-run`。
 6. 仅在需要持久化 LogSync 设置时使用 `test settings`。正常测试会以事务方式应用并还原设置。
@@ -55,11 +55,11 @@ description: 操作项目本地的 RimDevTools CLI，处理 RimWorld 1.6 模组�
 
 auto 测试参数遵循以下规则：
 
-- `--scope <value>` 可重复，多个 scope 取并集。支持 `standard/all/content/recipes/hediffs/turrets/rangedweapons/meleeweapons/threeviews/combatpawns/skillpocketmaps`。
+- `--scope <value>` 可重复，多个 scope 取并集。支持 `standard/content/recipes/hediffs/turrets/rangedweapons/meleeweapons/threeviews/combatpawns/skillpocketmaps`。
 - `--defname <value>` 可重复，仅适用于 auto。DefName 是精确白名单，与 scope 取交集；不传 DefName 时枚举所选 scope 下的目标。
-- 未传 scope 时默认为 `Standard`。`all` 只是兼容别名，同样映射为 `Standard`；Standard 不包含 `CombatPawns` 和 `SkillPocketMaps`。
+- 未传 scope 时默认为 `Standard`；Standard 不包含 `CombatPawns` 和 `SkillPocketMaps`。
 - 非 Standard 且未指定 DefName 的定向范围仍受 `autoTestBatchSize` 限制；Standard 或精确 DefName 测试不受该限制。
-- 启用模组缺少必要上级依赖时只输出 warning，不阻挡测试；应根据 warning 补齐 `min_active_mods` 或 `--mods-file`。
+- 启用模组缺少必要上级依赖时只输出 warning，不阻挡测试；应根据 warning 补齐 `min_active_mods` 或 `--active-mods-file`。
 
 例 1，只测试目标模组的三视图：
 
@@ -81,7 +81,7 @@ auto 测试参数遵循以下规则：
 
 ## 参考资料与工具安装
 
-使用 `ref pull` 将本地/创意工坊模组复制到 `参考文档`，并通过打包的 ILSpy 反编译其程序集。用精确 package ID、名称、目录或绝对路径消除歧义。以 `--deps` 获取完整硬依赖闭包；仅在审查替换目标后使用 `--force`。
+使用 `mod copy --dry-run` 先检查本地/创意工坊模组的解析结果、依赖闭包、目标冲突和待反编译程序集。确认计划后使用 `mod copy` 复制到 `参考文档`，并通过打包的 ILSpy 反编译程序集。用精确 package ID、名称、目录或绝对路径消除歧义；以 `--deps` 获取完整硬依赖闭包，仅在审查替换目标后使用 `--overwrite-existing`。
 
 使用 `mods install-tools` 安装单个打包的 LogSyncMod 组件。安装器会验证清单、package ID、版本和内容哈希，保留 `PublishedFileId.txt`，阻止降级，并通过暂存/备份回滚。
 

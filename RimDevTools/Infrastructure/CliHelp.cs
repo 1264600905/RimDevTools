@@ -9,11 +9,11 @@ public static class CliHelp
             "help" => TopLevel,
             "doctor" => Doctor,
             "deploy" => Deploy,
-            "ref" => Ref,
-            "ref search" => RefSearch,
-            "ref pull" => RefPull,
-            "ref deps" => RefDeps,
-            "ref related" => RefRelated,
+            "mod" => Mod,
+            "mod search" => ModSearch,
+            "mod copy" => ModCopy,
+            "mod dependencies" => ModDependencies,
+            "mod dependents" => ModDependents,
             "test" => Test,
             "test run" => TestRun,
             "test settings" => TestSettings,
@@ -30,7 +30,7 @@ public static class CliHelp
     public static string Path(string[] args)
     {
         if (args.Length == 0 || args[0] is "--help" or "-h") return "help";
-        if (args[0] is "ref" or "test" or "data" or "mods" && args.Length > 1 && !args[1].StartsWith('-'))
+        if (args[0] is "mod" or "test" or "mods" && args.Length > 1 && !args[1].StartsWith('-'))
             return $"{args[0]} {args[1]}";
         return args[0];
     }
@@ -45,13 +45,18 @@ public static class CliHelp
         Commands:
           doctor              Inspect project, game, tools, and transaction status.
           deploy              Build and atomically deploy the current mod.
-          ref                 Search, pull, and inspect local reference mods.
-          test                Configure or run quick, manual, automatic, and XML tests.
-          mods                Install the packaged LogSync tool mod.
+          mod search          Find local or Workshop reference mods.
+          mod copy            Copy and decompile a reference mod.
+          mod dependencies    List one mod's hard dependencies.
+          mod dependents      List local mods depending on a target.
+          test run            Run quick, manual, automatic, or XML tests.
+          test settings       Persist LogSync settings for manual game launches.
+          test cleanup        Inspect or recover interrupted transactions.
+          mods install-tools  Install the packaged LogSync tool mod.
 
         Global options:
           -h, --help          Show top-level or command-specific help.
-          --version           Print the RimDevTools version as JSON.
+          --version           Print the RimDevTools version as JSON; must be the only argument.
 
         Project discovery:
           Project commands look for mod_config.jsonc in the current directory, then its
@@ -65,7 +70,7 @@ public static class CliHelp
         Examples:
           RimDevTools.exe doctor [--verbose]
           RimDevTools.exe test run --mode quick
-          RimDevTools.exe ref pull "Harmony" --deps
+          RimDevTools.exe mod copy "Harmony" --deps --dry-run
 
         Exit codes:
           0 success; 2 invalid arguments/config; 3 missing dependency; 4 busy;
@@ -76,15 +81,17 @@ public static class CliHelp
         Inspect the current project and all RimDevTools capabilities without mutation.
 
         Usage:
-          RimDevTools.exe doctor
+          RimDevTools.exe doctor [--verbose]
 
         Options:
+          --verbose           Include the complete ordered check list.
           -h, --help          Show this help.
 
         Checks:
           .NET Framework 4.8 (preferred) or 4.7.2 build prerequisites, Steam libraries and RimWorld app 294100,
-          real game/Harmony assemblies, Harmony DLL version, Unity, Git/worktree, required mods, ILSpy, LogSync,
-          AutoTest, packaged tool mods, lock, and recoverable transactions.
+          About.xml/Preview.png, real game/Harmony assemblies, Harmony DLL version, Unity,
+          Git/worktree, required mods, ILSpy, LogSync, AutoTest, packaged tool mods, lock,
+          and recoverable transactions.
 
         Output:
           JSON ready/issueCount/warningCount summary. By default checks contains items that
@@ -119,26 +126,26 @@ public static class CliHelp
           SYNC_ITEM_NOT_FOUND, DEPLOY_FAILED.
         """;
 
-    private const string Ref = """
-        Search, pull, and inspect local RimWorld reference mods.
+    private const string Mod = """
+        Search, copy, and inspect local RimWorld reference mods.
 
         Usage:
-          RimDevTools.exe ref <search|pull|deps|related> ...
+          RimDevTools.exe mod <search|copy|dependencies|dependents> ...
 
         Subcommands:
-          search <keyword>    Find local candidates.
-          pull <query>        Copy and decompile a reference mod.
-          deps <query>        List hard dependencies.
-          related <query>     List local mods depending on the target.
+          search <keyword>        Find local candidates by mod metadata.
+          copy <query>            Copy and decompile a reference mod.
+          dependencies <query>    List hard dependencies.
+          dependents <query>      List local mods depending on the target.
 
-        Run 'RimDevTools.exe ref <subcommand> --help' for details.
+        Run 'RimDevTools.exe mod <subcommand> --help' for details.
         """;
 
-    private const string RefSearch = """
+    private const string ModSearch = """
         Search RimWorld Mods and configured Workshop directories.
 
         Usage:
-          RimDevTools.exe ref search <keyword> [--fuzzy]
+          RimDevTools.exe mod search <keyword> [--fuzzy]
 
         Arguments:
           keyword             Name, packageId, author, or source folder text.
@@ -148,7 +155,7 @@ public static class CliHelp
           -h, --help          Show this help.
 
         Example:
-          RimDevTools.exe ref search "联合重工" --fuzzy
+          RimDevTools.exe mod search "联合重工" --fuzzy
 
         Output:
           JSON candidate list containing name, packageId, source directory, and deps.
@@ -157,11 +164,11 @@ public static class CliHelp
           PROJECT_NOT_FOUND, INVALID_ARGUMENT.
         """;
 
-    private const string RefPull = """
+    private const string ModCopy = """
         Copy a local mod into 参考文档 and decompile its assemblies.
 
         Usage:
-          RimDevTools.exe ref pull <query> [options]
+          RimDevTools.exe mod copy <query> [options]
 
         Arguments:
           query               Absolute mod directory, exact packageId/name/folder, or match.
@@ -169,9 +176,10 @@ public static class CliHelp
         Options:
           --version <value>   Assembly version folder; defaults to game_version.
           --deps              Pull the complete hard-dependency closure.
-          --all               Do not apply pull_ignore_folders.
+          --include-ignored   Do not apply pull_ignore_folders.
           --fuzzy             Allow fuzzy query resolution.
-          --force             Replace all preflighted existing targets.
+          --overwrite-existing Replace all preflighted existing targets.
+          --dry-run           Print the copy/decompile plan without mutation.
           -h, --help          Show this help.
 
         Target naming:
@@ -179,18 +187,18 @@ public static class CliHelp
           Ambiguous queries and sanitized-name collisions fail before any copy.
 
         Example:
-          RimDevTools.exe ref pull KindSeal.LOL --deps --force
+          RimDevTools.exe mod copy KindSeal.LOL --deps --dry-run
 
         Common errors:
           MOD_NOT_FOUND, MOD_AMBIGUOUS, MOD_NAME_INVALID, DEPENDENCY_CYCLE,
-          TARGET_COLLISION, TARGET_CONFLICT, PULL_FAILED.
+          TARGET_COLLISION, TARGET_CONFLICT, COPY_FAILED.
         """;
 
-    private const string RefDeps = """
+    private const string ModDependencies = """
         List version-aware hard dependencies for one local mod.
 
         Usage:
-          RimDevTools.exe ref deps <query> [--version <value>] [--fuzzy]
+          RimDevTools.exe mod dependencies <query> [--version <value>] [--fuzzy]
 
         Options:
           --version <value>   Dependency metadata version; defaults to game_version.
@@ -198,17 +206,17 @@ public static class CliHelp
           -h, --help          Show this help.
 
         Example:
-          RimDevTools.exe ref deps KindSeal.LOL --version 1.6
+          RimDevTools.exe mod dependencies KindSeal.LOL --version 1.6
 
         Common errors:
           MOD_NOT_FOUND, MOD_AMBIGUOUS, INVALID_ARGUMENT.
         """;
 
-    private const string RefRelated = """
+    private const string ModDependents = """
         List local mods whose hard dependencies include the target.
 
         Usage:
-          RimDevTools.exe ref related <query> [--version <value>] [--fuzzy]
+          RimDevTools.exe mod dependents <query> [--version <value>] [--fuzzy]
 
         Options:
           --version <value>   Dependency metadata version; defaults to game_version.
@@ -216,7 +224,7 @@ public static class CliHelp
           -h, --help          Show this help.
 
         Example:
-          RimDevTools.exe ref related aoba.deadmanswitch.core
+          RimDevTools.exe mod dependents aoba.deadmanswitch.core
 
         Common errors:
           MOD_NOT_FOUND, MOD_AMBIGUOUS, INVALID_ARGUMENT.
@@ -226,7 +234,7 @@ public static class CliHelp
         Configure LogSync or run RimWorld tests.
 
         Usage:
-          RimDevTools.exe test <run|settings> ...
+          RimDevTools.exe test <run|settings|cleanup> ...
 
         Subcommands:
           run                 Run quick, manual, automatic, or XML testing.
@@ -246,13 +254,11 @@ public static class CliHelp
           --deploy                    Deploy before testing.
           --sync-source               Include source/; requires --deploy.
           --mode <value>              quick (default), manual, auto, or xml.
-          --mods-file <path>          External ModsConfig XML activeMods list.
+          --active-mods-file <path>   External ModsConfig XML activeMods list.
           --timeout-seconds <n>       Positive wait limit; defaults to timeouts.max_wait.
           --target-package-id <id>    Auto/XML target; defaults to current project.
-          --scope <value>             Repeatable auto/xml scope; 'all' is the historical alias for Standard.
-          --auto-test-scope <value>   Legacy single-value scope option; cannot be combined with --scope.
+          --scope <value>             Repeatable auto/xml scope; defaults to Standard.
           --defname <value>           Repeatable auto-mode DefName allowlist.
-          --auto-test-defname <value> Legacy single-value DefName option; cannot be combined with --defname.
           --capture-screenshots       Enable AutoTest screenshots for auto/xml only.
           --isolated-desktop          Force a private Windows desktop for this run.
           --no-isolated-desktop       Force the current visible desktop for this run.
@@ -266,6 +272,10 @@ public static class CliHelp
         Examples:
           RimDevTools.exe test run --mode quick --timeout-seconds 120
           RimDevTools.exe test run --mode auto --scope turrets --scope threeviews --defname MyMod_ArmorCoat
+
+        Scope values:
+          standard, content, recipes, hediffs, turrets, rangedweapons, meleeweapons,
+          threeviews, combatpawns, skillpocketmaps.
 
         Output:
           JSON runId, mode, target, mods/additions, isolation source, signal, result, and
@@ -286,8 +296,10 @@ public static class CliHelp
           -h, --help          Show this help.
 
         Behavior:
-          Acquires the shared environment lock and performs an atomic settings write.
-          Unlike test run, this explicit command does not restore the previous settings.
+          Waits for RimWorld to exit, acquires the shared environment lock, and atomically
+          writes the project log path, log_keywords, and AutoTest paths/options. Use it to
+          prepare a manually launched game session. Unlike test run, it leaves the settings
+          in place and does not restore the previous values.
 
         Common errors:
           ENVIRONMENT_BUSY, GAME_EXIT_TIMEOUT, SETTINGS_UPDATE_FAILED.
@@ -297,15 +309,17 @@ public static class CliHelp
         Inspect or safely recover interrupted RimDevTools configuration transactions.
 
         Usage:
-          RimDevTools.exe test cleanup [--dry-run]
+          RimDevTools.exe test cleanup [--dry-run] [--status]
 
         Options:
           --dry-run           Report recoverable transactions without changing files.
+          --status            Report lock, transaction, game, and deployment-artifact status only.
           -h, --help          Show this help.
 
         Behavior:
-          Mutation acquires the shared environment lock and refuses to run while RimWorld
-          is active. ModsConfig.xml recovery restores only the original activeMods list.
+          --status never acquires the write lock or changes files. Mutation acquires the
+          shared environment lock and refuses to run while RimWorld is active. ModsConfig.xml
+          recovery restores only the original activeMods list.
 
         Common errors:
           ENVIRONMENT_BUSY, GAME_RUNNING_CLEANUP_REFUSED, TRANSACTION_CLEANUP_INCOMPLETE.

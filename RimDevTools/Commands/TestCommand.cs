@@ -17,7 +17,51 @@ public static class TestCommand
             return CliResult.WriteFailure(command, ExitCodes.MissingDependency, modsConfigValidation.Code!, modsConfigValidation.Message!, context.Root, modsConfigValidation.Details);
 
         var dryRun = CliArgs.Has(args, "--dry-run");
+        var statusOnly = CliArgs.Has(args, "--status");
         var configDirectory = GameEnvironment.ConfigDirectory(context)!;
+        if (statusOnly)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var transactionStatus = await TransactionRecovery.CleanupAsync(configDirectory, modsConfigValidation.Path!, dryRun: true);
+            IReadOnlyList<DeploymentArtifactAction> deploymentArtifacts = [];
+            var environment = RimWorldEnvironmentResolver.Resolve(context);
+            if (environment.References.RimWorldDirectory is { } statusRimWorldDirectory && !string.IsNullOrWhiteSpace(context.Config.ModName))
+            {
+                var modsRoot = Path.GetFullPath(Path.Combine(statusRimWorldDirectory, "Mods"));
+                var target = Path.GetFullPath(Path.Combine(modsRoot, context.Config.ModName));
+                if (PathSafety.IsWithin(target, modsRoot))
+                    deploymentArtifacts = DeploymentArtifactRecovery.Plan(modsRoot, target, context.Config.CurrentPackageId(context.Root));
+            }
+
+            var gameRunning = ProcessUtil.IsRimWorldRunning();
+            var environmentBusy = EnvironmentLock.IsBusy(configDirectory);
+            var lockPath = Path.Combine(configDirectory, "RimDevTools.lock.json");
+            var found = transactionStatus.Found || deploymentArtifacts.Count > 0;
+            return CliResult.WriteSuccess(command, context.Root, new
+            {
+                status = true,
+                gameRunning,
+                environmentBusy,
+                lockPath,
+                lockInfo = File.Exists(lockPath) ? File.ReadAllText(lockPath) : null,
+                found,
+                recoverable = transactionStatus.Ok && deploymentArtifacts.All(item => item.Action != "retain"),
+                transactions = transactionStatus.Items.Select(item => new
+                {
+                    runId = Path.GetFileName(item.Directory),
+                    directory = item.Directory,
+                    item.Status,
+                    item.Message
+                }).ToArray(),
+                deploymentArtifacts,
+                nextCommand = found
+                    ? environmentBusy ? "请等待当前 RimDevTools 操作释放环境锁后重试"
+                    : gameRunning ? "请等待 RimWorld 完全退出后执行 RimDevTools.exe test cleanup --dry-run"
+                    : "RimDevTools.exe test cleanup --dry-run"
+                    : null
+            });
+        }
+
         var runId = Guid.NewGuid().ToString("N");
         EnvironmentLock? gate = null;
         try
@@ -123,6 +167,8 @@ public static class TestCommand
             return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "MODE_INVALID", $"不支持的测试模式: {mode}", context.Root);
         if (!AutoTestSelectionParser.TryParse(args, mode, out var selection, out var selectionError))
             return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "INVALID_ARGUMENT", selectionError!, context.Root);
+        if (CliArgs.Has(args, "--capture-screenshots") && mode is not ("auto" or "xml"))
+            return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "INVALID_ARGUMENT", "--capture-screenshots 仅适用于 --mode auto 或 --mode xml。示例：RimDevTools.exe test run --mode auto --capture-screenshots", context.Root);
         if (CliArgs.Has(args, "--sync-source") && !CliArgs.Has(args, "--deploy"))
             return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "SYNC_SOURCE_REQUIRES_DEPLOY", "--sync-source 必须与 --deploy 一起使用", context.Root);
         if (!CliArgs.TryPositiveInt(args, "--timeout-seconds", context.Config.Timeouts.MaxWait, out var timeout, out var timeoutError))
@@ -144,7 +190,7 @@ public static class TestCommand
         if (!steam.IsLoggedIn)
             return CliResult.WriteFailure(command, ExitCodes.GameFailed, steam.Code, steam.Message, context.Root, new { steam.IsRunning, steam.SteamRoot, steam.LoginUsersPath });
 
-        var modsFileValue = CliArgs.Value(args, "--mods-file");
+        var modsFileValue = CliArgs.Value(args, "--active-mods-file");
         var modsFile = modsFileValue is null ? null : Path.GetFullPath(modsFileValue, context.Root);
         var modList = ModListParser.Resolve(context, modsFile, targetPackageId, out var modError);
         if (modList is null)
@@ -324,7 +370,6 @@ public static class AutoTestSelectionParser
     private static readonly IReadOnlyDictionary<string, string> ScopeNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
     {
         ["standard"] = "Standard",
-        ["all"] = "Standard",
         ["content"] = "Content",
         ["recipes"] = "Recipes",
         ["hediffs"] = "Hediffs",
@@ -342,13 +387,10 @@ public static class AutoTestSelectionParser
         error = null;
 
         var nativeScopes = CliArgs.Values(args, "--scope");
-        var legacyScopes = CliArgs.Values(args, "--auto-test-scope");
-        if (nativeScopes.Count > 0 && legacyScopes.Count > 0)
-            return Fail("--scope 不能与 --auto-test-scope 同时使用", out error);
-        if ((nativeScopes.Count > 0 || legacyScopes.Count > 0) && mode is not ("auto" or "xml"))
-            return Fail("--scope/--auto-test-scope 仅适用于 --mode auto 或 --mode xml", out error);
+        if (nativeScopes.Count > 0 && mode is not ("auto" or "xml"))
+            return Fail("--scope 仅适用于 --mode auto 或 --mode xml。示例：RimDevTools.exe test run --mode auto --scope turrets", out error);
 
-        var rawScopes = nativeScopes.Count > 0 ? nativeScopes : legacyScopes;
+        var rawScopes = nativeScopes;
         var scopes = new List<string>();
         var seenScopes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var raw in rawScopes)
@@ -361,15 +403,12 @@ public static class AutoTestSelectionParser
         if (scopes.Count == 0) scopes.Add("Standard");
 
         var nativeDefNames = CliArgs.Values(args, "--defname");
-        var legacyDefNames = CliArgs.Values(args, "--auto-test-defname");
-        if (nativeDefNames.Count > 0 && legacyDefNames.Count > 0)
-            return Fail("--defname 不能与 --auto-test-defname 同时使用", out error);
-        if ((nativeDefNames.Count > 0 || legacyDefNames.Count > 0) && mode != "auto")
-            return Fail("--defname/--auto-test-defname 仅适用于 --mode auto", out error);
+        if (nativeDefNames.Count > 0 && mode != "auto")
+            return Fail("--defname 仅适用于 --mode auto。示例：RimDevTools.exe test run --mode auto --defname MyMod_Weapon", out error);
 
         var defNames = new List<string>();
         var seenDefNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var raw in nativeDefNames.Count > 0 ? nativeDefNames : legacyDefNames)
+        foreach (var raw in nativeDefNames)
         {
             var value = raw.Trim();
             if (value.Length == 0) return Fail("--defname 不能为空", out error);
@@ -461,7 +500,7 @@ public static class ModListParser
         {
             error = new CliError(
                 "REQUIRED_MODS_DISABLED",
-                "测试启动被拒绝：以下 min_active_mods 或启动必须模组未出现在本次 ModList 的 <activeMods> 中。请将它们加入 mod_config.jsonc 的 min_active_mods，或加入 --mods-file 指定文件的 <activeMods> 后重试；这不是模组文件缺失错误。",
+                "测试启动被拒绝：以下 min_active_mods 或启动必须模组未出现在本次 ModList 的 <activeMods> 中。请将它们加入 mod_config.jsonc 的 min_active_mods，或加入 --active-mods-file 指定文件的 <activeMods> 后重试；这不是模组文件缺失错误。",
                 new
                 {
                     required = requiredMods,

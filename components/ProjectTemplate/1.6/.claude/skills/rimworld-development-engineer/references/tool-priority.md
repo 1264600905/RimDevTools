@@ -5,7 +5,7 @@
 1. 读取当前项目源码、Defs、补丁、配置和测试。
 2. 判断任务是否需要新的官方 RimWorld/DLC 事实。
 3. 对于官方 Def、XML、类型、成员、实现或 Harmony 目标，调用 `rimsage` 并遵循其可用性和研究工作流。
-4. 对于第三方模组，检查 `参考文档`；当所需模组缺失时使用 `ref search` 和 `ref pull`。
+4. 对于第三方模组，检查 `参考文档`；当所需模组缺失时使用 `mod search` 和 `mod copy`。
 5. 仅在所选 API、字段、Def 或目标所需证据被记录后才实现。
 6. 通过本项目的静态检查、构建、部署计划和适当的游戏测试验证结果。
 
@@ -26,11 +26,11 @@ RimSage 是有条件的研究前提，而不是本地编辑、构建、部署、
 先使用既有本地参考。需要拉取时：
 
 ```powershell
-.\.tools\RimDevTools.exe ref search "<query>"
-.\.tools\RimDevTools.exe ref pull "<exact-query>"
+.\.tools\RimDevTools.exe mod search "<query>"
+.\.tools\RimDevTools.exe mod copy "<exact-query>" --dry-run
 ```
 
-仅在任务明确要求时选择 `--deps`、`--all` 或 `--force`。拉取后检查 About 元数据、LoadFolders、XML、补丁、程序集和生成的 ILSpy 源码。
+仅在任务明确要求时选择 `--deps`、`--include-ignored` 或 `--overwrite-existing`。确认预览计划后执行复制，再检查 About 元数据、LoadFolders、XML、补丁、程序集和生成的 ILSpy 源码。
 
 ## 项目操作
 
@@ -38,6 +38,6 @@ RimSage 是有条件的研究前提，而不是本地编辑、构建、部署、
 - 部署计划：`RimDevTools.exe deploy --dry-run`
 - 部署：`RimDevTools.exe deploy`
 - 测试：`RimDevTools.exe test run`
-- 参考研究：`RimDevTools.exe ref search|pull|deps|related`
+- 参考研究：`RimDevTools.exe mod search|copy|dependencies|dependents`
 
-打包的 ILSpy 可执行文件仍然是 `ref pull` 所必需的。
+打包的 ILSpy 可执行文件仍然是 `mod copy` 所必需的。

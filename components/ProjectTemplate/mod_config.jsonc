@@ -58,7 +58,7 @@
     "ilspycmd_path": "Ilspy\\ilspycmd.exe",
     // 日志同步关键词。测试启动时会写入 LogSyncMod 的配置文件。
     "log_keywords": ["MyCustomMod"],
-    // 默认的最小测试模组集（无 --mods-file 时使用）。
+    // 默认的最小测试模组集（无 --active-mods-file 时使用）。
     // 启动 RimWorld 前必须包含基础模组。
     "min_active_mods": [
         "brrainz.harmony",
