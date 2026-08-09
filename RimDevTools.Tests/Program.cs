@@ -104,7 +104,7 @@ internal static class FakeRimWorld
             manifestMissing = 0,
             results = new[] { new { caseId = "case-1", status } }
         };
-        File.WriteAllText(Path.Combine(outputPath, $"{packageId}_20260806_120000_Result.json"), JsonSerializer.Serialize(result));
+        File.WriteAllText(Path.Combine(outputPath, $"{packageId}_{runId}_Result.json"), JsonSerializer.Serialize(result));
         var completion = $"[LogSyncAutoTest] COMPLETED runId={runId} packageId={packageId}\n";
         File.AppendAllText(playerLog, mode == "auto-large-log"
             ? completion + string.Concat(Enumerable.Repeat(new string('y', 96) + "\n", 600))
@@ -132,6 +132,7 @@ internal sealed class TestSuite
             TestEnvironmentDiscovery();
             await TestTemplatePreflightAsync();
             await TestHelpAsync();
+            TestCliSelectionParsing();
             await TestToolModDeploymentAsync();
             TestModListParser();
             TestIncrementalLogSignalScanner();
@@ -566,6 +567,23 @@ internal sealed class TestSuite
 
     }
 
+    private void TestCliSelectionParsing()
+    {
+        Assert(CliArgs.Validate("test run", ["test", "run", "--scope", "turrets", "--scope", "threeviews"]) is null, "repeated --scope is accepted");
+        Assert(CliArgs.Validate("test run", ["test", "run", "--defname", "Coat", "--defname", "Rifle"]) is null, "repeated --defname is accepted");
+        Assert(CliArgs.Validate("test run", ["test", "run", "--mode", "auto", "--mode", "xml"])?.Contains("参数重复") == true, "non-repeatable options still reject duplicates");
+
+        Assert(AutoTestSelectionParser.TryParse(["test", "run", "--mode", "auto", "--scope", "turrets", "--scope", "THREEVIEWS", "--scope", "turrets", "--defname", "Coat", "--defname", "coat"], "auto", out var selection, out _)
+            && selection.Scopes.SequenceEqual(["Turrets", "ThreeViews"])
+            && selection.DefNames.SequenceEqual(["Coat"]), "selection parser normalizes and preserves first-seen order");
+        Assert(AutoTestSelectionParser.TryParse(["test", "run", "--mode", "xml", "--auto-test-scope", "all"], "xml", out var legacy, out _)
+            && legacy.Scopes.SequenceEqual(["Standard"]), "legacy all scope maps to Standard");
+        Assert(!AutoTestSelectionParser.TryParse(["test", "run", "--mode", "quick", "--scope", "turrets"], "quick", out _, out _), "scope is rejected outside auto/xml modes");
+        Assert(!AutoTestSelectionParser.TryParse(["test", "run", "--mode", "xml", "--defname", "Coat"], "xml", out _, out _), "defname is rejected outside auto mode");
+        Assert(!AutoTestSelectionParser.TryParse(["test", "run", "--mode", "auto", "--scope", "unknown"], "auto", out _, out _), "unknown scope is rejected");
+        Assert(!AutoTestSelectionParser.TryParse(["test", "run", "--mode", "auto", "--scope", "turrets", "--auto-test-scope", "all"], "auto", out _, out _), "new and legacy scope options cannot be mixed");
+    }
+
     private async Task TestSettingsAsync()
     {
         var environment = CreateProjectEnvironment("settings");
@@ -580,6 +598,16 @@ internal sealed class TestSuite
         Assert(settings.Element("autoTestOutputPath")?.Value == SettingsEditor.AutoTestOutputPath(context) && settings.Element("autoTestEnabled")?.Value == "True", "auto settings include output path and enabled state");
         Assert(settings.Element("keywords")?.Elements("li").Single().Value == "Ready", "settings writer updates keywords");
         Assert(settings.Element("testMuteAudio")?.Value == "False", "persistent test settings do not enable audio muting");
+
+        await SettingsEditor.UpdateAsync(context, "auto", scopes: ["Turrets", "ThreeViews", "turrets"], hasExplicitScopes: true, defNames: ["Coat", "coat"]);
+        document = XDocument.Load(environment.SettingsPath);
+        settings = document.Descendants("ModSettings").First();
+        Assert(settings.Element("autoTestScopes")?.Elements("li").Select(x => x.Value).SequenceEqual(["Turrets", "ThreeViews"]) == true, "settings writer persists normalized multiple scopes");
+        Assert(settings.Element("autoTestTargetDefNames")?.Elements("li").Select(x => x.Value).SequenceEqual(["Coat"]) == true, "settings writer persists normalized target DefNames");
+        await SettingsEditor.UpdateAsync(context, "auto");
+        document = XDocument.Load(environment.SettingsPath);
+        settings = document.Descendants("ModSettings").First();
+        Assert(settings.Element("autoTestScope")?.Value == "Standard" && settings.Element("autoTestScopes") is null && settings.Element("autoTestTargetDefNames") is null, "default settings clear prior multi-scope and target filters");
     }
 
     private async Task TestTransactionsAsync()
@@ -1007,6 +1035,10 @@ internal sealed class TestSuite
         var result = await CaptureAsync(() => TestCommand.RunAsync(["test", "run", "--mode", "auto", "--timeout-seconds", "1"]));
         Assert(result.ExitCode == ExitCodes.MissingDependency && JsonErrorCode(result.Output) == "GAME_NOT_FOUND", "test run rejects missing game before mutation");
         Assert(File.ReadAllText(environment.ModsConfigPath) == environment.OriginalMods && File.ReadAllText(environment.SettingsPath) == environment.OriginalSettings, "preflight failure preserves global configuration");
+        var invalidScopeMode = await CaptureAsync(() => CliApplication.RunAsync(["test", "run", "--mode", "quick", "--scope", "turrets"]));
+        var invalidDefMode = await CaptureAsync(() => CliApplication.RunAsync(["test", "run", "--mode", "xml", "--defname", "Demo_Coat"]));
+        Assert(invalidScopeMode.ExitCode == ExitCodes.InvalidArguments && JsonErrorCode(invalidScopeMode.Output) == "INVALID_ARGUMENT", "quick/manual scope misuse returns stable INVALID_ARGUMENT");
+        Assert(invalidDefMode.ExitCode == ExitCodes.InvalidArguments && JsonErrorCode(invalidDefMode.Output) == "INVALID_ARGUMENT", "non-auto DefName misuse returns stable INVALID_ARGUMENT");
 
         var steamBlocked = CreateProjectEnvironment("steam-blocked", createGameExecutable: true);
         using var blockedScope = UseEnvironment(steamBlocked);
@@ -1059,6 +1091,22 @@ internal sealed class TestSuite
         Assert(XDocument.Parse(observedSettings).Descendants("testMuteAudio").Single().Value == "True", "auto mode enables transactional audio muting");
         Assert(Directory.EnumerateFiles(autoOutput, "*_Result.json").Count() == 2, "configured auto-test retention is enforced after a run");
         AssertConfigurationRestored(environment, "auto mode restores settings changed by the game");
+
+        Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", "auto");
+        var selected = await CaptureAsync(() => TestCommand.RunAsync(["test", "run", "--mode", "auto", "--scope", "turrets", "--scope", "threeviews", "--scope", "TURRETS", "--defname", "Demo_Coat", "--defname", "demo_coat", "--timeout-seconds", "5"]));
+        var selectedSettings = XDocument.Parse(File.ReadAllText(Path.Combine(environment.ConfigDirectory, "fake-settings.xml"))).Descendants("ModSettings").Single();
+        Assert(selected.ExitCode == 0, "selected auto run succeeds: " + selected.Output);
+        using (var selectedJson = JsonDocument.Parse(selected.Output))
+        {
+            var selectedResult = selectedJson.RootElement.GetProperty("result");
+            Assert(selected.ExitCode == 0
+                && selectedResult.GetProperty("scopes").EnumerateArray().Select(x => x.GetString()).SequenceEqual(["Turrets", "ThreeViews"])
+                && selectedResult.GetProperty("defNames").EnumerateArray().Select(x => x.GetString()).SequenceEqual(["Demo_Coat"]), "auto success JSON reports normalized scopes and DefNames");
+        }
+        Assert(selectedSettings.Element("autoTestScope")?.Value == "Turrets"
+            && selectedSettings.Element("autoTestScopes")?.Elements("li").Select(x => x.Value).SequenceEqual(["Turrets", "ThreeViews"]) == true
+            && selectedSettings.Element("autoTestTargetDefNames")?.Elements("li").Select(x => x.Value).SequenceEqual(["Demo_Coat"]) == true, "auto run writes multi-scope and precise target settings for the game");
+        AssertConfigurationRestored(environment, "selected auto mode restores all new settings fields");
 
         Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", "auto-large-log");
         var largeAuto = await CaptureAsync(() => TestCommand.RunAsync(["test", "run", "--mode", "auto", "--timeout-seconds", "5"]));

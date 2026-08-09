@@ -101,7 +101,7 @@ public static class CliApplication
 
 public static class CliArgs
 {
-    private sealed record Option(string Name, bool TakesValue);
+    private sealed record Option(string Name, bool TakesValue, bool AllowMultiple = false);
 
     private static readonly IReadOnlyDictionary<string, (int PrefixLength, int Positionals, Option[] Options)> Contracts
         = new Dictionary<string, (int, int, Option[])>(StringComparer.OrdinalIgnoreCase)
@@ -112,7 +112,7 @@ public static class CliArgs
             ["ref pull"] = (2, 1, [new("--version", true), new("--deps", false), new("--all", false), new("--fuzzy", false), new("--force", false)]),
             ["ref deps"] = (2, 1, [new("--version", true), new("--fuzzy", false)]),
             ["ref related"] = (2, 1, [new("--version", true), new("--fuzzy", false)]),
-            ["test run"] = (2, 0, [new("--deploy", false), new("--sync-source", false), new("--mode", true), new("--mods-file", true), new("--timeout-seconds", true), new("--target-package-id", true), new("--capture-screenshots", false), new("--isolated-desktop", false), new("--no-isolated-desktop", false)]),
+            ["test run"] = (2, 0, [new("--deploy", false), new("--sync-source", false), new("--mode", true), new("--mods-file", true), new("--timeout-seconds", true), new("--target-package-id", true), new("--scope", true, true), new("--auto-test-scope", true), new("--defname", true, true), new("--auto-test-defname", true), new("--capture-screenshots", false), new("--isolated-desktop", false), new("--no-isolated-desktop", false)]),
             ["test settings"] = (2, 0, []),
             ["test cleanup"] = (2, 0, [new("--dry-run", false)]),
             ["mods install-tools"] = (2, 0, [new("--mods-path", true), new("--dry-run", false)])
@@ -135,7 +135,8 @@ public static class CliArgs
             }
 
             if (!allowed.TryGetValue(argument, out var option)) return $"未知参数: {argument}";
-            if (!seen.Add(option.Name)) return $"参数重复: {option.Name}";
+            if (!option.AllowMultiple && !seen.Add(option.Name)) return $"参数重复: {option.Name}";
+            seen.Add(option.Name);
             if (!option.TakesValue) continue;
             if (++index >= args.Length || args[index].StartsWith('-')) return $"缺少参数值: {option.Name}";
         }
@@ -157,6 +158,14 @@ public static class CliArgs
         for (var i = 0; i < args.Length - 1; i++)
             if (args[i].Equals(name, StringComparison.OrdinalIgnoreCase) && !args[i + 1].StartsWith('-')) return args[i + 1];
         return null;
+    }
+
+    public static IReadOnlyList<string> Values(string[] args, string name)
+    {
+        var values = new List<string>();
+        for (var i = 0; i < args.Length - 1; i++)
+            if (args[i].Equals(name, StringComparison.OrdinalIgnoreCase) && !args[i + 1].StartsWith('-')) values.Add(args[i + 1]);
+        return values;
     }
 
     public static string RequiredValue(string[] args, string name)

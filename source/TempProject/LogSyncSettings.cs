@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using Verse;
 
 namespace LogSyncMod
@@ -45,6 +46,9 @@ namespace LogSyncMod
         public string autoTestOutputPath = "D:/RimWorldAutoTest";
         public AutoTestMode autoTestMode = AutoTestMode.Automatic;
         public AutoTestScope autoTestScope = AutoTestScope.Standard;
+        public List<AutoTestScope> autoTestScopes = new List<AutoTestScope>();
+        public List<string> autoTestTargetDefNames = new List<string>();
+        public string autoTestTargetDefNamesInput = "";
         public bool autoTestBuildings = true;
         public bool autoTestItems = true;
         public bool autoTestTerrains = true;
@@ -74,6 +78,8 @@ namespace LogSyncMod
             Scribe_Values.Look(ref autoTestOutputPath, "autoTestOutputPath", "D:/RimWorldAutoTest");
             Scribe_Values.Look(ref autoTestMode, "autoTestMode", AutoTestMode.Automatic);
             Scribe_Values.Look(ref autoTestScope, "autoTestScope", AutoTestScope.Standard);
+            Scribe_Collections.Look(ref autoTestScopes, "autoTestScopes", LookMode.Value);
+            Scribe_Collections.Look(ref autoTestTargetDefNames, "autoTestTargetDefNames", LookMode.Value);
             Scribe_Values.Look(ref autoTestBuildings, "autoTestBuildings", true);
             Scribe_Values.Look(ref autoTestItems, "autoTestItems", true);
             Scribe_Values.Look(ref autoTestTerrains, "autoTestTerrains", true);
@@ -88,14 +94,20 @@ namespace LogSyncMod
             if (autoTestTargetPackageId == null) autoTestTargetPackageId = "";
             if (autoTestRunId == null) autoTestRunId = "";
             if (autoTestOutputPath == null) autoTestOutputPath = "D:/RimWorldAutoTest";
+            if (autoTestScopes == null) autoTestScopes = new List<AutoTestScope>();
+            if (autoTestTargetDefNames == null) autoTestTargetDefNames = new List<string>();
             if (logMaxLines < 1) logMaxLines = 1;
             if (!System.Enum.IsDefined(typeof(AutoTestMode), autoTestMode)) autoTestMode = AutoTestMode.Automatic;
             if (!System.Enum.IsDefined(typeof(AutoTestScope), autoTestScope)) autoTestScope = AutoTestScope.Standard;
+            autoTestScopes = NormalizeScopes(autoTestScopes);
+            autoTestTargetDefNames = NormalizeDefNames(autoTestTargetDefNames);
             
             if (Scribe.mode == LoadSaveMode.PostLoadInit)
             {
                 targetModIdsInput = string.Join(",", targetModIds);
                 keywordsInput = string.Join(",", keywords);
+                if (autoTestScopes.Count == 0) autoTestScopes.Add(autoTestScope);
+                autoTestTargetDefNamesInput = string.Join(",", autoTestTargetDefNames);
             }
         }
 
@@ -118,6 +130,14 @@ namespace LogSyncMod
             autoTestTargetPackageId = (autoTestTargetPackageId ?? "").Trim().ToLowerInvariant();
             autoTestRunId = (autoTestRunId ?? "").Trim();
             autoTestOutputPath = (autoTestOutputPath ?? "").Trim();
+            autoTestScopes = NormalizeScopes(autoTestScopes);
+            autoTestTargetDefNames.Clear();
+            foreach (var value in (autoTestTargetDefNamesInput ?? "").Split(','))
+            {
+                var trimmed = value.Trim();
+                if (!string.IsNullOrEmpty(trimmed) && !autoTestTargetDefNames.Contains(trimmed, System.StringComparer.OrdinalIgnoreCase))
+                    autoTestTargetDefNames.Add(trimmed);
+            }
             if (logMaxLines < 1) logMaxLines = 1;
             if (autoTestBatchSize < 1) autoTestBatchSize = 1;
             if (autoTestPocketMapMaxConcurrent < 1) autoTestPocketMapMaxConcurrent = 1;
@@ -130,12 +150,12 @@ namespace LogSyncMod
 
         public bool ShouldRunStandardSuite()
         {
-            return autoTestScope == AutoTestScope.Standard;
+            return HasScope(AutoTestScope.Standard);
         }
 
         public bool ShouldTestContent()
         {
-            return ShouldRunStandardSuite() || autoTestScope == AutoTestScope.Content;
+            return HasScope(AutoTestScope.Content) || ShouldRunStandardSuite();
         }
 
         public bool UseXmlDrivenAutoTest()
@@ -145,42 +165,72 @@ namespace LogSyncMod
 
         public bool ShouldTestRecipes()
         {
-            return ShouldRunStandardSuite() || autoTestScope == AutoTestScope.Recipes;
+            return HasScope(AutoTestScope.Recipes) || ShouldRunStandardSuite();
         }
 
         public bool ShouldTestHediffs()
         {
-            return ShouldRunStandardSuite() || autoTestScope == AutoTestScope.Hediffs;
+            return HasScope(AutoTestScope.Hediffs) || ShouldRunStandardSuite();
         }
 
         public bool ShouldTestTurrets()
         {
-            return ShouldRunStandardSuite() || autoTestScope == AutoTestScope.Turrets;
+            return HasScope(AutoTestScope.Turrets) || ShouldRunStandardSuite();
         }
 
         public bool ShouldTestRangedWeapons()
         {
-            return ShouldRunStandardSuite() || autoTestScope == AutoTestScope.RangedWeapons;
+            return HasScope(AutoTestScope.RangedWeapons) || ShouldRunStandardSuite();
         }
 
         public bool ShouldTestMeleeWeapons()
         {
-            return ShouldRunStandardSuite() || autoTestScope == AutoTestScope.MeleeWeapons;
+            return HasScope(AutoTestScope.MeleeWeapons) || ShouldRunStandardSuite();
         }
 
         public bool ShouldTestThreeViews()
         {
-            return ShouldRunStandardSuite() || autoTestScope == AutoTestScope.ThreeViews;
+            return HasScope(AutoTestScope.ThreeViews) || ShouldRunStandardSuite();
         }
 
         public bool ShouldTestCombatPawns()
         {
-            return autoTestScope == AutoTestScope.CombatPawns;
+            return HasScope(AutoTestScope.CombatPawns);
         }
 
         public bool ShouldTestSkillPocketMaps()
         {
-            return autoTestScope == AutoTestScope.SkillPocketMaps;
+            return HasScope(AutoTestScope.SkillPocketMaps);
+        }
+
+        public IReadOnlyList<AutoTestScope> EffectiveAutoTestScopes()
+            => autoTestScopes != null && autoTestScopes.Count > 0 ? autoTestScopes : new List<AutoTestScope> { autoTestScope };
+
+        public bool HasScope(AutoTestScope scope) => EffectiveAutoTestScopes().Contains(scope);
+
+        public bool MatchesAutoTestTargetDefName(string defName)
+        {
+            if (autoTestTargetDefNames == null || autoTestTargetDefNames.Count == 0) return true;
+            return autoTestTargetDefNames.Any(value => string.Equals(value, defName, System.StringComparison.OrdinalIgnoreCase));
+        }
+
+        private static List<AutoTestScope> NormalizeScopes(List<AutoTestScope> values)
+        {
+            var result = new List<AutoTestScope>();
+            foreach (var value in values ?? new List<AutoTestScope>())
+                if (System.Enum.IsDefined(typeof(AutoTestScope), value) && !result.Contains(value)) result.Add(value);
+            return result;
+        }
+
+        private static List<string> NormalizeDefNames(List<string> values)
+        {
+            var result = new List<string>();
+            foreach (var value in values ?? new List<string>())
+            {
+                var trimmed = (value ?? "").Trim();
+                if (!string.IsNullOrEmpty(trimmed) && !result.Contains(trimmed, System.StringComparer.OrdinalIgnoreCase)) result.Add(trimmed);
+            }
+            return result;
         }
 
         public int GetPocketMapMaxConcurrent()

@@ -31,6 +31,9 @@
   <LogSyncMod.AutoTestScopeThreeViews>Three-view studio screenshots</LogSyncMod.AutoTestScopeThreeViews>
   <LogSyncMod.AutoTestScopeCombatPawns>Combat pawn pocket maps</LogSyncMod.AutoTestScopeCombatPawns>
   <LogSyncMod.AutoTestScopeSkillPocketMaps>Skill pocket maps</LogSyncMod.AutoTestScopeSkillPocketMaps>
+  <LogSyncMod.AutoTestScopes>Test scopes (multiple allowed; Standard excludes combat pawns and skill pocket maps):</LogSyncMod.AutoTestScopes>
+  <LogSyncMod.AutoTestTargetDefNames>Exact DefName allowlist (comma-separated; blank means all):</LogSyncMod.AutoTestTargetDefNames>
+  <LogSyncMod.AutoTestTargetDefNamesXmlHint>XML-driven mode ignores this allowlist; Specs select the targets.</LogSyncMod.AutoTestTargetDefNamesXmlHint>
   <LogSyncMod.AutoTestCaptureScreenshots>Capture screenshots for opened InfoCards</LogSyncMod.AutoTestCaptureScreenshots>
   <LogSyncMod.AutoTestPreventPause>Prevent game pause during auto tests</LogSyncMod.AutoTestPreventPause>
   <LogSyncMod.AutoTestUseFastSpeed>Force 2x speed during auto tests</LogSyncMod.AutoTestUseFastSpeed>

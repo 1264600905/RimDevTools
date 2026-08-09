@@ -93,6 +93,7 @@ namespace LogSyncMod.AutoTest
         public int SkippedCount;
         public int MissingCount;
         public List<string> MissingCaseIds = new List<string>();
+        public List<string> MissingDefNames = new List<string>();
     }
 
     internal sealed class AutoTestResult

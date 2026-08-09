@@ -73,3 +73,7 @@ RimSage 是半强制研究前置：
 
 quick、auto 和 XML 测试遵循 `mod_config.jsonc.isolated_desktop`；模板默认使用当前桌面。manual 默认使用当前桌面，除非显式传入 `--isolated-desktop`。测试会事务化修改并恢复 RimWorld 配置。
 
+auto/xml 可重复传入 `--scope` 组合多个测试分类；`all` 保持历史语义，只映射为 Standard，不包含 CombatPawns 与 SkillPocketMaps。auto 还可重复传入 `--defname` 精确筛选目标，任何未命中的名称都会使本轮失败。兼容参数 `--auto-test-scope`、`--auto-test-defname` 仍为单值，且不能与对应的新参数混用。
+
+例如：`RimDevTools.exe test run --mode auto --scope threeviews --scope combatpawns --defname MyMod_ArmorCoat`。
+

@@ -56,7 +56,7 @@ RimDevTools.exe ref pull <query> [--version <value>] [--deps] [--all] [--fuzzy] 
 RimDevTools.exe ref deps <query> [--version <value>] [--fuzzy]
 RimDevTools.exe ref related <query> [--version <value>] [--fuzzy]
 RimDevTools.exe test settings
-RimDevTools.exe test run [--deploy] [--mode quick|manual|auto|xml]
+RimDevTools.exe test run [--deploy] [--mode quick|manual|auto|xml] [--scope <value>]... [--defname <value>]...
 RimDevTools.exe test cleanup [--dry-run]
 RimDevTools.exe mods install-tools [--mods-path <path>] [--dry-run]
 ```
@@ -73,7 +73,9 @@ RimDevTools.exe mods install-tools [--mods-path <path>] [--dry-run]
 
 ### 测试
 
-quick 是启动烟雾测试；manual 用于交互；auto/XML 验证结构化 AutoTest 结果。测试通过共享环境锁与配置事务恢复 `mods_config_path` 所在目录中的 RimWorld 配置。无论使用 `min_active_mods` 还是外部 `--mods-file`，都必须启用 `min_active_mods` 中的全部模组。`--deploy` 用于测试当前源码改动。事务冲突后，可在 RimWorld 完全退出后运行 `test cleanup`；`--dry-run` 只检查不修改，清理 ModsConfig.xml 时只恢复原始 `<activeMods>`。
+quick 是启动烟雾测试；manual 用于交互；auto/XML 验证结构化 AutoTest 结果。auto/xml 支持可重复的 `--scope`，范围按首次出现顺序去重；`standard` 与历史别名 `all` 都只表示 Standard 套件，不会隐式启用 CombatPawns 或 SkillPocketMaps。`--defname` 仅适用于 auto，可重复指定精确目标；任何未命中目标都会使结果不完整并失败。旧脚本的单值 `--auto-test-scope` 与 `--auto-test-defname` 继续兼容，但不能与新参数混用。XML 模式的具体用例仍由 Spec 决定。测试通过共享环境锁与配置事务恢复 `mods_config_path` 所在目录中的 RimWorld 配置。无论使用 `min_active_mods` 还是外部 `--mods-file`，都必须启用 `min_active_mods` 中的全部模组。`--deploy` 用于测试当前源码改动。事务冲突后，可在 RimWorld 完全退出后运行 `test cleanup`；`--dry-run` 只检查不修改，清理 ModsConfig.xml 时只恢复原始 `<activeMods>`。
+
+支持的 scope 值为：`standard`、`all`、`content`、`recipes`、`hediffs`、`turrets`、`rangedweapons`、`meleeweapons`、`threeviews`、`combatpawns`、`skillpocketmaps`。
 
 `doctor` 还会读取已解析的 `0Harmony.dll` AssemblyVersion。低于工具要求版本时只给出 warning，并提示重新订阅 Harmony。
 

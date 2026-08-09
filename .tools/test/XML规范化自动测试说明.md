@@ -71,6 +71,8 @@ Def 根类型必须写全限定名：`LogSyncMod.LogSyncAutoTestSpecDef`
 
 当前代码中的 `AutoTestScope` 可用值为：
 
+自动模式支持全局可重复参数 `--scope`（兼容单值 `--auto-test-scope`）和可重复的 `--defname`（兼容单值 `--auto-test-defname`）。`all` 始终等价于 `Standard`；Standard 不包含 CombatPawns、SkillPocketMaps。`--defname` 与范围取交集，未命中目标会让结果 JSON/Markdown 标记为 Incomplete。XML 模式可用多个全局范围扩大可发现类别，但具体用例仍由单条 `LogSyncAutoTestSpecDef` 的 `scope`、`categories`、`defNames` 决定。
+
 - `Standard`
 - `Content`
 - `Recipes`

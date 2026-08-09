@@ -237,7 +237,7 @@ namespace LogSyncMod.AutoTest
                 "[LogSyncAutoTest] START packageId={0} map={1} scope={2} pending={3} pocketMapMaxConcurrent={4}",
                 targetPackageId,
                 map.info?.parent?.LabelCap ?? map.ToString(),
-                settings.autoTestScope,
+                string.Join(",", settings.EffectiveAutoTestScopes()),
                 totalPending,
                 pocketMapMaxConcurrent));
             Log.Message(string.Format(
@@ -250,6 +250,7 @@ namespace LogSyncMod.AutoTest
                 settings.ShouldTestMeleeWeapons(),
                 settings.ShouldTestThreeViews(),
                 settings.ShouldTestCombatPawns()));
+            Log.Message("[LogSyncAutoTest] TARGET DefNames: " + (settings.autoTestTargetDefNames.Count == 0 ? "<all>" : string.Join(",", settings.autoTestTargetDefNames)));
 
             if (totalPending == 0)
             {
@@ -609,7 +610,7 @@ namespace LogSyncMod.AutoTest
                 global::LogSyncMod.TestAudioController.Restore();
             }
             Log.Message(string.Format(
-                "[LogSyncAutoTest] COMPLETED runId={0} packageId={1} total={2} passed={3} failed={4} discovered={5} planned={6} missing={7}",
+                "[LogSyncAutoTest] COMPLETED runId={0} packageId={1} total={2} passed={3} failed={4} discovered={5} planned={6} missing={7} missingDefNames={8}",
                 runId,
                 targetPackageId ?? "unknown",
                 results.Count,
@@ -617,7 +618,8 @@ namespace LogSyncMod.AutoTest
                 results.Count(result => result.Status != "passed" && result.Status != "skipped"),
                 runSummary?.DiscoveredCount ?? 0,
                 runSummary?.PlannedCount ?? 0,
-                runSummary?.MissingCount ?? 0));
+                runSummary?.MissingCount ?? 0,
+                runSummary == null || runSummary.MissingDefNames.Count == 0 ? "<none>" : string.Join(",", runSummary.MissingDefNames)));
         }
 
         private void CleanupSharedHediffPawn()
@@ -681,9 +683,9 @@ namespace LogSyncMod.AutoTest
 
         private void ApplyBatchLimit()
         {
-            if (IsFullCoverageRun())
+            if (IsFullCoverageRun() || (settings.autoTestTargetDefNames != null && settings.autoTestTargetDefNames.Count > 0))
             {
-                Log.Message("[LogSyncAutoTest] Standard suite detected. Batch limit is ignored.");
+                Log.Message("[LogSyncAutoTest] Full-coverage or exact-target run detected. Batch limit is ignored.");
                 return;
             }
 
@@ -1014,7 +1016,7 @@ namespace LogSyncMod.AutoTest
 
         private bool IsFullCoverageRun()
         {
-            return !settings.UseXmlDrivenAutoTest() && settings.autoTestScope == AutoTestScope.Standard;
+            return !settings.UseXmlDrivenAutoTest() && settings.ShouldRunStandardSuite() && settings.EffectiveAutoTestScopes().Count == 1;
         }
 
         private AutoTestPocketMapHandle CreatePocketMapHandle(string mapGeneratorDefName, IntVec3 mapSize, Action<Map> onGenerated, out string errorMessage)
@@ -1143,6 +1145,21 @@ namespace LogSyncMod.AutoTest
             }
 
             summary.MissingCount = summary.MissingCaseIds.Count;
+            if (settings.autoTestTargetDefNames != null && settings.autoTestTargetDefNames.Count > 0)
+            {
+                foreach (string requested in settings.autoTestTargetDefNames)
+                {
+                    bool matched = plannedManifest.Any(entry =>
+                        string.Equals(entry.DefName, requested, StringComparison.OrdinalIgnoreCase) ||
+                        entry.DefName.StartsWith(requested + "@", StringComparison.OrdinalIgnoreCase));
+                    if (!matched) summary.MissingDefNames.Add(requested);
+                }
+                foreach (string missing in summary.MissingDefNames)
+                {
+                    summary.MissingCaseIds.Add("DefName:" + missing);
+                }
+                summary.MissingCount = summary.MissingCaseIds.Count;
+            }
             summary.Complete = summary.MissingCount == 0 && summary.ExecutedCount >= summary.PlannedCount;
             return summary;
         }

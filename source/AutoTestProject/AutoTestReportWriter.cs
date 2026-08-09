@@ -97,6 +97,7 @@ namespace LogSyncMod.AutoTest
                 builder.AppendLine("- ManifestPlanned: " + runSummary.PlannedCount);
                 builder.AppendLine("- ManifestExecuted: " + runSummary.ExecutedCount);
                 builder.AppendLine("- ManifestMissing: " + runSummary.MissingCount);
+                builder.AppendLine("- MissingDefNames: " + (runSummary.MissingDefNames.Count == 0 ? "<none>" : string.Join(", ", runSummary.MissingDefNames.Select(value => "`" + value + "`"))));
             }
             builder.AppendLine();
             builder.AppendLine("## Results");
@@ -205,6 +206,7 @@ namespace LogSyncMod.AutoTest
                 builder.AppendLine("  \"manifestPlanned\": " + runSummary.PlannedCount + ",");
                 builder.AppendLine("  \"manifestExecuted\": " + runSummary.ExecutedCount + ",");
                 builder.AppendLine("  \"manifestMissing\": " + runSummary.MissingCount + ",");
+                builder.AppendLine("  \"missingDefNames\": " + BuildJsonArray(runSummary.MissingDefNames) + ",");
             }
             builder.AppendLine("  \"results\": [");
 

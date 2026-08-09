@@ -249,6 +249,10 @@ public static class CliHelp
           --mods-file <path>          External ModsConfig XML activeMods list.
           --timeout-seconds <n>       Positive wait limit; defaults to timeouts.max_wait.
           --target-package-id <id>    Auto/XML target; defaults to current project.
+          --scope <value>             Repeatable auto/xml scope; 'all' is the historical alias for Standard.
+          --auto-test-scope <value>   Legacy single-value scope option; cannot be combined with --scope.
+          --defname <value>           Repeatable auto-mode DefName allowlist.
+          --auto-test-defname <value> Legacy single-value DefName option; cannot be combined with --defname.
           --capture-screenshots       Enable AutoTest screenshots for auto/xml only.
           --isolated-desktop          Force a private Windows desktop for this run.
           --no-isolated-desktop       Force the current visible desktop for this run.
@@ -261,7 +265,7 @@ public static class CliHelp
 
         Examples:
           RimDevTools.exe test run --mode quick --timeout-seconds 120
-          RimDevTools.exe test run --mode auto --target-package-id aoba.deadmanswitch.core --capture-screenshots
+          RimDevTools.exe test run --mode auto --scope turrets --scope threeviews --defname MyMod_ArmorCoat
 
         Output:
           JSON runId, mode, target, mods/additions, isolation source, signal, and result.

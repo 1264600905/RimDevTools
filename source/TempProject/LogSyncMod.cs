@@ -208,24 +208,25 @@ namespace LogSyncMod
                 };
                 Find.WindowStack.Add(new FloatMenu(modeOptions));
             }
-            string scopeLabel = GetAutoTestScopeLabel(settings.autoTestScope);
-            listingStandard.Label("LogSyncMod.AutoTestScope".Translate(scopeLabel));
-            if (listingStandard.ButtonText("LogSyncMod.AutoTestScopeSelect".Translate(scopeLabel)))
+            listingStandard.Label("LogSyncMod.AutoTestScopes".Translate());
+            DrawAutoTestScopeCheckbox(listingStandard, AutoTestScope.Standard, "LogSyncMod.AutoTestScopeStandard".Translate());
+            DrawAutoTestScopeCheckbox(listingStandard, AutoTestScope.Content, "LogSyncMod.AutoTestScopeContent".Translate());
+            DrawAutoTestScopeCheckbox(listingStandard, AutoTestScope.Recipes, "LogSyncMod.AutoTestScopeRecipes".Translate());
+            DrawAutoTestScopeCheckbox(listingStandard, AutoTestScope.Hediffs, "LogSyncMod.AutoTestScopeHediffs".Translate());
+            DrawAutoTestScopeCheckbox(listingStandard, AutoTestScope.Turrets, "LogSyncMod.AutoTestScopeTurrets".Translate());
+            DrawAutoTestScopeCheckbox(listingStandard, AutoTestScope.RangedWeapons, "LogSyncMod.AutoTestScopeRangedWeapons".Translate());
+            DrawAutoTestScopeCheckbox(listingStandard, AutoTestScope.MeleeWeapons, "LogSyncMod.AutoTestScopeMeleeWeapons".Translate());
+            DrawAutoTestScopeCheckbox(listingStandard, AutoTestScope.ThreeViews, "LogSyncMod.AutoTestScopeThreeViews".Translate());
+            DrawAutoTestScopeCheckbox(listingStandard, AutoTestScope.CombatPawns, "LogSyncMod.AutoTestScopeCombatPawns".Translate());
+            DrawAutoTestScopeCheckbox(listingStandard, AutoTestScope.SkillPocketMaps, "LogSyncMod.AutoTestScopeSkillPocketMaps".Translate());
+            listingStandard.Label("LogSyncMod.AutoTestTargetDefNames".Translate());
+            bool targetNamesEnabled = settings.autoTestMode == AutoTestMode.Automatic;
+            GUI.enabled = targetNamesEnabled;
+            settings.autoTestTargetDefNamesInput = listingStandard.TextEntry(settings.autoTestTargetDefNamesInput);
+            GUI.enabled = true;
+            if (!targetNamesEnabled)
             {
-                List<FloatMenuOption> options = new List<FloatMenuOption>
-                {
-                    new FloatMenuOption("LogSyncMod.AutoTestScopeStandard".Translate(), () => settings.autoTestScope = AutoTestScope.Standard),
-                    new FloatMenuOption("LogSyncMod.AutoTestScopeContent".Translate(), () => settings.autoTestScope = AutoTestScope.Content),
-                    new FloatMenuOption("LogSyncMod.AutoTestScopeRecipes".Translate(), () => settings.autoTestScope = AutoTestScope.Recipes),
-                    new FloatMenuOption("LogSyncMod.AutoTestScopeHediffs".Translate(), () => settings.autoTestScope = AutoTestScope.Hediffs),
-                    new FloatMenuOption("LogSyncMod.AutoTestScopeTurrets".Translate(), () => settings.autoTestScope = AutoTestScope.Turrets),
-                    new FloatMenuOption("LogSyncMod.AutoTestScopeRangedWeapons".Translate(), () => settings.autoTestScope = AutoTestScope.RangedWeapons),
-                    new FloatMenuOption("LogSyncMod.AutoTestScopeMeleeWeapons".Translate(), () => settings.autoTestScope = AutoTestScope.MeleeWeapons),
-                    new FloatMenuOption("LogSyncMod.AutoTestScopeThreeViews".Translate(), () => settings.autoTestScope = AutoTestScope.ThreeViews),
-                    new FloatMenuOption("LogSyncMod.AutoTestScopeCombatPawns".Translate(), () => settings.autoTestScope = AutoTestScope.CombatPawns),
-                    new FloatMenuOption("LogSyncMod.AutoTestScopeSkillPocketMaps".Translate(), () => settings.autoTestScope = AutoTestScope.SkillPocketMaps)
-                };
-                Find.WindowStack.Add(new FloatMenu(options));
+                listingStandard.Label("LogSyncMod.AutoTestTargetDefNamesXmlHint".Translate());
             }
             listingStandard.CheckboxLabeled("LogSyncMod.AutoTestCaptureScreenshots".Translate(), ref settings.autoTestCaptureScreenshots);
             listingStandard.CheckboxLabeled("LogSyncMod.AutoTestPreventPause".Translate(), ref settings.autoTestPreventPause);
@@ -339,6 +340,21 @@ namespace LogSyncMod
                 case AutoTestScope.Standard:
                 default:
                     return "LogSyncMod.AutoTestScopeStandard".Translate();
+            }
+        }
+
+        private static void DrawAutoTestScopeCheckbox(Listing_Standard listing, AutoTestScope scope, string label)
+        {
+            bool selected = settings.HasScope(scope);
+            listing.CheckboxLabeled(label, ref selected);
+            if (selected)
+            {
+                if (!settings.autoTestScopes.Contains(scope)) settings.autoTestScopes.Add(scope);
+                settings.autoTestScope = scope;
+            }
+            else
+            {
+                settings.autoTestScopes.Remove(scope);
             }
         }
 

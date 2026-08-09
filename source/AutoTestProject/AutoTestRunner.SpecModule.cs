@@ -34,6 +34,11 @@ namespace LogSyncMod.AutoTest
 
         private bool MatchesSpecFilters(AutoTestKind kind, Def def)
         {
+            if (!settings.UseXmlDrivenAutoTest() && def != null && !settings.MatchesAutoTestTargetDefName(def.defName))
+            {
+                return false;
+            }
+
             if (!settings.UseXmlDrivenAutoTest())
             {
                 return true;

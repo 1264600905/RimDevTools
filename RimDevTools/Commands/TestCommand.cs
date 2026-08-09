@@ -121,6 +121,8 @@ public static class TestCommand
         var mode = CliArgs.Value(args, "--mode")?.ToLowerInvariant() ?? "quick";
         if (mode is not ("quick" or "manual" or "auto" or "xml"))
             return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "MODE_INVALID", $"不支持的测试模式: {mode}", context.Root);
+        if (!AutoTestSelectionParser.TryParse(args, mode, out var selection, out var selectionError))
+            return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "INVALID_ARGUMENT", selectionError!, context.Root);
         if (CliArgs.Has(args, "--sync-source") && !CliArgs.Has(args, "--deploy"))
             return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "SYNC_SOURCE_REQUIRES_DEPLOY", "--sync-source 必须与 --deploy 一起使用", context.Root);
         if (!CliArgs.TryPositiveInt(args, "--timeout-seconds", context.Config.Timeouts.MaxWait, out var timeout, out var timeoutError))
@@ -182,7 +184,7 @@ public static class TestCommand
                 runId,
                 [modsConfigPath, logSyncSettingsPath]);
             await transaction.WriteAllTextAsync(modsConfigPath, ModListParser.Render(modsConfigPath, modList.Mods));
-            await SettingsEditor.UpdateAsync(context, mode, transaction, runId, targetPackageId, captureScreenshots, muteAudio: mode != "manual");
+            await SettingsEditor.UpdateAsync(context, mode, transaction, runId, targetPackageId, captureScreenshots, muteAudio: mode != "manual", selection.Scopes, selection.HasExplicitScopes, selection.DefNames);
 
             LogArchive.Rotate(SettingsEditor.SyncLogPath(context), context.Config.Retention.MaxLogFiles);
 
@@ -235,13 +237,15 @@ public static class TestCommand
         }
 
         if (!outcome.Ok)
-            return CliResult.WriteFailure(command, outcome.ExitCode, outcome.Code, outcome.Message, context.Root, new { runId, mode, isolatedDesktop = isolation.Enabled, isolatedDesktopSource = isolation.Source, mods = modList.Mods, additions = modList.Additions, outcome.Details });
+            return CliResult.WriteFailure(command, outcome.ExitCode, outcome.Code, outcome.Message, context.Root, new { runId, mode, scopes = selection.Scopes, defNames = selection.DefNames, isolatedDesktop = isolation.Enabled, isolatedDesktopSource = isolation.Source, mods = modList.Mods, additions = modList.Additions, outcome.Details });
 
         return CliResult.WriteSuccess(command, context.Root, new
         {
             runId,
             mode,
             targetPackageId,
+            scopes = selection.Scopes,
+            defNames = selection.DefNames,
             captureScreenshots,
             isolatedDesktop = isolation.Enabled,
             isolatedDesktopSource = isolation.Source,
@@ -307,6 +311,76 @@ public static class TestCommand
     {
         public static TestOutcome Success(string message, object? details = null) => new(true, ExitCodes.Success, "", message, details);
         public static TestOutcome Failure(int exitCode, string code, string message, object? details = null) => new(false, exitCode, code, message, details);
+    }
+}
+
+public sealed record AutoTestSelection(IReadOnlyList<string> Scopes, IReadOnlyList<string> DefNames, bool HasExplicitScopes);
+
+public static class AutoTestSelectionParser
+{
+    private static readonly IReadOnlyDictionary<string, string> ScopeNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+    {
+        ["standard"] = "Standard",
+        ["all"] = "Standard",
+        ["content"] = "Content",
+        ["recipes"] = "Recipes",
+        ["hediffs"] = "Hediffs",
+        ["turrets"] = "Turrets",
+        ["rangedweapons"] = "RangedWeapons",
+        ["meleeweapons"] = "MeleeWeapons",
+        ["threeviews"] = "ThreeViews",
+        ["combatpawns"] = "CombatPawns",
+        ["skillpocketmaps"] = "SkillPocketMaps"
+    };
+
+    public static bool TryParse(string[] args, string mode, out AutoTestSelection selection, out string? error)
+    {
+        selection = new AutoTestSelection(["Standard"], [], false);
+        error = null;
+
+        var nativeScopes = CliArgs.Values(args, "--scope");
+        var legacyScopes = CliArgs.Values(args, "--auto-test-scope");
+        if (nativeScopes.Count > 0 && legacyScopes.Count > 0)
+            return Fail("--scope 不能与 --auto-test-scope 同时使用", out error);
+        if ((nativeScopes.Count > 0 || legacyScopes.Count > 0) && mode is not ("auto" or "xml"))
+            return Fail("--scope/--auto-test-scope 仅适用于 --mode auto 或 --mode xml", out error);
+
+        var rawScopes = nativeScopes.Count > 0 ? nativeScopes : legacyScopes;
+        var scopes = new List<string>();
+        var seenScopes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var raw in rawScopes)
+        {
+            var value = raw.Trim();
+            if (value.Length == 0 || !ScopeNames.TryGetValue(value, out var normalized))
+                return Fail($"未知测试范围: {raw}", out error);
+            if (seenScopes.Add(normalized)) scopes.Add(normalized);
+        }
+        if (scopes.Count == 0) scopes.Add("Standard");
+
+        var nativeDefNames = CliArgs.Values(args, "--defname");
+        var legacyDefNames = CliArgs.Values(args, "--auto-test-defname");
+        if (nativeDefNames.Count > 0 && legacyDefNames.Count > 0)
+            return Fail("--defname 不能与 --auto-test-defname 同时使用", out error);
+        if ((nativeDefNames.Count > 0 || legacyDefNames.Count > 0) && mode != "auto")
+            return Fail("--defname/--auto-test-defname 仅适用于 --mode auto", out error);
+
+        var defNames = new List<string>();
+        var seenDefNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var raw in nativeDefNames.Count > 0 ? nativeDefNames : legacyDefNames)
+        {
+            var value = raw.Trim();
+            if (value.Length == 0) return Fail("--defname 不能为空", out error);
+            if (seenDefNames.Add(value)) defNames.Add(value);
+        }
+
+        selection = new AutoTestSelection(scopes, defNames, rawScopes.Count > 0);
+        return true;
+    }
+
+    private static bool Fail(string message, out string? error)
+    {
+        error = message;
+        return false;
     }
 }
 
@@ -502,7 +576,7 @@ public static class SettingsEditor
     public static string SyncLogPath(ProjectContext context) => Path.Combine(context.Root, ".tools", "log", "精选日志.log");
     public static string AutoTestOutputPath(ProjectContext context) => Path.Combine(context.Root, ".tools", "log", "AutoTestOutput");
 
-    public static async Task<bool> UpdateAsync(ProjectContext context, string mode, ConfigTransaction? transaction = null, string? runId = null, string? targetPackageId = null, bool captureScreenshots = false, bool? muteAudio = null)
+    public static async Task<bool> UpdateAsync(ProjectContext context, string mode, ConfigTransaction? transaction = null, string? runId = null, string? targetPackageId = null, bool captureScreenshots = false, bool? muteAudio = null, IReadOnlyList<string>? scopes = null, bool hasExplicitScopes = false, IReadOnlyList<string>? defNames = null)
     {
         var path = GameEnvironment.LogSyncSettingsPath(context) ?? throw new InvalidOperationException("mods_config_path 未配置或无效");
         var document = File.Exists(path)
@@ -522,7 +596,15 @@ public static class SettingsEditor
         changed |= Set(settings, "autoTestRunId", auto ? runId ?? "" : "");
         changed |= Set(settings, "autoTestOutputPath", AutoTestOutputPath(context));
         changed |= Set(settings, "autoTestMode", mode == "xml" ? "XmlDriven" : "Automatic");
-        changed |= Set(settings, "autoTestScope", "Standard");
+        var effectiveScopes = scopes is { Count: > 0 } ? DistinctValues(scopes) : ["Standard"];
+        var effectiveDefNames = defNames is { Count: > 0 } ? DistinctValues(defNames) : [];
+        changed |= Set(settings, "autoTestScope", hasExplicitScopes ? effectiveScopes[0] : "Standard");
+        changed |= hasExplicitScopes
+            ? SetList(settings, "autoTestScopes", effectiveScopes)
+            : Remove(settings, "autoTestScopes");
+        changed |= effectiveDefNames.Count > 0
+            ? SetList(settings, "autoTestTargetDefNames", effectiveDefNames)
+            : Remove(settings, "autoTestTargetDefNames");
         changed |= Set(settings, "autoTestCaptureScreenshots", auto && captureScreenshots ? "True" : "False");
         changed |= Set(settings, "autoTestPreventPause", "True");
         changed |= Set(settings, "autoTestUseFastSpeed", "True");
@@ -559,6 +641,26 @@ public static class SettingsEditor
         node.RemoveNodes();
         foreach (var value in normalized) node.Add(new XElement("li", value));
         return true;
+    }
+
+    private static bool Remove(XElement parent, string name)
+    {
+        var nodes = parent.Elements().Where(x => x.Name.LocalName.Equals(name, StringComparison.OrdinalIgnoreCase)).ToArray();
+        if (nodes.Length == 0) return false;
+        foreach (var node in nodes) node.Remove();
+        return true;
+    }
+
+    private static IReadOnlyList<string> DistinctValues(IEnumerable<string> values)
+    {
+        var result = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var value in values)
+        {
+            var normalized = value?.Trim();
+            if (!string.IsNullOrEmpty(normalized) && seen.Add(normalized)) result.Add(normalized);
+        }
+        return result;
     }
 }
 
