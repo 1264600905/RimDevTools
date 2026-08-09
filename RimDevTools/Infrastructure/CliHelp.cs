@@ -268,7 +268,8 @@ public static class CliHelp
           RimDevTools.exe test run --mode auto --scope turrets --scope threeviews --defname MyMod_ArmorCoat
 
         Output:
-          JSON runId, mode, target, mods/additions, isolation source, signal, and result.
+          JSON runId, mode, target, mods/additions, isolation source, signal, result, and
+          non-blocking dependency warnings for enabled Mods whose hard parents are disabled.
 
         Common errors:
           MODE_INVALID, MOD_NOT_RESOLVED, ENVIRONMENT_BUSY, GAME_EXIT_TIMEOUT,

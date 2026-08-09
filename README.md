@@ -75,5 +75,7 @@ quick、auto 和 XML 测试遵循 `mod_config.jsonc.isolated_desktop`；模板�
 
 auto/xml 可重复传入 `--scope` 组合多个测试分类；`all` 保持历史语义，只映射为 Standard，不包含 CombatPawns 与 SkillPocketMaps。auto 还可重复传入 `--defname` 精确筛选目标，任何未命中的名称都会使本轮失败。兼容参数 `--auto-test-scope`、`--auto-test-defname` 仍为单值，且不能与对应的新参数混用。
 
+`test run` 和 `doctor` 还会检查启用模组的必要上级依赖。缺失依赖只显示 warning，不阻挡测试；`doctor` 的检查项为 `mods.min_active_dependencies`。
+
 例如：`RimDevTools.exe test run --mode auto --scope threeviews --scope combatpawns --defname MyMod_ArmorCoat`。
 

@@ -540,7 +540,8 @@ internal sealed class TestSuite
         CreateMod(environment.Game, "CameraPlus", "brrainz.cameraplus");
         CreateMod(environment.Game, "HumanoidAlienRaces", "erdelf.humanoidalienraces");
         CreateMod(environment.Game, "LogSync", "trigger.logsyncmod");
-        CreateMod(environment.Game, "Helper", "demo.helper");
+        CreateMod(environment.Game, "Helper", "demo.helper", "demo.parent");
+        CreateMod(environment.Game, "Parent", "demo.parent");
         File.WriteAllText(environment.ConfigPath, Config(environment, minMods: "[\"brrainz.harmony\",\"sarg.smartspeed\",\"brrainz.cameraplus\",\"erdelf.humanoidalienraces\",\"trigger.logsyncmod\",\"demo.helper\"]"));
         var modsFile = Path.Combine(environment.Root, "mods.xml");
         File.WriteAllText(modsFile, "<ModsConfigData><ignored><li>not.allowed</li></ignored><activeMods><li>brrainz.harmony</li><li>sarg.smartspeed</li><li>brrainz.cameraplus</li><li>erdelf.humanoidalienraces</li><li>trigger.logsyncmod</li><li>demo.helper</li><li>DEMO.HELPER</li></activeMods></ModsConfigData>");
@@ -548,6 +549,14 @@ internal sealed class TestSuite
         var resolution = ModListParser.Resolve(context, modsFile, out var error);
         Assert(error is null && resolution!.Mods.SequenceEqual(["brrainz.harmony", "ludeon.rimworld", "sarg.smartspeed", "brrainz.cameraplus", "erdelf.humanoidalienraces", "demo.current", "trigger.logsyncmod", "demo.helper"], StringComparer.OrdinalIgnoreCase), "ModList reads direct activeMods entries, enforces required mods, and deduplicates");
         Assert(resolution!.Additions.SequenceEqual([new ModListAddition("ludeon.rimworld", 1, "rimworld_core"), new ModListAddition("demo.current", 5, "current_project")]), "ModList reports automatic additions and positions");
+        Assert(resolution.DependencyWarnings.Count == 1
+            && resolution.DependencyWarnings[0].ModPackageId == "demo.helper"
+            && resolution.DependencyWarnings[0].MissingDependencyPackageId == "demo.parent"
+            && resolution.DependencyWarnings[0].DependencyInstalled, "ModList warns without blocking when an enabled mod's installed hard dependency is disabled");
+
+        File.WriteAllText(modsFile, "<ModsConfigData><activeMods><li>brrainz.harmony</li><li>sarg.smartspeed</li><li>brrainz.cameraplus</li><li>erdelf.humanoidalienraces</li><li>trigger.logsyncmod</li><li>demo.helper</li><li>demo.parent</li></activeMods></ModsConfigData>");
+        var completeDependencies = ModListParser.Resolve(context, modsFile, out var completeError);
+        Assert(completeError is null && completeDependencies!.DependencyWarnings.Count == 0, "ModList dependency warning clears when the required parent mod is enabled");
 
         File.WriteAllText(modsFile, "<ModsConfigData><activeMods><li>brrainz.harmony</li><li>trigger.logsyncmod</li></activeMods></ModsConfigData>");
         var rejected = ModListParser.Resolve(context, modsFile, out var rejectedError);
@@ -1009,6 +1018,8 @@ internal sealed class TestSuite
 
         var activeEnvironment = CreateProjectEnvironment("doctor-active", createGameExecutable: true);
         using var activeScope = UseEnvironment(activeEnvironment);
+        File.WriteAllText(Path.Combine(activeEnvironment.Game, "Mods", "SmartSpeed", "About", "About.xml"), "<ModMetaData><name>SmartSpeed</name><packageId>sarg.smartspeed</packageId><modDependencies><li><packageId>doctor.parent</packageId><displayName>Doctor Parent</displayName></li></modDependencies></ModMetaData>");
+        CreateMod(activeEnvironment.Game, "DoctorParent", "doctor.parent");
         var dataRoot = NewDirectory("doctor-component-data");
         File.WriteAllText(
             Path.Combine(dataRoot, "tool-mods.manifest.json"),
@@ -1021,8 +1032,13 @@ internal sealed class TestSuite
             using var activeJson = JsonDocument.Parse(activeResult.Output);
             var checks = activeJson.RootElement.GetProperty("result").GetProperty("checks").EnumerateArray().ToArray();
             var activeCheck = checks.Single(check => check.GetProperty("id").GetString() == "mods.min_active_enabled");
+            var dependencyCheck = checks.Single(check => check.GetProperty("id").GetString() == "mods.min_active_dependencies");
             var componentCheck = checks.Single(check => check.GetProperty("id").GetString() == "tools.component.trigger.logsyncmod");
             Assert(activeCheck.GetProperty("status").GetString() == "available" && activeCheck.GetProperty("details").GetProperty("activeMods").GetArrayLength() > 0, "doctor validates the effective active mod list that test run will write");
+            Assert(dependencyCheck.GetProperty("status").GetString() == "warning"
+                && dependencyCheck.GetProperty("required").GetBoolean() == false
+                && dependencyCheck.GetProperty("details").GetProperty("warnings")[0].GetProperty("missingDependencyPackageId").GetString() == "doctor.parent"
+                && activeJson.RootElement.GetProperty("result").GetProperty("warningCount").GetInt32() > 0, "doctor reports disabled min_active_mods dependencies as non-blocking warnings");
             Assert(componentCheck.GetProperty("required").GetBoolean() && componentCheck.GetProperty("status").GetString() == "missing", "doctor treats the bundled LogSyncMod component as a required dependency");
         }
         finally { Environment.SetEnvironmentVariable("RIMDEVTOOLS_DATA_PATH", oldDataPath); }
@@ -1052,6 +1068,8 @@ internal sealed class TestSuite
     {
         var environment = CreateProjectEnvironment("game-workflows", createGameExecutable: true);
         using var scope = UseEnvironment(environment);
+        File.WriteAllText(Path.Combine(environment.Root, "About", "About.xml"), "<ModMetaData><name>Current</name><packageId>demo.current</packageId><modDependencies><li><packageId>demo.parent</packageId><displayName>Demo Parent</displayName></li></modDependencies></ModMetaData>");
+        CreateMod(environment.Game, "DemoParent", "demo.parent");
         var callerDesktop = GameProcessLauncher.CurrentDesktopName();
 
         Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", "quick");
@@ -1059,6 +1077,11 @@ internal sealed class TestSuite
         var isolatedDesktop = File.ReadAllText(Path.Combine(environment.ConfigDirectory, "fake-desktop.txt"));
         var quickSettings = XDocument.Parse(File.ReadAllText(Path.Combine(environment.ConfigDirectory, "fake-settings.xml")));
         Assert(quick.ExitCode == 0 && quick.Output.Contains("\"isolatedDesktop\": false") && !File.ReadAllText(Path.Combine(environment.ConfigDirectory, "fake-args.txt")).Contains("quicktest"), "quick mode waits for ready signal on the normal desktop by default");
+        using (var quickJson = JsonDocument.Parse(quick.Output))
+        {
+            Assert(quickJson.RootElement.GetProperty("warnings").GetArrayLength() == 1
+                && quickJson.RootElement.GetProperty("warnings")[0].GetString()!.Contains("demo.parent", StringComparison.OrdinalIgnoreCase), "test run emits a dependency warning and continues execution");
+        }
         Assert(string.Equals(isolatedDesktop, callerDesktop, StringComparison.Ordinal), "default quick process runs on the current desktop");
         Assert(quickSettings.Descendants("testMuteAudio").Single().Value == "True", "quick mode enables transactional audio muting");
         AssertConfigurationRestored(environment, "quick mode restores exact configuration");

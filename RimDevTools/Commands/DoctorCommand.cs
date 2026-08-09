@@ -11,7 +11,7 @@ public static class DoctorCommand
 {
     private static readonly HashSet<string> ProblemStatuses = new(StringComparer.OrdinalIgnoreCase)
     {
-        "missing", "invalid", "stale", "busy", "unsupported"
+        "missing", "invalid", "stale", "busy", "unsupported", "warning"
     };
     private static readonly HashSet<string> AlwaysVisibleChecks = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -233,6 +233,16 @@ public static class DoctorCommand
             null,
             "测试会用此列表替换 ModsConfig.xml 的 activeMods",
             new { activeMods = resolution.Mods, additions = resolution.Additions }));
+        var dependencyWarnings = resolution.DependencyWarnings;
+        checks.Add(new DoctorCheck(
+            "mods.min_active_dependencies",
+            dependencyWarnings.Count == 0 ? "available" : "warning",
+            false,
+            null,
+            dependencyWarnings.Count == 0
+                ? "min_active_mods 中启用模组的必要上级依赖均已启用"
+                : string.Join(" ", dependencyWarnings.Select(ModDependencyInspector.FormatWarning)),
+            new { warnings = dependencyWarnings }));
     }
 
     private static object? SuggestedPathDetails(string? path)

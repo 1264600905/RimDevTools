@@ -149,6 +149,9 @@ public static class TestCommand
         var modList = ModListParser.Resolve(context, modsFile, targetPackageId, out var modError);
         if (modList is null)
             return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, modError!.Code, modError.Message, context.Root, modError.Details);
+        var dependencyWarnings = modList.DependencyWarnings
+            .Select(ModDependencyInspector.FormatWarning)
+            .ToArray();
         var runId = Guid.NewGuid().ToString("N");
         using var gate = EnvironmentLock.TryAcquire(configDirectory, command, context.Root, runId, out var busyInfo);
         if (gate is null)
@@ -167,7 +170,7 @@ public static class TestCommand
             if (CliArgs.Has(args, "--sync-source")) deployArgs.Add("--sync-source");
             var deploy = await DeployCommand.ExecuteAsync(deployArgs.ToArray(), cancellationToken, environmentPrepared: true);
             if (!deploy.Ok)
-                return CliResult.WriteFailure(command, deploy.ExitCode, "DEPLOY_FAILED", "测试前部署失败", context.Root, deploy.Error);
+                return CliResult.WriteFailure(command, deploy.ExitCode, "DEPLOY_FAILED", "测试前部署失败", context.Root, new { deploy.Error, dependencyWarnings }, dependencyWarnings);
         }
 
         ConfigTransaction? transaction = null;
@@ -222,7 +225,7 @@ public static class TestCommand
         }
 
         if (!gameExited)
-            return CliResult.WriteFailure(command, outcome.ExitCode, outcome.Code, outcome.Message, context.Root, new { runId, mode, isolatedDesktop = isolation.Enabled, isolatedDesktopSource = isolation.Source, transactionRetained = transaction is not null });
+            return CliResult.WriteFailure(command, outcome.ExitCode, outcome.Code, outcome.Message, context.Root, new { runId, mode, dependencyWarnings, isolatedDesktop = isolation.Enabled, isolatedDesktopSource = isolation.Source, transactionRetained = transaction is not null }, dependencyWarnings);
 
         if (transaction is not null)
         {
@@ -237,7 +240,7 @@ public static class TestCommand
         }
 
         if (!outcome.Ok)
-            return CliResult.WriteFailure(command, outcome.ExitCode, outcome.Code, outcome.Message, context.Root, new { runId, mode, scopes = selection.Scopes, defNames = selection.DefNames, isolatedDesktop = isolation.Enabled, isolatedDesktopSource = isolation.Source, mods = modList.Mods, additions = modList.Additions, outcome.Details });
+            return CliResult.WriteFailure(command, outcome.ExitCode, outcome.Code, outcome.Message, context.Root, new { runId, mode, scopes = selection.Scopes, defNames = selection.DefNames, dependencyWarnings, isolatedDesktop = isolation.Enabled, isolatedDesktopSource = isolation.Source, mods = modList.Mods, additions = modList.Additions, outcome.Details }, dependencyWarnings);
 
         return CliResult.WriteSuccess(command, context.Root, new
         {
@@ -254,7 +257,7 @@ public static class TestCommand
             signal = outcome.Message,
             result = outcome.Details,
             recoveredTransaction = recovery.Found
-        });
+        }, dependencyWarnings);
     }
 
     private static async Task<TestOutcome> WaitForModeAsync(
@@ -385,7 +388,7 @@ public static class AutoTestSelectionParser
 }
 
 public sealed record ModListAddition(string PackageId, int Index, string Reason);
-public sealed record ModListResolution(IReadOnlyList<string> Mods, IReadOnlyList<ModListAddition> Additions);
+public sealed record ModListResolution(IReadOnlyList<string> Mods, IReadOnlyList<ModListAddition> Additions, IReadOnlyList<ModDependencyWarning> DependencyWarnings);
 
 public static class ModListParser
 {
@@ -487,7 +490,8 @@ public static class ModListParser
             error = new CliError("MOD_NOT_RESOLVED", "以下模组无法在游戏 Mods 或 Workshop 中解析", new { missing });
             return null;
         }
-        return new ModListResolution(mods, additions);
+        var dependencyWarnings = ModDependencyInspector.Inspect(context, mods);
+        return new ModListResolution(mods, additions, dependencyWarnings);
     }
 
     public static List<string>? Load(ProjectContext context, string? path, out CliError? error)

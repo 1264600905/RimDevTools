@@ -30,9 +30,9 @@ public sealed class CliResult
         return ExitCodes.Success;
     }
 
-    public static int WriteFailure(string command, int exitCode, string code, string message, string? projectRoot = null, object? details = null)
+    public static int WriteFailure(string command, int exitCode, string code, string message, string? projectRoot = null, object? details = null, IEnumerable<string>? warnings = null)
     {
-        Write(new CliResult { Ok = false, Command = command, ProjectRoot = projectRoot, Error = new CliError(code, message, details) });
+        Write(new CliResult { Ok = false, Command = command, ProjectRoot = projectRoot, Error = new CliError(code, message, details), Warnings = warnings?.ToArray() ?? [] });
         return exitCode;
     }
 

@@ -73,7 +73,7 @@ RimDevTools.exe mods install-tools [--mods-path <path>] [--dry-run]
 
 ### 测试
 
-quick 是启动烟雾测试；manual 用于交互；auto/XML 验证结构化 AutoTest 结果。auto/xml 支持可重复的 `--scope`，范围按首次出现顺序去重；`standard` 与历史别名 `all` 都只表示 Standard 套件，不会隐式启用 CombatPawns 或 SkillPocketMaps。`--defname` 仅适用于 auto，可重复指定精确目标；任何未命中目标都会使结果不完整并失败。旧脚本的单值 `--auto-test-scope` 与 `--auto-test-defname` 继续兼容，但不能与新参数混用。XML 模式的具体用例仍由 Spec 决定。测试通过共享环境锁与配置事务恢复 `mods_config_path` 所在目录中的 RimWorld 配置。无论使用 `min_active_mods` 还是外部 `--mods-file`，都必须启用 `min_active_mods` 中的全部模组。`--deploy` 用于测试当前源码改动。事务冲突后，可在 RimWorld 完全退出后运行 `test cleanup`；`--dry-run` 只检查不修改，清理 ModsConfig.xml 时只恢复原始 `<activeMods>`。
+quick 是启动烟雾测试；manual 用于交互；auto/XML 验证结构化 AutoTest 结果。auto/xml 支持可重复的 `--scope`，范围按首次出现顺序去重；`standard` 与历史别名 `all` 都只表示 Standard 套件，不会隐式启用 CombatPawns 或 SkillPocketMaps。`--defname` 仅适用于 auto，可重复指定精确目标；任何未命中目标都会使结果不完整并失败。旧脚本的单值 `--auto-test-scope` 与 `--auto-test-defname` 继续兼容，但不能与新参数混用。XML 模式的具体用例仍由 Spec 决定。测试会检查本轮 activeMods 中每个可解析模组的必要硬依赖；依赖已安装但未启用、或完全找不到时，会在成功/失败 JSON 的 `warnings` 或 `details.dependencyWarnings` 中提示，但不会阻挡执行。`doctor` 通过 `mods.min_active_dependencies` 以非必需 warning 检查 `min_active_mods`。测试通过共享环境锁与配置事务恢复 `mods_config_path` 所在目录中的 RimWorld 配置。无论使用 `min_active_mods` 还是外部 `--mods-file`，都必须启用 `min_active_mods` 中的全部模组。`--deploy` 用于测试当前源码改动。事务冲突后，可在 RimWorld 完全退出后运行 `test cleanup`；`--dry-run` 只检查不修改，清理 ModsConfig.xml 时只恢复原始 `<activeMods>`。
 
 支持的 scope 值为：`standard`、`all`、`content`、`recipes`、`hediffs`、`turrets`、`rangedweapons`、`meleeweapons`、`threeviews`、`combatpawns`、`skillpocketmaps`。
 
