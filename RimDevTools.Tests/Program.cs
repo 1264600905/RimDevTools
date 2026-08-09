@@ -130,6 +130,7 @@ internal sealed class TestSuite
         {
             TestJsoncAndDiscovery();
             TestEnvironmentDiscovery();
+            await TestTemplatePreflightAsync();
             await TestHelpAsync();
             await TestToolModDeploymentAsync();
             TestModListParser();
@@ -232,6 +233,38 @@ internal sealed class TestSuite
             && !localized.Output.Contains("\\u90E8", StringComparison.OrdinalIgnoreCase), "structured JSON output preserves readable Unicode text");
     }
 
+    private async Task TestTemplatePreflightAsync()
+    {
+        var environment = CreateProjectEnvironment("template-preflight", createGameExecutable: false);
+        File.WriteAllText(environment.ConfigPath, Config(environment, modName: ProjectTemplatePreflight.TemplateModName));
+        File.WriteAllText(Path.Combine(environment.Root, "About", "About.xml"), $"<ModMetaData><name>{ProjectTemplatePreflight.TemplateDisplayName}</name><packageId>{ProjectTemplatePreflight.TemplatePackageId}</packageId></ModMetaData>");
+        var projectPath = Path.Combine(environment.Root, "source", "TestProject", "TestProject.csproj");
+        File.WriteAllText(projectPath, File.ReadAllText(projectPath).Replace("<AssemblyName>TestProject</AssemblyName>", "<AssemblyName>MyCustomMod</AssemblyName>", StringComparison.Ordinal));
+        var outputDirectory = Path.Combine(environment.Root, "1.6", "Assemblies");
+        Directory.CreateDirectory(outputDirectory);
+        File.WriteAllText(Path.Combine(outputDirectory, "MyCustomMod.dll"), "template");
+        using var scope = UseEnvironment(environment);
+
+        var context = ProjectDiscovery.Find(environment.Root, out var discoveryError);
+        var issues = context is null ? Array.Empty<ProjectTemplateIssue>() : ProjectTemplatePreflight.Inspect(context);
+        Assert(discoveryError is null && issues.Any(issue => issue.field == "mod_config.mod_name") && issues.Any(issue => issue.field == "About/About.xml:name") && issues.Any(issue => issue.field == "About/About.xml:packageId") && issues.Any(issue => issue.field.EndsWith(":AssemblyName", StringComparison.Ordinal)) && issues.Any(issue => issue.field.EndsWith("MyCustomMod.dll", StringComparison.Ordinal)), "template inspection detects branded defaults and the template DLL name");
+
+        var doctor = await CaptureAsync(() => DoctorCommand.RunAsync(["doctor"]));
+        using (var doctorDocument = JsonDocument.Parse(doctor.Output))
+        {
+            var result = doctorDocument.RootElement.GetProperty("result");
+            var templateCheck = result.GetProperty("checks").EnumerateArray().Single(check => check.GetProperty("id").GetString() == "project.template_configuration");
+            Assert(!result.GetProperty("ready").GetBoolean() && templateCheck.GetProperty("status").GetString() == "invalid", "doctor marks a branded template as not deployable");
+        }
+
+        var deploy = await DeployCommand.ExecuteAsync(["deploy", "--dry-run"]);
+        Assert(!deploy.Ok && deploy.Error?.Code == "PROJECT_TEMPLATE_NOT_CONFIGURED", "deploy rejects the template DLL before planning a deployment");
+        var testRun = await CaptureAsync(() => TestCommand.RunAsync(["test", "run", "--mode", "quick"]));
+        Assert(testRun.ExitCode == ExitCodes.InvalidArguments && JsonErrorCode(testRun.Output) == "PROJECT_TEMPLATE_NOT_CONFIGURED", "test run rejects the template DLL before starting RimWorld");
+        var testSettings = await CaptureAsync(() => TestCommand.SettingsAsync(["test", "settings"]));
+        Assert(testSettings.ExitCode == ExitCodes.InvalidArguments && JsonErrorCode(testSettings.Output) == "PROJECT_TEMPLATE_NOT_CONFIGURED", "test settings rejects a branded template");
+    }
+
     private void TestEnvironmentDiscovery()
     {
         var valve = ValveKeyValues.Parse("\"root\" { \"path\" \"D:\\\\SteamLibrary\" \"nested\" { \"value\" \"ok\" } }").Single();
@@ -311,9 +344,9 @@ internal sealed class TestSuite
         Assert(DoctorCommand.EvaluateProjectCheck(currentProject, "net48.csproj").Status == "available" && DoctorCommand.EvaluateProjectCheck(currentProject, "net472.csproj").Status == "available", "doctor accepts projects targeting .NET Framework 4.8 or 4.7.2");
         Assert(DoctorCommand.EvaluateProjectCheck(currentProject, "net462.csproj").Status == "unsupported", "doctor still rejects unsupported .NET Framework project targets");
 
-        var fallbackMessage = @"已找到 .NET Framework 4.7.2 Developer/Targeting Pack，可满足编译条件；仍建议安装 .NET Framework 4.8。AI 可能需要将 source\MyCustomMod\MyCustomMod.csproj 的 TargetFrameworkVersion 修改为 v4.7.2。";
+        var fallbackMessage = @"已找到 .NET Framework 4.7.2 Developer/Targeting Pack，可满足编译条件；仍建议安装 .NET Framework 4.8。AI 可能需要将当前 C# 工程的 TargetFrameworkVersion 修改为 v4.7.2。";
         var fallbackSummary = DoctorCommand.Summarize([new DoctorCheck("build.netfx_targeting_pack", "available", true, targetingPack472, fallbackMessage)], verbose: false);
-        Assert(fallbackSummary.Ready && fallbackSummary.IssueCount == 0 && fallbackSummary.Checks.Single().Message?.Contains(@"source\MyCustomMod\MyCustomMod.csproj", StringComparison.Ordinal) == true, "doctor keeps the .NET Framework 4.7.2 fallback ready while showing the AI repair hint by default");
+        Assert(fallbackSummary.Ready && fallbackSummary.IssueCount == 0 && fallbackSummary.Checks.Single().Message == fallbackMessage, "doctor keeps the .NET Framework 4.7.2 fallback ready while showing the AI repair hint by default");
 
         var defaultSummary = DoctorCommand.Summarize(
         [

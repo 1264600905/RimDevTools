@@ -3,6 +3,7 @@
   "supportedVersions": ["1.6"],
   "requiredFiles": [
     ".gitignore",
+    "LICENSE",
     "mod_config.jsonc",
     "LoadFolders.xml",
     "README.md",
@@ -55,6 +56,10 @@
     ".tools/Data/LogSyncMod/source",
     ".tools/Data/LogSyncMod/.tools",
     ".tools/Data/LogSyncMod/参考文档",
-    ".tools/Data/LogSyncMod/策划案"
+    ".tools/Data/LogSyncMod/策划案",
+    "UnityProjects",
+    "source/MyCustomMod/Shader",
+    "AssetBundles",
+    "1.6/Assemblies/MyCustomMod.dll"
   ]
 }

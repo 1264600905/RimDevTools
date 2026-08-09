@@ -37,10 +37,18 @@ public static class DoctorCommand
             new("project.discovery", "available", true, context.ConfigPath),
             new("project.config_version", config.ConfigVersion == 2 ? "available" : "invalid", true, context.ConfigPath, config.ConfigVersion == 2 ? null : $"需要 config_version=2，当前为 {config.ConfigVersion}")
         };
+        var templateIssues = ProjectTemplatePreflight.Inspect(context);
+        checks.Add(new DoctorCheck(
+            "project.template_configuration",
+            templateIssues.Count == 0 ? "available" : "invalid",
+            true,
+            context.Root,
+            templateIssues.Count == 0 ? null : "检测到模板默认值；在替换名称、packageId、日志关键词和程序集名称前，项目不能部署或测试。",
+            templateIssues.Count == 0 ? null : new { issues = templateIssues }));
 
         var build = DotNetBuildEnvironmentInspector.InspectCurrent();
         var targetingPackMessage = build.TargetFrameworkVersion == "v4.7.2"
-            ? @"已找到 .NET Framework 4.7.2 Developer/Targeting Pack，可满足编译条件；仍建议安装 .NET Framework 4.8。AI 可能需要将 source\MyCustomMod\MyCustomMod.csproj 的 TargetFrameworkVersion 修改为 v4.7.2。"
+            ? @"已找到 .NET Framework 4.7.2 Developer/Targeting Pack，可满足编译条件；仍建议安装 .NET Framework 4.8。AI 可能需要将当前 C# 工程的 TargetFrameworkVersion 修改为 v4.7.2。"
             : build.HasSupportedNetFrameworkTargetingPack ? null : "未找到 .NET Framework 4.8 或 4.7.2 Developer/Targeting Pack";
         checks.Add(new DoctorCheck(
             "build.netfx_targeting_pack",

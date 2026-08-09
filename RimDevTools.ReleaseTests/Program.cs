@@ -15,6 +15,7 @@ var templateConfig = Path.GetFullPath(Path.Combine(Environment.CurrentDirectory,
 var passed = 0;
 
 RequireFile("mod_config.jsonc");
+RequireFile("LICENSE");
 RequireFile(Path.Combine(".codex", "config.toml"));
 RequireFile(".mcp.json");
 RequireFile("opencode.jsonc");
@@ -38,6 +39,11 @@ Assert(!Directory.Exists(Path.Combine(tools, "components", "ProjectTemplate")), 
 Assert(!File.Exists(Path.Combine(release, "components", "ProjectTemplate", "manifest.json")), "release does not copy the build manifest into the project");
 Assert(!Directory.EnumerateFileSystemEntries(Path.Combine(tools, "log", "AutoTestOutput")).Any(), "release does not copy automatic test history");
 Assert(!Directory.EnumerateFileSystemEntries(Path.Combine(release, "参考文档")).Any(), "release does not copy local reference material");
+Assert(File.ReadAllText(Path.Combine(release, "LICENSE")).Contains("Copyright (c) 2026 白金trigger", StringComparison.Ordinal), "release contains the MIT license for 白金trigger");
+Assert(!Directory.Exists(Path.Combine(release, "UnityProjects")), "release does not contain a Unity shader project");
+Assert(!Directory.Exists(Path.Combine(release, "source", "MyCustomMod", "Shader")), "release does not contain shader example source");
+Assert(!Directory.Exists(Path.Combine(release, "AssetBundles")), "release does not contain shader asset bundles");
+Assert(!File.Exists(Path.Combine(release, "1.6", "Assemblies", "MyCustomMod.dll")), "release does not contain a stale template DLL");
 Assert(File.ReadAllBytes(Path.Combine(release, "mod_config.jsonc")).SequenceEqual(File.ReadAllBytes(templateConfig)), "release uses the single shared template mod_config.jsonc");
 Assert(!File.Exists(Path.Combine(template, "mod_config.jsonc")), "1.6 template does not contain a duplicate mod_config.jsonc");
 
@@ -84,12 +90,20 @@ var logSyncAssembly = AssemblyName.GetAssemblyName(Path.Combine(data, "LogSyncMo
 var autoTestAssembly = AssemblyName.GetAssemblyName(Path.Combine(data, "LogSyncMod", "1.6", "Assemblies", "LogSyncMod.AutoTest.dll")).Version;
 Assert(logSyncAssembly is not null && autoTestAssembly is not null && logSyncAssembly.Major == autoTestAssembly.Major && logSyncAssembly.Minor == autoTestAssembly.Minor && logSyncAssembly.Build == autoTestAssembly.Build, "packaged LogSync assemblies share a product version");
 
+var templateAbout = XDocument.Load(Path.Combine(release, "About", "About.xml"));
+Assert(templateAbout.Root?.Element("name")?.Value == ProjectTemplatePreflight.TemplateDisplayName && templateAbout.Root?.Element("packageId")?.Value == ProjectTemplatePreflight.TemplatePackageId, "release uses the branded template name and packageId");
+var templateProject = XDocument.Load(Path.Combine(release, "source", "MyCustomMod", "MyCustomMod.csproj"));
+var releaseOutputPath = templateProject.Descendants().FirstOrDefault(element => element.Name.LocalName == "PropertyGroup" && element.Attribute("Condition")?.Value.Contains("Release", StringComparison.OrdinalIgnoreCase) == true)?.Elements().FirstOrDefault(element => element.Name.LocalName == "OutputPath")?.Value.Trim();
+Assert(releaseOutputPath == @"..\..\1.6\Assemblies\", "template Release builds write the DLL to the deployed Assemblies directory");
+
 using (var config = JsonDocument.Parse(File.ReadAllText(Path.Combine(release, "mod_config.jsonc")), new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true }))
 {
     var root = config.RootElement;
+    Assert(root.GetProperty("mod_name").GetString() == ProjectTemplatePreflight.TemplateModName, "packaged configuration uses the template deployment name");
     Assert(root.GetProperty("ilspycmd_path").GetString() == "Ilspy\\ilspycmd.exe", "packaged configuration points at the packaged ILSpy directory");
     Assert(!root.GetProperty("isolated_desktop").GetBoolean(), "packaged configuration uses the normal desktop by default");
     Assert(!root.GetProperty("sync_source").GetBoolean(), "packaged configuration disables source synchronization by default");
+    Assert(!root.TryGetProperty("shader_bundle", out _) && !root.GetProperty("sync_items").EnumerateArray().Any(item => item.GetString() == "AssetBundles"), "packaged configuration does not include shader build settings or asset bundle synchronization");
 }
 
 var versionOutput = Run(Path.Combine(tools, "RimDevTools.exe"), release, "--version");

@@ -22,8 +22,6 @@ namespace MyCustomMod
             float y = 60f;
             const float rowHeight = 32f;
             Widgets.CheckboxLabeled(new Rect(0, y, inRect.width, rowHeight), "ShowDebugLog".Translate(), ref settings.enableLog);
-            y += rowHeight + 8f;
-            Widgets.CheckboxLabeled(new Rect(0, y, inRect.width, rowHeight), "EnableShaderDemo".Translate(), ref settings.enableShaderDemo);
             settings.Write();
         }
     }

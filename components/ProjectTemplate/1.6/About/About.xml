@@ -1,28 +1,29 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ModMetaData>
-    <name>MyCustomMod</name>
-    <author>trigger</author>
+    <name>Trigger's Project Template(白金的开发模板)</name>
+    <author>白金trigger</author>
     <url></url>
     <supportedVersions>
         <li>1.6</li>
     </supportedVersions>
-    <packageId>trigger.mycustommod</packageId>
+    <packageId>trigger.projectTemplate</packageId>
     <loadBefore />
     <loadAfter />
     <description>
-	[h1]模组模板[/h1]
+    [h1]Trigger's Project Template[/h1]
 
-[b]这是一个 RimWorld 模组模板。[/b]
-请在正式开发前直接替换名称、包名和说明文本。
+[b]白金trigger的 RimWorld 1.6 开发模板。[/b]
+创建项目后，请先替换模板名称、packageId、程序集名称和日志关键词。
 
-[h2]功能特性[/h2]
-- 包含基础的 Mod 设置菜单
-- 包含统一日志工具
-- 包含自动部署与测试脚本
+[h2]模板能力[/h2]
+- 基础 Mod 设置与可控日志工具
+- RimDevTools 环境检查、部署与游戏测试
+- Def、Patch、语言文件和参考资料目录
+- Codex、Claude 与 opencode 的开发辅助配置
 
-[h2]如何使用[/h2]
-1. 直接修改模板中的名称、packageId 和工程占位符
-2. 按 About 规范补全模组元数据
-3. 再开始编写 C# 与 XML 内容
+[h2]开始开发[/h2]
+1. 修改 About、mod_config.jsonc 与 source 中的 MyCustomMod 占位符
+2. 使用 doctor 检查本机环境和项目配置
+3. 完成 C# 与 XML 后通过 deploy 和 test run 验证
     </description>
 </ModMetaData>

@@ -5,7 +5,7 @@
     // 项目信息 — 每个模组项目必须修改的核心字段
     // ============================================================
     // 模组名称（英文，不含空格）。部署目标、日志关键词和程序集名称会使用它。
-    "mod_name": "MyCustomMod",
+    "mod_name": "TriggersProjectTemplate",
     // 目标 RimWorld 版本号；用于定位版本化 Assemblies 和 Defs 目录。
     "game_version": "1.6",
     // quick/auto/xml 默认使用当前桌面；需要隔离桌面时显式传入命令行参数。
@@ -35,7 +35,6 @@
     // 需要同步到游戏 Mods 目录的文件和文件夹（相对于项目根目录）。
     "sync_items": [
         "1.6\\Assemblies",
-        "AssetBundles",
         "1.6\\Defs",
         "1.6\\Patches",
         "Languages",
@@ -88,19 +87,5 @@
         "max_log_files": 3,
         // 自动测试输出最多保留几次运行。
         "max_auto_test_runs": 3
-    },
-
-    // ============================================================
-    // Shader Bundle 配置 — .tools/shader/build_shader_bundle.ps1 专用
-    // ============================================================
-    "shader_bundle": {
-        // 启用后 deploy 会在同步前执行 Shader Bundle 构建。
-        "enabled": false,
-        // Unity 项目路径和 Unity.exe 路径。
-        "unity_project_path": "UnityProjects\\ShaderBundleBuilder",
-        "unity_exe_path": "D:\\UnityEditor\\2023.2.20f1c1\\Editor\\Unity.exe",
-        // Unity 静态构建方法与生成的 Bundle 名称。
-        "build_method": "MyCustomMod.ShaderBundleBuilder.Build",
-        "bundle_name": "mycustommod_shaders"
     }
 }

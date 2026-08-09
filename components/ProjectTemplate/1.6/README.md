@@ -1,10 +1,12 @@
-# MyCustomMod
+# Trigger's Project Template
 
-RimWorld 1.6 模组开发模板。首次使用时修改：
+白金trigger的 RimWorld 1.6 模组开发模板。首次使用时必须修改：
 
 - `About/About.xml` 中的名称、作者和 packageId。
-- `mod_config.jsonc` 中的模组名、本机 RimWorld 路径和 Workshop 路径。
+- `mod_config.jsonc` 中的模组名、日志关键词、本机 RimWorld 路径和 Workshop 路径。
 - `source/MyCustomMod` 中的程序集名称、命名空间和工程文件名。
+
+`doctor`、`deploy` 和 `test` 会拒绝仍使用模板默认名称、packageId 或 `MyCustomMod.dll` 的项目。
 
 ## 环境要求
 
@@ -56,6 +58,6 @@ RimSage 不读取当前项目或第三方模组。当前项目直接读取工作
 
 `mods install-tools` 只安装随包 LogSyncMod。`ref pull` 保持选项显式，不会自动使用 `--deps`、`--all` 或 `--force`。
 
-模板 C# 工程默认目标为 .NET Framework 4.8，并递归包含 `source/MyCustomMod` 下除 `bin/obj` 外的 C# 文件。游戏、Unity 和 Harmony 引用由 RimDevTools 从真实安装解析。
+模板 C# 工程默认目标为 .NET Framework 4.8，并递归包含 `source/MyCustomMod` 下除 `bin/obj` 外的 C# 文件。游戏和 Harmony 引用由 RimDevTools 从真实安装解析。
 
 quick、auto 和 XML 使用 `mod_config.jsonc.isolated_desktop`；模板默认值为 `false`。manual 默认使用当前桌面。运行中的临时 ModList 和 LogSync 设置由事务恢复，不要手工并发修改。

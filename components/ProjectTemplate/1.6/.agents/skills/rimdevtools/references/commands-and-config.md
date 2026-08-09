@@ -82,7 +82,6 @@ quick 是启动冒烟测试。manual 是用户手动的。auto 和 XML 验证结
 - `timeouts.post_exit_delay`：退出后的稳定延迟。
 - `retention.max_log_files`：精选日志的存档限制。
 - `retention.max_auto_test_runs`：自动测试运行的保留数。
-- `shader_bundle.*`：可选的 Unity 批处理着色器构建设置。
 
 ## 推荐序列
 
