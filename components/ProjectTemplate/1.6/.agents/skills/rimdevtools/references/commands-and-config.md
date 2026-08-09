@@ -47,12 +47,34 @@ test settings
 test run [--deploy] [--sync-source] [--mode quick|manual|auto|xml]
          [--mods-file <path>] [--timeout-seconds <n>]
          [--target-package-id <id>] [--capture-screenshots]
+         [--scope <value>]... [--defname <value>]...
+         [--auto-test-scope <value>] [--auto-test-defname <value>]
          [--isolated-desktop|--no-isolated-desktop]
 ```
 
 `test settings` 持久化写入 LogSync 输出和关键字设置,但是一般不建议使用。`test run` 拥有一个事务，并在成功、失败、超时或取消后仍可恢复时恢复全局配置。
 
 quick 是启动冒烟测试。manual 是用户手动的。auto 和 XML 验证结构化的 AutoTest 结果。`--capture-screenshots` 仅适用于 auto/XML。隔离优先级为显式标志、项目设置，然后是模式默认值。
+
+`--scope` 可在 auto/XML 中重复，多个 scope 取并集。支持值：`standard`、`all`、`content`、`recipes`、`hediffs`、`turrets`、`rangedweapons`、`meleeweapons`、`threeviews`、`combatpawns`、`skillpocketmaps`。`all` 保持历史语义，只等于 `Standard`；Standard 不隐式启用 CombatPawns 或 SkillPocketMaps。
+
+`--defname` 仅适用于 auto，可重复且按不区分大小写去重。scope 选择测试类型，DefName 选择目标，两者取交集；不传 DefName 时枚举所选范围。任何请求的 DefName 未产生用例时，本轮失败并在 JSON/Markdown 中列出未命中名称。旧参数 `--auto-test-scope`、`--auto-test-defname` 仅允许单值，不能与对应的新参数混用。非 Standard 且不指定 DefName 时受设置项 `autoTestBatchSize` 限制。
+
+例 1，只测试三视图：
+
+```powershell
+.\.tools\RimDevTools.exe test run --mode auto --target-package-id aoba.deadmanswitch.core --scope threeviews
+```
+
+例 2，同时精确测试近战和远程武器：
+
+```powershell
+.\.tools\RimDevTools.exe test run --mode auto --target-package-id aoba.deadmanswitch.core `
+  --scope meleeweapons --scope rangedweapons `
+  --defname DMS_StunBaton --defname DMS_TacticalPistol
+```
+
+启用模组缺少必要上级依赖时，命令会在 `warnings` 中指出父模组和缺失依赖，但不会阻挡执行。`doctor` 使用 `mods.min_active_dependencies` 对 `min_active_mods` 做相同检查。
 
 ### `mods install-tools [--mods-path <path>] [--dry-run]`
 

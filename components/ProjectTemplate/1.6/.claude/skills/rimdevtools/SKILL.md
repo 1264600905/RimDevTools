@@ -50,7 +50,47 @@ description: 操作项目本地的 RimDevTools CLI，处理 RimWorld 1.6 模组�
 
 - `quick`：自动启动并等待运行就绪信号；冒烟测试默认模式。此测试速度最快，只会检查游戏启动报错。
 - `manual`：提供人工手动测试的游戏窗口；默认使用当前桌面。
-- `auto`：执行 自动化测试，会自动包含可能的测试物品，不需要手动设置，耗时最长，建议作为最终收尾测试。
-- `xml`：执行 XML 驱动的 AutoTest 用例, 此功能暂时不推荐使用。
+- `auto`：自动发现测试目标，可使用多个 scope 和精确 DefName 白名单。
+- `xml`：由目标模组中的 XML Spec 决定具体测试目标。
 
-测试必须覆盖当前源代码变更时使用 `--deploy`。`--sync-so
+auto 测试参数遵循以下规则：
+
+- `--scope <value>` 可重复，多个 scope 取并集。支持 `standard/all/content/recipes/hediffs/turrets/rangedweapons/meleeweapons/threeviews/combatpawns/skillpocketmaps`。
+- `--defname <value>` 可重复，仅适用于 auto。DefName 是精确白名单，与 scope 取交集；不传 DefName 时枚举所选 scope 下的目标。
+- 未传 scope 时默认为 `Standard`。`all` 只是兼容别名，同样映射为 `Standard`；Standard 不包含 `CombatPawns` 和 `SkillPocketMaps`。
+- `--auto-test-scope`、`--auto-test-defname` 是旧版单值参数，不能与对应的新参数混用。
+- 非 Standard 且未指定 DefName 的定向范围仍受 `autoTestBatchSize` 限制；Standard 或精确 DefName 测试不受该限制。
+- 启用模组缺少必要上级依赖时只输出 warning，不阻挡测试；应根据 warning 补齐 `min_active_mods` 或 `--mods-file`。
+
+例 1，只测试目标模组的三视图：
+
+```powershell
+.\.tools\RimDevTools.exe test run --mode auto --target-package-id aoba.deadmanswitch.core --scope threeviews
+```
+
+例 2，同时测试指定的近战和远程武器：
+
+```powershell
+.\.tools\RimDevTools.exe test run --mode auto --target-package-id aoba.deadmanswitch.core `
+  --scope meleeweapons --scope rangedweapons `
+  --defname DMS_StunBaton --defname DMS_TacticalPistol
+```
+
+测试必须覆盖当前源代码变更时使用 `--deploy`。`--sync-source` 需要 `--deploy`。quick、auto 和 XML 使用配置的桌面隔离默认值；manual 除非明确覆盖，否则使用当前桌面。
+
+运行期间绝不编辑活动 RimWorld 的 `ModsConfig.xml`、LogSync 设置、事务清单或请求/结果文件。RimDevTools 负责事务性还原。失败时报告稳定错误代码并保留恢复产物。
+
+## 参考资料与工具安装
+
+使用 `ref pull` 将本地/创意工坊模组复制到 `参考文档`，并通过打包的 ILSpy 反编译其程序集。用精确 package ID、名称、目录或绝对路径消除歧义。以 `--deps` 获取完整硬依赖闭包；仅在审查替换目标后使用 `--force`。
+
+使用 `mods install-tools` 安装单个打包的 LogSyncMod 组件。安装器会验证清单、package ID、版本和内容哈希，保留 `PublishedFileId.txt`，阻止降级，并通过暂存/备份回滚。
+
+## 防护规则
+
+- 不要仅从进程退出推断成功；应解析最后的 JSON 和产物。
+- 不要重试 `ENVIRONMENT_BUSY`；识别或等待占用操作。
+- 不要删除 `.rimdev` 事务来掩盖恢复错误。
+- 开始实际开发后，不要以通用模板程序集/模组名称部署。
+- 测试进行期间，不要并发执行测试指令，因为环世界是单线程游戏，日志只有一个文件，并发执行后果不可控。
+- 结论应关联命令输出、配置值或生成报告。
