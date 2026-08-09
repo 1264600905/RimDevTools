@@ -34,6 +34,8 @@
 
 RimSage 不读取当前项目或第三方模组。当前项目直接读取工作树；第三方模组先检查 `参考文档`，缺少时使用 `ref search/ref pull`。
 
+必须使用RimSage不要瞎猜源码！必须使用RimSage不要瞎猜源码！必须使用RimSage不要瞎猜源码！如果rimsage不能用要及时告诉用户。
+
 ## Skills
 
 项目级 Codex skill 位于 `.agents/skills`，Claude skill 位于 `.claude/skills`：
@@ -61,3 +63,6 @@ RimSage 不读取当前项目或第三方模组。当前项目直接读取工作
 模板 C# 工程默认目标为 .NET Framework 4.8，并递归包含 `source/MyCustomMod` 下除 `bin/obj` 外的 C# 文件。游戏和 Harmony 引用由 RimDevTools 从真实安装解析。
 
 quick、auto 和 XML 使用 `mod_config.jsonc.isolated_desktop`；模板默认值为 `false`。manual 默认使用当前桌面。运行中的临时 ModList 和 LogSync 设置由事务恢复，不要手工并发修改。
+
+
+日志会自动同步到.tools下面的log/精选日志.txt  如无必要禁止直接读取原log文件.
