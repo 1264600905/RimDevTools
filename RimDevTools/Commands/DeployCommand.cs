@@ -29,6 +29,10 @@ public static class DeployCommand
         var config = context.Config;
         var templateError = ProjectTemplatePreflight.Validate(context);
         if (templateError is not null) return Failure(ExitCodes.InvalidArguments, templateError, context.Root);
+        var modsConfigValidation = GameEnvironment.ValidateModsConfig(context);
+        if (!modsConfigValidation.Ok)
+            return Failure(ExitCodes.MissingDependency, new CliError(modsConfigValidation.Code!, modsConfigValidation.Message!, modsConfigValidation.Details), context.Root);
+        var configDirectory = GameEnvironment.ConfigDirectory(context)!;
         if (config.ConfigVersion != 2)
             return Failure(ExitCodes.InvalidArguments, new CliError("CONFIG_VERSION_UNSUPPORTED", $"需要 config_version=2，当前为 {config.ConfigVersion}"), context.Root);
         if (string.IsNullOrWhiteSpace(config.ModName))
@@ -134,7 +138,7 @@ public static class DeployCommand
         var runId = Guid.NewGuid().ToString("N");
         Directory.CreateDirectory(targetRoot);
         string? busyInfo = null;
-        using var gate = environmentPrepared ? null : EnvironmentLock.TryAcquire(GameEnvironment.ConfigDirectory(), "deploy", context.Root, runId, out busyInfo);
+        using var gate = environmentPrepared ? null : EnvironmentLock.TryAcquire(configDirectory, "deploy", context.Root, runId, out busyInfo);
         if (!environmentPrepared && gate is null)
             return Failure(ExitCodes.Busy, new CliError("ENVIRONMENT_BUSY", "RimWorld 环境正被另一个 RimDevTools 进程占用", new { busyInfo }), context.Root);
         var recovery = new TransactionRecoveryResult(true, false);
@@ -143,7 +147,7 @@ public static class DeployCommand
             if (!await ProcessUtil.WaitForRimWorldExitAsync(config.Timeouts.ExistingGameExit, config.Timeouts.PostExitDelay, cancellationToken))
                 return Failure(ExitCodes.Timeout, new CliError("GAME_EXIT_TIMEOUT", "等待 RimWorld 退出超时"), context.Root);
 
-            recovery = await TransactionRecovery.RecoverAsync(GameEnvironment.ConfigDirectory());
+            recovery = await TransactionRecovery.RecoverAsync(configDirectory);
             if (!recovery.Ok)
                 return Failure(ExitCodes.TaskFailed, recovery.Error!, context.Root);
         }

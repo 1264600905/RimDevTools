@@ -16,6 +16,8 @@
     // ============================================================
     // RimWorld 安装根目录；工具会自动推导游戏、部署和本地模组搜索路径。
     "rimworld_dir": "H:\\SteamLibrary\\steamapps\\common\\RimWorld",
+    // RimWorld 实际读取的 ModsConfig.xml。doctor、deploy 和 test 均使用此文件；请改为当前 Windows 用户的真实文件路径。
+    "mods_config_path": "C:\\Users\\YOUR_WINDOWS_USER\\AppData\\LocalLow\\Ludeon Studios\\RimWorld by Ludeon Studios\\Config\\ModsConfig.xml",
     // 额外的 Steam Workshop 模组搜索路径；{rimworld_dir}/Mods 会自动包含。
     "workshop_paths": [
         "C:\\Program Files (x86)\\Steam\\steamapps\\workshop\\content\\294100",

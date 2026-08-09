@@ -10,6 +10,7 @@ public sealed class ProjectConfig
     [JsonPropertyName("mod_name")] public string? ModName { get; set; }
     [JsonPropertyName("game_version")] public string? GameVersion { get; set; }
     [JsonPropertyName("rimworld_dir")] public string? RimWorldDir { get; set; }
+    [JsonPropertyName("mods_config_path")] public string? ModsConfigPath { get; set; }
     [JsonPropertyName("workshop_paths")] public List<string> WorkshopPaths { get; set; } = [];
     [JsonPropertyName("csproj_paths")] public List<string> CsprojPaths { get; set; } = [];
     [JsonPropertyName("sync_items")] public List<string> SyncItems { get; set; } = [];
@@ -45,6 +46,12 @@ public sealed class ProjectConfig
         if (!File.Exists(about)) return null;
         try { return XDocument.Load(about).Root?.Element("packageId")?.Value.Trim(); }
         catch { return null; }
+    }
+
+    public string? ResolveModsConfigPath(string projectRoot)
+    {
+        if (string.IsNullOrWhiteSpace(ModsConfigPath)) return null;
+        return Path.GetFullPath(ModsConfigPath, projectRoot);
     }
 }
 

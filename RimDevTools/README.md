@@ -9,7 +9,7 @@ RimDevTools 是 Windows x64 的 .NET 10 CLI，负责 RimWorld 1.6 模组项目�
 - `ref pull` 使用随包 ILSpy，目标机还需要 .NET 8 Runtime。
 - 模组编译需要 .NET Framework 4.8 Developer/Targeting Pack；4.7.2 也受支持。
 
-`doctor` 检查项目、构建环境、Steam/RimWorld、程序集、ILSpy、LogSync、AutoTest、锁和事务。它不检查启动 CLI 所需的 Runtime，也不探测 RimSage 网络或进程。
+`doctor` 检查项目、`mod_config.jsonc` 的路径、Steam/RimWorld、程序集、最小启用模组、ILSpy、LogSync、AutoTest、锁和事务。`mods_config_path` 必须指向游戏实际读取的现有 `ModsConfig.xml`；`deploy` 和 `test` 会拒绝在该项无效时继续。它不检查启动 CLI 所需的 Runtime，也不探测 RimSage 网络或进程。
 
 ## 构建与发布
 
@@ -64,7 +64,7 @@ RimDevTools.exe mods install-tools [--mods-path <path>] [--dry-run]
 
 ### 部署
 
-先运行 `deploy --dry-run` 检查不可变计划。项目必须位于独立工作目录，不能位于 RimWorld `Mods` 或 Steam Workshop 内容目录；部署会自动同步到 `RimWorld/Mods`。实际部署会构建配置中的项目，以暂存目录和备份目录原子替换目标，并保留 `protected_files_regex` 匹配的文件。配置 `sync_source: true` 可让每次部署默认包含 `source/`，`--sync-source` 仍可单次启用。
+先运行 `doctor --verbose`，再运行 `deploy --dry-run` 检查不可变计划。项目必须位于独立工作目录，不能位于 RimWorld `Mods` 或 Steam Workshop 内容目录；部署会自动同步到 `RimWorld/Mods`。实际部署会构建配置中的项目，以暂存目录和备份目录原子替换目标，并保留 `protected_files_regex` 匹配的文件。配置 `sync_source: true` 可让每次部署默认包含 `source/`，`--sync-source` 仍可单次启用。
 
 ### 第三方参考
 
@@ -72,7 +72,7 @@ RimDevTools.exe mods install-tools [--mods-path <path>] [--dry-run]
 
 ### 测试
 
-quick 是启动烟雾测试；manual 用于交互；auto/XML 验证结构化 AutoTest 结果。测试通过共享环境锁与配置事务恢复全局 RimWorld 配置。`--deploy` 用于测试当前源码改动。
+quick 是启动烟雾测试；manual 用于交互；auto/XML 验证结构化 AutoTest 结果。测试通过共享环境锁与配置事务恢复 `mods_config_path` 所在目录中的 RimWorld 配置。无论使用 `min_active_mods` 还是外部 `--mods-file`，都必须启用 `min_active_mods` 中的全部模组。`--deploy` 用于测试当前源码改动。
 
 ### 工具 Mod 安装
 

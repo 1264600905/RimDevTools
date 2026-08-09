@@ -540,7 +540,7 @@ internal sealed class TestSuite
 
         File.WriteAllText(modsFile, "<ModsConfigData><activeMods><li>brrainz.harmony</li><li>trigger.logsyncmod</li></activeMods></ModsConfigData>");
         var rejected = ModListParser.Resolve(context, modsFile, out var rejectedError);
-        Assert(rejected is null && rejectedError?.Code == "REQUIRED_MODS_DISABLED", "ModList rejects game launches without all required mods enabled");
+        Assert(rejected is null && rejectedError?.Code == "REQUIRED_MODS_DISABLED" && JsonSerializer.Serialize(rejectedError.Details).Contains("demo.helper", StringComparison.OrdinalIgnoreCase), "ModList rejects external mod lists that omit configured min_active_mods");
 
     }
 
@@ -728,6 +728,12 @@ internal sealed class TestSuite
         File.WriteAllText(environment.ConfigPath, Config(environment, modName: "Demo", extra: "\"sync_items\":[\"About\"],\"protected_files_regex\":\"^(PublishedFileId\\\\.txt)$\""));
         using var scope = UseEnvironment(environment);
 
+        var absentModsConfig = Path.Combine(environment.ConfigDirectory, "missing-ModsConfig.xml");
+        File.WriteAllText(environment.ConfigPath, Config(environment, modName: "Demo", modsConfigPath: absentModsConfig, extra: "\"sync_items\":[\"About\"]"));
+        var blockedByModsConfig = await DeployCommand.ExecuteAsync(["deploy", "--dry-run"]);
+        Assert(!blockedByModsConfig.Ok && blockedByModsConfig.ExitCode == ExitCodes.MissingDependency && blockedByModsConfig.Error?.Code == "MODS_CONFIG_NOT_FOUND", "deploy refuses to continue when mods_config_path does not point to an existing ModsConfig.xml");
+
+        File.WriteAllText(environment.ConfigPath, Config(environment, modName: "Demo", extra: "\"sync_items\":[\"About\"],\"protected_files_regex\":\"^(PublishedFileId\\\\.txt)$\""));
         var dryRun = await DeployCommand.ExecuteAsync(["deploy", "--dry-run"]);
         var dryResult = (DeployResult)dryRun.Result!;
         Assert(dryRun.Ok && dryResult.Plan.TargetActions.Any(x => x.Action == "protect") && dryResult.Plan.TargetActions.Any(x => x.Action == "replace") && dryResult.Plan.References.ManagedDirectory == Path.Combine(environment.Game, "RimWorldWin64_Data", "Managed") && !dryResult.Plan.SyncItems.Any(item => item.Item.Equals("source", StringComparison.OrdinalIgnoreCase)), "deploy dry-run reports protected/replaced targets, resolved build references, and disabled source synchronization");
@@ -827,10 +833,18 @@ internal sealed class TestSuite
         var compactChecks = compact.RootElement.GetProperty("result").GetProperty("checks").EnumerateArray().ToArray();
         Assert(compact.RootElement.GetProperty("result").TryGetProperty("ready", out _)
             && !result.Output.Contains("project.discovery", StringComparison.Ordinal)
+            && compactChecks.Any(check => check.GetProperty("id").GetString() == "game.mods_config" && check.GetProperty("status").GetString() == "missing")
             && compactChecks.Any(check => check.GetProperty("id").GetString() == "build.game_assembly.Assembly-CSharp" && check.GetProperty("path").GetString() == Path.Combine(environment.Game, "RimWorldWin64_Data", "Managed", "Assembly-CSharp.dll"))
             && compactChecks.Any(check => check.GetProperty("id").GetString() == "build.harmony_assembly" && check.GetProperty("path").GetString() == Path.Combine(environment.Game, "Mods", "Harmony", "Current", "Assemblies", "0Harmony.dll")), "doctor returns a compact readiness summary with both critical resolved assembly paths visible by default");
         var verbose = await CaptureAsync(() => DoctorCommand.RunAsync(["doctor", "--verbose"]));
         Assert(verbose.Output.Contains("environment.transactions") && verbose.Output.Contains("build.dotnet") && verbose.Output.Contains("project.discovery"), "doctor --verbose reports the complete ordered capability list");
+
+        var activeEnvironment = CreateProjectEnvironment("doctor-active", createGameExecutable: true);
+        using var activeScope = UseEnvironment(activeEnvironment);
+        var activeResult = await CaptureAsync(() => DoctorCommand.RunAsync(["doctor", "--verbose"]));
+        using var activeJson = JsonDocument.Parse(activeResult.Output);
+        var activeCheck = activeJson.RootElement.GetProperty("result").GetProperty("checks").EnumerateArray().Single(check => check.GetProperty("id").GetString() == "mods.min_active_enabled");
+        Assert(!activeJson.RootElement.GetProperty("result").GetProperty("ready").GetBoolean() && activeCheck.GetProperty("status").GetString() == "missing", "doctor reports configured min_active_mods that are not enabled in ModsConfig.xml");
     }
 
     private async Task TestRunPreflightAsync()
@@ -1009,7 +1023,7 @@ internal sealed class TestSuite
         foreach (var directory in Directory.EnumerateDirectories(source)) CopyTestDirectory(directory, Path.Combine(destination, Path.GetFileName(directory)));
     }
 
-    private string Config(ProjectEnvironment environment, string modName = "Demo", string minMods = "[\"brrainz.harmony\",\"sarg.smartspeed\",\"brrainz.cameraplus\",\"erdelf.humanoidalienraces\",\"trigger.logsyncmod\"]", string? extra = null)
+    private string Config(ProjectEnvironment environment, string modName = "Demo", string minMods = "[\"brrainz.harmony\",\"sarg.smartspeed\",\"brrainz.cameraplus\",\"erdelf.humanoidalienraces\",\"trigger.logsyncmod\"]", string? modsConfigPath = null, string? extra = null)
     {
         var members = new List<string>
         {
@@ -1017,6 +1031,7 @@ internal sealed class TestSuite
             $"\"mod_name\":\"{modName}\"",
             "\"game_version\":\"1.6\"",
             $"\"rimworld_dir\":\"{Escape(environment.Game)}\"",
+            $"\"mods_config_path\":\"{Escape(modsConfigPath ?? environment.ModsConfigPath)}\"",
             "\"csproj_paths\":[\"source\\\\TestProject\\\\TestProject.csproj\"]",
             $"\"log_keywords\":[\"{modName}\"]",
             $"\"min_active_mods\":{minMods}",

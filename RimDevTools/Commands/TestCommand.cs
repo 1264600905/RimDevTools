@@ -14,16 +14,20 @@ public static class TestCommand
         var templateError = ProjectTemplatePreflight.Validate(context);
         if (templateError is not null)
             return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, templateError.Code, templateError.Message, context.Root, templateError.Details);
+        var modsConfigValidation = GameEnvironment.ValidateModsConfig(context);
+        if (!modsConfigValidation.Ok)
+            return CliResult.WriteFailure(command, ExitCodes.MissingDependency, modsConfigValidation.Code!, modsConfigValidation.Message!, context.Root, modsConfigValidation.Details);
+        var configDirectory = GameEnvironment.ConfigDirectory(context)!;
 
         var runId = Guid.NewGuid().ToString("N");
-        using var gate = EnvironmentLock.TryAcquire(GameEnvironment.ConfigDirectory(), command, context.Root, runId, out var busyInfo);
+        using var gate = EnvironmentLock.TryAcquire(configDirectory, command, context.Root, runId, out var busyInfo);
         if (gate is null)
             return CliResult.WriteFailure(command, ExitCodes.Busy, "ENVIRONMENT_BUSY", "RimWorld 环境正被占用", context.Root, new { busyInfo });
 
         if (!await ProcessUtil.WaitForRimWorldExitAsync(context.Config.Timeouts.ExistingGameExit, context.Config.Timeouts.PostExitDelay, cancellationToken))
             return CliResult.WriteFailure(command, ExitCodes.Timeout, "GAME_EXIT_TIMEOUT", "等待已有 RimWorld 退出超时", context.Root);
 
-        var recovery = await TransactionRecovery.RecoverAsync(GameEnvironment.ConfigDirectory());
+        var recovery = await TransactionRecovery.RecoverAsync(configDirectory);
         if (!recovery.Ok)
             return CliResult.WriteFailure(command, ExitCodes.TaskFailed, recovery.Error!.Code, recovery.Error.Message, context.Root, recovery.Error.Details);
 
@@ -33,7 +37,7 @@ public static class TestCommand
             return CliResult.WriteSuccess(command, context.Root, new
             {
                 runId,
-                settingsPath = GameEnvironment.LogSyncSettingsPath(),
+                settingsPath = GameEnvironment.LogSyncSettingsPath(context),
                 changed,
                 recoveredTransaction = recovery.Found
             });
@@ -53,6 +57,13 @@ public static class TestCommand
         var templateError = ProjectTemplatePreflight.Validate(context);
         if (templateError is not null)
             return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, templateError.Code, templateError.Message, context.Root, templateError.Details);
+        var modsConfigValidation = GameEnvironment.ValidateModsConfig(context);
+        if (!modsConfigValidation.Ok)
+            return CliResult.WriteFailure(command, ExitCodes.MissingDependency, modsConfigValidation.Code!, modsConfigValidation.Message!, context.Root, modsConfigValidation.Details);
+        var configDirectory = GameEnvironment.ConfigDirectory(context)!;
+        var modsConfigPath = modsConfigValidation.Path!;
+        var logSyncSettingsPath = GameEnvironment.LogSyncSettingsPath(context)!;
+        var playerLogPath = GameEnvironment.PlayerLogPath(context)!;
 
         var mode = CliArgs.Value(args, "--mode")?.ToLowerInvariant() ?? "quick";
         if (mode is not ("quick" or "manual" or "auto" or "xml"))
@@ -84,14 +95,14 @@ public static class TestCommand
         if (modList is null)
             return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, modError!.Code, modError.Message, context.Root, modError.Details);
         var runId = Guid.NewGuid().ToString("N");
-        using var gate = EnvironmentLock.TryAcquire(GameEnvironment.ConfigDirectory(), command, context.Root, runId, out var busyInfo);
+        using var gate = EnvironmentLock.TryAcquire(configDirectory, command, context.Root, runId, out var busyInfo);
         if (gate is null)
             return CliResult.WriteFailure(command, ExitCodes.Busy, "ENVIRONMENT_BUSY", "RimWorld 环境正被占用", context.Root, new { busyInfo });
 
         if (!await ProcessUtil.WaitForRimWorldExitAsync(context.Config.Timeouts.ExistingGameExit, context.Config.Timeouts.PostExitDelay, cancellationToken))
             return CliResult.WriteFailure(command, ExitCodes.Timeout, "GAME_EXIT_TIMEOUT", "等待已有 RimWorld 退出超时", context.Root);
 
-        var recovery = await TransactionRecovery.RecoverAsync(GameEnvironment.ConfigDirectory());
+        var recovery = await TransactionRecovery.RecoverAsync(configDirectory);
         if (!recovery.Ok)
             return CliResult.WriteFailure(command, ExitCodes.TaskFailed, recovery.Error!.Code, recovery.Error.Message, context.Root, recovery.Error.Details);
 
@@ -110,14 +121,14 @@ public static class TestCommand
         var gameExited = true;
         var outputPath = SettingsEditor.AutoTestOutputPath(context);
         var resultSnapshot = AutoResultValidator.Snapshot(outputPath);
-        var logOffset = File.Exists(GameEnvironment.PlayerLogPath()) ? new FileInfo(GameEnvironment.PlayerLogPath()).Length : 0;
+        var logOffset = File.Exists(playerLogPath) ? new FileInfo(playerLogPath).Length : 0;
         try
         {
             transaction = await ConfigTransaction.CreateAsync(
-                GameEnvironment.ConfigDirectory(),
+                configDirectory,
                 runId,
-                [GameEnvironment.ModsConfigPath(), GameEnvironment.LogSyncSettingsPath()]);
-            await transaction.WriteAllTextAsync(GameEnvironment.ModsConfigPath(), ModListParser.Render(GameEnvironment.ModsConfigPath(), modList.Mods));
+                [modsConfigPath, logSyncSettingsPath]);
+            await transaction.WriteAllTextAsync(modsConfigPath, ModListParser.Render(modsConfigPath, modList.Mods));
             await SettingsEditor.UpdateAsync(context, mode, transaction, runId, targetPackageId, captureScreenshots, muteAudio: mode != "manual");
 
             LogArchive.Rotate(SettingsEditor.SyncLogPath(context), context.Config.Retention.MaxLogFiles);
@@ -125,7 +136,7 @@ public static class TestCommand
             var gameArguments = new List<string> { "-popupwindow" };
             if (mode is "auto" or "xml") gameArguments.Add("quicktest");
             gameSession = GameProcessLauncher.Start(gamePath, context.Config.RimWorldDir, gameArguments, isolation.Enabled, runId);
-            outcome = await WaitForModeAsync(mode, gameSession.Process, timeout, logOffset, outputPath, targetPackageId, runId, resultSnapshot, cancellationToken);
+            outcome = await WaitForModeAsync(mode, gameSession.Process, timeout, playerLogPath, logOffset, outputPath, targetPackageId, runId, resultSnapshot, cancellationToken);
         }
         catch (OperationCanceledException)
         {
@@ -193,6 +204,7 @@ public static class TestCommand
         string mode,
         Process game,
         int timeoutSeconds,
+        string playerLogPath,
         long logOffset,
         string outputPath,
         string? packageId,
@@ -213,7 +225,7 @@ public static class TestCommand
             }
             else
             {
-                var read = await IncrementalLogReader.ReadAsync(GameEnvironment.PlayerLogPath(), logOffset, cancellationToken);
+                var read = await IncrementalLogReader.ReadAsync(playerLogPath, logOffset, cancellationToken);
                 logOffset = read.Offset;
                 if (read.Reset) scanner.Reset();
                 scanner.Append(read.Text);
@@ -250,7 +262,7 @@ public sealed record ModListResolution(IReadOnlyList<string> Mods, IReadOnlyList
 
 public static class ModListParser
 {
-    private static readonly string[] RequiredStartupMods =
+    internal static readonly string[] RequiredStartupMods =
     [
         "brrainz.harmony",
         "sarg.smartspeed",
@@ -306,7 +318,9 @@ public static class ModListParser
             }
         }
 
-        var requiredMods = RequiredStartupMods
+        var requiredMods = context.Config.MinActiveMods
+            .Where(packageId => !string.IsNullOrWhiteSpace(packageId))
+            .Concat(RequiredStartupMods)
             .Append(toolingPackageId)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
@@ -317,7 +331,7 @@ public static class ModListParser
         {
             error = new CliError(
                 "REQUIRED_MODS_DISABLED",
-                "测试启动被拒绝：以下默认模组未出现在本次 ModList 的 <activeMods> 中。请将它们加入 mod_config.jsonc 的 min_active_mods，或加入 --mods-file 指定文件的 <activeMods> 后重试；这不是模组文件缺失错误。",
+                "测试启动被拒绝：以下 min_active_mods 或启动必须模组未出现在本次 ModList 的 <activeMods> 中。请将它们加入 mod_config.jsonc 的 min_active_mods，或加入 --mods-file 指定文件的 <activeMods> 后重试；这不是模组文件缺失错误。",
                 new
                 {
                     required = requiredMods,
@@ -351,6 +365,32 @@ public static class ModListParser
 
     public static List<string>? Load(ProjectContext context, string? path, out CliError? error)
         => Resolve(context, path, out error)?.Mods.ToList();
+
+    internal static IReadOnlyList<string>? ReadActiveMods(string path, out string? error)
+    {
+        error = null;
+        try
+        {
+            var document = XDocument.Load(path);
+            var active = document.Root?.Elements().FirstOrDefault(x => x.Name.LocalName.Equals("activeMods", StringComparison.OrdinalIgnoreCase));
+            if (active is null)
+            {
+                error = "ModsConfig.xml 缺少 activeMods";
+                return null;
+            }
+            return active.Elements()
+                .Where(x => x.Name.LocalName.Equals("li", StringComparison.OrdinalIgnoreCase))
+                .Select(x => x.Value.Trim())
+                .Where(x => x.Length > 0)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+            return null;
+        }
+    }
 
     public static string Render(string path, IReadOnlyList<string> mods)
     {
@@ -437,7 +477,7 @@ public static class SettingsEditor
 
     public static async Task<bool> UpdateAsync(ProjectContext context, string mode, ConfigTransaction? transaction = null, string? runId = null, string? targetPackageId = null, bool captureScreenshots = false, bool? muteAudio = null)
     {
-        var path = GameEnvironment.LogSyncSettingsPath();
+        var path = GameEnvironment.LogSyncSettingsPath(context) ?? throw new InvalidOperationException("mods_config_path 未配置或无效");
         var document = File.Exists(path)
             ? XDocument.Load(path)
             : new XDocument(

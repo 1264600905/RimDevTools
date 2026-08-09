@@ -30,6 +30,9 @@
     //   - {rimworld_dir}/Mods -> pull 搜索路径之一
     "rimworld_dir": "H:\\SteamLibrary\\steamapps\\common\\RimWorld",
 
+    // RimWorld 实际读取的 ModsConfig.xml。doctor、deploy 和 test 均使用此文件；必须指向现有文件。
+    "mods_config_path": "C:\\Users\\liu\\AppData\\LocalLow\\Ludeon Studios\\RimWorld by Ludeon Studios\\Config\\ModsConfig.xml",
+
     // 额外的 Steam Workshop 模组搜索路径
     // pull_ref.py 和测试脚本会在这些目录下搜索模组
     // 注意: {rimworld_dir}/Mods 会被自动包含，无需重复添加

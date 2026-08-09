@@ -85,28 +85,31 @@ public static class DoctorCommand
         checks.Add(new DoctorCheck("build.harmony_assembly", environment.References.HarmonyDllPath is null ? "missing" : "available", config.CsprojPaths.Count > 0, environment.References.HarmonyDllPath, environment.References.HarmonyDllPath is null ? environment.HarmonyResolution?.Error ?? "未找到 0Harmony.dll" : null, environment.HarmonyResolution));
         checks.Add(new DoctorCheck("mods.metadata", environment.Mods.Diagnostics.Count == 0 ? "available" : "invalid", false, null, environment.Mods.Diagnostics.Count == 0 ? null : "部分模组 About.xml 无法解析", new { diagnostics = environment.Mods.Diagnostics }));
 
+        AddConfigPathChecks(checks, context, environment);
         AddUnityChecks(checks, context);
         AddGitChecks(checks, context);
         AddRequiredModsCheck(checks, config, environment.Mods);
-        AddPathCheck(checks, "game.config_directory", GameEnvironment.ConfigDirectory(), false, PathKind.Directory);
-        AddPathCheck(checks, "game.mods_config", GameEnvironment.ModsConfigPath(), false, PathKind.File);
-        AddPathCheck(checks, "game.player_log", GameEnvironment.PlayerLogPath(), false, PathKind.File);
+        var configDirectory = GameEnvironment.ConfigDirectory(context);
+        AddPathCheck(checks, "game.config_directory", configDirectory, true, PathKind.Directory);
+        AddModsConfigPathCheck(checks, context);
+        AddPathCheck(checks, "game.player_log", GameEnvironment.PlayerLogPath(context), false, PathKind.File);
+        AddActiveModsCheck(checks, context);
         var regexStatus = ValidateRegex(config.ProtectedFilesRegex, out var regexMessage);
         checks.Add(new DoctorCheck("deploy.protected_files_regex", regexStatus, true, null, regexMessage));
         AddPathCheck(checks, "ref.ilspy", ResolveIlspyPath(context), false, PathKind.File);
 
         var logSync = environment.Mods.Find("trigger.logsyncmod");
         checks.Add(new DoctorCheck("test.logsync_mod", logSync is null ? "missing" : "available", true, logSync?.Directory, logSync is null ? "未找到 trigger.logsyncmod" : null));
-        var logSyncSettings = GameEnvironment.LogSyncSettingsPath();
+        var logSyncSettings = GameEnvironment.LogSyncSettingsPath(context);
         checks.Add(new DoctorCheck("test.logsync_settings", File.Exists(logSyncSettings) ? "available" : "not_applicable", false, logSyncSettings, File.Exists(logSyncSettings) ? null : "设置文件尚不存在；test run 会在事务内临时创建"));
         var autoTestAssembly = logSync is null ? null : SafeFind(logSync.Directory, "*AutoTest*.dll");
         checks.Add(new DoctorCheck("test.autotest_extension", autoTestAssembly is null ? "missing" : "available", true, autoTestAssembly, autoTestAssembly is null ? "LogSync 模组中未发现 AutoTest 程序集" : null));
 
         AddToolModChecks(checks, environment.Mods);
-        var lockPath = Path.Combine(GameEnvironment.ConfigDirectory(), "RimDevTools.lock.json");
-        var lockBusy = EnvironmentLock.IsBusy(GameEnvironment.ConfigDirectory());
+        var lockPath = configDirectory is null ? null : Path.Combine(configDirectory, "RimDevTools.lock.json");
+        var lockBusy = configDirectory is not null && EnvironmentLock.IsBusy(configDirectory);
         checks.Add(new DoctorCheck("environment.lock", lockBusy ? "busy" : File.Exists(lockPath) ? "stale" : "available", false, lockPath, lockBusy ? "RimWorld 环境互斥锁正被占用" : File.Exists(lockPath) ? "互斥锁未占用，但存在遗留诊断文件" : null));
-        var pendingTransactions = TransactionRecovery.PendingDirectories(GameEnvironment.ConfigDirectory());
+        var pendingTransactions = configDirectory is null ? [] : TransactionRecovery.PendingDirectories(configDirectory);
         checks.Add(new DoctorCheck("environment.transactions", pendingTransactions.Count > 0 ? "stale" : "available", false, null, pendingTransactions.Count > 0 ? "存在未完成事务" : null, new { directories = pendingTransactions }));
 
         var summary = Summarize(checks, verbose);
@@ -141,6 +144,101 @@ public static class DoctorCommand
         foreach (var projectFile in context.Config.CsprojPaths)
             checks.Add(EvaluateProjectCheck(context.Root, projectFile));
     }
+
+    private static void AddConfigPathChecks(List<DoctorCheck> checks, ProjectContext context, RimWorldEnvironmentResolution environment)
+    {
+        var configuredGame = context.Config.RimWorldDir;
+        var gamePath = ResolveConfiguredPath(configuredGame, context.Root);
+        var gameValid = gamePath is not null && File.Exists(Path.Combine(gamePath, "RimWorldWin64.exe"));
+        checks.Add(new DoctorCheck(
+            "config.rimworld_dir",
+            gameValid ? "available" : string.IsNullOrWhiteSpace(configuredGame) || gamePath is not null ? "missing" : "invalid",
+            true,
+            gamePath,
+            gameValid ? null : RecommendPath("rimworld_dir 未指向有效的 RimWorld 安装目录", environment.References.RimWorldDirectory),
+            SuggestedPathDetails(environment.References.RimWorldDirectory)));
+
+        foreach (var pair in context.Config.WorkshopPaths.Select((path, index) => new { path, index }))
+        {
+            var path = ResolveConfiguredPath(pair.path, context.Root);
+            checks.Add(new DoctorCheck(
+                $"config.workshop_paths.{pair.index}",
+                path is not null && Directory.Exists(path) ? "available" : string.IsNullOrWhiteSpace(pair.path) || path is not null ? "missing" : "invalid",
+                false,
+                path,
+                path is not null && Directory.Exists(path) ? null : RecommendPath("workshop_paths 配置的目录不存在", environment.Steam.WorkshopPaths.FirstOrDefault()),
+                SuggestedPathDetails(environment.Steam.WorkshopPaths.FirstOrDefault())));
+        }
+
+        foreach (var pair in context.Config.SyncItems.Select((item, index) => new { item, index }))
+        {
+            var path = ResolveConfiguredPath(pair.item, context.Root);
+            var withinProject = path is not null && PathSafety.IsWithin(path, context.Root);
+            var exists = withinProject && (File.Exists(path) || Directory.Exists(path));
+            checks.Add(new DoctorCheck(
+                $"config.sync_items.{pair.index}",
+                path is null || !withinProject ? "invalid" : exists ? "available" : "missing",
+                !(pair.item ?? "").TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar).Equals("AssetBundles", StringComparison.OrdinalIgnoreCase),
+                path,
+                !withinProject ? "sync_items 路径越出项目目录" : exists ? null : "sync_items 指向的文件或目录不存在"));
+        }
+    }
+
+    private static string? ResolveConfiguredPath(string? path, string basePath)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return null;
+        try { return Path.GetFullPath(path, basePath); }
+        catch { return null; }
+    }
+
+    private static void AddModsConfigPathCheck(List<DoctorCheck> checks, ProjectContext context)
+    {
+        var validation = GameEnvironment.ValidateModsConfig(context);
+        checks.Add(new DoctorCheck(
+            "game.mods_config",
+            validation.Ok ? "available" : validation.Code == "MODS_CONFIG_PATH_INVALID" ? "invalid" : "missing",
+            true,
+            validation.Path,
+            validation.Message,
+            validation.Details));
+    }
+
+    private static void AddActiveModsCheck(List<DoctorCheck> checks, ProjectContext context)
+    {
+        var validation = GameEnvironment.ValidateModsConfig(context);
+        if (!validation.Ok || validation.Path is null)
+        {
+            checks.Add(new DoctorCheck("mods.min_active_enabled", "not_applicable", true, validation.Path, "ModsConfig.xml 不可用，无法检查实际启用模组"));
+            return;
+        }
+
+        var activeMods = ModListParser.ReadActiveMods(validation.Path, out var readError);
+        if (activeMods is null)
+        {
+            checks.Add(new DoctorCheck("mods.min_active_enabled", "invalid", true, validation.Path, readError));
+            return;
+        }
+
+        var missing = context.Config.MinActiveMods
+            .Where(packageId => !activeMods.Contains(packageId, StringComparer.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        checks.Add(new DoctorCheck(
+            "mods.min_active_enabled",
+            missing.Length == 0 ? "available" : "missing",
+            true,
+            validation.Path,
+            missing.Length == 0 ? null : "ModsConfig.xml 未启用部分 min_active_mods",
+            new { missingPackageIds = missing, activeMods }));
+    }
+
+    private static object? SuggestedPathDetails(string? path)
+        => !string.IsNullOrWhiteSpace(path) && (File.Exists(path) || Directory.Exists(path)) ? new { suggestedPath = path } : null;
+
+    private static string RecommendPath(string message, string? suggestedPath)
+        => !string.IsNullOrWhiteSpace(suggestedPath) && (File.Exists(suggestedPath) || Directory.Exists(suggestedPath))
+            ? $"{message}；建议改为: {suggestedPath}"
+            : message;
 
     internal static DoctorCheck EvaluateProjectCheck(string projectRoot, string projectFile)
     {
@@ -211,6 +309,17 @@ public static class DoctorCommand
 
     private static void AddRequiredModsCheck(List<DoctorCheck> checks, ProjectConfig config, ModInstallationIndex mods)
     {
+        var missingBootstrap = ModListParser.RequiredStartupMods
+            .Where(packageId => !config.MinActiveMods.Contains(packageId, StringComparer.OrdinalIgnoreCase))
+            .ToArray();
+        checks.Add(new DoctorCheck(
+            "mods.min_active_required",
+            missingBootstrap.Length == 0 ? "available" : "missing",
+            true,
+            null,
+            missingBootstrap.Length == 0 ? null : "min_active_mods 未包含测试启动必须模组",
+            new { requiredPackageIds = ModListParser.RequiredStartupMods, missingPackageIds = missingBootstrap }));
+
         var missing = config.MinActiveMods.Where(packageId => mods.Find(packageId) is null).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         checks.Add(new DoctorCheck("mods.required", missing.Length == 0 ? "available" : "missing", true, null, missing.Length == 0 ? null : "部分 min_active_mods 无法解析", new { missingPackageIds = missing }));
     }
@@ -304,15 +413,68 @@ public static class DoctorCommand
 
 internal static class GameEnvironment
 {
-    public static string ConfigDirectory()
+    public static string DefaultConfigDirectory()
     {
-        var overridePath = Environment.GetEnvironmentVariable("RIMDEVTOOLS_CONFIG_DIR");
-        return !string.IsNullOrWhiteSpace(overridePath)
-            ? Path.GetFullPath(overridePath)
-            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "AppData", "LocalLow", "Ludeon Studios", "RimWorld by Ludeon Studios", "Config");
+        return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "AppData", "LocalLow", "Ludeon Studios", "RimWorld by Ludeon Studios", "Config");
     }
 
-    public static string PlayerLogPath() => Path.Combine(Directory.GetParent(ConfigDirectory())?.FullName ?? ConfigDirectory(), "Player.log");
-    public static string ModsConfigPath() => Path.Combine(ConfigDirectory(), "ModsConfig.xml");
-    public static string LogSyncSettingsPath() => Path.Combine(ConfigDirectory(), "Mod_LogSyncMod_LogSyncMod.xml");
+    public static string ConfigDirectory() => DefaultConfigDirectory();
+    public static string? ModsConfigPath(ProjectContext context)
+    {
+        try { return context.Config.ResolveModsConfigPath(context.Root); }
+        catch { return null; }
+    }
+
+    public static string? ConfigDirectory(ProjectContext context)
+    {
+        var path = ModsConfigPath(context);
+        return path is null ? null : Path.GetDirectoryName(path);
+    }
+
+    public static string? PlayerLogPath(ProjectContext context)
+    {
+        var configDirectory = ConfigDirectory(context);
+        return configDirectory is null ? null : Path.Combine(Directory.GetParent(configDirectory)?.FullName ?? configDirectory, "Player.log");
+    }
+
+    public static string? LogSyncSettingsPath(ProjectContext context)
+    {
+        var configDirectory = ConfigDirectory(context);
+        return configDirectory is null ? null : Path.Combine(configDirectory, "Mod_LogSyncMod_LogSyncMod.xml");
+    }
+
+    public static ModsConfigValidation ValidateModsConfig(ProjectContext context)
+    {
+        if (string.IsNullOrWhiteSpace(context.Config.ModsConfigPath))
+            return new(false, "MODS_CONFIG_PATH_MISSING", null, "mod_config.jsonc 缺少 mods_config_path", new { suggestedPath = CanonicalModsConfigPath() });
+
+        string path;
+        try { path = context.Config.ResolveModsConfigPath(context.Root)!; }
+        catch (Exception ex)
+        {
+            return new(false, "MODS_CONFIG_PATH_INVALID", null, $"mods_config_path 无效: {ex.Message}", new { configuredPath = context.Config.ModsConfigPath, suggestedPath = ExistingCanonicalModsConfigPath() });
+        }
+
+        if (File.Exists(path)) return new(true, null, path, null);
+        return new(false, "MODS_CONFIG_NOT_FOUND", path, RecommendModsConfigPath(path), new { configuredPath = context.Config.ModsConfigPath, suggestedPath = ExistingCanonicalModsConfigPath() });
+    }
+
+    public static object? ModsConfigRecommendation(ProjectContext context) => ValidateModsConfig(context).Details;
+
+    private static string CanonicalModsConfigPath() => Path.Combine(DefaultConfigDirectory(), "ModsConfig.xml");
+    private static string? ExistingCanonicalModsConfigPath()
+    {
+        var path = CanonicalModsConfigPath();
+        return File.Exists(path) ? path : null;
+    }
+
+    private static string RecommendModsConfigPath(string configuredPath)
+    {
+        var suggestedPath = ExistingCanonicalModsConfigPath();
+        return suggestedPath is null || suggestedPath.Equals(configuredPath, StringComparison.OrdinalIgnoreCase)
+            ? "mods_config_path 指向的 ModsConfig.xml 不存在"
+            : $"mods_config_path 指向的 ModsConfig.xml 不存在；建议改为: {suggestedPath}";
+    }
 }
+
+internal sealed record ModsConfigValidation(bool Ok, string? Code, string? Path, string? Message, object? Details = null);
