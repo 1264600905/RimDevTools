@@ -92,6 +92,9 @@ Assert(logSyncAssembly is not null && autoTestAssembly is not null && logSyncAss
 
 var templateAbout = XDocument.Load(Path.Combine(release, "About", "About.xml"));
 Assert(templateAbout.Root?.Element("name")?.Value == ProjectTemplatePreflight.TemplateDisplayName && templateAbout.Root?.Element("packageId")?.Value == ProjectTemplatePreflight.TemplatePackageId, "release uses the branded template name and packageId");
+Assert(templateAbout.Root?.Element("incompatibleWith")?.Elements("li").Any(item => item.Value.Equals("ludeon.rimworld", StringComparison.OrdinalIgnoreCase)) == true, "release template is incompatible with Core until it is configured");
+var templateDescription = templateAbout.Root?.Element("description")?.Value ?? "";
+Assert(templateDescription.Contains("[h2][b]快速开始[/b][/h2]", StringComparison.Ordinal) && !templateDescription.Contains("------", StringComparison.Ordinal) && System.Text.Encoding.UTF8.GetByteCount(templateDescription) <= 8000, "release template provides a Chinese quick-start guide within Steam description limits");
 var templateProject = XDocument.Load(Path.Combine(release, "source", "MyCustomMod", "MyCustomMod.csproj"));
 var releaseOutputPath = templateProject.Descendants().FirstOrDefault(element => element.Name.LocalName == "PropertyGroup" && element.Attribute("Condition")?.Value.Contains("Release", StringComparison.OrdinalIgnoreCase) == true)?.Elements().FirstOrDefault(element => element.Name.LocalName == "OutputPath")?.Value.Trim();
 Assert(releaseOutputPath == @"..\..\1.6\Assemblies\", "template Release builds write the DLL to the deployed Assemblies directory");

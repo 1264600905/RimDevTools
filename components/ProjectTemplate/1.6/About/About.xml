@@ -7,23 +7,70 @@
         <li>1.6</li>
     </supportedVersions>
     <packageId>trigger.projectTemplate</packageId>
+    <incompatibleWith>
+        <li>ludeon.rimworld</li>
+    </incompatibleWith>
     <loadBefore />
     <loadAfter />
     <description>
-    [h1]Trigger's Project Template[/h1]
+[h1][b]白金的开发模板[/b][/h1]
 
-[b]白金trigger的 RimWorld 1.6 开发模板。[/b]
-创建项目后，请先替换模板名称、packageId、程序集名称和日志关键词。
+[b]用途[/b]
+这是一套面向 RimWorld 1.6 模组开发的完整工作区，不是提供游戏内容的普通模组。模板包含标准目录、示例程序集、游戏内设置入口、日志工具、RimDevTools、LogSyncMod 测试组件、ILSpy，以及 Codex、Claude Code、opencode 和 RimSage 的项目级配置与开发 skill。它的目标是让开发者或 AI 在同一套可验证的约束下完成研究、实现、部署和测试。
 
-[h2]模板能力[/h2]
-- 基础 Mod 设置与可控日志工具
-- RimDevTools 环境检查、部署与游戏测试
-- Def、Patch、语言文件和参考资料目录
-- Codex、Claude 与 opencode 的开发辅助配置
+[h2][b]快速开始[/b][/h2]
+[list]
+[*] 通过 Steam 创意工坊订阅后，先将整个模板复制到独立工作目录。不要在 Workshop 下载目录、RimWorld 的 Mods 目录或其他已部署模组目录中直接开发。
+[*] 修改 About/About.xml 中的名称、作者、packageId 和介绍文本；packageId 必须是你的唯一标识。
+[*] 修改 mod_config.jsonc 中的 mod_name、rimworld_dir、workshop_paths、csproj_paths、sync_items 和 log_keywords，使它们与本机环境和新项目一致。
+[*] 重命名 source/MyCustomMod 下的工程文件、命名空间、程序集名称、设置类和日志前缀；Release 输出应落在将被部署的版本 Assemblies 目录。
+[*] 在 About 元数据的 incompatibleWith 列表中移除 ludeon.rimworld。模板故意与 Core 冲突，因此在完成这一步前不能在游戏中启用。
+[*] 运行 .tools/RimDevTools.exe doctor，逐项处理项目身份、游戏路径、Steam、编译前置和工具状态；所有模板默认值被替换后，doctor 才会将项目标记为可继续。
+[*] 先运行 .tools/RimDevTools.exe deploy --dry-run 审查构建与同步计划。确认目标、程序集和同步项正确后，再运行 deploy。
+[*] 修改代码后使用 test run --deploy --mode quick 进行启动冒烟测试；交互验证使用 manual，最终功能验证使用 auto，需要声明式用例时使用 xml。
+[/list]
+[img]图片展示：从 doctor、部署预演到快速测试的完整起步流程[/img]
 
-[h2]开始开发[/h2]
-1. 修改 About、mod_config.jsonc 与 source 中的 MyCustomMod 占位符
-2. 使用 doctor 检查本机环境和项目配置
-3. 完成 C# 与 XML 后通过 deploy 和 test run 验证
+[h2][b]项目骨架与日志[/b][/h2]
+[list]
+[*] 模板预置 1.6 版本内容目录、About、Languages、source、参考资料区、LoadFolders 和项目配置，便于直接添加 Def、Patch、翻译和 C# 实现。
+[*] 示例模组提供基础设置页面，可开关普通开发日志；错误日志不会因该开关而被隐藏。
+[*] LogUtils 统一输出信息、警告、错误和带类别的日志，并支持高频调用的限流输出，减少 Tick 或 UI 更新造成的日志刷屏。
+[*] 模板名称、packageId、源码目录、日志关键字、程序集名称和遗留的模板 DLL 都会被前置检查识别；未改名模板不能执行部署或测试。
+[/list]
+[img]图片展示：基础设置页面、日志分类与程序集输出目录[/img]
+
+[h2][b]RimDevTools 工作流[/b][/h2]
+[list]
+[*] doctor 为只读诊断，检查项目配置、部署位置安全性、RimWorld 和 Steam 发现、游戏程序集、Harmony、.NET Framework 目标包、Git 状态、ILSpy、LogSync、AutoTest、环境锁和未完成事务。使用 --verbose 可查看已满足的检查项。
+[*] deploy 会等待 RimWorld 退出，构建 csproj_paths，基于暂存目录准备 sync_items，再原子替换本地 Mods 目录中的目标模组。protected_files_regex 可保留 PublishedFileId.txt 等发布文件，sync_source 或 --sync-source 只在需要同步源码时启用。
+[*] test run 在事务中写入并恢复 ModsConfig 与 LogSync 设置。quick 等待运行就绪信号；manual 供人工观察；auto 和 xml 验证结构化 AutoTest 结果；可设置 timeout、mods-file、target-package-id、截图和隔离桌面。
+[*] 测试和部署共享环境锁。不要在运行期间手工修改 RimWorld 配置、LogSync 设置、事务目录或自动测试结果；失败后应读取 JSON 结果、精选日志和保留报告定位问题。
+[/list]
+[img]图片展示：部署暂存、配置事务恢复与自动测试报告[/img]
+
+[h2][b]参考模组与工具组件[/b][/h2]
+[list]
+[*] ref search、ref deps 和 ref related 用于发现本地或 Workshop 中的候选模组、依赖和关联项。确认目标后，ref pull 会复制到参考资料区，并使用随包 ILSpy 生成可读源码。
+[*] ref pull 的 --deps、--all、--force 和 --fuzzy 均需显式指定。名称歧义、依赖循环、目标冲突和不安全路径会在复制前失败，避免参考资料被误覆盖。
+[*] mods install-tools --dry-run 可预览随包 LogSyncMod 的安装计划。实际安装会校验 packageId、版本、目录哈希和暂存结果，保留 PublishedFileId.txt，不降级，也会在替换失败时回滚。
+[*] 随包的 LogSyncMod 用于日志同步和自动测试配合，不是模板项目的游戏功能。需要使用测试流程前，按安装计划将它安装到本地 Mods 目录。
+[/list]
+[img]图片展示：参考模组检索、ILSpy 源码与工具模组安装计划[/img]
+
+[h2][b]AI 研究与项目规则[/b][/h2]
+[list]
+[*] Codex CLI、Claude Code 和 opencode 均预置 RimSage 的只读服务配置。研究官方 Def、XML 继承、官方 C# API、实现行为或 Harmony 目标时，先使用 RimSage 获取证据。
+[*] RimSage 不读取当前项目或第三方模组。当前项目直接读取工作树；第三方模组先检查参考资料区，缺少时再使用 ref search 和 ref pull。
+[*] 项目内的 rimdevtools、rimsage、rimworld-development-engineer、rimworld-plan-engineer 和 about-write-description skill 分别约束工具调用、官方研究、实现验证、计划和 Workshop 文案更新。
+[*] 推荐验证链路为 doctor -> deploy --dry-run -> test run --deploy --mode quick -> test run --deploy --mode auto。不要把游戏进程退出或无可见报错当作成功依据。
+[/list]
+[img]图片展示：AI 研究链路、项目 skill 与验证循环[/img]
+
+[b]兼容性与运行条件[/b]
+目标版本为 RimWorld 1.6，未声明官方 DLC 前置。模板的 incompatibleWith 列表故意包含 ludeon.rimworld，以阻止玩家或开发者直接启用未改名模板；复制后必须移除该条目。RimDevTools.exe 需要 Windows x64 和 .NET 10 Runtime；使用 ILSpy 进行 ref pull 需要 .NET 8 Runtime；编译模组需要 dotnet SDK 和 .NET Framework 4.8 Developer/Targeting Pack，4.7.2 可作为兼容替代。运行游戏测试需要可用的 RimWorld 1.6 与已登录 Steam 会话。
+
+[b]致谢[/b]
+随附组件与配置包括 LogSyncMod、ILSpy 命令行反编译器和 RimSage 只读研究服务。
     </description>
 </ModMetaData>
