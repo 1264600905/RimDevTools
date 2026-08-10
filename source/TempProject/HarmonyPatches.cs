@@ -91,8 +91,7 @@ namespace LogSyncMod
         private static void ProcessLog(string text, string type)
         {
             if (string.IsNullOrEmpty(text)) return;
-            string sourceMod = GetSourceModPackageId();
-            PublishCapturedLog(text, type, sourceMod);
+            bool captureRequested = !publishingCapturedLog && LogCaptured != null;
             bool controlSignal = IsControlSignal(text);
             bool pendingSourceCandidate = pendingSourceReference != null && IsPotentialSourceReferenceLine(text);
 
@@ -111,9 +110,15 @@ namespace LogSyncMod
             }
 
             // 检查设置开关。普通 Message 默认可禁用，但关键词命中的 Message 仍允许进入同步流程。
-            if (type == "Message" && !LogSyncMod.settings.syncMessage && !controlSignal && !keywordMatched && !pendingSourceCandidate) return;
-            if (type == "Warning" && !LogSyncMod.settings.syncWarning) return;
-            if (type == "Error" && !LogSyncMod.settings.syncError) return;
+            bool synchronizationRequested = true;
+            if (type == "Message" && !LogSyncMod.settings.syncMessage && !controlSignal && !keywordMatched && !pendingSourceCandidate) synchronizationRequested = false;
+            if (type == "Warning" && !LogSyncMod.settings.syncWarning) synchronizationRequested = false;
+            if (type == "Error" && !LogSyncMod.settings.syncError) synchronizationRequested = false;
+            if (!captureRequested && !synchronizationRequested) return;
+
+            string sourceMod = GetSourceModPackageId();
+            if (captureRequested) PublishCapturedLog(text, type, sourceMod);
+            if (!synchronizationRequested) return;
 
             // 2. 识别模组来源
             string sourceModLower = sourceMod?.ToLower();

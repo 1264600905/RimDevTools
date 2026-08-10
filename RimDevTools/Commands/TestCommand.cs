@@ -757,6 +757,11 @@ public static class AutoResultValidator
                         var evidencePackageId = evidenceRoot.TryGetProperty("packageId", out var evidencePackageNode) ? evidencePackageNode.GetString() : null;
                         if (!string.Equals(evidenceRunId, runId, StringComparison.Ordinal) || !string.Equals(evidencePackageId, packageId, StringComparison.OrdinalIgnoreCase))
                             return Failure("AUTO_EVIDENCE_MISMATCH", "Evidence 与 Result 的 runId/packageId 不匹配", new { path, evidencePath, runId, evidenceRunId, packageId, evidencePackageId });
+                        if (!evidenceRoot.TryGetProperty("success", out var evidenceSuccessNode) ||
+                            (evidenceSuccessNode.ValueKind != JsonValueKind.True && evidenceSuccessNode.ValueKind != JsonValueKind.False))
+                            return Failure("AUTO_EVIDENCE_INVALID", "Evidence 缺少有效的 success 状态", new { path, evidencePath });
+                        if (!evidenceSuccessNode.GetBoolean())
+                            return Failure("AUTO_EVIDENCE_FAILED", "Evidence 报告本轮自动测试失败", new { path, evidencePath });
                     }
                     catch (JsonException ex)
                     {

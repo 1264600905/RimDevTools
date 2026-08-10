@@ -107,7 +107,7 @@ internal sealed class CoreTestSuite
         timeout.Poll(1);
         timeoutClock.Advance(60);
         var outcome = timeout.Poll(2);
-        Assert(outcome.TimedOut && outcome.Attempts == 2 && outcome.LastSnapshot == "not-ready", "wait timeout retains snapshot");
+        Assert(outcome.TimedOut && outcome.Attempts == 1 && outcome.LastSnapshot == "not-ready", "wait timeout retains snapshot");
 
         attempts = 0;
         var interval = new AutoTestWaitHandle(new AutoTestWaitOptions { ConditionId = "interval", TimeoutMs = 1000, MinimumPollIntervalTicks = 3 },
@@ -117,6 +117,23 @@ internal sealed class CoreTestSuite
         interval.Poll(12);
         interval.Poll(13);
         Assert(attempts == 2, "wait honors tick poll interval");
+
+        var pausedClock = new FakeClock();
+        var paused = new AutoTestWaitHandle(new AutoTestWaitOptions { ConditionId = "paused", TimeoutMs = 50, MinimumPollIntervalTicks = 3 },
+            () => new AutoTestProbeResult { Satisfied = false }, pausedClock);
+        paused.Poll(10);
+        pausedClock.Advance(60);
+        var pausedOutcome = paused.Poll(10);
+        Assert(pausedOutcome.TimedOut && pausedOutcome.Attempts == 1, "wait timeout is enforced while game tick is paused");
+
+        var lateClock = new FakeClock();
+        var late = new AutoTestWaitHandle(new AutoTestWaitOptions { ConditionId = "late", TimeoutMs = 50, MinimumPollIntervalTicks = 0 }, () =>
+        {
+            lateClock.Advance(60);
+            return new AutoTestProbeResult { Satisfied = true, Snapshot = "late-ready" };
+        }, lateClock);
+        var lateOutcome = late.Poll(1);
+        Assert(lateOutcome.TimedOut && !lateOutcome.Satisfied && lateOutcome.Attempts == 1, "wait rejects probe success after realtime deadline");
 
         var journal = new AutoTestOperationJournal();
         AutoTestWaitHandle journaled;

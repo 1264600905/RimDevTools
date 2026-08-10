@@ -52,6 +52,7 @@ namespace LogSyncMod.AutoTest
             public AutoTestWaitHandle CloseWait;
             public AutoTestOperationEnvelope OpenOperation;
             public AutoTestOperationEnvelope CaptureOperation;
+            public AutoTestOperationEnvelope FailureCaptureOperation;
             public AutoTestOperationEnvelope CloseOperation;
             public AutoTestOperationEnvelope ForceCloseOperation;
             public long CloseRequestedAtRealtimeMs;
@@ -788,19 +789,39 @@ namespace LogSyncMod.AutoTest
                 return;
             }
 
-            if (activeSession.EvidenceAdapter != null && activeSession.CaptureOperation == null)
+            if (activeSession.EvidenceAdapter != null)
             {
                 ActiveSession session = activeSession;
-                session.CaptureOperation = session.EvidenceAdapter.Run("capture_info_card", delegate
+                AutoTestOperationEnvelope captureOperation = null;
+                if (session.CaptureOperation == null)
                 {
-                    bool capturedFlag = session.ScreenshotCaptured;
-                    bool captured = screenshotService.TryCaptureInfoCard(session.Result, ref capturedFlag, session.AllowScreenshots, force, results.Count, IsInfoCardPresent);
-                    session.ScreenshotCaptured = capturedFlag;
-                    return captured;
-                }, captured => captured ? "screenshot_requested" : "screenshot_not_requested");
-                if (session.CaptureOperation.Success && session.ScreenshotCaptured && !string.IsNullOrEmpty(session.Result.ScreenshotPath))
-                    session.EvidenceAdapter.AddCapture("InfoCard", session.Result.ScreenshotPath, session.CaptureOperation.OperationId, session.Result.DefName);
-                return;
+                    captureOperation = session.EvidenceAdapter.Run("capture_info_card", delegate
+                    {
+                        bool capturedFlag = session.ScreenshotCaptured;
+                        bool captured = screenshotService.TryCaptureInfoCard(session.Result, ref capturedFlag, session.AllowScreenshots, force, results.Count, IsInfoCardPresent);
+                        session.ScreenshotCaptured = capturedFlag;
+                        return captured;
+                    }, captured => captured ? "screenshot_requested" : "screenshot_not_requested");
+                    session.CaptureOperation = captureOperation;
+                }
+                else if (force && !session.ScreenshotCaptured && session.FailureCaptureOperation == null)
+                {
+                    captureOperation = session.EvidenceAdapter.Run("capture_info_card_failure", delegate
+                    {
+                        bool capturedFlag = session.ScreenshotCaptured;
+                        bool captured = screenshotService.TryCaptureInfoCard(session.Result, ref capturedFlag, session.AllowScreenshots, true, results.Count, IsInfoCardPresent);
+                        session.ScreenshotCaptured = capturedFlag;
+                        return captured;
+                    }, captured => captured ? "failure_screenshot_requested" : "failure_screenshot_not_requested");
+                    session.FailureCaptureOperation = captureOperation;
+                }
+
+                if (captureOperation != null)
+                {
+                    if (captureOperation.Success && session.ScreenshotCaptured && !string.IsNullOrEmpty(session.Result.ScreenshotPath))
+                        session.EvidenceAdapter.AddCapture("InfoCard", session.Result.ScreenshotPath, captureOperation.OperationId, session.Result.DefName);
+                    return;
+                }
             }
 
             screenshotService.TryCaptureInfoCard(activeSession.Result, ref activeSession.ScreenshotCaptured, activeSession.AllowScreenshots, force, results.Count, IsInfoCardPresent);

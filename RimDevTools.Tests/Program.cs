@@ -1030,6 +1030,12 @@ internal sealed class TestSuite
         var evidencePassed = AutoResultValidator.Validate(output, "demo.current", "run-evidence", evidenceSnapshot);
         Assert(evidencePassed.Ok, "auto result validator accepts matching evidence");
 
+        var failedEvidenceSnapshot = AutoResultValidator.Snapshot(output);
+        WriteEvidence(output, "demo.current", "run-evidence-failed", "failed_Evidence.json", success: false);
+        WriteResultWithEvidence(output, "demo.current", "run-evidence-failed", "failed_Evidence.json", "failed-evidence_Result.json");
+        var failedEvidence = AutoResultValidator.Validate(output, "demo.current", "run-evidence-failed", failedEvidenceSnapshot);
+        Assert(!failedEvidence.Ok && failedEvidence.Code == "AUTO_EVIDENCE_FAILED", "auto result validator rejects evidence that reports failure");
+
         var missingEvidenceSnapshot = AutoResultValidator.Snapshot(output);
         WriteResultWithEvidence(output, "demo.current", "run-evidence-missing", "missing_Evidence.json", "missing_Result.json");
         var missingEvidence = AutoResultValidator.Validate(output, "demo.current", "run-evidence-missing", missingEvidenceSnapshot);
@@ -1379,9 +1385,9 @@ internal sealed class TestSuite
         File.WriteAllText(Path.Combine(output, name), JsonSerializer.Serialize(value));
     }
 
-    private static void WriteEvidence(string output, string packageId, string runId, string name)
+    private static void WriteEvidence(string output, string packageId, string runId, string name, bool success = true)
     {
-        var value = new { schemaVersion = 1, packageId, runId, success = true, operations = Array.Empty<object>(), assertions = Array.Empty<object>() };
+        var value = new { schemaVersion = 1, packageId, runId, success, operations = Array.Empty<object>(), assertions = Array.Empty<object>() };
         File.WriteAllText(Path.Combine(output, name), JsonSerializer.Serialize(value));
     }
 

@@ -51,6 +51,7 @@ namespace LogSyncMod.AutoTest
         public AutoTestWaitOutcome Poll(int currentGameTick)
         {
             if (outcome.Terminal) return Copy(outcome);
+            if (TryTimeout()) return Copy(outcome);
             int interval = Math.Max(0, options.MinimumPollIntervalTicks);
             if (lastPollTick != int.MinValue && currentGameTick - lastPollTick < interval) return Copy(outcome);
             lastPollTick = currentGameTick;
@@ -66,6 +67,7 @@ namespace LogSyncMod.AutoTest
                 outcome.Message = result.Message;
                 outcome.LastSnapshot = result.Snapshot;
                 if (result.Satisfied) outcome.StablePolls++; else outcome.StablePolls = 0;
+                if (TryTimeout()) return Copy(outcome);
                 if (outcome.StablePolls >= Math.Max(1, options.RequiredStablePolls))
                 {
                     outcome.Terminal = true;
@@ -84,21 +86,25 @@ namespace LogSyncMod.AutoTest
                 if (journal != null) journal.RecordEvent("wait.probe_failed", context.RunId, context.CaseId, context.StepId, context.OperationId, context.CapabilityId, ex.Message, clock.UtcNow);
             }
 
-            if (clock.RealtimeMilliseconds - startedMs >= Math.Max(0, options.TimeoutMs))
-            {
-                outcome.Terminal = true;
-                outcome.TimedOut = true;
-                outcome.Satisfied = false;
-                if (journal != null) journal.RecordEvent("wait.timed_out", context.RunId, context.CaseId, context.StepId, context.OperationId, context.CapabilityId, Describe(outcome), clock.UtcNow);
-                CompleteWaitOperation(AutoTestOperationStatus.TimedOut, new AutoTestOperationError
-                {
-                    Code = "wait.timed_out",
-                    Message = Describe(outcome),
-                    ExceptionType = string.IsNullOrEmpty(outcome.LastProbeError) ? null : "wait.probe_failed",
-                    StackTrace = outcome.LastProbeError
-                });
-            }
+            TryTimeout();
             return Copy(outcome);
+        }
+
+        private bool TryTimeout()
+        {
+            if (outcome.Terminal || clock.RealtimeMilliseconds - startedMs < Math.Max(0, options.TimeoutMs)) return false;
+            outcome.Terminal = true;
+            outcome.TimedOut = true;
+            outcome.Satisfied = false;
+            if (journal != null) journal.RecordEvent("wait.timed_out", context.RunId, context.CaseId, context.StepId, context.OperationId, context.CapabilityId, Describe(outcome), clock.UtcNow);
+            CompleteWaitOperation(AutoTestOperationStatus.TimedOut, new AutoTestOperationError
+            {
+                Code = "wait.timed_out",
+                Message = Describe(outcome),
+                ExceptionType = string.IsNullOrEmpty(outcome.LastProbeError) ? null : "wait.probe_failed",
+                StackTrace = outcome.LastProbeError
+            });
+            return true;
         }
 
         private void CompleteWaitOperation(AutoTestOperationStatus status, AutoTestOperationError error)
