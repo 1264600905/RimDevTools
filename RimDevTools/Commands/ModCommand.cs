@@ -73,11 +73,19 @@ public static class ModCommand
         if (selected is null)
             return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, error!.Code, error.Message, context.Root, error.Details);
 
-        var closure = ResolveDependencyClosure(context, selected, CliArgs.Has(args, "--deps"), version, out error);
+        var closure = ResolveDependencyClosure(context, selected, CliArgs.Has(args, "--deps"), version, out var skippedDependencies, out error);
         if (closure is null)
             return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, error!.Code, error.Message, context.Root, error.Details);
 
-        var targetRoot = Path.GetFullPath(Path.Combine(context.Root, "参考文档"));
+        string targetRoot;
+        try
+        {
+            targetRoot = context.Config.ResolveReferenceDocsPath(context.Root);
+        }
+        catch (Exception ex)
+        {
+            return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "PROJECT_PATH_INVALID", ex.Message, context.Root);
+        }
         try
         {
             PathSafety.EnsureNoReparsePoints(context.Root, targetRoot);
@@ -122,6 +130,7 @@ public static class ModCommand
                 version,
                 selected,
                 dependencyClosure = closure.Select(mod => new { mod.Name, mod.PackageId, mod.SourceDirectory }).ToArray(),
+                skippedDependencies,
                 ignoredFolders,
                 conflicts,
                 targets = plan
@@ -164,7 +173,7 @@ public static class ModCommand
             }
 
             InstallBatch(targets);
-            return CliResult.WriteSuccess(command, context.Root, new { runId, version, results });
+            return CliResult.WriteSuccess(command, context.Root, new { runId, version, skippedDependencies, results });
         }
         catch (OperationCanceledException) { throw; }
         catch (Exception ex)
@@ -220,9 +229,17 @@ public static class ModCommand
                 .ToArray();
     }
 
-    private static List<ModCandidate>? ResolveDependencyClosure(ProjectContext context, ModCandidate selected, bool includeDependencies, string version, out CliError? error)
+    private static List<ModCandidate>? ResolveDependencyClosure(
+        ProjectContext context,
+        ModCandidate selected,
+        bool includeDependencies,
+        string version,
+        out IReadOnlyList<SkippedDependency> skippedDependencies,
+        out CliError? error)
     {
         error = null;
+        var skipped = new List<SkippedDependency>();
+        skippedDependencies = skipped;
         if (!includeDependencies) return [selected];
 
         var ordered = new List<ModCandidate>();
@@ -244,7 +261,16 @@ public static class ModCommand
             visiting.Add(current.PackageId);
             foreach (var dependency in current.Dependencies)
             {
-                if (IsOfficialPackageId(dependency)) continue;
+                var exclusionReason = DependencyExclusionReason(dependency);
+                if (exclusionReason is not null)
+                {
+                    var existing = skipped.FirstOrDefault(item => item.PackageId.Equals(dependency, StringComparison.OrdinalIgnoreCase));
+                    if (existing is null)
+                        skipped.Add(new SkippedDependency(dependency, exclusionReason, [current.PackageId]));
+                    else if (!existing.RequiredBy.Contains(current.PackageId, StringComparer.OrdinalIgnoreCase))
+                        existing.RequiredBy.Add(current.PackageId);
+                    continue;
+                }
                 var resolved = ResolveUnique(context, dependency, false, version, out var dependencyError);
                 if (resolved is null)
                 {
@@ -264,9 +290,15 @@ public static class ModCommand
         return succeeded ? ordered : null;
     }
 
-    private static bool IsOfficialPackageId(string packageId)
-        => packageId.Equals("ludeon.rimworld", StringComparison.OrdinalIgnoreCase)
-            || packageId.StartsWith("ludeon.rimworld.", StringComparison.OrdinalIgnoreCase);
+    private static string? DependencyExclusionReason(string packageId)
+    {
+        if (packageId.Equals("ludeon.rimworld", StringComparison.OrdinalIgnoreCase)
+            || packageId.StartsWith("ludeon.rimworld.", StringComparison.OrdinalIgnoreCase))
+            return "official_content";
+        if (packageId.Equals("brrainz.harmony", StringComparison.OrdinalIgnoreCase))
+            return "shared_harmony";
+        return null;
+    }
 
     private static async Task<int> DecompileAssembliesAsync(ProjectContext context, string staging, string version, CancellationToken cancellationToken)
     {
@@ -535,6 +567,7 @@ public static class ModCommand
     }
 
     internal sealed record CopyTarget(ModCandidate Mod, string Target, string Staging, string Backup);
+    internal sealed record SkippedDependency(string PackageId, string Reason, List<string> RequiredBy);
 }
 
 internal sealed class TargetDirectoryLock : IDisposable

@@ -18,7 +18,7 @@ public sealed class EnvironmentLock : IDisposable
         _infoPath = infoPath;
     }
 
-    public static EnvironmentLock? TryAcquire(string rimWorldConfigDirectory, string command, string projectRoot, string runId, out string? busyInfo)
+    public static EnvironmentLock? TryAcquire(string rimWorldConfigDirectory, string command, string projectRoot, string runId, out object? busyInfo)
     {
         Directory.CreateDirectory(rimWorldConfigDirectory);
         var mutexName = MutexName(rimWorldConfigDirectory);
@@ -64,7 +64,7 @@ public sealed class EnvironmentLock : IDisposable
         }
         if (!acquired)
         {
-            busyInfo = File.Exists(infoPath) ? File.ReadAllText(infoPath) : null;
+            busyInfo = ReadInfo(infoPath);
             ownerThread.Join();
             releaseSignal.Dispose();
             return null;
@@ -81,7 +81,7 @@ public sealed class EnvironmentLock : IDisposable
                 projectPath = projectRoot,
                 startedUtc = DateTimeOffset.UtcNow,
                 runId
-            }));
+            }, JsonDefaults.Storage));
             return handle;
         }
         catch
@@ -106,6 +106,20 @@ public sealed class EnvironmentLock : IDisposable
             }
         }
         catch (WaitHandleCannotBeOpenedException) { return false; }
+    }
+
+    public static object? ReadInfo(string infoPath)
+    {
+        if (!File.Exists(infoPath)) return null;
+        try
+        {
+            using var document = JsonDocument.Parse(File.ReadAllText(infoPath));
+            return document.RootElement.Clone();
+        }
+        catch (Exception ex)
+        {
+            return new { invalid = true, error = ex.Message };
+        }
     }
 
     private static string MutexName(string rimWorldConfigDirectory)

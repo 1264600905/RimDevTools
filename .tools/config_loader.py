@@ -44,6 +44,19 @@ def get_tools_dir() -> Path:
     return find_project_root() / ".tools"
 
 
+def get_project_path(name: str, default: str) -> Path:
+    """解析 project_paths 中的项目内相对目录，并拒绝越界或项目根目录。"""
+    root = find_project_root().resolve()
+    configured = load_config().get("project_paths", {}).get(name, default)
+    candidate = Path(configured)
+    if candidate.is_absolute():
+        raise ValueError(f"project_paths.{name} 必须是项目根目录内的相对目录")
+    resolved = (root / candidate).resolve()
+    if resolved == root or root not in resolved.parents:
+        raise ValueError(f"project_paths.{name} 必须指向项目根目录内的子目录")
+    return resolved
+
+
 def get_rimworld_dir() -> Path:
     """返回 RimWorld 安装根目录。"""
     return Path(load_config()["rimworld_dir"])

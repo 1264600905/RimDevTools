@@ -142,6 +142,7 @@ namespace LogSyncMod.AutoTest
         private bool? cameraPlusActive;
         private int nextDiscoverOrder = 1;
         private int nextPlannedOrder = 1;
+        private bool batchLimitApplied;
         private AutoTestGameClock evidenceClock;
         private AutoTestOperationJournal operationJournal;
         private AutoTestLogJournal logJournal;
@@ -890,6 +891,8 @@ namespace LogSyncMod.AutoTest
             foreach (var item in limitedThreeViews) pendingThreeViewTargets.Enqueue(item);
             foreach (var item in limitedCombatPawns) pendingCombatPawnTargets.Enqueue(item);
 
+            batchLimitApplied = true;
+
             Log.Message(string.Format(
                 "[LogSyncAutoTest] Batch limit applied. Original={0}, Kept={1}",
                 originalTotal,
@@ -1250,6 +1253,8 @@ namespace LogSyncMod.AutoTest
             }
 
             summary.MissingCount = summary.MissingCaseIds.Count;
+            summary.BatchSize = Math.Max(1, settings.autoTestBatchSize);
+            summary.BatchLimitApplied = batchLimitApplied;
             if (settings.autoTestTargetDefNames != null && settings.autoTestTargetDefNames.Count > 0)
             {
                 foreach (string requested in settings.autoTestTargetDefNames)

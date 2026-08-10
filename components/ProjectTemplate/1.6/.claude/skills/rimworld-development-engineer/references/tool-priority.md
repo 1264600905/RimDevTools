@@ -5,7 +5,7 @@
 1. 读取当前项目源码、Defs、补丁、配置和测试。
 2. 判断任务是否需要新的官方 RimWorld/DLC 事实。
 3. 对于官方 Def、XML、类型、成员、实现或 Harmony 目标，调用 `rimsage` 并遵循其可用性和研究工作流。
-4. 对于第三方模组，检查 `参考文档`；当所需模组缺失时使用 `mod search` 和 `mod copy`。
+4. 对于第三方模组，检查 `project_paths.reference_docs`；当所需模组缺失时使用 `mod search` 和 `mod copy`。
 5. 仅在所选 API、字段、Def 或目标所需证据被记录后才实现。
 6. 通过本项目的静态检查、构建、部署计划和适当的游戏测试验证结果。
 

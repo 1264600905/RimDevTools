@@ -141,7 +141,7 @@ public static class DeployCommand
 
         var runId = Guid.NewGuid().ToString("N");
         Directory.CreateDirectory(targetRoot);
-        string? busyInfo = null;
+        object? busyInfo = null;
         using var gate = environmentPrepared ? null : EnvironmentLock.TryAcquire(configDirectory, "deploy", context.Root, runId, out busyInfo);
         if (!environmentPrepared && gate is null)
             return Failure(ExitCodes.Busy, new CliError("ENVIRONMENT_BUSY", "RimWorld 环境正被另一个 RimDevTools 进程占用", new { busyInfo }), context.Root);

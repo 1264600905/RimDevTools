@@ -42,7 +42,7 @@ description: 通过 RimSage MCP 研究官方 RimWorld 和 DLC 的 Def、XML 继�
 ## 研究第三方模组
 
 1. 确认对象是第三方模组而非官方内容。
-2. 在 `参考文档` 中查找现有本地副本。
+2. 读取 `mod_config.jsonc`，在 `project_paths.reference_docs` 指定的目录中查找现有本地副本。
 3. 若不存在，用 `.\.tools\RimDevTools.exe mod search <query>` 消除歧义。
 4. 先运行 `mod copy <query> --dry-run` 检查计划，再仅带任务所需选项运行 `mod copy`。不要隐式添加 `--deps`、`--include-ignored` 或 `--overwrite-existing`。
 5. 若目标与现有参考目录冲突，报告冲突并询问用户是否意图替换。

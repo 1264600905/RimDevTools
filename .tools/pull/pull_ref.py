@@ -9,9 +9,9 @@ from pathlib import Path
 
 # 将 .tools 目录加入 sys.path 以便导入 config_loader
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from config_loader import find_project_root, load_config, get_tools_dir, get_search_paths
+from config_loader import find_project_root, load_config, get_project_path, get_tools_dir, get_search_paths
 
-TARGET_DIR = find_project_root() / "参考文档"
+TARGET_DIR = get_project_path("reference_docs", "参考文档")
 
 
 def resolve_ilspy_command(ilspycmd_raw: str):

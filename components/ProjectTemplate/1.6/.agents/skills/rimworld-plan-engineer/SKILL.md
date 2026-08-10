@@ -15,7 +15,7 @@ description: 在不修改源代码的前提下，为 RimWorld 模组研究并产
 2. 路径、工具或恢复状态不确定时运行 `RimDevTools.exe doctor`；仅在需要成功检查项时使用 `doctor --verbose`。
 3. 选择实施位置前检查当前可编辑项目文件和测试。
 4. 判断计划是否需要官方 RimWorld/DLC Def、API、源代码行为或 Harmony 目标事实。需要时调用 `rimsage` 并遵循其可用性与证据工作流。
-5. 第三方模组事实先检查 `参考文档`。建立计划证据确有需要时可运行 `mod search/mod copy`；先预览复制计划，显式选择选项，未经用户指示不得覆盖目标。
+5. 第三方模组事实先检查 `mod_config.jsonc` 的 `project_paths.reference_docs`。建立计划证据确有需要时可运行 `mod search/mod copy`；先预览复制计划，显式选择选项，未经用户指示不得覆盖目标。计划文件写入 `project_paths.planning_docs`。
 6. RimSage 修复和重试流程后所需证据仍不可用时，停止依赖它的结论，并请用户恢复访问。
 
 工具或来源不可用时不得虚构证据。区分已验证事实、推断和未解决假设。

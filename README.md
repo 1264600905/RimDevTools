@@ -25,7 +25,7 @@ RimDevTools.Tests/           CLI 回归测试
 RimDevTools.ReleaseTests/    发布布局测试
 components/ProjectTemplate/  RimWorld 1.6 项目模板源
 .tools/                      开发、发布、测试与 ILSpy 工具
-参考文档/                    通过 mod copy 获取的第三方模组证据
+参考文档/                    默认的第三方模组证据目录（由 project_paths.reference_docs 配置）
 ```
 
 ## 构建与测试
@@ -52,7 +52,7 @@ RimSage 是半强制研究前置：
 - 配置明显损坏时，skill 会安全修复并重试一次；服务仍不可用时停止依赖它的结论并要求用户恢复访问。
 - 已配置的同名本地服务与默认远程服务等同使用。
 
-当前项目始终直接读取工作树。第三方模组不由 RimSage 提供；先检查 `参考文档`，缺少时使用 `mod search/mod copy` 获取 XML、程序集和 ILSpy 源码。
+当前项目始终直接读取工作树。第三方模组不由 RimSage 提供；先检查 `mod_config.jsonc` 的 `project_paths.reference_docs`，缺少时使用 `mod search/mod copy` 获取 XML、程序集和 ILSpy 源码。计划文档目录由 `project_paths.planning_docs` 指定。
 
 ## 常用命令
 
@@ -73,7 +73,7 @@ RimSage 是半强制研究前置：
 
 quick、auto 和 XML 测试遵循 `mod_config.jsonc.isolated_desktop`；模板默认使用当前桌面。manual 默认使用当前桌面，除非显式传入 `--isolated-desktop`。测试会事务化修改并恢复 RimWorld 配置。
 
-auto/xml 可重复传入 `--scope` 组合多个测试分类；未传 scope 时默认为 Standard。auto 还可重复传入 `--defname` 精确筛选目标，任何未命中的名称都会使本轮失败。外部 ModsConfig XML 使用 `--active-mods-file` 指定。
+auto/xml 可重复传入 `--scope` 组合多个测试分类；未传 scope 时默认为 Standard。auto 还可重复传入 `--defname` 精确筛选目标，任何未命中的名称都会使本轮失败。`--batch-size` 设置 Targeted 测试计划上限，默认 40；Standard 全量和显式 DefName 测试忽略该上限。RimWorld 标准输出写入 `.tools/log/RimWorldProcess.log`，终端 stdout 保持为单一最终 JSON。外部 ModsConfig XML 使用 `--active-mods-file` 指定。
 
 `test run` 和 `doctor` 还会检查启用模组的必要上级依赖。缺失依赖只显示 warning，不阻挡测试；`doctor` 的检查项为 `mods.min_active_dependencies`。
 

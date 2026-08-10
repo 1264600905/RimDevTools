@@ -30,7 +30,7 @@ mod dependencies <query> [--version <value>] [--fuzzy]
 mod dependents <query> [--version <value>] [--fuzzy]
 ```
 
-搜索会扫描游戏 Mods 目录和 `workshop_paths`。`mod copy` 接受绝对目录、精确的 package ID/名称/文件夹或搜索匹配项。它以净化后的 About 名称命名目标，复制到 `参考文档`，并使用打包的 ILSpy 反编译程序集。
+搜索会扫描游戏 Mods 目录和 `workshop_paths`。`mod copy` 接受绝对目录、精确的 package ID/名称/文件夹或搜索匹配项。它以净化后的 About 名称命名目标，复制到 `project_paths.reference_docs`，并使用打包的 ILSpy 反编译程序集。`--deps` 不复制官方内容与 Harmony 共享依赖。
 
 - `--deps`：拉取完整的硬依赖闭包。
 - `--include-ignored`：禁用 `pull_ignore_folders`。
@@ -48,7 +48,7 @@ test settings
 test run [--deploy] [--sync-source] [--mode quick|manual|auto|xml]
          [--active-mods-file <path>] [--timeout-seconds <n>]
          [--target-package-id <id>] [--capture-screenshots]
-         [--scope <value>]... [--defname <value>]...
+         [--scope <value>]... [--defname <value>]... [--batch-size <n>]
          [--isolated-desktop|--no-isolated-desktop]
 ```
 
@@ -58,7 +58,7 @@ quick 是启动冒烟测试。manual 是用户手动的。auto 和 XML 验证结
 
 `--scope` 可在 auto/XML 中重复，多个 scope 取并集。支持值：`standard`、`content`、`recipes`、`hediffs`、`turrets`、`rangedweapons`、`meleeweapons`、`threeviews`、`combatpawns`、`skillpocketmaps`。未传时默认为 `Standard`；Standard 不隐式启用 CombatPawns 或 SkillPocketMaps。
 
-`--defname` 仅适用于 auto，可重复且按不区分大小写去重。scope 选择测试类型，DefName 选择目标，两者取交集；不传 DefName 时枚举所选范围。任何请求的 DefName 未产生用例时，本轮失败并在 JSON/Markdown 中列出未命中名称。非 Standard 且不指定 DefName 时受设置项 `autoTestBatchSize` 限制。
+`--defname` 仅适用于 auto，可重复且按不区分大小写去重。scope 选择测试类型，DefName 选择目标，两者取交集；不传 DefName 时枚举所选范围。任何请求的 DefName 未产生用例时，本轮失败并在 JSON/Markdown 中列出未命中名称。`--batch-size` 适用于 auto/xml，默认 40；非 Standard 且不指定 DefName 时限制计划数量，Standard 全量和显式 DefName 运行忽略该限制。游戏进程 stdout/stderr 写入 `.tools/log/RimWorldProcess.log`。
 
 例 1，只测试三视图：
 
@@ -96,6 +96,8 @@ quick 是启动冒烟测试。manual 是用户手动的。auto 和 XML 验证结
 - `sync_source`：为 `true` 时，部署默认附带 `source/`；默认 `false`。
 - `protected_files_regex`：替换时保留的已部署相对路径。
 - `pull_ignore_folders`：除非使用 `--include-ignored`，否则参考复制省略的文件夹。
+- `project_paths.reference_docs`：第三方模组复制和证据目录，默认 `参考文档`。
+- `project_paths.planning_docs`：项目计划文档目录，默认 `策划案`。
 - `ilspycmd_path`：相对 `.tools` 的路径，通常为 `Ilspy\ilspycmd.exe`。
 - `log_keywords`：应用于 LogSync 设置的字符串。
 - `min_active_mods`：始终包含在临时测试模组列表中的 package ID。

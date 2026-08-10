@@ -34,7 +34,7 @@
 - 配置缺失或损坏时安全修复并重试一次；仍不可用时停止依赖它的研究并请求用户处理。
 - 用户自行配置的同名本地服务与默认远程服务等同使用。
 
-RimSage 不读取当前项目或第三方模组。当前项目直接读取工作树；第三方模组先检查 `参考文档`，缺少时使用 `mod search/mod copy`。
+RimSage 不读取当前项目或第三方模组。当前项目直接读取工作树；第三方模组先检查 `mod_config.jsonc` 的 `project_paths.reference_docs`（默认 `参考文档`），缺少时使用 `mod search/mod copy`。计划文档目录由 `project_paths.planning_docs` 指定。
 
 必须使用RimSage不要瞎猜源码！必须使用RimSage不要瞎猜源码！必须使用RimSage不要瞎猜源码！如果rimsage不能用要及时告诉用户。
 

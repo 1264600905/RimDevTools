@@ -85,7 +85,7 @@ using (var manifestDocument = JsonDocument.Parse(File.ReadAllText(Path.Combine(d
 
 var logSyncAbout = XDocument.Load(Path.Combine(data, "LogSyncMod", "About", "About.xml"));
 Assert(logSyncAbout.Root?.Element("packageId")?.Value.Equals("trigger.logsyncmod", StringComparison.OrdinalIgnoreCase) == true, "packaged LogSyncMod has the expected packageId");
-Assert(logSyncAbout.Root?.Element("modVersion")?.Value == "1.1.1", "packaged LogSyncMod declares version 1.1.1");
+Assert(logSyncAbout.Root?.Element("modVersion")?.Value == "1.1.2", "packaged LogSyncMod declares version 1.1.2");
 var logSyncAssembly = AssemblyName.GetAssemblyName(Path.Combine(data, "LogSyncMod", "1.6", "Assemblies", "LogSyncMod.dll")).Version;
 var autoTestAssembly = AssemblyName.GetAssemblyName(Path.Combine(data, "LogSyncMod", "1.6", "Assemblies", "LogSyncMod.AutoTest.dll")).Version;
 Assert(logSyncAssembly is not null && autoTestAssembly is not null && logSyncAssembly.Major == autoTestAssembly.Major && logSyncAssembly.Minor == autoTestAssembly.Minor && logSyncAssembly.Build == autoTestAssembly.Build, "packaged LogSync assemblies share a product version");
@@ -106,6 +106,8 @@ using (var config = JsonDocument.Parse(File.ReadAllText(Path.Combine(release, "m
     Assert(root.GetProperty("ilspycmd_path").GetString() == "Ilspy\\ilspycmd.exe", "packaged configuration points at the packaged ILSpy directory");
     Assert(!root.GetProperty("isolated_desktop").GetBoolean(), "packaged configuration uses the normal desktop by default");
     Assert(!root.GetProperty("sync_source").GetBoolean(), "packaged configuration disables source synchronization by default");
+    Assert(root.GetProperty("project_paths").GetProperty("reference_docs").GetString() == "参考文档"
+        && root.GetProperty("project_paths").GetProperty("planning_docs").GetString() == "策划案", "packaged configuration exposes configurable project semantic paths");
     Assert(!root.TryGetProperty("shader_bundle", out _) && !root.GetProperty("sync_items").EnumerateArray().Any(item => item.GetString() == "AssetBundles"), "packaged configuration does not include shader build settings or asset bundle synchronization");
 }
 
@@ -125,7 +127,12 @@ Assert(cleanupHelp.Contains("--dry-run", StringComparison.Ordinal) && cleanupHel
 var modCopyHelp = Run(Path.Combine(tools, "RimDevTools.exe"), release, "mod", "copy", "--help");
 Assert(modCopyHelp.Contains("--include-ignored", StringComparison.Ordinal)
     && modCopyHelp.Contains("--overwrite-existing", StringComparison.Ordinal)
-    && modCopyHelp.Contains("--dry-run", StringComparison.Ordinal), "packaged CLI exposes the new reference mod copy options");
+    && modCopyHelp.Contains("--dry-run", StringComparison.Ordinal)
+    && modCopyHelp.Contains("project_paths.reference_docs", StringComparison.Ordinal), "packaged CLI exposes reference copy options and the configured destination");
+var testRunHelp = Run(Path.Combine(tools, "RimDevTools.exe"), release, "test", "run", "--help");
+Assert(testRunHelp.Contains("--batch-size", StringComparison.Ordinal)
+    && testRunHelp.Contains("defaults to 40", StringComparison.Ordinal)
+    && testRunHelp.Contains("ignore the batch limit", StringComparison.Ordinal), "packaged CLI exposes the automatic-test batch contract");
 var removedInit = RunResult(Path.Combine(tools, "RimDevTools.exe"), release, "init", "1.6", "--output", Path.Combine(Path.GetTempPath(), "removed-init"));
 Assert(removedInit.ExitCode == 2 && removedInit.Stdout.Contains("UNKNOWN_COMMAND", StringComparison.Ordinal), "packaged CLI no longer exposes init");
 var removedRef = RunResult(Path.Combine(tools, "RimDevTools.exe"), release, "ref", "search", "anything");

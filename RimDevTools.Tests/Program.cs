@@ -166,6 +166,18 @@ internal sealed class TestSuite
         Assert(context!.Config.Retention.MaxAutoTestRuns == 3, "automatic test retention defaults to three runs");
         Assert(!context.Config.IsolatedDesktop, "isolated desktop defaults to disabled when omitted from JSONC");
         Assert(!context.Config.SyncSource, "source synchronization defaults to disabled when omitted from JSONC");
+        Assert(context.Config.ResolveReferenceDocsPath(root) == Path.Combine(root, "参考文档")
+            && context.Config.ResolvePlanningDocsPath(root) == Path.Combine(root, "策划案"), "project semantic paths preserve backward-compatible defaults");
+        var customPaths = new ProjectConfig
+        {
+            ProjectPaths = new ProjectPathsConfig { ReferenceDocs = "证据库", PlanningDocs = "计划库" }
+        };
+        Assert(customPaths.ResolveReferenceDocsPath(root) == Path.Combine(root, "证据库")
+            && customPaths.ResolvePlanningDocsPath(root) == Path.Combine(root, "计划库"), "project semantic paths accept configured directory names");
+        AssertThrows<InvalidDataException>(() => new ProjectConfig
+        {
+            ProjectPaths = new ProjectPathsConfig { ReferenceDocs = "..\\outside" }
+        }.ResolveReferenceDocsPath(root), "project semantic paths reject traversal outside the project root");
         var disabledConfig = new ProjectConfig { IsolatedDesktop = false };
         var configured = IsolatedDesktopOptions.Resolve(disabledConfig, "auto", [], out _);
         var overridden = IsolatedDesktopOptions.Resolve(disabledConfig, "auto", ["--isolated-desktop"], out _);
@@ -610,6 +622,7 @@ internal sealed class TestSuite
         Assert(!AutoTestSelectionParser.TryParse(["test", "run", "--mode", "xml", "--defname", "Coat"], "xml", out _, out _), "defname is rejected outside auto mode");
         Assert(!AutoTestSelectionParser.TryParse(["test", "run", "--mode", "auto", "--scope", "unknown"], "auto", out _, out _), "unknown scope is rejected");
         Assert(CliArgs.Validate("test run", ["test", "run", "--active-mods-file", "ModsConfig.xml"]) is null, "active mods file option is accepted");
+        Assert(CliArgs.Validate("test run", ["test", "run", "--batch-size", "7"]) is null, "batch size option is accepted");
     }
 
     private async Task TestSettingsAsync()
@@ -627,11 +640,12 @@ internal sealed class TestSuite
         Assert(settings.Element("keywords")?.Elements("li").Single().Value == "Ready", "settings writer updates keywords");
         Assert(settings.Element("testMuteAudio")?.Value == "False", "persistent test settings do not enable audio muting");
 
-        await SettingsEditor.UpdateAsync(context, "auto", scopes: ["Turrets", "ThreeViews", "turrets"], hasExplicitScopes: true, defNames: ["Coat", "coat"]);
+        await SettingsEditor.UpdateAsync(context, "auto", scopes: ["Turrets", "ThreeViews", "turrets"], hasExplicitScopes: true, defNames: ["Coat", "coat"], batchSize: 7);
         document = XDocument.Load(environment.SettingsPath);
         settings = document.Descendants("ModSettings").First();
         Assert(settings.Element("autoTestScopes")?.Elements("li").Select(x => x.Value).SequenceEqual(["Turrets", "ThreeViews"]) == true, "settings writer persists normalized multiple scopes");
         Assert(settings.Element("autoTestTargetDefNames")?.Elements("li").Select(x => x.Value).SequenceEqual(["Coat"]) == true, "settings writer persists normalized target DefNames");
+        Assert(settings.Element("autoTestBatchSize")?.Value == "7", "settings writer persists the requested automatic-test batch size");
         await SettingsEditor.UpdateAsync(context, "auto");
         document = XDocument.Load(environment.SettingsPath);
         settings = document.Descendants("ModSettings").First();
@@ -729,7 +743,7 @@ internal sealed class TestSuite
 
     private async Task TestCleanupCommandAsync()
     {
-        var environment = CreateProjectEnvironment("cleanup-command", createGameExecutable: true);
+        var environment = CreateProjectEnvironment("cleanup-command-工具测试", createGameExecutable: true);
         using var scope = UseEnvironment(environment);
         var transaction = await ConfigTransaction.CreateAsync(environment.ConfigDirectory, "cleanup-command", [environment.ModsConfigPath]);
         await transaction.WriteAllTextAsync(environment.ModsConfigPath, "<ModsConfigData><activeMods><li>temporary.mod</li></activeMods><other>tool</other></ModsConfigData>");
@@ -742,12 +756,19 @@ internal sealed class TestSuite
             {
                 Assert(heldLock is not null, "cleanup status fixture acquires the environment lock");
                 var status = await CaptureAsync(() => TestCommand.CleanupAsync(["test", "cleanup", "--status", "--dry-run"]));
+                using var statusJson = JsonDocument.Parse(status.Output);
+                var lockInfo = statusJson.RootElement.GetProperty("result").GetProperty("lockInfo");
                 Assert(status.ExitCode == 0
                     && status.Output.Contains("cleanup-command", StringComparison.Ordinal)
                     && status.Output.Contains("\"gameRunning\": true", StringComparison.Ordinal)
                     && status.Output.Contains("\"environmentBusy\": true", StringComparison.Ordinal)
+                    && lockInfo.ValueKind == JsonValueKind.Object
+                    && lockInfo.GetProperty("projectPath").GetString() == environment.Root
+                    && status.Output.Contains("工具测试", StringComparison.Ordinal)
+                    && !status.Output.Contains("\\u5DE5", StringComparison.OrdinalIgnoreCase)
+                    && !status.Output.Contains("\\u002B", StringComparison.OrdinalIgnoreCase)
                     && TransactionRecovery.PendingDirectories(environment.ConfigDirectory).Count == 1
-                    && Directory.Exists(staleStaging), "cleanup status reports the lock, transactions, game, and deployment artifacts without mutation");
+                    && Directory.Exists(staleStaging), "cleanup status reports readable structured lock data without mutation");
             }
             var refused = await CaptureAsync(() => TestCommand.CleanupAsync(["test", "cleanup"]));
             Assert(refused.ExitCode == ExitCodes.Busy && JsonErrorCode(refused.Output) == "GAME_RUNNING_CLEANUP_REFUSED" && TransactionRecovery.PendingDirectories(environment.ConfigDirectory).Count == 1, "cleanup command refuses mutation while RimWorld is running");
@@ -859,19 +880,39 @@ internal sealed class TestSuite
         var referenceMod = CreateMod(environment.Game, "Reference", "demo.reference", content: "v1");
         Directory.CreateDirectory(Path.Combine(referenceMod, "Ignored"));
         File.WriteAllText(Path.Combine(referenceMod, "Ignored", "ignored.txt"), "included on request");
-        File.WriteAllText(environment.ConfigPath, Config(environment, extra: $"\"workshop_paths\":[\"{Escape(workshop)}\"],\"pull_ignore_folders\":[\"Ignored\"]"));
+        File.WriteAllText(environment.ConfigPath, Config(environment, extra: $"\"workshop_paths\":[\"{Escape(workshop)}\"],\"pull_ignore_folders\":[\"Ignored\"],\"project_paths\":{{\"reference_docs\":\"证据库\",\"planning_docs\":\"计划库\"}}"));
+        var configuredReferenceRoot = Path.Combine(environment.Root, "证据库");
         var dryRun = await CaptureAsync(() => ModCommand.CopyAsync(["mod", "copy", "demo.reference", "--dry-run"]));
-        Assert(dryRun.ExitCode == 0 && dryRun.Output.Contains("dependencyClosure") && !Directory.Exists(Path.Combine(environment.Root, "参考文档")), "mod copy dry-run reports the plan without creating reference targets");
+        Assert(dryRun.ExitCode == 0 && dryRun.Output.Contains("dependencyClosure") && !Directory.Exists(configuredReferenceRoot), "mod copy dry-run reports the plan without creating the configured reference target");
         var pulled = await CaptureAsync(() => ModCommand.CopyAsync(["mod", "copy", "demo.reference"]));
         Assert(pulled.ExitCode == 0
-            && File.ReadAllText(Path.Combine(environment.Root, "参考文档", "Reference", "content.txt")) == "v1"
-            && !Directory.Exists(Path.Combine(environment.Root, "参考文档", "Reference", "Ignored")), "mod copy installs staged mod and applies pull_ignore_folders");
+            && File.ReadAllText(Path.Combine(configuredReferenceRoot, "Reference", "content.txt")) == "v1"
+            && !Directory.Exists(Path.Combine(configuredReferenceRoot, "Reference", "Ignored")), "mod copy installs into project_paths.reference_docs and applies pull_ignore_folders");
         var overwritten = await CaptureAsync(() => ModCommand.CopyAsync(["mod", "copy", "demo.reference", "--include-ignored", "--overwrite-existing"]));
-        Assert(overwritten.ExitCode == 0 && File.Exists(Path.Combine(environment.Root, "参考文档", "Reference", "Ignored", "ignored.txt")), "mod copy includes ignored folders and overwrites an existing target only when explicitly requested");
+        Assert(overwritten.ExitCode == 0 && File.Exists(Path.Combine(configuredReferenceRoot, "Reference", "Ignored", "ignored.txt")), "mod copy includes ignored folders and overwrites an existing configured target only when explicitly requested");
 
         CreateMod(environment.Game, "OfficialDependency", "demo.official-dependency", "ludeon.rimworld.royalty");
         var officialDependency = await CaptureAsync(() => ModCommand.CopyAsync(["mod", "copy", "demo.official-dependency", "--deps"]));
-        Assert(officialDependency.ExitCode == 0 && Directory.Exists(Path.Combine(environment.Root, "参考文档", "OfficialDependency")), "mod copy skips official RimWorld dependencies that are not stored under Mods");
+        Assert(officialDependency.ExitCode == 0
+            && officialDependency.Output.Contains("official_content", StringComparison.Ordinal)
+            && Directory.Exists(Path.Combine(configuredReferenceRoot, "OfficialDependency")), "mod copy skips and reports official RimWorld dependencies");
+
+        CreateMod(environment.Game, "HarmonyDependency", "demo.harmony-dependency", "brrainz.harmony");
+        var harmonyDependency = await CaptureAsync(() => ModCommand.CopyAsync(["mod", "copy", "demo.harmony-dependency", "--deps"]));
+        Assert(harmonyDependency.ExitCode == 0
+            && harmonyDependency.Output.Contains("brrainz.harmony", StringComparison.OrdinalIgnoreCase)
+            && harmonyDependency.Output.Contains("shared_harmony", StringComparison.Ordinal)
+            && Directory.Exists(Path.Combine(configuredReferenceRoot, "HarmonyDependency"))
+            && !Directory.Exists(Path.Combine(configuredReferenceRoot, "Harmony")), "mod copy skips Harmony throughout dependency closure while retaining the requested root");
+
+        var invalidPathEnvironment = CreateProjectEnvironment("ref-invalid-path");
+        CreateMod(invalidPathEnvironment.Game, "Reference", "demo.reference");
+        File.WriteAllText(invalidPathEnvironment.ConfigPath, Config(invalidPathEnvironment, extra: "\"project_paths\":{\"reference_docs\":\"..\\\\outside\"}"));
+        using (UseEnvironment(invalidPathEnvironment))
+        {
+            var invalidPath = await CaptureAsync(() => ModCommand.CopyAsync(["mod", "copy", "demo.reference", "--dry-run"]));
+            Assert(invalidPath.ExitCode == ExitCodes.InvalidArguments && JsonErrorCode(invalidPath.Output) == "PROJECT_PATH_INVALID", "mod copy rejects configured reference paths outside the project root");
+        }
 
         var unsafeEnvironment = CreateProjectEnvironment("ref-reparse");
         CreateMod(unsafeEnvironment.Game, "Reference", "demo.reference", content: "safe");
@@ -1135,9 +1176,13 @@ internal sealed class TestSuite
         var invalidScopeMode = await CaptureAsync(() => CliApplication.RunAsync(["test", "run", "--mode", "quick", "--scope", "turrets"]));
         var invalidDefMode = await CaptureAsync(() => CliApplication.RunAsync(["test", "run", "--mode", "xml", "--defname", "Demo_Coat"]));
         var invalidScreenshotMode = await CaptureAsync(() => CliApplication.RunAsync(["test", "run", "--mode", "quick", "--capture-screenshots"]));
+        var invalidBatchMode = await CaptureAsync(() => CliApplication.RunAsync(["test", "run", "--mode", "quick", "--batch-size", "5"]));
+        var invalidBatchSize = await CaptureAsync(() => CliApplication.RunAsync(["test", "run", "--mode", "auto", "--batch-size", "0"]));
         Assert(invalidScopeMode.ExitCode == ExitCodes.InvalidArguments && JsonErrorCode(invalidScopeMode.Output) == "INVALID_ARGUMENT", "quick/manual scope misuse returns stable INVALID_ARGUMENT");
         Assert(invalidDefMode.ExitCode == ExitCodes.InvalidArguments && JsonErrorCode(invalidDefMode.Output) == "INVALID_ARGUMENT", "non-auto DefName misuse returns stable INVALID_ARGUMENT");
         Assert(invalidScreenshotMode.ExitCode == ExitCodes.InvalidArguments && JsonErrorCode(invalidScreenshotMode.Output) == "INVALID_ARGUMENT", "non-auto screenshot misuse returns stable INVALID_ARGUMENT");
+        Assert(invalidBatchMode.ExitCode == ExitCodes.InvalidArguments && JsonErrorCode(invalidBatchMode.Output) == "INVALID_ARGUMENT", "non-auto batch-size misuse returns stable INVALID_ARGUMENT");
+        Assert(invalidBatchSize.ExitCode == ExitCodes.InvalidArguments && JsonErrorCode(invalidBatchSize.Output) == "BATCH_SIZE_INVALID", "non-positive batch size returns stable BATCH_SIZE_INVALID");
 
         var steamBlocked = CreateProjectEnvironment("steam-blocked", createGameExecutable: true);
         using var blockedScope = UseEnvironment(steamBlocked);
@@ -1160,6 +1205,8 @@ internal sealed class TestSuite
         var isolatedDesktop = File.ReadAllText(Path.Combine(environment.ConfigDirectory, "fake-desktop.txt"));
         var quickSettings = XDocument.Parse(File.ReadAllText(Path.Combine(environment.ConfigDirectory, "fake-settings.xml")));
         Assert(quick.ExitCode == 0 && quick.Output.Contains("\"isolatedDesktop\": false") && !File.ReadAllText(Path.Combine(environment.ConfigDirectory, "fake-args.txt")).Contains("quicktest"), "quick mode waits for ready signal on the normal desktop by default");
+        Assert(File.ReadAllText(SettingsEditor.GameProcessLogPath(ProjectDiscovery.Find(environment.Root, out _)!)).Contains("FAKE_GAME_STDOUT", StringComparison.Ordinal)
+            && !quick.Output.Contains("FAKE_GAME_STDOUT", StringComparison.Ordinal), "normal desktop game output is captured outside the final JSON");
         using (var quickJson = JsonDocument.Parse(quick.Output))
         {
             Assert(quickJson.RootElement.GetProperty("warnings").GetArrayLength() == 1
@@ -1194,12 +1241,13 @@ internal sealed class TestSuite
         var observedSettings = File.ReadAllText(Path.Combine(environment.ConfigDirectory, "fake-settings.xml"));
         Assert(auto.ExitCode == 0 && File.ReadAllText(Path.Combine(environment.ConfigDirectory, "fake-args.txt")).Contains("quicktest"), "auto mode launches with quicktest and validates result");
         Assert(observedSettings.Contains("demo.current") && observedSettings.Contains("AutoTestOutput"), "auto mode passes target package and output path to LogSync");
+        Assert(XDocument.Parse(observedSettings).Descendants("autoTestBatchSize").Single().Value == "40", "auto mode writes the default batch size of 40");
         Assert(XDocument.Parse(observedSettings).Descendants("testMuteAudio").Single().Value == "True", "auto mode enables transactional audio muting");
         Assert(Directory.EnumerateFiles(autoOutput, "*_Result.json").Count() == 2, "configured auto-test retention is enforced after a run");
         AssertConfigurationRestored(environment, "auto mode restores settings changed by the game");
 
         Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", "auto");
-        var selected = await CaptureAsync(() => TestCommand.RunAsync(["test", "run", "--mode", "auto", "--scope", "turrets", "--scope", "threeviews", "--scope", "TURRETS", "--defname", "Demo_Coat", "--defname", "demo_coat", "--timeout-seconds", "5"]));
+        var selected = await CaptureAsync(() => TestCommand.RunAsync(["test", "run", "--mode", "auto", "--scope", "turrets", "--scope", "threeviews", "--scope", "TURRETS", "--defname", "Demo_Coat", "--defname", "demo_coat", "--batch-size", "7", "--timeout-seconds", "5"]));
         var selectedSettings = XDocument.Parse(File.ReadAllText(Path.Combine(environment.ConfigDirectory, "fake-settings.xml"))).Descendants("ModSettings").Single();
         Assert(selected.ExitCode == 0, "selected auto run succeeds: " + selected.Output);
         using (var selectedJson = JsonDocument.Parse(selected.Output))
@@ -1207,11 +1255,13 @@ internal sealed class TestSuite
             var selectedResult = selectedJson.RootElement.GetProperty("result");
             Assert(selected.ExitCode == 0
                 && selectedResult.GetProperty("scopes").EnumerateArray().Select(x => x.GetString()).SequenceEqual(["Turrets", "ThreeViews"])
-                && selectedResult.GetProperty("defNames").EnumerateArray().Select(x => x.GetString()).SequenceEqual(["Demo_Coat"]), "auto success JSON reports normalized scopes and DefNames");
+                && selectedResult.GetProperty("defNames").EnumerateArray().Select(x => x.GetString()).SequenceEqual(["Demo_Coat"])
+                && selectedResult.GetProperty("batchSize").GetInt32() == 7, "auto success JSON reports normalized scopes, DefNames, and batch size");
         }
         Assert(selectedSettings.Element("autoTestScope")?.Value == "Turrets"
             && selectedSettings.Element("autoTestScopes")?.Elements("li").Select(x => x.Value).SequenceEqual(["Turrets", "ThreeViews"]) == true
-            && selectedSettings.Element("autoTestTargetDefNames")?.Elements("li").Select(x => x.Value).SequenceEqual(["Demo_Coat"]) == true, "auto run writes multi-scope and precise target settings for the game");
+            && selectedSettings.Element("autoTestTargetDefNames")?.Elements("li").Select(x => x.Value).SequenceEqual(["Demo_Coat"]) == true
+            && selectedSettings.Element("autoTestBatchSize")?.Value == "7", "auto run writes multi-scope, precise target, and batch settings for the game");
         AssertConfigurationRestored(environment, "selected auto mode restores all new settings fields");
 
         Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", "auto-large-log");
@@ -1232,6 +1282,8 @@ internal sealed class TestSuite
         Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", "manual");
         var isolatedManual = await CaptureAsync(() => TestCommand.RunAsync(["test", "run", "--mode", "manual", "--isolated-desktop", "--timeout-seconds", "5"]));
         Assert(isolatedManual.ExitCode == 0 && isolatedManual.Output.Contains("\"isolatedDesktop\": true") && File.ReadAllText(Path.Combine(environment.ConfigDirectory, "fake-desktop.txt")).StartsWith("RimDevTools.", StringComparison.Ordinal), "manual mode supports an explicit isolated desktop override");
+        Assert(File.ReadAllText(SettingsEditor.GameProcessLogPath(ProjectDiscovery.Find(environment.Root, out _)!)).Contains("FAKE_GAME_STDOUT", StringComparison.Ordinal)
+            && !isolatedManual.Output.Contains("FAKE_GAME_STDOUT", StringComparison.Ordinal), "isolated desktop game output is captured outside the final JSON");
 
         Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", "hang");
         var timeout = await CaptureAsync(() => TestCommand.RunAsync(["test", "run", "--mode", "manual", "--timeout-seconds", "1"]));

@@ -101,6 +101,8 @@ namespace LogSyncMod.AutoTest
                 builder.AppendLine("- ManifestPlanned: " + runSummary.PlannedCount);
                 builder.AppendLine("- ManifestExecuted: " + runSummary.ExecutedCount);
                 builder.AppendLine("- ManifestMissing: " + runSummary.MissingCount);
+                builder.AppendLine("- BatchSize: " + runSummary.BatchSize);
+                builder.AppendLine("- BatchLimitApplied: " + runSummary.BatchLimitApplied);
                 builder.AppendLine("- MissingDefNames: " + (runSummary.MissingDefNames.Count == 0 ? "<none>" : string.Join(", ", runSummary.MissingDefNames.Select(value => "`" + value + "`"))));
             }
             builder.AppendLine();
@@ -258,6 +260,8 @@ namespace LogSyncMod.AutoTest
                 builder.AppendLine("  \"manifestPlanned\": " + runSummary.PlannedCount + ",");
                 builder.AppendLine("  \"manifestExecuted\": " + runSummary.ExecutedCount + ",");
                 builder.AppendLine("  \"manifestMissing\": " + runSummary.MissingCount + ",");
+                builder.AppendLine("  \"batchSize\": " + runSummary.BatchSize + ",");
+                builder.AppendLine("  \"batchLimitApplied\": " + (runSummary.BatchLimitApplied ? "true" : "false") + ",");
                 builder.AppendLine("  \"missingDefNames\": " + BuildJsonArray(runSummary.MissingDefNames) + ",");
             }
             builder.AppendLine("  \"results\": [");
@@ -312,6 +316,8 @@ namespace LogSyncMod.AutoTest
             builder.AppendLine("  \"generatedAt\": \"" + DateTime.Now.ToString("o") + "\",");
             builder.AppendLine("  \"runMode\": \"" + EscapeJson(runSummary?.RunMode ?? string.Empty) + "\",");
             builder.AppendLine("  \"completeness\": \"" + (runSummary?.Complete == true ? "Complete" : "Incomplete") + "\",");
+            builder.AppendLine("  \"batchSize\": " + (runSummary?.BatchSize ?? 40) + ",");
+            builder.AppendLine("  \"batchLimitApplied\": " + (runSummary?.BatchLimitApplied == true ? "true" : "false") + ",");
             builder.AppendLine("  \"discovered\": " + BuildManifestEntryArray(discoveredManifest) + ",");
             builder.AppendLine("  \"planned\": " + BuildManifestEntryArray(plannedManifest) + ",");
             builder.AppendLine("  \"missingCaseIds\": " + BuildJsonArray(runSummary?.MissingCaseIds));

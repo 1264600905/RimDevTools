@@ -165,7 +165,7 @@ public static class CliHelp
         """;
 
     private const string ModCopy = """
-        Copy a local mod into 参考文档 and decompile its assemblies.
+        Copy a local mod into project_paths.reference_docs and decompile its assemblies.
 
         Usage:
           RimDevTools.exe mod copy <query> [options]
@@ -259,6 +259,7 @@ public static class CliHelp
           --target-package-id <id>    Auto/XML target; defaults to current project.
           --scope <value>             Repeatable auto/xml scope; defaults to Standard.
           --defname <value>           Repeatable auto-mode DefName allowlist.
+          --batch-size <n>            Positive auto/xml targeted-case limit; defaults to 40.
           --capture-screenshots       Enable AutoTest screenshots for auto/xml only.
           --isolated-desktop          Force a private Windows desktop for this run.
           --no-isolated-desktop       Force the current visible desktop for this run.
@@ -276,6 +277,10 @@ public static class CliHelp
         Scope values:
           standard, content, recipes, hediffs, turrets, rangedweapons, meleeweapons,
           threeviews, combatpawns, skillpocketmaps.
+
+        Batch behavior:
+          Standard full-coverage runs and explicit --defname runs ignore the batch limit.
+          Other targeted auto/xml runs plan at most --batch-size cases.
 
         Output:
           JSON runId, mode, target, mods/additions, isolation source, signal, result, and

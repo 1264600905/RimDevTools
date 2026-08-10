@@ -43,7 +43,7 @@ public static class TestCommand
                 gameRunning,
                 environmentBusy,
                 lockPath,
-                lockInfo = File.Exists(lockPath) ? File.ReadAllText(lockPath) : null,
+                lockInfo = EnvironmentLock.ReadInfo(lockPath),
                 found,
                 recoverable = transactionStatus.Ok && deploymentArtifacts.All(item => item.Action != "retain"),
                 transactions = transactionStatus.Items.Select(item => new
@@ -169,10 +169,19 @@ public static class TestCommand
             return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "INVALID_ARGUMENT", selectionError!, context.Root);
         if (CliArgs.Has(args, "--capture-screenshots") && mode is not ("auto" or "xml"))
             return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "INVALID_ARGUMENT", "--capture-screenshots 仅适用于 --mode auto 或 --mode xml。示例：RimDevTools.exe test run --mode auto --capture-screenshots", context.Root);
+        if (CliArgs.Has(args, "--batch-size") && mode is not ("auto" or "xml"))
+            return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "INVALID_ARGUMENT", "--batch-size 仅适用于 --mode auto 或 --mode xml", context.Root);
         if (CliArgs.Has(args, "--sync-source") && !CliArgs.Has(args, "--deploy"))
             return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "SYNC_SOURCE_REQUIRES_DEPLOY", "--sync-source 必须与 --deploy 一起使用", context.Root);
         if (!CliArgs.TryPositiveInt(args, "--timeout-seconds", context.Config.Timeouts.MaxWait, out var timeout, out var timeoutError))
             return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "TIMEOUT_INVALID", timeoutError!, context.Root);
+        int? batchSize = null;
+        if (mode is "auto" or "xml")
+        {
+            if (!CliArgs.TryPositiveInt(args, "--batch-size", 40, out var parsedBatchSize, out var batchSizeError))
+                return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "BATCH_SIZE_INVALID", batchSizeError!, context.Root);
+            batchSize = parsedBatchSize;
+        }
         var isolation = IsolatedDesktopOptions.Resolve(context.Config, mode, args, out var isolationError);
         if (isolation is null)
             return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, isolationError!.Code, isolationError.Message, context.Root);
@@ -224,6 +233,7 @@ public static class TestCommand
         TestOutcome outcome;
         var gameExited = true;
         var outputPath = SettingsEditor.AutoTestOutputPath(context);
+        var gameProcessLogPath = SettingsEditor.GameProcessLogPath(context);
         var resultSnapshot = AutoResultValidator.Snapshot(outputPath);
         var logOffset = File.Exists(playerLogPath) ? new FileInfo(playerLogPath).Length : 0;
         try
@@ -233,13 +243,14 @@ public static class TestCommand
                 runId,
                 [modsConfigPath, logSyncSettingsPath]);
             await transaction.WriteAllTextAsync(modsConfigPath, ModListParser.Render(modsConfigPath, modList.Mods));
-            await SettingsEditor.UpdateAsync(context, mode, transaction, runId, targetPackageId, captureScreenshots, muteAudio: mode != "manual", selection.Scopes, selection.HasExplicitScopes, selection.DefNames);
+            await SettingsEditor.UpdateAsync(context, mode, transaction, runId, targetPackageId, captureScreenshots, muteAudio: mode != "manual", selection.Scopes, selection.HasExplicitScopes, selection.DefNames, batchSize);
 
             LogArchive.Rotate(SettingsEditor.SyncLogPath(context), context.Config.Retention.MaxLogFiles);
+            if (gameProcessLogPath is not null) LogArchive.Rotate(gameProcessLogPath, context.Config.Retention.MaxLogFiles);
 
             var gameArguments = new List<string> { "-popupwindow" };
             if (mode is "auto" or "xml") gameArguments.Add("quicktest");
-            gameSession = GameProcessLauncher.Start(gamePath, context.Config.RimWorldDir, gameArguments, isolation.Enabled, runId);
+            gameSession = GameProcessLauncher.Start(gamePath, context.Config.RimWorldDir, gameArguments, isolation.Enabled, runId, gameProcessLogPath);
             outcome = await WaitForModeAsync(mode, gameSession.Process, timeout, playerLogPath, logOffset, outputPath, targetPackageId, runId, resultSnapshot, cancellationToken);
         }
         catch (OperationCanceledException)
@@ -271,7 +282,7 @@ public static class TestCommand
         }
 
         if (!gameExited)
-            return CliResult.WriteFailure(command, outcome.ExitCode, outcome.Code, outcome.Message, context.Root, new { runId, mode, dependencyWarnings, isolatedDesktop = isolation.Enabled, isolatedDesktopSource = isolation.Source, transactionRetained = transaction is not null }, dependencyWarnings);
+            return CliResult.WriteFailure(command, outcome.ExitCode, outcome.Code, outcome.Message, context.Root, new { runId, mode, batchSize, dependencyWarnings, isolatedDesktop = isolation.Enabled, isolatedDesktopSource = isolation.Source, gameProcessLogPath, transactionRetained = transaction is not null }, dependencyWarnings);
 
         if (transaction is not null)
         {
@@ -286,7 +297,7 @@ public static class TestCommand
         }
 
         if (!outcome.Ok)
-            return CliResult.WriteFailure(command, outcome.ExitCode, outcome.Code, outcome.Message, context.Root, new { runId, mode, scopes = selection.Scopes, defNames = selection.DefNames, dependencyWarnings, isolatedDesktop = isolation.Enabled, isolatedDesktopSource = isolation.Source, mods = modList.Mods, additions = modList.Additions, outcome.Details }, dependencyWarnings);
+            return CliResult.WriteFailure(command, outcome.ExitCode, outcome.Code, outcome.Message, context.Root, new { runId, mode, scopes = selection.Scopes, defNames = selection.DefNames, batchSize, dependencyWarnings, isolatedDesktop = isolation.Enabled, isolatedDesktopSource = isolation.Source, gameProcessLogPath, mods = modList.Mods, additions = modList.Additions, outcome.Details }, dependencyWarnings);
 
         return CliResult.WriteSuccess(command, context.Root, new
         {
@@ -295,9 +306,11 @@ public static class TestCommand
             targetPackageId,
             scopes = selection.Scopes,
             defNames = selection.DefNames,
+            batchSize,
             captureScreenshots,
             isolatedDesktop = isolation.Enabled,
             isolatedDesktopSource = isolation.Source,
+            gameProcessLogPath,
             mods = modList.Mods,
             additions = modList.Additions,
             signal = outcome.Message,
@@ -617,9 +630,10 @@ public static class ModListParser
 public static class SettingsEditor
 {
     public static string SyncLogPath(ProjectContext context) => Path.Combine(context.Root, ".tools", "log", "精选日志.log");
+    public static string GameProcessLogPath(ProjectContext context) => Path.Combine(context.Root, ".tools", "log", "RimWorldProcess.log");
     public static string AutoTestOutputPath(ProjectContext context) => Path.Combine(context.Root, ".tools", "log", "AutoTestOutput");
 
-    public static async Task<bool> UpdateAsync(ProjectContext context, string mode, ConfigTransaction? transaction = null, string? runId = null, string? targetPackageId = null, bool captureScreenshots = false, bool? muteAudio = null, IReadOnlyList<string>? scopes = null, bool hasExplicitScopes = false, IReadOnlyList<string>? defNames = null)
+    public static async Task<bool> UpdateAsync(ProjectContext context, string mode, ConfigTransaction? transaction = null, string? runId = null, string? targetPackageId = null, bool captureScreenshots = false, bool? muteAudio = null, IReadOnlyList<string>? scopes = null, bool hasExplicitScopes = false, IReadOnlyList<string>? defNames = null, int? batchSize = null)
     {
         var path = GameEnvironment.LogSyncSettingsPath(context) ?? throw new InvalidOperationException("mods_config_path 未配置或无效");
         var document = File.Exists(path)
@@ -648,6 +662,7 @@ public static class SettingsEditor
         changed |= effectiveDefNames.Count > 0
             ? SetList(settings, "autoTestTargetDefNames", effectiveDefNames)
             : Remove(settings, "autoTestTargetDefNames");
+        if (auto && batchSize.HasValue) changed |= Set(settings, "autoTestBatchSize", Math.Max(1, batchSize.Value).ToString());
         changed |= Set(settings, "autoTestCaptureScreenshots", auto && captureScreenshots ? "True" : "False");
         changed |= Set(settings, "autoTestPreventPause", "True");
         changed |= Set(settings, "autoTestUseFastSpeed", "True");

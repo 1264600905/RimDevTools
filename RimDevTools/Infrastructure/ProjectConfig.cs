@@ -24,6 +24,7 @@ public sealed class ProjectConfig
     [JsonPropertyName("retention")] public RetentionConfig Retention { get; set; } = new();
     [JsonPropertyName("shader_bundle")] public ShaderBundleConfig ShaderBundle { get; set; } = new();
     [JsonPropertyName("isolated_desktop")] public bool IsolatedDesktop { get; set; }
+    [JsonPropertyName("project_paths")] public ProjectPathsConfig ProjectPaths { get; set; } = new();
 
     public static ProjectConfig Load(string path)
     {
@@ -37,7 +38,8 @@ public sealed class ProjectConfig
     public void Normalize()
     {
         WorkshopPaths ??= []; CsprojPaths ??= []; SyncItems ??= []; PullIgnoreFolders ??= [];
-        LogKeywords ??= []; MinActiveMods ??= []; Timeouts ??= new(); Retention ??= new(); ShaderBundle ??= new();
+        LogKeywords ??= []; MinActiveMods ??= []; Timeouts ??= new(); Retention ??= new(); ShaderBundle ??= new(); ProjectPaths ??= new();
+        ProjectPaths.Normalize();
     }
 
     public string? CurrentPackageId(string projectRoot)
@@ -52,6 +54,39 @@ public sealed class ProjectConfig
     {
         if (string.IsNullOrWhiteSpace(ModsConfigPath)) return null;
         return Path.GetFullPath(ModsConfigPath, projectRoot);
+    }
+
+    public string ResolveReferenceDocsPath(string projectRoot)
+        => ProjectPaths.ResolveDirectory(projectRoot, ProjectPaths.ReferenceDocs, "project_paths.reference_docs");
+
+    public string ResolvePlanningDocsPath(string projectRoot)
+        => ProjectPaths.ResolveDirectory(projectRoot, ProjectPaths.PlanningDocs, "project_paths.planning_docs");
+}
+
+public sealed class ProjectPathsConfig
+{
+    public const string DefaultReferenceDocs = "参考文档";
+    public const string DefaultPlanningDocs = "策划案";
+
+    [JsonPropertyName("reference_docs")] public string ReferenceDocs { get; set; } = DefaultReferenceDocs;
+    [JsonPropertyName("planning_docs")] public string PlanningDocs { get; set; } = DefaultPlanningDocs;
+
+    public void Normalize()
+    {
+        if (string.IsNullOrWhiteSpace(ReferenceDocs)) ReferenceDocs = DefaultReferenceDocs;
+        if (string.IsNullOrWhiteSpace(PlanningDocs)) PlanningDocs = DefaultPlanningDocs;
+    }
+
+    internal string ResolveDirectory(string projectRoot, string configuredPath, string field)
+    {
+        if (Path.IsPathRooted(configuredPath))
+            throw new InvalidDataException($"{field} 必须是项目根目录内的相对目录");
+
+        var root = Path.GetFullPath(projectRoot);
+        var resolved = Path.GetFullPath(configuredPath, root);
+        if (resolved.Equals(root, StringComparison.OrdinalIgnoreCase) || !PathSafety.IsWithin(resolved, root))
+            throw new InvalidDataException($"{field} 必须指向项目根目录内的子目录");
+        return resolved;
     }
 }
 

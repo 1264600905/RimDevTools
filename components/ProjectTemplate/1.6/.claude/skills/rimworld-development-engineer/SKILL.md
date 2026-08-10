@@ -14,7 +14,7 @@ description: 在此模板中端到端实现、诊断并验证 RimWorld 1.6 模�
 1. 首先阅读最近的当前项目源码、Defs、补丁、配置和测试。
 2. 判断任务是否需要关于官方 RimWorld/DLC Def、API、源码行为或 Harmony 目标的新事实。
 3. 需要时，调用 `rimsage` 并遵循其可用性、单次重试、官方研究和失败规则，然后再选择字段、类型、方法或目标。
-4. 当对象是第三方模组时，检查 `参考文档` 中已有的副本，或按 `rimsage` 和 `rimdevtools` 所述使用 `RimDevTools.exe mod search/mod copy`。
+4. 当对象是第三方模组时，检查 `project_paths.reference_docs` 中已有的副本，或按 `rimsage` 和 `rimdevtools` 所述使用 `RimDevTools.exe mod search/mod copy`。
 5. 如果允许的修复和重试后仍无法获得所需 RimSage 证据，只停止依赖它的研究，并请用户恢复访问。不要用猜测替代证据。
 
 当前项目文件对本项目行为仍具有权威性。RimSage 仅对其暴露的官方内容具有权威性；拉取的 XML 和 ILSpy 源码是第三方模组的证据。

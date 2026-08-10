@@ -343,5 +343,5 @@ internal sealed class TransactionEntry
 
 internal static class TransactionJson
 {
-    public static readonly JsonSerializerOptions Options = new() { WriteIndented = true, PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+    public static readonly JsonSerializerOptions Options = JsonDefaults.StorageIndented;
 }

@@ -43,19 +43,23 @@ public sealed class GameProcessLaunchException : Exception
 public sealed class GameProcessSession : IDisposable
 {
     private IntPtr _desktop;
+    private readonly ProcessOutputCapture? _outputCapture;
     private bool _disposed;
 
-    internal GameProcessSession(Process process, bool isolated, string? desktopName, IntPtr desktop)
+    internal GameProcessSession(Process process, bool isolated, string? desktopName, IntPtr desktop, ProcessOutputCapture? outputCapture = null, string? outputLogPath = null)
     {
         Process = process;
         Isolated = isolated;
         DesktopName = desktopName;
         _desktop = desktop;
+        _outputCapture = outputCapture;
+        OutputLogPath = outputLogPath ?? outputCapture?.Path;
     }
 
     public Process Process { get; }
     public bool Isolated { get; }
     public string? DesktopName { get; }
+    public string? OutputLogPath { get; }
     public int? CleanupError { get; private set; }
 
     public void Dispose()
@@ -63,6 +67,7 @@ public sealed class GameProcessSession : IDisposable
         if (_disposed) return;
         _disposed = true;
         Process.Dispose();
+        _outputCapture?.Dispose();
         if (_desktop == IntPtr.Zero) return;
         if (!GameProcessLauncher.CloseDesktop(_desktop)) CleanupError = Marshal.GetLastWin32Error();
         _desktop = IntPtr.Zero;
@@ -73,10 +78,10 @@ public static class GameProcessLauncher
 {
     internal static bool CloseDesktop(IntPtr desktop) => NativeMethods.CloseDesktop(desktop);
 
-    public static GameProcessSession Start(string executable, string? workingDirectory, IEnumerable<string> arguments, bool isolated, string runId)
+    public static GameProcessSession Start(string executable, string? workingDirectory, IEnumerable<string> arguments, bool isolated, string runId, string? outputLogPath = null)
         => isolated
-            ? StartIsolated(executable, workingDirectory, arguments, runId)
-            : StartNormal(executable, workingDirectory, arguments);
+            ? StartIsolated(executable, workingDirectory, arguments, runId, outputLogPath)
+            : StartNormal(executable, workingDirectory, arguments, outputLogPath);
 
     public static string? CurrentDesktopName()
     {
@@ -90,31 +95,40 @@ public static class GameProcessLauncher
             : null;
     }
 
-    private static GameProcessSession StartNormal(string executable, string? workingDirectory, IEnumerable<string> arguments)
+    private static GameProcessSession StartNormal(string executable, string? workingDirectory, IEnumerable<string> arguments, string? outputLogPath)
     {
+        ProcessOutputCapture? outputCapture = null;
+        if (!string.IsNullOrWhiteSpace(outputLogPath)) outputCapture = ProcessOutputCapture.Create(outputLogPath);
         var startInfo = new ProcessStartInfo(executable)
         {
             WorkingDirectory = workingDirectory,
             UseShellExecute = false,
             CreateNoWindow = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true
+            RedirectStandardOutput = outputCapture is not null,
+            RedirectStandardError = outputCapture is not null
         };
         foreach (var argument in arguments) startInfo.ArgumentList.Add(argument);
         var process = new Process { StartInfo = startInfo };
-        process.OutputDataReceived += (_, eventArgs) => { if (eventArgs.Data is not null) Console.Error.WriteLine(eventArgs.Data); };
-        process.ErrorDataReceived += (_, eventArgs) => { if (eventArgs.Data is not null) Console.Error.WriteLine(eventArgs.Data); };
+        if (outputCapture is not null)
+        {
+            process.OutputDataReceived += (_, eventArgs) => outputCapture.Write("stdout", eventArgs.Data);
+            process.ErrorDataReceived += (_, eventArgs) => outputCapture.Write("stderr", eventArgs.Data);
+        }
         if (!process.Start())
         {
             process.Dispose();
+            outputCapture?.Dispose();
             throw new GameProcessLaunchException("GAME_START_FAILED", "无法启动 RimWorld");
         }
-        process.BeginOutputReadLine();
-        process.BeginErrorReadLine();
-        return new GameProcessSession(process, false, null, IntPtr.Zero);
+        if (outputCapture is not null)
+        {
+            process.BeginOutputReadLine();
+            process.BeginErrorReadLine();
+        }
+        return new GameProcessSession(process, false, null, IntPtr.Zero, outputCapture);
     }
 
-    private static GameProcessSession StartIsolated(string executable, string? workingDirectory, IEnumerable<string> arguments, string runId)
+    private static GameProcessSession StartIsolated(string executable, string? workingDirectory, IEnumerable<string> arguments, string runId, string? outputLogPath)
     {
         if (!OperatingSystem.IsWindows())
             throw new GameProcessLaunchException("ISOLATED_DESKTOP_CREATE_FAILED", "隔离桌面仅支持 Windows");
@@ -134,6 +148,20 @@ public static class GameProcessLauncher
             Cb = Marshal.SizeOf<NativeMethods.StartupInfo>(),
             Desktop = desktopName
         };
+        NativeProcessOutputHandles? outputHandles = null;
+        if (!string.IsNullOrWhiteSpace(outputLogPath))
+        {
+            try { outputHandles = NativeProcessOutputHandles.Create(outputLogPath); }
+            catch
+            {
+                NativeMethods.CloseDesktop(desktop);
+                throw;
+            }
+            startup.Flags = NativeMethods.StartfUseStdHandles;
+            startup.StdInput = outputHandles.Input;
+            startup.StdOutput = outputHandles.Output;
+            startup.StdError = outputHandles.Output;
+        }
         var commandLine = new StringBuilder(string.Join(" ", new[] { executable }.Concat(arguments).Select(QuoteArgument)));
         try
         {
@@ -142,7 +170,7 @@ public static class GameProcessLauncher
                     commandLine,
                     IntPtr.Zero,
                     IntPtr.Zero,
-                    false,
+                    outputHandles is not null,
                     0,
                     IntPtr.Zero,
                     workingDirectory,
@@ -156,7 +184,7 @@ public static class GameProcessLauncher
             try
             {
                 var process = Process.GetProcessById(unchecked((int)processInfo.ProcessId));
-                return new GameProcessSession(process, true, desktopName, desktop);
+                return new GameProcessSession(process, true, desktopName, desktop, outputLogPath: outputHandles?.Path);
             }
             finally
             {
@@ -168,6 +196,10 @@ public static class GameProcessLauncher
         {
             NativeMethods.CloseDesktop(desktop);
             throw;
+        }
+        finally
+        {
+            outputHandles?.Dispose();
         }
     }
 
@@ -199,6 +231,15 @@ public static class GameProcessLauncher
     {
         internal const int UoiName = 2;
         internal const uint DesktopAllAccess = 0x01FF;
+        internal const int StartfUseStdHandles = 0x00000100;
+        internal const uint GenericRead = 0x80000000;
+        internal const uint GenericWrite = 0x40000000;
+        internal const uint FileShareRead = 0x00000001;
+        internal const uint FileShareWrite = 0x00000002;
+        internal const uint CreateAlways = 2;
+        internal const uint OpenExisting = 3;
+        internal const uint FileAttributeNormal = 0x00000080;
+        internal static readonly IntPtr InvalidHandleValue = new(-1);
 
         [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
         internal struct StartupInfo
@@ -230,6 +271,14 @@ public static class GameProcessLauncher
             public IntPtr Thread;
             public uint ProcessId;
             public uint ThreadId;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        internal struct SecurityAttributes
+        {
+            public int Length;
+            public IntPtr SecurityDescriptor;
+            [MarshalAs(UnmanagedType.Bool)] public bool InheritHandle;
         }
 
         [DllImport("user32.dll", EntryPoint = "CreateDesktopW", CharSet = CharSet.Unicode, SetLastError = true)]
@@ -266,5 +315,119 @@ public static class GameProcessLauncher
         [DllImport("kernel32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         internal static extern bool CloseHandle(IntPtr handle);
+
+        [DllImport("kernel32.dll", EntryPoint = "CreateFileW", CharSet = CharSet.Unicode, SetLastError = true)]
+        internal static extern IntPtr CreateFile(
+            string fileName,
+            uint desiredAccess,
+            uint shareMode,
+            ref SecurityAttributes securityAttributes,
+            uint creationDisposition,
+            uint flagsAndAttributes,
+            IntPtr templateFile);
+    }
+
+    private sealed class NativeProcessOutputHandles : IDisposable
+    {
+        private NativeProcessOutputHandles(string path, IntPtr input, IntPtr output)
+        {
+            Path = path;
+            Input = input;
+            Output = output;
+        }
+
+        public string Path { get; }
+        public IntPtr Input { get; private set; }
+        public IntPtr Output { get; private set; }
+
+        public static NativeProcessOutputHandles Create(string path)
+        {
+            var fullPath = System.IO.Path.GetFullPath(path);
+            Directory.CreateDirectory(System.IO.Path.GetDirectoryName(fullPath)!);
+            var security = new NativeMethods.SecurityAttributes
+            {
+                Length = Marshal.SizeOf<NativeMethods.SecurityAttributes>(),
+                InheritHandle = true
+            };
+            var output = NativeMethods.CreateFile(
+                fullPath,
+                NativeMethods.GenericWrite,
+                NativeMethods.FileShareRead | NativeMethods.FileShareWrite,
+                ref security,
+                NativeMethods.CreateAlways,
+                NativeMethods.FileAttributeNormal,
+                IntPtr.Zero);
+            if (output == NativeMethods.InvalidHandleValue)
+                throw new Win32Exception(Marshal.GetLastWin32Error(), $"无法创建 RimWorld 进程日志: {fullPath}");
+
+            var input = NativeMethods.CreateFile(
+                "NUL",
+                NativeMethods.GenericRead,
+                NativeMethods.FileShareRead | NativeMethods.FileShareWrite,
+                ref security,
+                NativeMethods.OpenExisting,
+                NativeMethods.FileAttributeNormal,
+                IntPtr.Zero);
+            if (input == NativeMethods.InvalidHandleValue)
+            {
+                NativeMethods.CloseHandle(output);
+                throw new Win32Exception(Marshal.GetLastWin32Error(), "无法创建隔离进程标准输入句柄");
+            }
+            return new NativeProcessOutputHandles(fullPath, input, output);
+        }
+
+        public void Dispose()
+        {
+            if (Input != IntPtr.Zero && Input != NativeMethods.InvalidHandleValue) NativeMethods.CloseHandle(Input);
+            if (Output != IntPtr.Zero && Output != NativeMethods.InvalidHandleValue) NativeMethods.CloseHandle(Output);
+            Input = IntPtr.Zero;
+            Output = IntPtr.Zero;
+        }
+    }
+}
+
+internal sealed class ProcessOutputCapture : IDisposable
+{
+    private readonly object _gate = new();
+    private readonly StreamWriter _writer;
+    private bool _disposed;
+
+    private ProcessOutputCapture(string path, StreamWriter writer)
+    {
+        Path = path;
+        _writer = writer;
+    }
+
+    public string Path { get; }
+
+    public static ProcessOutputCapture Create(string path)
+    {
+        var fullPath = System.IO.Path.GetFullPath(path);
+        Directory.CreateDirectory(System.IO.Path.GetDirectoryName(fullPath)!);
+        var writer = new StreamWriter(new FileStream(fullPath, FileMode.Create, FileAccess.Write, FileShare.Read), new UTF8Encoding(false))
+        {
+            AutoFlush = true
+        };
+        return new ProcessOutputCapture(fullPath, writer);
+    }
+
+    public void Write(string stream, string? line)
+    {
+        if (line is null) return;
+        lock (_gate)
+        {
+            if (_disposed) return;
+            _writer.WriteLine($"[{stream}] {line}");
+        }
+    }
+
+    public void Dispose()
+    {
+        lock (_gate)
+        {
+            if (_disposed) return;
+            _disposed = true;
+            _writer.Dispose();
+        }
     }
 }

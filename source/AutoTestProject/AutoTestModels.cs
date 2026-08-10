@@ -92,6 +92,8 @@ namespace LogSyncMod.AutoTest
         public int FailedCount;
         public int SkippedCount;
         public int MissingCount;
+        public int BatchSize;
+        public bool BatchLimitApplied;
         public List<string> MissingCaseIds = new List<string>();
         public List<string> MissingDefNames = new List<string>();
     }
