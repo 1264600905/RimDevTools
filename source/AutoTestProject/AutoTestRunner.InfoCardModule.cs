@@ -312,6 +312,8 @@ namespace LogSyncMod.AutoTest
             activeSession.RemainingUiFrames--;
             if (activeSession.RemainingUiFrames > 0) return;
 
+            if (!AutoTestScreenshotService.PrepareCaptureFrame()) return;
+
             TryCaptureRecipeBillScreenshot(false);
             activeSession.Phase = SessionPhase.WaitingForRecipeBillConfigClose;
             activeSession.CloseIssued = false;
@@ -455,6 +457,8 @@ namespace LogSyncMod.AutoTest
 
             activeSession.RemainingUiFrames--;
             if (activeSession.RemainingUiFrames > 0) return;
+
+            if (!AutoTestScreenshotService.PrepareCaptureFrame()) return;
 
             TryCaptureInfoCardScreenshot(false);
             activeSession.Phase = SessionPhase.WaitingBeforeClose;

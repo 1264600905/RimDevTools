@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using HarmonyLib;
 using UnityEngine;
 using Verse;
@@ -14,6 +15,7 @@ namespace LogSyncMod.AutoTest
         private readonly Func<string, string, string> appendNote;
         private readonly Func<string, string> trimForNote;
         private static readonly System.Type EditWindowLogType = AccessTools.TypeByName("LudeonTK.EditWindow_Log");
+        private static int debugLogDismissedFrame = -1;
 
         public AutoTestScreenshotService(
             AutoTestRunArtifacts runArtifacts,
@@ -315,29 +317,57 @@ namespace LogSyncMod.AutoTest
             return completedCount + offset + 1;
         }
 
-        private static void DismissDebugLogWindow()
+        public static bool PrepareCaptureFrame()
+        {
+            bool removed = DismissDebugLogWindow();
+            if (removed)
+            {
+                debugLogDismissedFrame = Time.frameCount;
+                return false;
+            }
+
+            return debugLogDismissedFrame < 0 || Time.frameCount > debugLogDismissedFrame;
+        }
+
+        private static bool DismissDebugLogWindow()
         {
             try
             {
-                if (EditWindowLogType == null || Current.ProgramState != ProgramState.Playing)
+                if (Current.ProgramState != ProgramState.Playing)
                 {
-                    return;
+                    return false;
                 }
 
                 WindowStack windowStack = Find.WindowStack;
                 if (windowStack == null)
                 {
-                    return;
+                    return false;
                 }
 
-                if (windowStack.TryRemove(EditWindowLogType, doCloseSound: false))
+                bool removed = false;
+                foreach (Window window in windowStack.Windows
+                    .Where(window => window != null && string.Equals(window.GetType().Name, "EditWindow_Log", StringComparison.Ordinal))
+                    .ToList())
+                {
+                    removed = windowStack.TryRemove(window, doCloseSound: false) || removed;
+                }
+
+                if (EditWindowLogType != null)
+                {
+                    removed = windowStack.TryRemove(EditWindowLogType, doCloseSound: false) || removed;
+                }
+
+                if (removed)
                 {
                     Log.Message("[LogSyncAutoTest] Dismissed debug log window before screenshot capture.");
                 }
+
+                return removed;
             }
             catch (Exception ex)
             {
                 Log.Warning("[LogSyncAutoTest] Failed to dismiss debug log window: " + ex.Message);
+                return false;
             }
         }
 

@@ -24,6 +24,7 @@ namespace LogSyncMod.AutoTest
             public Map TestMap;
             public IntVec3 RootCell;
             public AutoTestThreeViewTargetContext Context;
+            public StaticViewContext StudioSnapshot;
             public bool AllowScreenshots;
             public int WaitTicks;
             public ThreeViewTestPhase Phase;
@@ -124,6 +125,35 @@ namespace LogSyncMod.AutoTest
                         return;
                     }
                 }
+                if (Spec.TargetHairDef != null || Spec.TargetHeadTypeDef != null || Spec.TargetGeneDef != null || Spec.TargetXenotypeDef != null)
+                {
+                    Result.Notes = AppendNote(Result.Notes, "PresenterPawnKind=" + (Spec.PawnKindDef?.defName ?? "null"));
+                    Result.Notes = AppendNote(Result.Notes, "PresenterRace=" + (Spec.RaceDef?.defName ?? "null"));
+                    Result.Notes = AppendNote(Result.Notes, "PresenterGender=" + (Context.Pawns.FirstOrDefault()?.gender.ToString() ?? "null"));
+                    Result.Notes = AppendNote(Result.Notes, "PresenterBodyType=" + (Context.Pawns.FirstOrDefault()?.story?.bodyType?.defName ?? "null"));
+                    Result.Notes = AppendNote(Result.Notes, "VisualEffectDetected=" + Context.VisualEffectDetected);
+                    if (Spec.TargetGeneDef != null)
+                    {
+                        Result.Notes = AppendNote(Result.Notes, "TargetGenePresent=" + Context.TargetGenePresent);
+                        Result.Notes = AppendNote(Result.Notes, "TargetGeneLocation=" + (Context.TargetGeneLocation ?? "Missing"));
+                        if (!Context.TargetGenePresent)
+                        {
+                            Fail("gene_apply_failed", "Target Gene was not present on the generated presenter.");
+                            return;
+                        }
+                    }
+
+                    if (Spec.TargetXenotypeDef != null)
+                    {
+                        Result.Notes = AppendNote(Result.Notes, "TargetXenotypeMatches=" + Context.TargetXenotypeMatches);
+                        Result.Notes = AppendNote(Result.Notes, "TargetXenotypeGeneSetMatches=" + Context.TargetXenotypeGeneSetMatches);
+                        if (!Context.TargetXenotypeMatches || !Context.TargetXenotypeGeneSetMatches)
+                        {
+                            Fail("xenotype_apply_failed", "Target Xenotype or its GeneSet was not retained on the generated presenter.");
+                            return;
+                        }
+                    }
+                }
                 if (!owner.threeViewService.TryPrimeDirectionalFacingForPausedCapture(Context, out string pausedCaptureError))
                 {
                     Fail("motion_prime_failed", pausedCaptureError ?? "ThreeView paused capture directional facing could not be primed.");
@@ -188,6 +218,11 @@ namespace LogSyncMod.AutoTest
                     return false;
                 }
 
+                if (!AutoTestScreenshotService.PrepareCaptureFrame())
+                {
+                    return false;
+                }
+
                 Result.Stage = "capture";
                 Log.Message("[LogSyncAutoTest] ThreeView capture begin: def=" + Spec.DefName + " tick=" + (Find.TickManager?.TicksGame ?? -1) + " paused=" + (Find.TickManager?.Paused ?? false) + " elapsedRealtime=" + elapsed.ToString("0.000") + " allowScreenshots=" + AllowScreenshots + " rootCell=" + RootCell);
                 bool captureRequested = AllowScreenshots;
@@ -220,10 +255,16 @@ namespace LogSyncMod.AutoTest
                 owner.threeViewService.Cleanup(Context);
                 bool targetsRemoved = trackedPawns.All(pawn => pawn.Destroyed || !pawn.Spawned);
                 Context = null;
-                owner.ClearArea(RootCell, StudioWidth, StudioHeight);
-                owner.threeViewService.PrepareStudioArea(TestMap, RootCell, StudioWidth, StudioHeight);
+                bool studioRestored = owner.RestoreStaticViewContext(StudioSnapshot, Result);
+                Result.Notes = AppendNote(Result.Notes, "ThreeViewStudioRestored=" + studioRestored);
                 owner.RefreshThreeViewCooldown("cleanup");
                 owner.RecordThreeViewCleanupSemantic(this, targetsRemoved);
+                if (!studioRestored && Result.Status == "passed")
+                {
+                    Result.Status = "failed";
+                    Result.Stage = "cleanup";
+                    Result.ErrorMessage = "ThreeView studio map state was not restored exactly.";
+                }
                 Phase = ThreeViewTestPhase.Done;
             }
 
@@ -302,9 +343,26 @@ namespace LogSyncMod.AutoTest
                     return session;
                 }
 
-                owner.ClearArea(rootCell, StudioWidth, StudioHeight);
+                StaticViewContext studioSnapshot = new StaticViewContext
+                {
+                    Map = owner.map,
+                    RootCell = rootCell,
+                    AnchorCell = new IntVec3(rootCell.x + 10, 0, rootCell.z + 10),
+                    Profile = spec.Profile
+                };
+                if (!owner.TrySnapshotAndClearStaticViewArea(studioSnapshot, StudioWidth, StudioHeight, out string snapshotError))
+                {
+                    result.Status = "failed";
+                    result.Stage = "snapshot";
+                    result.ErrorMessage = snapshotError ?? "ThreeView studio snapshot failed.";
+                    owner.RestoreStaticViewContext(studioSnapshot, result);
+                    session.Phase = ThreeViewTestPhase.Done;
+                    return session;
+                }
+
                 owner.threeViewService.PrepareStudioArea(owner.map, rootCell, StudioWidth, StudioHeight);
                 session.RootCell = rootCell;
+                session.StudioSnapshot = studioSnapshot;
                 session.Result.Stage = "prepare_studio";
                 session.Phase = ThreeViewTestPhase.SpawningTargets;
                 return session;
@@ -323,6 +381,13 @@ namespace LogSyncMod.AutoTest
                 if (!MatchesThreeViewFilters(spec))
                 {
                     continue;
+                }
+
+                if (!threeViewService.TryResolveAppearancePresenter(spec, out string appearanceSkipReason))
+                {
+                    spec.SkipReason = string.IsNullOrWhiteSpace(appearanceSkipReason)
+                        ? "no_compatible_presenter"
+                        : appearanceSkipReason;
                 }
 
                 pendingThreeViewTargets.Enqueue(spec);
@@ -395,6 +460,11 @@ namespace LogSyncMod.AutoTest
                         return false;
                     }
 
+                    if (map.roofGrid.RoofAt(cell) != null)
+                    {
+                        return false;
+                    }
+
                     foreach (Thing thing in cell.GetThingList(map))
                     {
                         if (thing == null || thing.Destroyed)
@@ -433,6 +503,20 @@ namespace LogSyncMod.AutoTest
             bool allowScreenshots = ShouldCaptureScreenshots(matchedSpec);
             result.Notes = AppendNote(result.Notes, "AutoTestMode=" + (settings.UseXmlDrivenAutoTest() ? "XmlDriven" : "Automatic"));
             result.Notes = AppendNote(result.Notes, "ThreeViewProfile=" + (spec.Profile?.ProfileId ?? "Unknown"));
+            if (!string.IsNullOrWhiteSpace(spec.CompatibilitySource))
+            {
+                result.Notes = AppendNote(result.Notes, "CompatibilitySource=" + spec.CompatibilitySource);
+            }
+
+            if (!string.IsNullOrWhiteSpace(spec.SkipReason))
+            {
+                result.Status = "skipped";
+                result.Stage = "presenter_resolution";
+                result.ErrorMessage = spec.SkipReason;
+                result.Notes = AppendNote(result.Notes, "SkipReason=" + spec.SkipReason);
+                RecordResult(result);
+                return;
+            }
 
             ThreeViewTestSession session = ThreeViewTestSession.Create(this, spec, result, allowScreenshots);
             if (session.Phase == ThreeViewTestPhase.Done)

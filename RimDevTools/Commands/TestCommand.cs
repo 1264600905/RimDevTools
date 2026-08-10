@@ -803,10 +803,12 @@ public static class AutoResultValidator
                     return Failure("AUTO_RESULT_INVALID", "自动测试结果缺少 results", new { path });
 
                 var failed = results.EnumerateArray()
-                    .Where(item => !item.TryGetProperty("status", out var status) || status.GetString() != "passed")
+                    .Where(item =>
+                        !item.TryGetProperty("status", out var status) ||
+                        (status.GetString() != "passed" && status.GetString() != "skipped"))
                     .Select(item => item.TryGetProperty("caseId", out var caseId) ? caseId.GetString() : null)
                     .ToArray();
-                if (failed.Length > 0) return Failure("AUTO_RESULT_FAILED", "自动测试结果包含失败或跳过用例", new { path, failed });
+                if (failed.Length > 0) return Failure("AUTO_RESULT_FAILED", "自动测试结果包含失败用例", new { path, failed });
                 return new AutoResultValidation(true, "", "", new { path, packageId, runId, executed, planned });
             }
             catch (JsonException ex)

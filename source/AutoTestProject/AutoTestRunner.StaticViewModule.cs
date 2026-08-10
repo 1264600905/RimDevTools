@@ -190,6 +190,11 @@ namespace LogSyncMod.AutoTest
                     return false;
                 }
 
+                if (!AutoTestScreenshotService.PrepareCaptureFrame())
+                {
+                    return false;
+                }
+
                 Result.Stage = "capture";
                 bool captureRequested = AllowScreenshots;
                 bool captured = owner.TryCaptureStaticViewScreenshot(this, false);

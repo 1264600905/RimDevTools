@@ -1061,6 +1061,12 @@ internal sealed class TestSuite
         WriteResult(output, "demo.current", "run-two", "passed", "second_Result.json");
         var passed = AutoResultValidator.Validate(output, "demo.current", "run-two", freshSnapshot);
         Assert(passed.Ok, "auto result validator accepts complete passing run");
+
+        var skippedSnapshot = AutoResultValidator.Snapshot(output);
+        WriteResult(output, "demo.current", "run-skipped", "skipped", "skipped_Result.json");
+        var skipped = AutoResultValidator.Validate(output, "demo.current", "run-skipped", skippedSnapshot);
+        Assert(skipped.Ok, "auto result validator accepts explicit skipped cases");
+
         var stale = AutoResultValidator.Validate(output, "demo.current", "run-three", AutoResultValidator.Snapshot(output));
         Assert(!stale.Ok && stale.Code == "AUTO_RESULT_MISSING", "old result files cannot satisfy a new run");
 

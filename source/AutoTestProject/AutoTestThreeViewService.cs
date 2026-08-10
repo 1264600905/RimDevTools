@@ -1,8 +1,11 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Text;
+using HarmonyLib;
 using RimWorld;
 using UnityEngine;
 using Verse;
@@ -18,6 +21,16 @@ namespace LogSyncMod.AutoTest
         public PawnKindDef PawnKindDef;
         public ThingDef RaceDef;
         public ThingDef ItemDef;
+        public HairDef TargetHairDef;
+        public HeadTypeDef TargetHeadTypeDef;
+        public GeneDef TargetGeneDef;
+        public XenotypeDef TargetXenotypeDef;
+        public List<PawnKindDef> PresenterCandidates;
+        public string CompatibilitySource;
+        public string SkipReason;
+        public string BeforeVisualSignature;
+        public string AfterVisualSignature;
+        public bool VisualEffectDetected;
         public BodyTypeDef ForcedBodyType;
         public Gender? ForcedGender;
         public bool WearAsApparel;
@@ -56,6 +69,11 @@ namespace LogSyncMod.AutoTest
         public LifeStageDef ActualLifeStage;
         public float ActualBiologicalAgeYears = -1f;
         public bool LifeStageLockFallbackUsed;
+        public bool VisualEffectDetected;
+        public bool TargetGenePresent;
+        public string TargetGeneLocation;
+        public bool TargetXenotypeMatches;
+        public bool TargetXenotypeGeneSetMatches;
     }
 
     internal sealed class AutoTestThreeViewAppearanceTemplate
@@ -161,8 +179,315 @@ namespace LogSyncMod.AutoTest
             AddTargetModHumanlikeLifeStageTargets(targets, targetMod, registerDiscoveredCase);
             AddTargetModApparelTargets(targets, targetMod, registerDiscoveredCase);
             AddTargetModWeaponTargets(targets, targetMod, excludedWeaponDefs, registerDiscoveredCase);
+            AddTargetModHairTargets(targets, targetMod, registerDiscoveredCase);
+            AddTargetModHeadTypeTargets(targets, targetMod, registerDiscoveredCase);
+            AddTargetModGeneTargets(targets, targetMod, registerDiscoveredCase);
+            AddTargetModXenotypeTargets(targets, targetMod, registerDiscoveredCase);
 
             return targets;
+        }
+
+        public bool TryResolveAppearancePresenter(AutoTestThreeViewTargetSpec spec, out string skipReason)
+        {
+            skipReason = null;
+            if (spec == null || !IsAppearanceSpec(spec))
+            {
+                return true;
+            }
+
+            if (spec.TargetHairDef?.noGraphic == true)
+            {
+                skipReason = "no_graphic";
+                return false;
+            }
+
+            List<PawnKindDef> candidates = spec.PresenterCandidates == null
+                ? new List<PawnKindDef>()
+                : spec.PresenterCandidates.Where(candidate => candidate != null).ToList();
+            if (candidates.Count == 0 && spec.PawnKindDef != null)
+            {
+                candidates.Add(spec.PawnKindDef);
+            }
+
+            string lastReason = "no_compatible_presenter";
+            foreach (PawnKindDef candidate in candidates)
+            {
+                foreach (Gender? gender in ResolveAppearanceProbeGenders(spec))
+                {
+                    Pawn pawn = null;
+                    try
+                    {
+                        if (!TryGenerateProbePawn(candidate, out pawn) || pawn == null)
+                        {
+                            lastReason = "presenter_generation_failed:" + candidate.defName;
+                            continue;
+                        }
+
+                        if (gender.HasValue)
+                        {
+                            pawn.gender = gender.Value;
+                        }
+
+                        pawn.apparel?.DestroyAll();
+                        pawn.equipment?.DestroyAllEquipment();
+                        RefreshPawnGraphics(pawn);
+                        string before = BuildPawnVisualSignature(pawn);
+                        if (!ApplyAppearanceTarget(pawn, spec, out string compatibilitySource, out string applyError))
+                        {
+                            lastReason = string.IsNullOrWhiteSpace(applyError) ? "appearance_apply_failed" : applyError;
+                            continue;
+                        }
+
+                        string after = BuildPawnVisualSignature(pawn);
+                        bool visualEffect = !string.Equals(before, after, StringComparison.Ordinal);
+                        if (!visualEffect)
+                        {
+                            lastReason = "no_visual_effect:" + candidate.defName;
+                            continue;
+                        }
+
+                        spec.PawnKindDef = candidate;
+                        spec.RaceDef = candidate.race;
+                        spec.ForcedGender = gender;
+                        spec.PawnRaceDefName = candidate.race?.defName;
+                        spec.PawnRaceLabel = candidate.race?.label ?? candidate.race?.defName ?? string.Empty;
+                        spec.PawnBodyTypeDefName = pawn.story?.bodyType?.defName ?? string.Empty;
+                        spec.PawnBodyTypeLabel = pawn.story?.bodyType?.label ?? pawn.story?.bodyType?.defName ?? string.Empty;
+                        spec.Profile = ResolveThreeViewProfileForPawnKind(candidate);
+                        spec.CompatibilitySource = AppendCompatibilitySource(spec.CompatibilitySource, compatibilitySource);
+                        spec.BeforeVisualSignature = before;
+                        spec.AfterVisualSignature = after;
+                        spec.VisualEffectDetected = true;
+                        spec.OverlayLine1 = string.IsNullOrWhiteSpace(spec.Label) ? spec.DefName : spec.Label;
+                        spec.OverlayLine2 = spec.DefName + " / " + candidate.defName;
+                        spec.OverlayLine3 = "Race: " + (candidate.race?.label ?? candidate.race?.defName ?? "Unknown") + " / Gender: " + pawn.gender;
+                        spec.OverlayLine4 = "Compatibility: " + spec.CompatibilitySource;
+                        return true;
+                    }
+                    catch (Exception ex)
+                    {
+                        lastReason = "presenter_probe_error:" + ex.Message;
+                    }
+                    finally
+                    {
+                        try
+                        {
+                            pawn?.Destroy(DestroyMode.Vanish);
+                        }
+                        catch
+                        {
+                        }
+                    }
+                }
+            }
+
+            skipReason = spec.TargetGeneDef != null || spec.TargetXenotypeDef != null
+                ? "no_visual_effect"
+                : lastReason;
+            return false;
+        }
+
+        private static bool IsAppearanceSpec(AutoTestThreeViewTargetSpec spec)
+        {
+            return spec?.TargetHairDef != null ||
+                spec?.TargetHeadTypeDef != null ||
+                spec?.TargetGeneDef != null ||
+                spec?.TargetXenotypeDef != null;
+        }
+
+        private static IEnumerable<Gender?> ResolveAppearanceProbeGenders(AutoTestThreeViewTargetSpec spec)
+        {
+            if (spec?.TargetHeadTypeDef != null && spec.TargetHeadTypeDef.gender != Gender.None)
+            {
+                return new Gender?[] { spec.TargetHeadTypeDef.gender };
+            }
+
+            string styleGender = spec?.TargetHairDef?.styleGender.ToString() ?? string.Empty;
+            if (string.Equals(styleGender, "Male", StringComparison.OrdinalIgnoreCase))
+            {
+                return new Gender?[] { Gender.Male };
+            }
+
+            if (string.Equals(styleGender, "Female", StringComparison.OrdinalIgnoreCase))
+            {
+                return new Gender?[] { Gender.Female };
+            }
+
+            return new Gender?[] { null, Gender.Female, Gender.Male };
+        }
+
+        private static bool ApplyAppearanceTarget(
+            Pawn pawn,
+            AutoTestThreeViewTargetSpec spec,
+            out string compatibilitySource,
+            out string errorMessage)
+        {
+            compatibilitySource = "VanillaDynamicProbe";
+            errorMessage = null;
+            if (pawn == null || spec == null)
+            {
+                errorMessage = "appearance_target_missing";
+                return false;
+            }
+
+            try
+            {
+                if (spec.TargetHairDef != null)
+                {
+                    HairDef hairDef = spec.TargetHairDef;
+                    if (pawn.story == null || hairDef.noGraphic)
+                    {
+                        errorMessage = hairDef.noGraphic ? "no_graphic" : "presenter_story_missing";
+                        return false;
+                    }
+
+                    if (hairDef.requiredMutant != null)
+                    {
+                        errorMessage = "required_mutant:" + hairDef.requiredMutant.defName;
+                        return false;
+                    }
+
+                    if (hairDef.requiredGene != null)
+                    {
+                        if (pawn.genes == null)
+                        {
+                            errorMessage = "required_gene_without_gene_tracker:" + hairDef.requiredGene.defName;
+                            return false;
+                        }
+
+                        if (pawn.genes.GetGene(hairDef.requiredGene) == null)
+                        {
+                            pawn.genes.AddGene(hairDef.requiredGene, xenogene: true);
+                        }
+                    }
+
+                    if (!TryEvaluateHarStyleCompatibility(pawn, hairDef, out bool harCompatible, out string harSource) || !harCompatible)
+                    {
+                        errorMessage = "har_style_incompatible";
+                        return false;
+                    }
+
+                    compatibilitySource = harSource;
+                    pawn.story.hairDef = hairDef;
+                }
+                else if (spec.TargetHeadTypeDef != null)
+                {
+                    HeadTypeDef headTypeDef = spec.TargetHeadTypeDef;
+                    if (pawn.story == null)
+                    {
+                        errorMessage = "presenter_story_missing";
+                        return false;
+                    }
+
+                    if (headTypeDef.gender != Gender.None)
+                    {
+                        pawn.gender = headTypeDef.gender;
+                    }
+
+                    if (headTypeDef.requiredGenes != null && headTypeDef.requiredGenes.Count > 0)
+                    {
+                        if (pawn.genes == null)
+                        {
+                            errorMessage = "head_required_genes_without_tracker";
+                            return false;
+                        }
+
+                        foreach (GeneDef requiredGene in headTypeDef.requiredGenes.Where(gene => gene != null))
+                        {
+                            if (pawn.genes.GetGene(requiredGene) == null)
+                            {
+                                pawn.genes.AddGene(requiredGene, xenogene: true);
+                            }
+                        }
+                    }
+
+                    if (!TryEvaluateHarHeadCompatibility(pawn, headTypeDef, out bool harCompatible, out string harSource) || !harCompatible)
+                    {
+                        errorMessage = "har_head_incompatible";
+                        return false;
+                    }
+
+                    compatibilitySource = harSource;
+                    pawn.story.headType = headTypeDef;
+                }
+                else if (spec.TargetGeneDef != null)
+                {
+                    if (pawn.genes == null)
+                    {
+                        errorMessage = "biotech_gene_tracker_missing";
+                        return false;
+                    }
+
+                    pawn.genes.ClearXenogenes();
+                    Gene existing = pawn.genes.GetGene(spec.TargetGeneDef);
+                    if (existing != null)
+                    {
+                        pawn.genes.RemoveGene(existing);
+                    }
+
+                    pawn.genes.AddGene(spec.TargetGeneDef, xenogene: true);
+                    compatibilitySource = "DynamicVisualSignature";
+                }
+                else if (spec.TargetXenotypeDef != null)
+                {
+                    if (pawn.genes == null)
+                    {
+                        errorMessage = "biotech_gene_tracker_missing";
+                        return false;
+                    }
+
+                    foreach (Gene gene in pawn.genes.Xenogenes.ToList())
+                    {
+                        pawn.genes.RemoveGene(gene);
+                    }
+
+                    foreach (Gene gene in pawn.genes.Endogenes.ToList())
+                    {
+                        pawn.genes.RemoveGene(gene);
+                    }
+
+                    pawn.genes.SetXenotypeDirect(spec.TargetXenotypeDef);
+                    foreach (GeneDef geneDef in (spec.TargetXenotypeDef.genes ?? new List<GeneDef>()).Where(gene => gene != null))
+                    {
+                        pawn.genes.AddGene(geneDef, xenogene: false);
+                    }
+                    compatibilitySource = "DynamicVisualSignature";
+                }
+
+                RefreshPawnGraphics(pawn);
+                RefreshOptionalAlienGraphics(pawn);
+
+                if (spec.TargetHairDef != null && pawn.story?.hairDef != spec.TargetHairDef)
+                {
+                    errorMessage = "hair_assignment_not_retained";
+                    return false;
+                }
+
+                if (spec.TargetHeadTypeDef != null && pawn.story?.headType != spec.TargetHeadTypeDef)
+                {
+                    errorMessage = "head_assignment_not_retained";
+                    return false;
+                }
+
+                if (spec.TargetGeneDef != null && pawn.genes?.GetGene(spec.TargetGeneDef) == null)
+                {
+                    errorMessage = "gene_assignment_not_retained";
+                    return false;
+                }
+
+                if (spec.TargetXenotypeDef != null && pawn.genes?.Xenotype != spec.TargetXenotypeDef)
+                {
+                    errorMessage = "xenotype_assignment_not_retained";
+                    return false;
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                errorMessage = ex.Message;
+                return false;
+            }
         }
 
         public bool TryPopulateTriptych(Map map, IntVec3 anchorCell, AutoTestThreeViewTargetSpec spec, out AutoTestThreeViewTargetContext context, out string errorMessage)
@@ -246,6 +571,23 @@ namespace LogSyncMod.AutoTest
                 createdContext.ActualLifeStage = sourcePawn.ageTracker.CurLifeStage;
                 createdContext.ActualBiologicalAgeYears = sourcePawn.ageTracker.AgeBiologicalYearsFloat;
                 createdContext.LifeStageLockFallbackUsed = spec.LifeStageLockFallbackUsed;
+            }
+            createdContext.VisualEffectDetected = spec.VisualEffectDetected;
+            createdContext.TargetGenePresent = spec.TargetGeneDef == null || sourcePawn?.genes?.GetGene(spec.TargetGeneDef) != null;
+            if (spec.TargetGeneDef != null && sourcePawn?.genes != null)
+            {
+                bool endogene = sourcePawn.genes.Endogenes.Any(gene => gene?.def == spec.TargetGeneDef);
+                bool xenogene = sourcePawn.genes.Xenogenes.Any(gene => gene?.def == spec.TargetGeneDef);
+                createdContext.TargetGeneLocation = endogene && xenogene
+                    ? "Endogene+Xenogene"
+                    : (endogene ? "Endogene" : (xenogene ? "Xenogene" : "Missing"));
+            }
+            createdContext.TargetXenotypeMatches = spec.TargetXenotypeDef == null || sourcePawn?.genes?.Xenotype == spec.TargetXenotypeDef;
+            if (spec.TargetXenotypeDef != null && sourcePawn?.genes != null)
+            {
+                HashSet<GeneDef> expectedGenes = new HashSet<GeneDef>((spec.TargetXenotypeDef.genes ?? new List<GeneDef>()).Where(gene => gene != null));
+                HashSet<GeneDef> actualGenes = new HashSet<GeneDef>(sourcePawn.genes.GenesListForReading.Select(gene => gene?.def).Where(gene => gene != null));
+                createdContext.TargetXenotypeGeneSetMatches = expectedGenes.SetEquals(actualGenes);
             }
             return true;
         }
@@ -871,6 +1213,171 @@ namespace LogSyncMod.AutoTest
             }
         }
 
+        private static void AddTargetModHairTargets(
+            ICollection<AutoTestThreeViewTargetSpec> targets,
+            ModContentPack targetMod,
+            Func<AutoTestCaseType, string, string, string, AutoTestManifestEntry> registerDiscoveredCase)
+        {
+            List<PawnKindDef> candidates = ResolveAppearancePresenterCandidates(targetMod);
+            foreach (HairDef hairDef in DefDatabase<HairDef>.AllDefsListForReading
+                .Where(def => def != null && def.modContentPack == targetMod)
+                .OrderBy(def => def.defName))
+            {
+                PawnKindDef presenter = candidates.FirstOrDefault();
+                targets.Add(new AutoTestThreeViewTargetSpec
+                {
+                    Kind = AutoTestKind.HairThreeView,
+                    CaseType = AutoTestCaseType.HairThreeView,
+                    ManifestEntry = registerDiscoveredCase(AutoTestCaseType.HairThreeView, nameof(HairDef), hairDef.defName, hairDef.label),
+                    TargetDef = hairDef,
+                    TargetHairDef = hairDef,
+                    PawnKindDef = presenter,
+                    RaceDef = presenter?.race,
+                    PresenterCandidates = candidates,
+                    ForceStripLoadout = true,
+                    DefName = hairDef.defName,
+                    Label = hairDef.label,
+                    ScreenshotStageSuffix = "triptych",
+                    Profile = ResolveThreeViewProfileForPawnKind(presenter)
+                });
+            }
+        }
+
+        private static void AddTargetModHeadTypeTargets(
+            ICollection<AutoTestThreeViewTargetSpec> targets,
+            ModContentPack targetMod,
+            Func<AutoTestCaseType, string, string, string, AutoTestManifestEntry> registerDiscoveredCase)
+        {
+            List<PawnKindDef> candidates = ResolveAppearancePresenterCandidates(targetMod);
+            foreach (HeadTypeDef headTypeDef in DefDatabase<HeadTypeDef>.AllDefsListForReading
+                .Where(def => def != null && def.modContentPack == targetMod)
+                .OrderBy(def => def.defName))
+            {
+                PawnKindDef presenter = candidates.FirstOrDefault();
+                targets.Add(new AutoTestThreeViewTargetSpec
+                {
+                    Kind = AutoTestKind.HeadTypeThreeView,
+                    CaseType = AutoTestCaseType.HeadTypeThreeView,
+                    ManifestEntry = registerDiscoveredCase(AutoTestCaseType.HeadTypeThreeView, nameof(HeadTypeDef), headTypeDef.defName, headTypeDef.label),
+                    TargetDef = headTypeDef,
+                    TargetHeadTypeDef = headTypeDef,
+                    PawnKindDef = presenter,
+                    RaceDef = presenter?.race,
+                    PresenterCandidates = candidates,
+                    ForceStripLoadout = true,
+                    DefName = headTypeDef.defName,
+                    Label = headTypeDef.label,
+                    ScreenshotStageSuffix = "triptych",
+                    Profile = ResolveThreeViewProfileForPawnKind(presenter)
+                });
+            }
+        }
+
+        private static void AddTargetModGeneTargets(
+            ICollection<AutoTestThreeViewTargetSpec> targets,
+            ModContentPack targetMod,
+            Func<AutoTestCaseType, string, string, string, AutoTestManifestEntry> registerDiscoveredCase)
+        {
+            List<PawnKindDef> candidates = ResolveAppearancePresenterCandidates(targetMod);
+            foreach (GeneDef geneDef in DefDatabase<GeneDef>.AllDefsListForReading
+                .Where(def => def != null && def.modContentPack == targetMod)
+                .OrderBy(def => def.defName))
+            {
+                PawnKindDef presenter = candidates.FirstOrDefault();
+                targets.Add(new AutoTestThreeViewTargetSpec
+                {
+                    Kind = AutoTestKind.GeneThreeView,
+                    CaseType = AutoTestCaseType.GeneThreeView,
+                    ManifestEntry = registerDiscoveredCase(AutoTestCaseType.GeneThreeView, nameof(GeneDef), geneDef.defName, geneDef.label),
+                    TargetDef = geneDef,
+                    TargetGeneDef = geneDef,
+                    PawnKindDef = presenter,
+                    RaceDef = presenter?.race,
+                    PresenterCandidates = candidates,
+                    ForceStripLoadout = true,
+                    CompatibilitySource = DescribeGeneStaticVisualHints(geneDef),
+                    DefName = geneDef.defName,
+                    Label = geneDef.label,
+                    ScreenshotStageSuffix = "triptych",
+                    Profile = ResolveThreeViewProfileForPawnKind(presenter)
+                });
+            }
+        }
+
+        private static void AddTargetModXenotypeTargets(
+            ICollection<AutoTestThreeViewTargetSpec> targets,
+            ModContentPack targetMod,
+            Func<AutoTestCaseType, string, string, string, AutoTestManifestEntry> registerDiscoveredCase)
+        {
+            List<PawnKindDef> candidates = ResolveAppearancePresenterCandidates(targetMod);
+            foreach (XenotypeDef xenotypeDef in DefDatabase<XenotypeDef>.AllDefsListForReading
+                .Where(def => def != null && def.modContentPack == targetMod)
+                .OrderBy(def => def.defName))
+            {
+                PawnKindDef presenter = candidates.FirstOrDefault();
+                targets.Add(new AutoTestThreeViewTargetSpec
+                {
+                    Kind = AutoTestKind.XenotypeThreeView,
+                    CaseType = AutoTestCaseType.XenotypeThreeView,
+                    ManifestEntry = registerDiscoveredCase(AutoTestCaseType.XenotypeThreeView, nameof(XenotypeDef), xenotypeDef.defName, xenotypeDef.label),
+                    TargetDef = xenotypeDef,
+                    TargetXenotypeDef = xenotypeDef,
+                    PawnKindDef = presenter,
+                    RaceDef = presenter?.race,
+                    PresenterCandidates = candidates,
+                    ForceStripLoadout = true,
+                    CompatibilitySource = "XenotypeGenes=" + (xenotypeDef.genes?.Count ?? 0),
+                    DefName = xenotypeDef.defName,
+                    Label = xenotypeDef.label,
+                    ScreenshotStageSuffix = "triptych",
+                    Profile = ResolveThreeViewProfileForPawnKind(presenter)
+                });
+            }
+        }
+
+        private static List<PawnKindDef> ResolveAppearancePresenterCandidates(ModContentPack targetMod)
+        {
+            List<PawnKindDef> candidates = DefDatabase<PawnKindDef>.AllDefsListForReading
+                .Where(def => def != null && def.modContentPack == targetMod && def.race?.race?.Humanlike == true)
+                .OrderBy(def => def.defName)
+                .ToList();
+            PawnKindDef human = ResolveDefaultHumanPawnKind();
+            if (human != null)
+            {
+                candidates.Add(human);
+            }
+
+            return candidates
+                .Where(def => def != null && def.race?.race?.Humanlike == true)
+                .GroupBy(def => def.defName, StringComparer.OrdinalIgnoreCase)
+                .Select(group => group.First())
+                .ToList();
+        }
+
+        private static string DescribeGeneStaticVisualHints(GeneDef geneDef)
+        {
+            if (geneDef == null)
+            {
+                return "StaticVisualHints=None";
+            }
+
+            List<string> hints = new List<string>();
+            if (geneDef.HasDefinedGraphicProperties) hints.Add("DefinedGraphicProperties");
+            if (geneDef.renderNodeProperties != null && geneDef.renderNodeProperties.Count > 0) hints.Add("RenderNodes");
+            if (geneDef.hairColorOverride.HasValue) hints.Add("HairColor");
+            if (geneDef.skinColorBase.HasValue || geneDef.skinColorOverride.HasValue) hints.Add("SkinColor");
+            if (geneDef.bodyType.HasValue) hints.Add("BodyType");
+            if (geneDef.forcedHeadTypes != null && geneDef.forcedHeadTypes.Count > 0) hints.Add("HeadType");
+            if (geneDef.forcedHair != null) hints.Add("Hair");
+            if (geneDef.hairTagFilter != null || geneDef.beardTagFilter != null) hints.Add("StyleFilter");
+            if (geneDef.modExtensions != null && geneDef.modExtensions.Count > 0)
+            {
+                hints.AddRange(geneDef.modExtensions.Select(extension => extension?.GetType().FullName).Where(name => !string.IsNullOrWhiteSpace(name)));
+            }
+
+            return "StaticVisualHints=" + (hints.Count == 0 ? "None" : string.Join(",", hints.Distinct().ToArray()));
+        }
+
         private static PawnKindDef ResolveDefaultHumanPawnKind()
         {
             return ResolvePawnKind(new[] { "Colonist" }, def => def?.race == ThingDefOf.Human);
@@ -1291,6 +1798,17 @@ namespace LogSyncMod.AutoTest
                 if (usedLifeStageLock)
                 {
                     spec.LifeStageLockFallbackUsed = true;
+                }
+
+                if (IsAppearanceSpec(spec))
+                {
+                    if (!ApplyAppearanceTarget(pawn, spec, out string compatibilitySource, out string appearanceError))
+                    {
+                        errorMessage = appearanceError ?? "Failed to apply appearance target.";
+                        return false;
+                    }
+
+                    spec.CompatibilitySource = AppendCompatibilitySource(spec.CompatibilitySource, compatibilitySource);
                 }
 
                 if (ShouldStripGeneratedPawnLoadout(spec, pawn))
@@ -1880,6 +2398,287 @@ namespace LogSyncMod.AutoTest
             }
 
             return sourceName;
+        }
+
+        private static bool TryEvaluateHarStyleCompatibility(
+            Pawn pawn,
+            HairDef hairDef,
+            out bool compatible,
+            out string source)
+        {
+            compatible = true;
+            source = "VanillaStyleRules";
+            if (pawn?.def == null || hairDef == null || !string.Equals(pawn.def.GetType().FullName, "AlienRace.ThingDef_AlienRace", StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            source = "HARFallbackDynamic";
+            try
+            {
+                object alienSettings = ReadMemberValue(pawn.def, "alienRace");
+                object styleSettingsMap = ReadMemberValue(alienSettings, "styleSettings");
+                if (!(styleSettingsMap is IDictionary dictionary) || !dictionary.Contains(typeof(HairDef)))
+                {
+                    return true;
+                }
+
+                object styleSettings = dictionary[typeof(HairDef)];
+                MethodInfo method = styleSettings?.GetType()
+                    .GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+                    .Where(candidate => string.Equals(candidate.Name, "IsValidStyle", StringComparison.Ordinal))
+                    .OrderBy(candidate => candidate.GetParameters().Length)
+                    .FirstOrDefault();
+                if (method == null)
+                {
+                    return true;
+                }
+
+                ParameterInfo[] parameters = method.GetParameters();
+                object[] arguments = parameters.Length >= 3
+                    ? new object[] { hairDef, pawn, false }
+                    : new object[] { hairDef, pawn };
+                object result = method.Invoke(styleSettings, arguments);
+                if (result is bool valid)
+                {
+                    compatible = valid;
+                    source = "HAR.StyleSettings.IsValidStyle";
+                }
+
+                return true;
+            }
+            catch
+            {
+                compatible = true;
+                source = "HARFallbackDynamic";
+                return true;
+            }
+        }
+
+        private static bool TryEvaluateHarHeadCompatibility(
+            Pawn pawn,
+            HeadTypeDef headTypeDef,
+            out bool compatible,
+            out string source)
+        {
+            compatible = true;
+            source = "VanillaHeadRules";
+            if (pawn?.def == null || headTypeDef == null || !string.Equals(pawn.def.GetType().FullName, "AlienRace.ThingDef_AlienRace", StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            source = "HARDynamicHeadProbe";
+            try
+            {
+                object alienSettings = ReadMemberValue(pawn.def, "alienRace");
+                object generalSettings = ReadMemberValue(alienSettings, "generalSettings");
+                object partGenerator = ReadMemberValue(generalSettings, "alienPartGenerator") ?? ReadMemberValue(alienSettings, "alienPartGenerator");
+                object headTypes = ReadMemberValue(partGenerator, "HeadTypes") ?? ReadMemberValue(partGenerator, "headTypes");
+                if (headTypes is IEnumerable enumerable)
+                {
+                    List<HeadTypeDef> allowed = enumerable.Cast<object>().OfType<HeadTypeDef>().ToList();
+                    if (allowed.Count > 0)
+                    {
+                        compatible = allowed.Contains(headTypeDef);
+                        source = "HAR.AlienPartGenerator.HeadTypes";
+                    }
+                }
+
+                return true;
+            }
+            catch
+            {
+                compatible = true;
+                source = "HARDynamicHeadProbe";
+                return true;
+            }
+        }
+
+        private static object ReadMemberValue(object instance, string memberName)
+        {
+            if (instance == null || string.IsNullOrWhiteSpace(memberName))
+            {
+                return null;
+            }
+
+            Type type = instance.GetType();
+            FieldInfo field = type.GetField(memberName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            if (field != null)
+            {
+                return field.GetValue(instance);
+            }
+
+            PropertyInfo property = type.GetProperty(memberName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            if (property != null && property.GetIndexParameters().Length == 0)
+            {
+                return property.GetValue(instance, null);
+            }
+
+            return null;
+        }
+
+        private static string BuildPawnVisualSignature(Pawn pawn)
+        {
+            if (pawn == null)
+            {
+                return "pawn:null";
+            }
+
+            RefreshPawnGraphics(pawn);
+            RefreshOptionalAlienGraphics(pawn);
+            StringBuilder builder = new StringBuilder();
+            builder.Append("race=").Append(pawn.def?.defName ?? "null");
+            builder.Append("|gender=").Append(pawn.gender);
+            if (pawn.story != null)
+            {
+                builder.Append("|body=").Append(pawn.story.bodyType?.defName ?? "null");
+                builder.Append("|head=").Append(pawn.story.headType?.defName ?? "null");
+                builder.Append("|hair=").Append(pawn.story.hairDef?.defName ?? "null");
+                builder.Append("|hairColor=").Append(pawn.story.HairColor);
+                builder.Append("|skinBase=").Append(pawn.story.SkinColorBase);
+                builder.Append("|skinOverride=").Append(pawn.story.skinColorOverride?.ToString() ?? "null");
+            }
+
+            PawnRenderer renderer = pawn.Drawer?.renderer;
+            try
+            {
+                AppendGraphicSignature(builder, "bodyGraphic", renderer?.BodyGraphic);
+                AppendGraphicSignature(builder, "headGraphic", renderer?.HeadGraphic);
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                object renderTree = ReadMemberValue(renderer, "renderTree");
+                object rootNode = ReadMemberValue(renderTree, "rootNode");
+                Queue<object> queue = new Queue<object>();
+                HashSet<object> visited = new HashSet<object>();
+                if (rootNode != null)
+                {
+                    queue.Enqueue(rootNode);
+                }
+
+                int index = 0;
+                while (queue.Count > 0 && index < 256)
+                {
+                    object node = queue.Dequeue();
+                    if (node == null || !visited.Add(node))
+                    {
+                        continue;
+                    }
+
+                    builder.Append("|node").Append(index).Append('=').Append(node.GetType().FullName);
+                    object props = ReadMemberValue(node, "Props") ?? ReadMemberValue(node, "props");
+                    builder.Append(':').Append(props?.GetType().FullName ?? "null");
+                    AppendGraphicSignature(builder, "primary", ReadMemberValue(node, "PrimaryGraphic") as Graphic ?? ReadMemberValue(node, "primaryGraphic") as Graphic);
+                    object graphics = ReadMemberValue(node, "Graphics") ?? ReadMemberValue(node, "graphics");
+                    if (graphics is IEnumerable graphicEnumerable)
+                    {
+                        int graphicIndex = 0;
+                        foreach (Graphic graphic in graphicEnumerable.Cast<object>().OfType<Graphic>())
+                        {
+                            AppendGraphicSignature(builder, "graphic" + graphicIndex++, graphic);
+                        }
+                    }
+
+                    object children = ReadMemberValue(node, "children");
+                    if (children is IEnumerable childEnumerable)
+                    {
+                        foreach (object child in childEnumerable)
+                        {
+                            if (child != null)
+                            {
+                                queue.Enqueue(child);
+                            }
+                        }
+                    }
+
+                    index++;
+                }
+            }
+            catch
+            {
+            }
+
+            return builder.ToString();
+        }
+
+        private static void AppendGraphicSignature(StringBuilder builder, string key, Graphic graphic)
+        {
+            if (builder == null)
+            {
+                return;
+            }
+
+            if (graphic == null)
+            {
+                builder.Append('|').Append(key).Append("=null");
+                return;
+            }
+
+            string path = ReadMemberValue(graphic, "path") as string ?? string.Empty;
+            string maskPath = ReadMemberValue(graphic, "maskPath") as string ?? string.Empty;
+            builder.Append('|').Append(key).Append('=').Append(graphic.GetType().FullName)
+                .Append(':').Append(path)
+                .Append(':').Append(maskPath)
+                .Append(':').Append(graphic.Color)
+                .Append(':').Append(graphic.ColorTwo);
+        }
+
+        private static void RefreshOptionalAlienGraphics(Pawn pawn)
+        {
+            if (pawn == null)
+            {
+                return;
+            }
+
+            try
+            {
+                foreach (ThingComp comp in pawn.AllComps ?? new List<ThingComp>())
+                {
+                    if (comp == null || !string.Equals(comp.GetType().FullName, "AlienRace.AlienPartGenerator+AlienComp", StringComparison.Ordinal))
+                    {
+                        continue;
+                    }
+
+                    foreach (string methodName in new[] { "RegenerateAddonsForced", "RegenerateColorChannelLinks", "UpdateColors" })
+                    {
+                        MethodInfo method = comp.GetType().GetMethod(methodName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null, Type.EmptyTypes, null);
+                        method?.Invoke(comp, null);
+                    }
+                }
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                Type patches = AccessTools.TypeByName("AlienRace.AlienRenderTreePatches");
+                MethodInfo regenerate = patches?.GetMethod("RegenerateResolveData", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic, null, new[] { typeof(Pawn) }, null);
+                regenerate?.Invoke(null, new object[] { pawn });
+            }
+            catch
+            {
+            }
+        }
+
+        private static string AppendCompatibilitySource(string existing, string next)
+        {
+            if (string.IsNullOrWhiteSpace(existing))
+            {
+                return next ?? string.Empty;
+            }
+
+            if (string.IsNullOrWhiteSpace(next) || existing.IndexOf(next, StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return existing;
+            }
+
+            return existing + ";" + next;
         }
 
         private static void RefreshPawnGraphics(Pawn pawn)
