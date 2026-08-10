@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Collections.Generic;
 using System.Reflection;
 using HarmonyLib;
 using UnityEngine.SceneManagement;
@@ -11,13 +12,18 @@ namespace LogSyncMod.AutoTest
     public static class AutoTestBootstrap
     {
         private const string HarmonyId = "trigger.logsyncmod.autotest";
-        private const int StartupMapSettleTicks = 10;
+        private const int StartupReadinessTimeoutMs = 120000;
         private static readonly FieldInfo QuickStartedField = typeof(QuickStarter).GetField("quickStarted", BindingFlags.NonPublic | BindingFlags.Static);
         private static readonly FieldInfo LogAutoOpenField = AccessTools.Field("LudeonTK.EditWindow_Log:canAutoOpen");
         private static bool startupReady;
         private static bool waitingForMapLogged;
         private static bool quickStartAttempted;
-        private static int playableMapReadyTick = -1;
+        private static AutoTestWaitHandle readinessWait;
+        private static AutoTestOperationJournal readinessJournal;
+        private static AutoTestGameClock readinessClock;
+        private static AutoTestReadinessSnapshot readinessSnapshot;
+        private static AutoTestEvidenceSnapshotDto lastEvidenceSnapshot;
+        private static string lastRuntimeRunId;
         private static bool? previousLogAutoOpenState;
         private static TimeSpeed? previousTimeSpeed;
         private static bool runtimeGuardsArmed;
@@ -53,11 +59,17 @@ namespace LogSyncMod.AutoTest
                 runner.Tick();
                 if (runner.Completed)
                 {
+                    lastEvidenceSnapshot = runner.GetRuntimeEvidenceSnapshot();
+                    lastRuntimeRunId = runner.RuntimeRunId;
                     RestoreLogAutoOpen();
                     RestoreRuntimeGuards();
                     runner = null;
                     settings.autoTestEnabled = false;
                     settings.Write();
+                    readinessWait = null;
+                    readinessJournal = null;
+                    readinessClock = null;
+                    readinessSnapshot = null;
                 }
                 return;
             }
@@ -85,7 +97,7 @@ namespace LogSyncMod.AutoTest
             if (map == null)
             {
                 TryStartQuickTest();
-                playableMapReadyTick = -1;
+                readinessWait = null;
                 if (!waitingForMapLogged)
                 {
                     Log.Message("[LogSyncAutoTest] Waiting for a playable map.");
@@ -95,23 +107,49 @@ namespace LogSyncMod.AutoTest
             }
 
             waitingForMapLogged = false;
-            if (playableMapReadyTick < 0)
+            if (readinessWait == null)
             {
-                playableMapReadyTick = Find.TickManager.TicksGame;
-                Log.Message("[LogSyncAutoTest] Playable map detected. Waiting " + StartupMapSettleTicks + " ticks before starting auto test.");
+                readinessClock = new AutoTestGameClock();
+                readinessJournal = new AutoTestOperationJournal();
+                readinessWait = new AutoTestWaitHandle(
+                    new AutoTestWaitOptions { ConditionId = "automation.ready", TimeoutMs = StartupReadinessTimeoutMs, MinimumPollIntervalTicks = 1, RequiredStablePolls = 3 },
+                    delegate
+                    {
+                        readinessSnapshot = AutoTestReadinessProbe.Capture();
+                        return new AutoTestProbeResult { Satisfied = readinessSnapshot.AutomationReady, Snapshot = readinessSnapshot.Summary, Message = readinessSnapshot.Summary };
+                    },
+                    readinessClock,
+                    readinessJournal);
+            }
+
+            AutoTestWaitOutcome readinessOutcome = readinessWait.Poll(Find.TickManager?.TicksGame ?? 0);
+            if (!readinessOutcome.Terminal)
+            {
+                if (readinessOutcome.Attempts == 1 || readinessOutcome.Attempts % 60 == 0)
+                    Log.Message("[LogSyncAutoTest] Waiting for automation.ready: " + readinessOutcome.LastSnapshot);
                 return;
             }
 
-            if (Find.TickManager.TicksGame - playableMapReadyTick < StartupMapSettleTicks)
+            if (!readinessOutcome.Satisfied)
             {
+                readinessSnapshot = AutoTestReadinessProbe.Capture();
+                Log.Error("[LogSyncAutoTest] automation.ready timed out: " + AutoTestWaitHandle.Describe(readinessOutcome));
+                new AutoTestRunner(settings, map, readinessSnapshot).Initialize();
+                settings.autoTestEnabled = false;
+                settings.Write();
+                readinessWait = null;
+                readinessJournal = null;
+                readinessClock = null;
                 return;
             }
 
             DisableLogAutoOpenForAutoTest();
             ArmRuntimeGuards(settings);
-            runner = new AutoTestRunner(settings, map);
+            runner = new AutoTestRunner(settings, map, readinessSnapshot);
             runner.Initialize();
-            playableMapReadyTick = -1;
+            readinessWait = null;
+            readinessJournal = null;
+            readinessClock = null;
         }
 
         public static void OnGui()
@@ -316,6 +354,65 @@ namespace LogSyncMod.AutoTest
         {
             temporaryPauseBypass = active;
             SmartSpeedBridge.SetPauseBypass(active);
+        }
+
+        internal static AutoTestRuntimeStatusDto GetRuntimeStatus()
+        {
+            if (runner != null)
+            {
+                return new AutoTestRuntimeStatusDto { State = runner.Completed ? "completed" : "running", RunId = runner.RuntimeRunId, PackageId = runner.RuntimePackageId, Completed = runner.Completed, ResultCount = runner.RuntimeResultCount, Summary = "active run" };
+            }
+            LogSyncSettings settings = global::LogSyncMod.LogSyncMod.settings;
+            if (settings != null && settings.autoTestEnabled)
+            {
+                return new AutoTestRuntimeStatusDto { State = "queued", RunId = settings.autoTestRunId, PackageId = settings.autoTestTargetPackageId, Summary = "run requested but not started" };
+            }
+            return new AutoTestRuntimeStatusDto { State = string.IsNullOrEmpty(lastRuntimeRunId) ? "idle" : "completed", RunId = lastRuntimeRunId, Completed = lastEvidenceSnapshot?.Found == true, ResultCount = 0, Summary = "no active run" };
+        }
+
+        internal static AutoTestRunRequestResultDto RequestRuntimeRun(AutoTestRunRequestDto request)
+        {
+            request = request ?? new AutoTestRunRequestDto();
+            if (runner != null || (global::LogSyncMod.LogSyncMod.settings?.autoTestEnabled ?? false))
+                return new AutoTestRunRequestResultDto { Accepted = false, ErrorCode = "autotest.run_already_active", Message = "An auto-test run is already active or queued." };
+            string packageId = (request.PackageId ?? string.Empty).Trim().ToLowerInvariant();
+            if (string.IsNullOrEmpty(packageId)) return new AutoTestRunRequestResultDto { Accepted = false, ErrorCode = "autotest.package_id_required", Message = "packageId is required." };
+            LogSyncSettings settings = global::LogSyncMod.LogSyncMod.settings;
+            if (settings == null) return new AutoTestRunRequestResultDto { Accepted = false, ErrorCode = "autotest.settings_unavailable", Message = "LogSync settings are unavailable." };
+            List<AutoTestScope> scopes = new List<AutoTestScope>();
+            foreach (string scopeText in request.Scopes ?? new List<string>())
+                if (Enum.TryParse(scopeText, true, out AutoTestScope scope) && !scopes.Contains(scope)) scopes.Add(scope);
+            if (scopes.Count == 0) scopes.Add(AutoTestScope.Standard);
+            settings.autoTestTargetPackageId = packageId;
+            settings.autoTestRunId = string.IsNullOrWhiteSpace(request.RunId) ? Guid.NewGuid().ToString("N") : request.RunId.Trim();
+            settings.autoTestScopes = scopes;
+            settings.autoTestScope = scopes[0];
+            settings.autoTestTargetDefNames = (request.DefNames ?? new List<string>()).Where(value => !string.IsNullOrWhiteSpace(value)).Select(value => value.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            settings.autoTestTargetDefNamesInput = string.Join(",", settings.autoTestTargetDefNames.ToArray());
+            settings.autoTestCaptureScreenshots = request.CaptureScreenshots;
+            settings.autoTestMode = string.Equals(request.Mode, "xml", StringComparison.OrdinalIgnoreCase) ? AutoTestMode.XmlDriven : AutoTestMode.Automatic;
+            if (!string.IsNullOrWhiteSpace(request.OutputPath)) settings.autoTestOutputPath = request.OutputPath.Trim();
+            settings.autoTestEnabled = true;
+            settings.RequestAutoTestRun();
+            settings.Write();
+            return new AutoTestRunRequestResultDto { Accepted = true, RunId = settings.autoTestRunId, Message = "Run queued for the next game tick." };
+        }
+
+        internal static AutoTestCancelResultDto RequestRuntimeCancel(string runId)
+        {
+            if (runner != null && string.Equals(runner.RuntimeRunId, runId, StringComparison.OrdinalIgnoreCase))
+            {
+                runner.RequestCancel(runId);
+                return new AutoTestCancelResultDto { Accepted = true, RunId = runId, Message = "Cancellation queued on the game thread." };
+            }
+            return new AutoTestCancelResultDto { Accepted = false, RunId = runId, ErrorCode = "autotest.run_not_found", Message = "No active run matches runId." };
+        }
+
+        internal static AutoTestEvidenceSnapshotDto GetRuntimeEvidence(string runId)
+        {
+            if (runner != null && string.Equals(runner.RuntimeRunId, runId, StringComparison.OrdinalIgnoreCase)) return runner.GetRuntimeEvidenceSnapshot();
+            if (lastEvidenceSnapshot != null && string.Equals(lastEvidenceSnapshot.RunId, runId, StringComparison.OrdinalIgnoreCase)) return lastEvidenceSnapshot;
+            return new AutoTestEvidenceSnapshotDto { Found = false, RunId = runId, ErrorCode = "autotest.run_not_found" };
         }
 
         private static void MaintainRuntimeGuards(LogSyncSettings settings, string source)

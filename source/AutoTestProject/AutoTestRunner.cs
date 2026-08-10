@@ -138,6 +138,7 @@ namespace LogSyncMod.AutoTest
         private readonly AutoTestPocketMapService pocketMapService;
         private readonly AutoTestThreeViewService threeViewService;
         private readonly AutoTestCombatPawnService combatPawnService;
+        private readonly AutoTestReadinessSnapshot initialReadiness;
         private bool? cameraPlusActive;
         private int nextDiscoverOrder = 1;
         private int nextPlannedOrder = 1;
@@ -149,17 +150,41 @@ namespace LogSyncMod.AutoTest
         private AutoTestEvidenceManifest evidenceManifest;
         private AutoTestLogCaptureSubscription logCaptureSubscription;
         private IDisposable runContextScope;
+        private volatile bool cancelRequested;
 
-        public AutoTestRunner(LogSyncSettings settings, Map map)
+        public AutoTestRunner(LogSyncSettings settings, Map map, AutoTestReadinessSnapshot initialReadiness = null)
         {
             this.settings = settings;
             this.map = map;
+            this.initialReadiness = initialReadiness;
             pocketMapService = new AutoTestPocketMapService();
             threeViewService = new AutoTestThreeViewService();
             combatPawnService = new AutoTestCombatPawnService();
         }
 
         public bool Completed => completed;
+        internal string RuntimeRunId => runId;
+        internal string RuntimePackageId => targetPackageId;
+        internal int RuntimeResultCount => results.Count;
+        internal AutoTestEvidenceSnapshotDto GetRuntimeEvidenceSnapshot()
+        {
+            return new AutoTestEvidenceSnapshotDto
+            {
+                Found = true,
+                RunId = runId,
+                Success = evidenceManifest?.Success ?? false,
+                OperationCount = evidenceManifest?.Operations?.Count ?? 0,
+                AssertionCount = evidenceManifest?.Assertions?.Count ?? 0,
+                FailedAssertionCount = evidenceManifest?.Assertions?.Count(item => !item.Success) ?? 0,
+                ErrorCount = evidenceManifest?.Errors?.Count ?? 0,
+                CaseCount = evidenceManifest?.Cases?.Count ?? 0
+            };
+        }
+
+        internal void RequestCancel(string requestedRunId)
+        {
+            if (string.IsNullOrEmpty(requestedRunId) || string.Equals(requestedRunId, runId, StringComparison.OrdinalIgnoreCase)) cancelRequested = true;
+        }
 
         public void Initialize()
         {
@@ -179,7 +204,13 @@ namespace LogSyncMod.AutoTest
                 StartedAtUtc = evidenceClock.UtcNow,
                 Environment = AutoTestRuntimeObservation.Capture(targetPackageId, map)
             };
+            evidenceManifest.Readiness = initialReadiness;
             evidenceBuilder = new AutoTestEvidenceBuilder(evidenceManifest, evidenceClock);
+            InitializeSemanticInfrastructure();
+            if (initialReadiness != null)
+            {
+                evidenceBuilder.Assert("automation.ready", initialReadiness.AutomationReady, "AutomationReady=true after 3 stable polls", initialReadiness.Summary, initialReadiness.Summary);
+            }
             logCaptureSubscription = new AutoTestLogCaptureSubscription(runId, logJournal);
             operationJournal.RecordEvent("run.started", runId, null, null, null, "autotest.run", "Auto-test run started.", evidenceClock.UtcNow);
             outputDirectory = ResolveOutputDirectory(settings);
@@ -192,6 +223,14 @@ namespace LogSyncMod.AutoTest
             {
                 evidenceBuilder.AddError(new AutoTestOperationError { Code = "runtime.not_ready", Message = "Target mod not found: " + targetPackageId });
                 Log.Error("[LogSyncAutoTest] Target mod not found: " + targetPackageId);
+                Finish();
+                return;
+            }
+
+            if (initialReadiness != null && !initialReadiness.AutomationReady)
+            {
+                evidenceBuilder.AddError(new AutoTestOperationError { Code = "runtime.not_ready", Message = "Automation readiness timed out: " + initialReadiness.Summary });
+                Log.Error("[LogSyncAutoTest] Automation readiness timed out: " + initialReadiness.Summary);
                 Finish();
                 return;
             }
@@ -306,6 +345,12 @@ namespace LogSyncMod.AutoTest
         {
             if (completed) return;
 
+            if (cancelRequested)
+            {
+                CancelActiveSessions();
+                cancelRequested = false;
+            }
+
             if (activeSession == null && pendingItems.Count > 0)
             {
                 StartNextSession();
@@ -366,37 +411,37 @@ namespace LogSyncMod.AutoTest
 
             foreach (var session in activeTurretSessions)
             {
-                session.Update();
+                using (AutoTestOperationContext.PushCase(session.Result?.CaseId)) session.Update();
             }
 
             foreach (var session in activeRangedWeaponSessions)
             {
-                session.Update();
+                using (AutoTestOperationContext.PushCase(session.Result?.CaseId)) session.Update();
             }
 
             foreach (var session in activeMeleeWeaponSessions)
             {
-                session.Update();
+                using (AutoTestOperationContext.PushCase(session.Result?.CaseId)) session.Update();
             }
 
             foreach (var session in activeSkillPocketMapSessions)
             {
-                session.Update();
+                using (AutoTestOperationContext.PushCase(session.Result?.CaseId)) session.Update();
             }
 
             foreach (var session in activeThreeViewSessions)
             {
-                session.Update();
+                using (AutoTestOperationContext.PushCase(session.Result?.CaseId)) session.Update();
             }
 
             foreach (var session in activeCombatPawnSessions)
             {
-                session.Update();
+                using (AutoTestOperationContext.PushCase(session.Result?.CaseId)) session.Update();
             }
 
             activeTurretSessions.RemoveAll(session => {
                 if (session.Phase == TurretTestPhase.Done) {
-                    results.Add(session.Result);
+                    RecordResult(session.Result);
                     return true;
                 }
                 return false;
@@ -404,7 +449,7 @@ namespace LogSyncMod.AutoTest
 
             activeRangedWeaponSessions.RemoveAll(session => {
                 if (session.Phase == RangedWeaponTestPhase.Done) {
-                    results.Add(session.Result);
+                    RecordResult(session.Result);
                     return true;
                 }
                 return false;
@@ -412,7 +457,7 @@ namespace LogSyncMod.AutoTest
 
             activeMeleeWeaponSessions.RemoveAll(session => {
                 if (session.Phase == MeleeWeaponTestPhase.Done) {
-                    results.Add(session.Result);
+                    RecordResult(session.Result);
                     return true;
                 }
                 return false;
@@ -420,7 +465,7 @@ namespace LogSyncMod.AutoTest
 
             activeSkillPocketMapSessions.RemoveAll(session => {
                 if (session.Phase == SkillPocketMapTestPhase.Done) {
-                    results.Add(session.Result);
+                    RecordResult(session.Result);
                     return true;
                 }
                 return false;
@@ -428,7 +473,7 @@ namespace LogSyncMod.AutoTest
 
             activeThreeViewSessions.RemoveAll(session => {
                 if (session.Phase == ThreeViewTestPhase.Done) {
-                    results.Add(session.Result);
+                    RecordResult(session.Result);
                     return true;
                 }
                 return false;
@@ -436,7 +481,7 @@ namespace LogSyncMod.AutoTest
 
             activeCombatPawnSessions.RemoveAll(session => {
                 if (session.Phase == CombatPawnTestPhase.Done) {
-                    results.Add(session.Result);
+                    RecordResult(session.Result);
                     return true;
                 }
                 return false;
@@ -615,7 +660,7 @@ namespace LogSyncMod.AutoTest
             result.Status = status;
             result.Stage = stage;
             result.ErrorMessage = errorMessage ?? string.Empty;
-            results.Add(result);
+            RecordResult(result);
         }
 
         private void Finish()
@@ -629,6 +674,7 @@ namespace LogSyncMod.AutoTest
             AutoTestEvidenceManifest completedEvidence = null;
             try
             {
+                foreach (AutoTestResult result in results.ToList()) CompleteSemanticCase(result);
                 LegacyResultEvidenceAdapter.AddResults(evidenceBuilder, results);
                 operationJournal?.RecordEvent("run.completed", runId, null, null, null, "autotest.run", "Auto-test run completed.", evidenceClock?.UtcNow ?? DateTime.UtcNow);
                 logCaptureSubscription?.Dispose();
@@ -654,6 +700,27 @@ namespace LogSyncMod.AutoTest
                 runSummary?.PlannedCount ?? 0,
                 runSummary?.MissingCount ?? 0,
                 runSummary == null || runSummary.MissingDefNames.Count == 0 ? "<none>" : string.Join(",", runSummary.MissingDefNames)));
+        }
+
+        private void CancelActiveSessions()
+        {
+            pendingItems.Clear();
+            pendingTurretDefs.Clear();
+            pendingRangedWeaponDefs.Clear();
+            pendingMeleeWeaponDefs.Clear();
+            pendingSkillAbilityDefs.Clear();
+            pendingThreeViewTargets.Clear();
+            pendingCombatPawnTargets.Clear();
+            if (activeSession != null)
+            {
+                FailActiveSession("cancelled", "cancel", "Auto-test run cancelled by runtime API.");
+            }
+            foreach (TurretTestSession session in activeTurretSessions) { session.Result.Status = "cancelled"; session.Result.ErrorMessage = "Auto-test run cancelled."; session.Phase = TurretTestPhase.CleaningUp; }
+            foreach (RangedWeaponTestSession session in activeRangedWeaponSessions) { session.Result.Status = "cancelled"; session.Result.ErrorMessage = "Auto-test run cancelled."; session.Phase = RangedWeaponTestPhase.CleaningUp; }
+            foreach (MeleeWeaponTestSession session in activeMeleeWeaponSessions) { session.Result.Status = "cancelled"; session.Result.ErrorMessage = "Auto-test run cancelled."; session.Phase = MeleeWeaponTestPhase.CleaningUp; }
+            foreach (SkillPocketMapTestSession session in activeSkillPocketMapSessions) { session.Result.Status = "cancelled"; session.Result.ErrorMessage = "Auto-test run cancelled."; session.Phase = SkillPocketMapTestPhase.CleaningUp; }
+            foreach (ThreeViewTestSession session in activeThreeViewSessions) { session.Result.Status = "cancelled"; session.Result.ErrorMessage = "Auto-test run cancelled."; session.Phase = ThreeViewTestPhase.CleaningUp; }
+            foreach (CombatPawnTestSession session in activeCombatPawnSessions) { session.Result.Status = "cancelled"; session.Result.ErrorMessage = "Auto-test run cancelled."; session.Phase = CombatPawnTestPhase.CleaningUp; }
         }
 
         private void CleanupSharedHediffPawn()
@@ -997,7 +1064,9 @@ namespace LogSyncMod.AutoTest
             LogSyncAutoTestSpecDef specDef = null)
         {
             AutoTestCaseType caseType = ResolveCaseType(kind);
-            Def targetDef = (Def)thingDef ?? terrainDef ?? (Def)recipeDef ?? hediffDef;
+            // Recipe cases are keyed by the RecipeDef even though the produced ThingDef
+            // is also carried on the work item for setup and result labeling.
+            Def targetDef = (Def)recipeDef ?? (Def)thingDef ?? (Def)terrainDef ?? hediffDef;
             string defType = targetDef?.GetType().Name ?? string.Empty;
             AutoTestManifestEntry entry = RegisterDiscoveredCase(caseType, defType, targetDef?.defName, targetDef?.label);
 
@@ -1024,7 +1093,7 @@ namespace LogSyncMod.AutoTest
                 caseType = AutoTestCaseType.ItemInfoCard;
             }
 
-            return new AutoTestResult
+            AutoTestResult result = new AutoTestResult
             {
                 PackageId = targetPackageId,
                 CaseId = entry?.CaseId ?? BuildCaseId(caseType, defName),
@@ -1040,6 +1109,8 @@ namespace LogSyncMod.AutoTest
                 ScreenshotPath = string.Empty,
                 Notes = string.Empty
             };
+            RegisterSemanticCase(result);
+            return result;
         }
 
         private AutoTestResult CreateResult(AutoTestCaseType caseType, string defType, string defName, string label)

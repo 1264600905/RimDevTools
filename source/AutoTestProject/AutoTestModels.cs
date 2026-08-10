@@ -116,5 +116,11 @@ namespace LogSyncMod.AutoTest
         public string OverlayLine2;
         public string OverlayLine3;
         public string OverlayLine4;
+        public int AssertionCount;
+        public List<string> FailedAssertionIds = new List<string>();
+        public List<string> OperationIds = new List<string>();
+        public string EvidenceCaseKey;
+        public int UnexpectedSevereLogCount;
+        public string LastSnapshot;
     }
 }

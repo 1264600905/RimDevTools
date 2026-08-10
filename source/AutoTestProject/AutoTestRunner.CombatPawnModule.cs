@@ -50,6 +50,7 @@ namespace LogSyncMod.AutoTest
             public bool FirstHitScreenshotCaptured;
             public int FirstHitTick = -1;
             public int HitScreenshotDelayTicks;
+            public AutoTestPawnSnapshot InitialSnapshot;
 
             public CombatPawnTestSession(AutoTestRunner owner)
             {
@@ -163,6 +164,7 @@ namespace LogSyncMod.AutoTest
                 }
 
                 initialHealthPercent = TargetPawn.health?.summaryHealth?.SummaryHealthPercent ?? 1f;
+                InitialSnapshot = AutoTestPawnProbe.Capture(TargetPawn);
                 Result.Stage = "spawn_target";
                 Result.Notes = AppendNote(Result.Notes, "TargetPawn=" + (TargetPawn.kindDef?.defName ?? "Unknown"));
                 Log.Message("[LogSyncAutoTest] CombatPawn target spawned: " + BuildTargetSummary(TargetPawn));
@@ -450,6 +452,7 @@ namespace LogSyncMod.AutoTest
 
             private void CleanupAndClose()
             {
+                owner.RecordCombatPawnSemanticBeforeCleanup(this);
                 try
                 {
                     if (TargetPawn != null && !TargetPawn.Destroyed)
@@ -476,6 +479,7 @@ namespace LogSyncMod.AutoTest
                 }
 
                 owner.DestroyPocketMap(TestMap, Parent);
+                owner.RecordCombatPawnCleanupSemantic(this);
                 Phase = CombatPawnTestPhase.Done;
             }
 

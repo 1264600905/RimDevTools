@@ -27,6 +27,7 @@ namespace LogSyncMod.AutoTest
             public ThingDef WeaponDef;
             public Pawn ShooterPawn;
             public ThingWithComps EquippedWeapon;
+            public bool InitialWeaponEquipped;
             public readonly List<Pawn> EnemyPawns = new List<Pawn>();
             public readonly Dictionary<int, float> EnemyInitialHealthPercent = new Dictionary<int, float>();
             public MeleeWeaponTestPhase Phase;
@@ -254,8 +255,10 @@ namespace LogSyncMod.AutoTest
 
                 ShooterPawn.equipment?.MakeRoomFor(EquippedWeapon);
                 ShooterPawn.equipment?.AddEquipment(EquippedWeapon);
+                InitialWeaponEquipped = ShooterPawn.equipment?.Primary == EquippedWeapon;
                 Result.Label = EquippedWeapon.LabelCap;
                 Result.Notes = AppendNote(Result.Notes, "EquippedWeapon=" + EquippedWeapon.def.defName);
+                Result.Notes = AppendNote(Result.Notes, "InitialWeaponEquipped=" + InitialWeaponEquipped);
 
                 SearchAndDestroyEnabled = TryEnableSearchAndDestroy(ShooterPawn, out string status);
                 SearchAndDestroyStatus = status ?? string.Empty;
@@ -507,6 +510,7 @@ namespace LogSyncMod.AutoTest
 
             private void CleanupAndClose()
             {
+                owner.RecordMeleeSemanticBeforeCleanup(this);
                 CleanupShooter();
                 if (TestMap != null && Find.Maps.Contains(TestMap))
                 {
@@ -522,6 +526,7 @@ namespace LogSyncMod.AutoTest
                     Current.Game.CurrentMap = owner.map;
                 }
 
+                owner.RecordMeleeCleanupSemantic(this);
                 Phase = MeleeWeaponTestPhase.Done;
             }
 

@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using RimWorld;
 using RimWorld.Planet;
 using UnityEngine;
@@ -182,11 +184,15 @@ namespace LogSyncMod.AutoTest
                     return;
                 }
 
+                owner.RecordThreeViewSemanticBeforeCleanup(this);
+                List<Pawn> trackedPawns = Context?.Pawns?.Where(pawn => pawn != null).ToList() ?? new List<Pawn>();
                 owner.threeViewService.Cleanup(Context);
+                bool targetsRemoved = trackedPawns.All(pawn => pawn.Destroyed || !pawn.Spawned);
                 Context = null;
                 owner.ClearArea(RootCell, StudioWidth, StudioHeight);
                 owner.threeViewService.PrepareStudioArea(TestMap, RootCell, StudioWidth, StudioHeight);
                 owner.RefreshThreeViewCooldown("cleanup");
+                owner.RecordThreeViewCleanupSemantic(this, targetsRemoved);
                 Phase = ThreeViewTestPhase.Done;
             }
 

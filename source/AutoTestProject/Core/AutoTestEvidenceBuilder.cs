@@ -20,6 +20,7 @@ namespace LogSyncMod.AutoTest
         public AutoTestAssertionEvidence Fail(string name, string expected, string actual, string details = null) { return AddAssertion(name, false, expected, actual, details); }
         public AutoTestAssertionEvidence AreEqual(string name, object expected, object actual) { return AddAssertion(name, Equals(expected, actual), Convert.ToString(expected), Convert.ToString(actual), null); }
         public AutoTestAssertionEvidence IsTrue(string name, bool actual, string details = null) { return AddAssertion(name, actual, "True", actual.ToString(), details); }
+        public AutoTestAssertionEvidence Assert(string name, bool success, string expected, string actual, string details = null) { return AddAssertion(name, success, expected, actual, details); }
         public AutoTestAssertionEvidence OperationSucceeded(string name, AutoTestOperationEnvelope envelope)
         {
             AutoTestAssertionEvidence assertion = AddAssertion(name, envelope != null && envelope.Success, "Completed", envelope == null ? "Missing" : envelope.Status.ToString(), envelope == null || envelope.Error == null ? null : envelope.Error.Message);

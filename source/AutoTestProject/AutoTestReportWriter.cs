@@ -66,7 +66,7 @@ namespace LogSyncMod.AutoTest
 
                 Directory.CreateDirectory(artifacts.OutputDirectory);
                 if (evidence != null) AutoTestEvidenceSerializer.Write(artifacts.EvidencePath, evidence);
-                File.WriteAllText(artifacts.ReportPath, BuildMarkdown(artifacts, packageId, modName, results, runSummary), Encoding.UTF8);
+                File.WriteAllText(artifacts.ReportPath, BuildMarkdown(artifacts, packageId, modName, results, runSummary, evidence), Encoding.UTF8);
                 File.WriteAllText(artifacts.ResultPath, BuildJson(artifacts, packageId, runId, modName, results, runSummary, evidence), Encoding.UTF8);
                 File.WriteAllText(artifacts.ManifestPath, BuildManifestJson(packageId, modName, discoveredManifest, plannedManifest, runSummary), Encoding.UTF8);
                 PruneArchives(artifacts.OutputDirectory, artifacts.SafePackageId);
@@ -77,7 +77,7 @@ namespace LogSyncMod.AutoTest
             }
         }
 
-        private static string BuildMarkdown(AutoTestRunArtifacts artifacts, string packageId, string modName, List<AutoTestResult> results, AutoTestRunSummary runSummary)
+        private static string BuildMarkdown(AutoTestRunArtifacts artifacts, string packageId, string modName, List<AutoTestResult> results, AutoTestRunSummary runSummary, AutoTestEvidenceManifest evidence)
         {
             StringBuilder builder = new StringBuilder();
             int passed = results.Count(result => result.Status == "passed");
@@ -191,6 +191,41 @@ namespace LogSyncMod.AutoTest
                 }
             }
 
+            List<AutoTestResult> failedResults = results.Where(result => result.Status != "passed" && result.Status != "skipped").ToList();
+            foreach (AutoTestResult failedResult in failedResults)
+            {
+                List<AutoTestAssertionEvidence> assertions = evidence?.Assertions?.Where(item => item.CaseId == failedResult.CaseId && !item.Success).ToList() ?? new List<AutoTestAssertionEvidence>();
+                List<AutoTestOperationEnvelope> operations = evidence?.Operations?.Where(item => item.CaseId == failedResult.CaseId).ToList() ?? new List<AutoTestOperationEnvelope>();
+                List<AutoTestLogEvidence> logs = evidence?.Cases?.FirstOrDefault(item => item.CaseId == failedResult.CaseId)?.Logs ?? new List<AutoTestLogEvidence>();
+                builder.AppendLine();
+                builder.AppendLine("## Failure Details: " + failedResult.DefName);
+                builder.AppendLine();
+                builder.AppendLine("### Failed Assertions");
+                builder.AppendLine();
+                if (assertions.Count == 0) builder.AppendLine("- No structured failed assertion was recorded; status=`" + failedResult.Status + "`.");
+                foreach (AutoTestAssertionEvidence assertion in assertions)
+                {
+                    builder.AppendLine("- " + assertion.Name + " (`" + assertion.AssertionId + "`)");
+                    builder.AppendLine("  - Expected: " + EscapePipe(assertion.Expected));
+                    builder.AppendLine("  - Actual: " + EscapePipe(assertion.Actual));
+                    builder.AppendLine("  - Details: " + EscapePipe(assertion.Details));
+                }
+                builder.AppendLine("  - LastSnapshot: " + EscapePipe(failedResult.LastSnapshot));
+                builder.AppendLine();
+                builder.AppendLine("### Related Logs");
+                builder.AppendLine();
+                foreach (AutoTestLogEvidence log in logs.Where(item => item.Level == "warning" || item.Level == "error" || item.Level == "fatal").Take(50))
+                    builder.AppendLine("- [" + log.Level + "] " + EscapePipe(log.Message));
+                if (!logs.Any(item => item.Level == "warning" || item.Level == "error" || item.Level == "fatal")) builder.AppendLine("- <none>");
+                builder.AppendLine();
+                builder.AppendLine("### Operation Timeline");
+                builder.AppendLine();
+                builder.AppendLine("| Step | Status | DurationMs | Summary |");
+                builder.AppendLine("| --- | --- | ---: | --- |");
+                foreach (AutoTestOperationEnvelope operation in operations)
+                    builder.AppendLine("| " + EscapePipe(operation.StepId) + " | " + operation.Status + " | " + operation.DurationMs + " | " + EscapePipe(operation.ResultSummary) + " |");
+            }
+
             return builder.ToString();
         }
 
@@ -242,7 +277,13 @@ namespace LogSyncMod.AutoTest
                 builder.AppendLine("      \"errorMessage\": \"" + EscapeJson(result.ErrorMessage) + "\",");
                 builder.AppendLine("      \"screenshotPath\": \"" + EscapeJson(result.ScreenshotPath) + "\",");
                 builder.AppendLine("      \"screenshotPaths\": " + BuildJsonArray(result.ScreenshotPaths) + ",");
-                builder.AppendLine("      \"notes\": \"" + EscapeJson(result.Notes) + "\"");
+                builder.AppendLine("      \"notes\": \"" + EscapeJson(result.Notes) + "\",");
+                builder.AppendLine("      \"assertionCount\": " + result.AssertionCount + ",");
+                builder.AppendLine("      \"failedAssertionIds\": " + BuildJsonArray(result.FailedAssertionIds) + ",");
+                builder.AppendLine("      \"operationIds\": " + BuildJsonArray(result.OperationIds) + ",");
+                builder.AppendLine("      \"evidenceCaseKey\": \"" + EscapeJson(result.EvidenceCaseKey) + "\",");
+                builder.AppendLine("      \"unexpectedSevereLogCount\": " + result.UnexpectedSevereLogCount + ",");
+                builder.AppendLine("      \"lastSnapshot\": \"" + EscapeJson(result.LastSnapshot) + "\"");
                 builder.Append("    }");
                 if (i < results.Count - 1) builder.Append(",");
                 builder.AppendLine();

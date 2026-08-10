@@ -754,7 +754,9 @@ namespace LogSyncMod.AutoTest
                     {
                         billStack.Delete(productionBill);
                         session.RecipeBillAdded = false;
-                        session.RecipeBill = null;
+                        // Keep the object reference so the post-close semantic assertion
+                        // can prove that this exact Bill was removed from the BillStack.
+                        session.RecipeBill = productionBill;
                     }
                     catch
                     {

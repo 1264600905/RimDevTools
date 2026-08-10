@@ -60,6 +60,7 @@ namespace LogSyncMod.AutoTest
             public readonly Dictionary<int, Vector3> ProjectileLastPositions = new Dictionary<int, Vector3>();
             public readonly Dictionary<int, int> ProjectileLastTicks = new Dictionary<int, int>();
             public StageScreenshotRequest ActiveStageScreenshot;
+            public string TargetingMode = "unsupported";
 
             public RangedWeaponTestSession(AutoTestRunner owner, ThingDef weaponDef, AutoTestResult result)
             {
@@ -112,6 +113,17 @@ namespace LogSyncMod.AutoTest
                             if (EquippedWeapon == null)
                             {
                                 Fail("failed_weapon_equip", "Weapon could not be equipped.");
+                                return;
+                            }
+
+                            TargetingMode = ClassifyTargetingMode();
+                            Result.Notes = AppendNote(Result.Notes, "TargetingMode=" + TargetingMode);
+                            if (TargetingMode != "pawn_target")
+                            {
+                                Result.Status = "unsupported";
+                                Result.Stage = "targeting_classification";
+                                Result.ErrorMessage = "Targeting mode '" + TargetingMode + "' is classified explicitly and is not executed through the pawn-target harness.";
+                                Phase = RangedWeaponTestPhase.CleaningUp;
                                 return;
                             }
 
@@ -615,11 +627,6 @@ namespace LogSyncMod.AutoTest
 
             private void UpdateProjectileScreenshotSchedule()
             {
-                if (!CaptureProjectileScreenshots)
-                {
-                    return;
-                }
-
                 List<Thing> activeProjectiles = GetActiveProjectiles();
                 if (!ProjectileShotDetected)
                 {
@@ -631,6 +638,11 @@ namespace LogSyncMod.AutoTest
                     ProjectileShotDetected = true;
                     ProjectileShotTick = Find.TickManager.TicksGame;
                     Result.Notes = AppendNote(Result.Notes, "ProjectileShotTick=" + ProjectileShotTick);
+                }
+
+                if (!CaptureProjectileScreenshots)
+                {
+                    return;
                 }
 
                 if (activeProjectiles.Count == 0)
@@ -748,6 +760,17 @@ namespace LogSyncMod.AutoTest
                 return true;
             }
 
+            private string ClassifyTargetingMode()
+            {
+                Verb verb = ShooterPawn?.equipment?.AllEquipmentVerbs?.FirstOrDefault(value => value?.verbProps != null && value.verbProps.range > 1f);
+                TargetingParameters parameters = verb?.verbProps?.targetParams ?? WeaponDef?.Verbs?.FirstOrDefault(value => value != null && value.range > 1f)?.targetParams;
+                if (parameters == null) return "unsupported";
+                if (parameters.canTargetPawns) return "pawn_target";
+                if (parameters.canTargetBuildings) return "building_target";
+                if (parameters.canTargetLocations) return "location_target";
+                return "unsupported";
+            }
+
             private bool ProcessPendingStageScreenshotQueue()
             {
                 if (ActiveStageScreenshot == null && pendingStageScreenshots.Count == 0)
@@ -854,6 +877,7 @@ namespace LogSyncMod.AutoTest
 
             private void CleanupAndClose()
             {
+                owner.RecordRangedSemanticBeforeCleanup(this);
                 CleanupShooter();
                 if (TestMap != null && Find.Maps.Contains(TestMap))
                 {
@@ -869,6 +893,7 @@ namespace LogSyncMod.AutoTest
                     Current.Game.CurrentMap = owner.map;
                 }
 
+                owner.RecordRangedCleanupSemantic(this);
                 Phase = RangedWeaponTestPhase.Done;
             }
 

@@ -15,6 +15,8 @@ namespace LogSyncMod
         public bool captureProjectileScreenshots = false;
         public List<int> turretProjectileScreenshotTicks = new List<int> { 20, 30, 40 };
         public List<int> projectileScreenshotTicks = new List<int> { 20, 40 };
+        public List<string> allowedErrorPatterns = new List<string>();
+        public List<string> allowedWarningPatterns = new List<string>();
 
         public override void ResolveReferences()
         {
@@ -23,6 +25,8 @@ namespace LogSyncMod
             defNames = NormalizeStrings(defNames);
             turretProjectileScreenshotTicks = NormalizeTicks(turretProjectileScreenshotTicks);
             projectileScreenshotTicks = NormalizeTicks(projectileScreenshotTicks);
+            allowedErrorPatterns = NormalizeStrings(allowedErrorPatterns);
+            allowedWarningPatterns = NormalizeStrings(allowedWarningPatterns);
         }
 
         private static List<string> NormalizeStrings(List<string> values)

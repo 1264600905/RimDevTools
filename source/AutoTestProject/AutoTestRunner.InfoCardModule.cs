@@ -233,6 +233,7 @@ namespace LogSyncMod.AutoTest
                 if (activeSession.OpenStableRepaintFrames >= OpenStableFrameRequirement)
                 {
                     activeSession.Result.Stage = "recipe_capture_bill_config";
+                    RecordInfoCardSemantic(true);
                     activeSession.Phase = SessionPhase.WaitingForRecipeBillConfigCapture;
                     activeSession.RemainingUiFrames = 2;
                 }
@@ -345,6 +346,7 @@ namespace LogSyncMod.AutoTest
                     activeSession.EvidenceAdapter.AssertTrue("info_card.stably_open", true, AutoTestWaitHandle.Describe(open), activeSession.OpenWait.OperationId);
                     activeSession.OpenAssertionRecorded = true;
                 }
+                RecordInfoCardSemantic(true);
                 InfoCardCloseTrace.AddReason("OpenConfirmed.StablePolls=" + open.StablePolls);
                 activeSession.Phase = SessionPhase.WaitingForCaptureSettle;
                 activeSession.RemainingUiFrames = 2;
@@ -370,6 +372,7 @@ namespace LogSyncMod.AutoTest
                 {
                     InfoCardCloseTrace.AddReason("OpenConfirmed.RepaintFrames=" + activeSession.OpenStableRepaintFrames);
                     Log.Message("[LogSyncAutoTest] InfoCard open confirmed for " + activeSession.Result.DefName);
+                    RecordInfoCardSemantic(true);
                     activeSession.Phase = SessionPhase.WaitingForCaptureSettle;
                     activeSession.RemainingUiFrames = 2;
                 }
@@ -631,9 +634,14 @@ namespace LogSyncMod.AutoTest
             activeSession.Result.ErrorMessage = errorMessage;
             TryCaptureInfoCardScreenshot(true);
             activeSession.Result.Notes = AppendNote(activeSession.Result.Notes, "Trace=" + InfoCardCloseTrace.Describe());
+            RecordInfoCardSemantic(false);
             CleanupSelectionAndWindows();
+            RecordInfoCardClosedSemantic();
             InfoCardCloseTrace.Stop();
             FinalizeInfoCardEvidence(false, errorMessage);
+            // Close the semantic cursor at the actual InfoCard terminal state. The result
+            // is already present in the legacy results list, so do not add it a second time.
+            CompleteSemanticCase(activeSession.Result);
             activeSession = null;
         }
 
@@ -649,8 +657,12 @@ namespace LogSyncMod.AutoTest
                     activeSession.Result.Status = "failed_recipe_produce";
                     activeSession.Result.ErrorMessage = errorMessage;
                     activeSession.Result.Notes = AppendNote(activeSession.Result.Notes, "Trace=" + InfoCardCloseTrace.Describe());
+                    RecordInfoCardSemantic(false);
                     CleanupSelectionAndWindows();
+                    RecordInfoCardClosedSemantic();
                     InfoCardCloseTrace.Stop();
+                    FinalizeInfoCardEvidence(false, errorMessage);
+                    CompleteSemanticCase(activeSession.Result);
                     activeSession = null;
                     return;
                 }
@@ -674,8 +686,10 @@ namespace LogSyncMod.AutoTest
             activeSession.Result.Notes = AppendNote(activeSession.Result.Notes, "Trace=" + InfoCardCloseTrace.Describe());
             Log.Message("[LogSyncAutoTest] InfoCard close confirmed for " + activeSession.Result.DefName);
             CleanupSelectionAndWindows();
+            RecordInfoCardClosedSemantic();
             InfoCardCloseTrace.Stop();
             FinalizeInfoCardEvidence(true, "InfoCard case completed.");
+            CompleteSemanticCase(activeSession.Result);
             activeSession = null;
         }
 

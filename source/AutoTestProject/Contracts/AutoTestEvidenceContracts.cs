@@ -126,5 +126,6 @@ namespace LogSyncMod.AutoTest
         [DataMember(Name = "events", Order = 13)] public List<AutoTestEventEvidence> Events { get; set; }
         [DataMember(Name = "errors", Order = 14)] public List<AutoTestOperationError> Errors { get; set; }
         [DataMember(Name = "cases", Order = 15)] public List<AutoTestCaseEvidence> Cases { get; set; }
+        [DataMember(Name = "readiness", Order = 16, EmitDefaultValue = false)] public AutoTestReadinessSnapshot Readiness { get; set; }
     }
 }

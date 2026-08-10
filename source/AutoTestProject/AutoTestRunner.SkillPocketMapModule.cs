@@ -38,6 +38,8 @@ namespace LogSyncMod.AutoTest
             private const int MapReadyWaitTicks = 180;
             private const int FightDurationTicks = 3600;
             private const int CooldownResetIntervalTicks = 600;
+            private const int DirectCastInitialDelayTicks = 60;
+            private const int DirectCastRetryIntervalTicks = 120;
             private const int PostCastInstantScreenshotDelayTicks = 2;
             private readonly AutoTestRunner owner;
 
@@ -70,6 +72,12 @@ namespace LogSyncMod.AutoTest
             public string SearchAndDestroyStatus = string.Empty;
             public string SkillTargetMode = "Unknown";
             public bool UniversalPrerequisitesApplied;
+            public int FightingStartTick = -1;
+            public int NextDirectCastAttemptTick = -1;
+            public int DirectCastAttemptCount;
+            public string DirectCastTargetSummary = string.Empty;
+            public AutoTestAbilitySnapshot AbilityBefore;
+            public readonly Dictionary<string, string> TargetStateBefore = new Dictionary<string, string>(StringComparer.Ordinal);
 
             public SkillPocketMapTestSession(AutoTestRunner owner)
             {
@@ -107,12 +115,12 @@ namespace LogSyncMod.AutoTest
                         Result.Stage = "setup";
                         Result.ErrorMessage = "Skill pocket map did not stabilize in time.";
                         TryCaptureSkillScreenshot(true, "failed_map_not_ready");
-                        Phase = SkillPocketMapTestPhase.Done;
+                        Phase = SkillPocketMapTestPhase.CleaningUp;
                         break;
                     case SkillPocketMapTestPhase.SpawningCaster:
                         if (!TrySpawnCaster())
                         {
-                            Phase = SkillPocketMapTestPhase.Done;
+                            Phase = SkillPocketMapTestPhase.CleaningUp;
                             break;
                         }
 
@@ -121,15 +129,18 @@ namespace LogSyncMod.AutoTest
                     case SkillPocketMapTestPhase.SpawningTargets:
                         if (!TrySpawnTargets())
                         {
-                            Phase = SkillPocketMapTestPhase.Done;
+                            Phase = SkillPocketMapTestPhase.CleaningUp;
                             break;
                         }
                         Phase = SkillPocketMapTestPhase.ConfiguringAbilities;
                         break;
                     case SkillPocketMapTestPhase.ConfiguringAbilities:
+                        CaptureSemanticBaseline();
                         ConfigureAutoCastForTest();
                         FightTicksRemaining = FightDurationTicks;
                         LastCooldownResetTick = Find.TickManager.TicksGame;
+                        FightingStartTick = LastCooldownResetTick;
+                        NextDirectCastAttemptTick = FightingStartTick + DirectCastInitialDelayTicks;
                         Result.Stage = "fighting_60s";
                         Phase = SkillPocketMapTestPhase.Fighting;
                         break;
@@ -139,12 +150,15 @@ namespace LogSyncMod.AutoTest
                     case SkillPocketMapTestPhase.CapturingScreenshot:
                         CapturePendingSuccessScreenshot();
                         break;
+                    case SkillPocketMapTestPhase.CleaningUp:
+                        CleanupAndClose();
+                        break;
                     default:
                         Result.Status = "skipped";
                         Result.Stage = "skill_not_implemented";
                         Result.ErrorMessage = "Skill pocket map session has not been implemented yet.";
                         TryCaptureSkillScreenshot(true, "skill_not_implemented");
-                        Phase = SkillPocketMapTestPhase.Done;
+                        Phase = SkillPocketMapTestPhase.CleaningUp;
                         break;
                 }
             }
@@ -699,7 +713,7 @@ namespace LogSyncMod.AutoTest
                     Result.Stage = "fighting_60s";
                     Result.ErrorMessage = "Caster pawn disappeared during skill test.";
                     TryCaptureSkillScreenshot(true, "failed_caster_lost");
-                    Phase = SkillPocketMapTestPhase.Done;
+                    Phase = SkillPocketMapTestPhase.CleaningUp;
                     return;
                 }
 
@@ -709,12 +723,13 @@ namespace LogSyncMod.AutoTest
                     Result.Stage = "fighting_60s";
                     Result.ErrorMessage = "Ability instance disappeared during skill test.";
                     TryCaptureSkillScreenshot(true, "failed_ability_lost");
-                    Phase = SkillPocketMapTestPhase.Done;
+                    Phase = SkillPocketMapTestPhase.CleaningUp;
                     return;
                 }
 
                 int currentTick = Find.TickManager.TicksGame;
                 EnsureCasterAutoCombatState(currentTick);
+                TryQueueDirectAbilityCast(currentTick);
 
                 if (currentTick - LastCooldownResetTick >= CooldownResetIntervalTicks)
                 {
@@ -754,7 +769,7 @@ namespace LogSyncMod.AutoTest
                 Result.Stage = "fighting_60s";
                 Result.ErrorMessage = "Caster did not successfully start any ability cast within 60 seconds.";
                 TryCaptureSkillScreenshot(true, "failed_no_skill_cast");
-                Phase = SkillPocketMapTestPhase.Done;
+                Phase = SkillPocketMapTestPhase.CleaningUp;
             }
 
             private void ConfigureAutoCastForTest()
@@ -764,6 +779,55 @@ namespace LogSyncMod.AutoTest
                 if (!string.IsNullOrWhiteSpace(autoCastSummary))
                 {
                     Result.Notes = AutoTestRunner.AppendNote(Result.Notes, autoCastSummary);
+                }
+
+                Result.Notes = AutoTestRunner.AppendNote(Result.Notes, "DirectCastFallback=True");
+            }
+
+            private void TryQueueDirectAbilityCast(int currentTick)
+            {
+                if (CastSucceeded || currentTick < NextDirectCastAttemptTick || Ability == null || CasterPawn?.jobs == null)
+                {
+                    return;
+                }
+
+                NextDirectCastAttemptTick = currentTick + DirectCastRetryIntervalTicks;
+                DirectCastAttemptCount++;
+                LocalTargetInfo target = ResolveCastTarget();
+                DirectCastTargetSummary = DescribeTarget(target);
+                Result.Notes = AutoTestRunner.AppendNote(Result.Notes, "DirectCastAttempt=" + DirectCastAttemptCount + "@" + currentTick + ",Target=" + DirectCastTargetSummary);
+                if (!target.IsValid)
+                {
+                    Result.Notes = AutoTestRunner.AppendNote(Result.Notes, "DirectCastRejected=NoValidTarget");
+                    return;
+                }
+
+                try
+                {
+                    Ability.ResetCooldown();
+                    if (Ability.UsesCharges && Ability.RemainingCharges <= 0)
+                    {
+                        Ability.RemainingCharges = Math.Max(1, Ability.maxCharges);
+                    }
+
+                    if (!Ability.CanApplyOn(target) || (Ability.verb != null && !Ability.verb.ValidateTarget(target, false)))
+                    {
+                        Result.Notes = AutoTestRunner.AppendNote(Result.Notes, "DirectCastRejected=TargetValidationFailed");
+                        return;
+                    }
+
+                    Ability.QueueCastingJob(target, LocalTargetInfo.Invalid);
+                    Job queuedJob = CasterPawn.CurJob;
+                    bool accepted = queuedJob?.ability == Ability || Ability.Casting;
+                    Result.Notes = AutoTestRunner.AppendNote(Result.Notes, "DirectCastQueued=" + accepted + ",Job=" + (queuedJob?.def?.defName ?? "none"));
+                    if (accepted)
+                    {
+                        ObserveAbilityExecution(currentTick);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Result.Notes = AutoTestRunner.AppendNote(Result.Notes, "DirectCastError=" + AutoTestRunner.TrimForNote(ex.Message));
                 }
             }
 
@@ -1013,6 +1077,29 @@ namespace LogSyncMod.AutoTest
             {
                 Result.Stage = WarmupStartTick >= 0 ? "warmup_end_plus_2" : "skill_casted";
                 TryCaptureSkillScreenshot(false, WarmupStartTick >= 0 ? "warmup_end_p2" : "skill_casted");
+                Phase = SkillPocketMapTestPhase.CleaningUp;
+            }
+
+            private void CaptureSemanticBaseline()
+            {
+                AbilityBefore = AutoTestAbilityProbe.Capture(Ability);
+                TargetStateBefore.Clear();
+                foreach (Pawn pawn in EnemyPawns.Concat(new[] { AllyPawn, CasterPawn }).Where(item => item != null))
+                {
+                    string id = AutoTestThingProbe.Target(pawn)?.Id;
+                    if (!string.IsNullOrEmpty(id)) TargetStateBefore[id] = BuildPawnEffectFingerprint(pawn);
+                }
+                Result.Notes = AutoTestRunner.AppendNote(Result.Notes, "forceBypass=true");
+                Result.Notes = AutoTestRunner.AppendNote(Result.Notes, "AbilityBaseline=" + AbilityBefore.DefName + "/cooldown=" + AbilityBefore.CooldownTicks + "/charges=" + AbilityBefore.Charges);
+            }
+
+            private void CleanupAndClose()
+            {
+                owner.RecordSkillSemanticBeforeCleanup(this);
+                if (TestMap != null && Find.Maps.Contains(TestMap)) owner.DestroyPocketMap(TestMap, Parent);
+                else if (Parent != null && !Parent.Destroyed) owner.DestroyPocketMap(null, Parent);
+                if (Current.Game != null && owner.map != null && Find.Maps.Contains(owner.map)) Current.Game.CurrentMap = owner.map;
+                owner.RecordSkillCleanupSemantic(this);
                 Phase = SkillPocketMapTestPhase.Done;
             }
 
@@ -1059,13 +1146,20 @@ namespace LogSyncMod.AutoTest
 
             private LocalTargetInfo ResolveCastTarget()
             {
-                Pawn enemy = EnemyPawns.FirstOrDefault(pawn => pawn != null && !pawn.Destroyed && pawn.Spawned && pawn.Map == TestMap && !pawn.Dead);
-                if (enemy != null)
+                foreach (Pawn enemy in EnemyPawns.Where(pawn => pawn != null && !pawn.Destroyed && pawn.Spawned && pawn.Map == TestMap && !pawn.Dead))
                 {
                     LocalTargetInfo enemyTarget = new LocalTargetInfo(enemy);
                     if (Ability.CanApplyOn(enemyTarget) && (Ability.verb == null || Ability.verb.ValidateTarget(enemyTarget, false)))
                     {
+                        SkillTargetMode = "EnemyPawn";
                         return enemyTarget;
+                    }
+
+                    LocalTargetInfo enemyCellTarget = new LocalTargetInfo(enemy.Position);
+                    if (Ability.CanApplyOn(enemyCellTarget) && (Ability.verb == null || Ability.verb.ValidateTarget(enemyCellTarget, false)))
+                    {
+                        SkillTargetMode = "EnemyLocation";
+                        return enemyCellTarget;
                     }
                 }
 
@@ -1074,6 +1168,7 @@ namespace LogSyncMod.AutoTest
                     LocalTargetInfo allyTarget = new LocalTargetInfo(AllyPawn);
                     if (Ability.CanApplyOn(allyTarget) && (Ability.verb == null || Ability.verb.ValidateTarget(allyTarget, false)))
                     {
+                        SkillTargetMode = "AllyPawn";
                         return allyTarget;
                     }
                 }
@@ -1081,7 +1176,15 @@ namespace LogSyncMod.AutoTest
                 LocalTargetInfo selfTarget = new LocalTargetInfo(CasterPawn);
                 if (Ability.CanApplyOn(selfTarget) && (Ability.verb == null || Ability.verb.ValidateTarget(selfTarget, false)))
                 {
+                    SkillTargetMode = "Self";
                     return selfTarget;
+                }
+
+                LocalTargetInfo nearbyCellTarget = new LocalTargetInfo(CasterPawn.Position);
+                if (Ability.CanApplyOn(nearbyCellTarget) && (Ability.verb == null || Ability.verb.ValidateTarget(nearbyCellTarget, false)))
+                {
+                    SkillTargetMode = "SelfLocation";
+                    return nearbyCellTarget;
                 }
 
                 return LocalTargetInfo.Invalid;

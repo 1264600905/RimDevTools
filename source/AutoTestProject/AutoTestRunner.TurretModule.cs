@@ -318,6 +318,7 @@ namespace LogSyncMod.AutoTest
                             break;
 
                         case TurretTestPhase.CleaningUp:
+                            owner.RecordTurretSemanticBeforeCleanup(this);
                             if (OperatorPawn != null && !OperatorPawn.Destroyed)
                             {
                                 OperatorPawn.Destroy();
@@ -342,6 +343,7 @@ namespace LogSyncMod.AutoTest
                                 Current.Game.CurrentMap = owner.map;
                             }
 
+                            owner.RecordTurretCleanupSemantic(this);
                             Phase = TurretTestPhase.Done;
                             break;
                     }
@@ -650,11 +652,6 @@ namespace LogSyncMod.AutoTest
 
             private void UpdateProjectileScreenshotSchedule()
             {
-                if (!CaptureProjectileScreenshots)
-                {
-                    return;
-                }
-
                 List<Thing> activeProjectiles = GetActiveProjectiles();
                 if (!ProjectileShotDetected)
                 {
@@ -667,6 +664,11 @@ namespace LogSyncMod.AutoTest
                     ProjectileShotTick = Find.TickManager.TicksGame;
                     Result.Notes = AppendNote(Result.Notes, "ProjectileShotTick=" + ProjectileShotTick);
                     Log.Message($"[LogSyncAutoTest] Projectile detected for turret '{TurretDef.defName}' at tick {ProjectileShotTick}.");
+                }
+
+                if (!CaptureProjectileScreenshots)
+                {
+                    return;
                 }
 
                 if (activeProjectiles.Count == 0)
