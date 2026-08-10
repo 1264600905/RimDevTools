@@ -78,10 +78,18 @@ namespace LogSyncMod.AutoTest
                 Context = context;
                 Result.Stage = "spawn";
                 Result.Label = string.IsNullOrWhiteSpace(Spec.Label) ? Spec.DefName : Spec.Label;
-                Result.OverlayLine1 = string.IsNullOrWhiteSpace(Spec.DefName) ? Result.DefName : Spec.DefName;
-                Result.OverlayLine2 = string.IsNullOrWhiteSpace(Spec.Label) ? Result.Label : Spec.Label;
-                Result.OverlayLine3 = string.IsNullOrWhiteSpace(Spec.PawnRaceLabel) ? string.Empty : "Race: " + Spec.PawnRaceLabel;
-                Result.OverlayLine4 = string.IsNullOrWhiteSpace(Spec.PawnBodyTypeLabel) ? string.Empty : "BodyType: " + Spec.PawnBodyTypeLabel;
+                Result.OverlayLine1 = string.IsNullOrWhiteSpace(Spec.OverlayLine1)
+                    ? (string.IsNullOrWhiteSpace(Spec.DefName) ? Result.DefName : Spec.DefName)
+                    : Spec.OverlayLine1;
+                Result.OverlayLine2 = string.IsNullOrWhiteSpace(Spec.OverlayLine2)
+                    ? (string.IsNullOrWhiteSpace(Spec.Label) ? Result.Label : Spec.Label)
+                    : Spec.OverlayLine2;
+                Result.OverlayLine3 = string.IsNullOrWhiteSpace(Spec.OverlayLine3)
+                    ? (string.IsNullOrWhiteSpace(Spec.PawnRaceLabel) ? string.Empty : "Race: " + Spec.PawnRaceLabel)
+                    : Spec.OverlayLine3;
+                Result.OverlayLine4 = string.IsNullOrWhiteSpace(Spec.OverlayLine4)
+                    ? (string.IsNullOrWhiteSpace(Spec.PawnBodyTypeLabel) ? string.Empty : "BodyType: " + Spec.PawnBodyTypeLabel)
+                    : Spec.OverlayLine4;
                 Result.Notes = AppendNote(Result.Notes, "ThreeViewTriptych=True");
                 Result.Notes = AppendNote(Result.Notes, "SpawnedPawns=" + Context.Pawns.Count);
                 if (!string.IsNullOrWhiteSpace(Spec.PawnRaceDefName))
@@ -92,6 +100,29 @@ namespace LogSyncMod.AutoTest
                 if (!string.IsNullOrWhiteSpace(Spec.PawnBodyTypeDefName))
                 {
                     Result.Notes = AppendNote(Result.Notes, "ThreeViewBodyType=" + Spec.PawnBodyTypeDefName);
+                }
+                if (Spec.TargetLifeStage != null)
+                {
+                    Result.OverlayLine4 = "Age: " + Context.ActualBiologicalAgeYears.ToString("0.###") + " / StageIndex=" + Context.ActualLifeStageIndex;
+                    Result.Notes = AppendNote(Result.Notes, "TargetLifeStageDef=" + Spec.TargetLifeStage.defName);
+                    Result.Notes = AppendNote(Result.Notes, "TargetLifeStageIndex=" + Spec.TargetLifeStageIndex);
+                    Result.Notes = AppendNote(Result.Notes, "AgeGenerationMode=PawnGenerationRequest.FixedBiologicalAge");
+                    Result.Notes = AppendNote(Result.Notes, "ActualLifeStageDef=" + (Context.ActualLifeStage?.defName ?? "null"));
+                    Result.Notes = AppendNote(Result.Notes, "ActualLifeStageIndex=" + Context.ActualLifeStageIndex);
+                    Result.Notes = AppendNote(Result.Notes, "ActualBiologicalAgeYears=" + Context.ActualBiologicalAgeYears.ToString("0.###"));
+                    Result.Notes = AppendNote(Result.Notes, "LifeStageLockFallbackUsed=" + Context.LifeStageLockFallbackUsed);
+                }
+                if (Spec.ForceStripLoadout)
+                {
+                    bool naked = Context.Pawns.All(pawn =>
+                        (pawn?.apparel?.WornApparel == null || pawn.apparel.WornApparel.Count == 0) &&
+                        pawn?.equipment?.Primary == null);
+                    Result.Notes = AppendNote(Result.Notes, "Naked=" + naked);
+                    if (!naked)
+                    {
+                        Fail("loadout_cleanup_failed", "Life-stage presenter retained apparel or equipment.");
+                        return;
+                    }
                 }
                 if (!owner.threeViewService.TryPrimeDirectionalFacingForPausedCapture(Context, out string pausedCaptureError))
                 {
@@ -289,13 +320,43 @@ namespace LogSyncMod.AutoTest
                     continue;
                 }
 
-                if (!MatchesSpecFilters(spec.Kind, spec.TargetDef ?? (Def)spec.PawnKindDef))
+                if (!MatchesThreeViewFilters(spec))
                 {
                     continue;
                 }
 
                 pendingThreeViewTargets.Enqueue(spec);
             }
+        }
+
+        private bool MatchesThreeViewFilters(AutoTestThreeViewTargetSpec spec)
+        {
+            if (spec == null)
+            {
+                return false;
+            }
+
+            Def primaryDef = spec.TargetDef ?? (Def)spec.PawnKindDef;
+            if (settings.UseXmlDrivenAutoTest())
+            {
+                return MatchesSpecFilters(spec.Kind, primaryDef);
+            }
+
+            if (settings.autoTestTargetDefNames == null || settings.autoTestTargetDefNames.Count == 0)
+            {
+                return true;
+            }
+
+            string[] aliases =
+            {
+                spec.DefName,
+                spec.TargetDef?.defName,
+                spec.PawnKindDef?.defName,
+                spec.RaceDef?.defName,
+                spec.ItemDef?.defName,
+                spec.TargetLifeStage?.defName
+            };
+            return aliases.Any(alias => !string.IsNullOrWhiteSpace(alias) && settings.MatchesAutoTestTargetDefName(alias));
         }
 
         private bool TryAllocateThreeViewStudioRoot(int width, int height, out IntVec3 rootCell)
@@ -397,7 +458,10 @@ namespace LogSyncMod.AutoTest
                 Force = force,
                 IsFailureArtifact = force,
                 ResultIndex = screenshotService.ResolveTurretResultIndex(results, activeThreeViewSessions.IndexOf(session)),
-                StageSuffix = force ? (session.Result?.Stage ?? "failed") : "triptych",
+                StageSuffix = force
+                    ? (session.Result?.Stage ?? "failed")
+                    : (string.IsNullOrWhiteSpace(session.Spec?.ScreenshotStageSuffix) ? "triptych" : session.Spec.ScreenshotStageSuffix),
+                RelativeSubdirectory = session.Spec?.RelativeScreenshotSubdirectory,
                 Prepare = () =>
                 {
                     threeViewService.PrepareForCapture(session.Context);

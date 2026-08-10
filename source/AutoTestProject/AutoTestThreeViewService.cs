@@ -22,6 +22,17 @@ namespace LogSyncMod.AutoTest
         public Gender? ForcedGender;
         public bool WearAsApparel;
         public bool HoldAsWeapon;
+        public bool ForceStripLoadout;
+        public LifeStageDef TargetLifeStage;
+        public int TargetLifeStageIndex = -1;
+        public float TargetBiologicalAgeYears = -1f;
+        public string RelativeScreenshotSubdirectory;
+        public string ScreenshotStageSuffix;
+        public string OverlayLine1;
+        public string OverlayLine2;
+        public string OverlayLine3;
+        public string OverlayLine4;
+        public bool LifeStageLockFallbackUsed;
         public string PawnRaceDefName;
         public string PawnRaceLabel;
         public string PawnBodyTypeDefName;
@@ -41,6 +52,10 @@ namespace LogSyncMod.AutoTest
         public readonly List<Rot4> Rotations = new List<Rot4>();
         public readonly List<IntVec3> WalkTargets = new List<IntVec3>();
         public bool DirectionalWalkPrimed;
+        public int ActualLifeStageIndex = -1;
+        public LifeStageDef ActualLifeStage;
+        public float ActualBiologicalAgeYears = -1f;
+        public bool LifeStageLockFallbackUsed;
     }
 
     internal sealed class AutoTestThreeViewAppearanceTemplate
@@ -68,6 +83,7 @@ namespace LogSyncMod.AutoTest
     {
         private static readonly Rot4[] DefaultRotations = { Rot4.West, Rot4.South, Rot4.North };
         private static readonly FieldInfo StoryMelaninField = typeof(Pawn_StoryTracker).GetField("melanin", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        private static readonly MethodInfo RecalculateLifeStageIndexMethod = typeof(Pawn_AgeTracker).GetMethod("RecalculateLifeStageIndex", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
 
         public bool PrepareStudioArea(Map map, IntVec3 rootCell, int width, int height)
         {
@@ -139,9 +155,10 @@ namespace LogSyncMod.AutoTest
             }
 
             AddTargetModPawnKindTargets(targets, targetMod, registerDiscoveredCase, AutoTestKind.HumanoidThreeView, AutoTestCaseType.HumanoidThreeView, def => def?.race == ThingDefOf.Human);
-            AddTargetModPawnKindTargets(targets, targetMod, registerDiscoveredCase, AutoTestKind.AnimalThreeView, AutoTestCaseType.AnimalThreeView, def => def?.race?.race?.Animal == true);
+            AddTargetModAnimalLifeStageTargets(targets, targetMod, registerDiscoveredCase);
             AddTargetModPawnKindTargets(targets, targetMod, registerDiscoveredCase, AutoTestKind.MechanoidThreeView, AutoTestCaseType.MechanoidThreeView, def => def?.race?.race?.IsMechanoid == true);
             AddTargetModPawnKindTargets(targets, targetMod, registerDiscoveredCase, AutoTestKind.AlienThreeView, AutoTestCaseType.AlienThreeView, def => IsAlienHumanlike(def?.race));
+            AddTargetModHumanlikeLifeStageTargets(targets, targetMod, registerDiscoveredCase);
             AddTargetModApparelTargets(targets, targetMod, registerDiscoveredCase);
             AddTargetModWeaponTargets(targets, targetMod, excludedWeaponDefs, registerDiscoveredCase);
 
@@ -223,6 +240,13 @@ namespace LogSyncMod.AutoTest
             }
 
             context = createdContext;
+            if (sourcePawn?.ageTracker != null)
+            {
+                createdContext.ActualLifeStageIndex = sourcePawn.ageTracker.CurLifeStageIndex;
+                createdContext.ActualLifeStage = sourcePawn.ageTracker.CurLifeStage;
+                createdContext.ActualBiologicalAgeYears = sourcePawn.ageTracker.AgeBiologicalYearsFloat;
+                createdContext.LifeStageLockFallbackUsed = spec.LifeStageLockFallbackUsed;
+            }
             return true;
         }
 
@@ -274,16 +298,20 @@ namespace LogSyncMod.AutoTest
 
                     pawn.jobs?.StopAll();
                     pawn.pather?.StopDead();
-                    pawn.rotationTracker?.FaceCell(walkTarget);
                     pawn.Rotation = context.Rotations[i];
-                    if (pawn.drafter != null)
+                    bool immobile = pawn.Downed || pawn.ageTracker?.CurLifeStage?.alwaysDowned == true;
+                    if (!immobile)
                     {
-                        pawn.drafter.Drafted = true;
-                    }
+                        pawn.rotationTracker?.FaceCell(walkTarget);
+                        if (pawn.drafter != null)
+                        {
+                            pawn.drafter.Drafted = true;
+                        }
 
-                    if (walkTarget != origin)
-                    {
-                        pawn.pather?.StartPath(walkTarget, Verse.AI.PathEndMode.OnCell);
+                        if (walkTarget != origin)
+                        {
+                            pawn.pather?.StartPath(walkTarget, Verse.AI.PathEndMode.OnCell);
+                        }
                     }
                 }
 
@@ -326,14 +354,19 @@ namespace LogSyncMod.AutoTest
 
                     pawn.jobs?.StopAll();
                     pawn.pather?.StopDead();
-                    if (pawn.drafter != null)
+                    pawn.Rotation = context.Rotations[i];
+                    bool immobile = pawn.Downed || pawn.ageTracker?.CurLifeStage?.alwaysDowned == true;
+                    if (!immobile)
                     {
-                        pawn.drafter.Drafted = true;
-                    }
+                        if (pawn.drafter != null)
+                        {
+                            pawn.drafter.Drafted = true;
+                        }
 
-                    if (walkTarget != origin)
-                    {
-                        pawn.pather?.StartPath(walkTarget, Verse.AI.PathEndMode.OnCell);
+                        if (walkTarget != origin)
+                        {
+                            pawn.pather?.StartPath(walkTarget, Verse.AI.PathEndMode.OnCell);
+                        }
                     }
 
                     pawn.Drawer?.renderer?.SetAllGraphicsDirty();
@@ -367,10 +400,18 @@ namespace LogSyncMod.AutoTest
                 IntVec3 walkTarget = i < context.WalkTargets.Count ? context.WalkTargets[i] : context.Cells[i];
                 try
                 {
-                    pawn.rotationTracker?.FaceCell(walkTarget);
-                    if (context.DirectionalWalkPrimed && walkTarget != pawn.Position && !(pawn.pather?.Moving ?? false))
+                    bool immobile = pawn.Downed || pawn.ageTracker?.CurLifeStage?.alwaysDowned == true;
+                    if (immobile)
                     {
-                        pawn.pather?.StartPath(walkTarget, Verse.AI.PathEndMode.OnCell);
+                        pawn.Rotation = context.Rotations[i];
+                    }
+                    else
+                    {
+                        pawn.rotationTracker?.FaceCell(walkTarget);
+                        if (context.DirectionalWalkPrimed && walkTarget != pawn.Position && !(pawn.pather?.Moving ?? false))
+                        {
+                            pawn.pather?.StartPath(walkTarget, Verse.AI.PathEndMode.OnCell);
+                        }
                     }
 
                     pawn.Drawer?.renderer?.SetAllGraphicsDirty();
@@ -411,7 +452,7 @@ namespace LogSyncMod.AutoTest
                 }
 
                 bool rotationReady = pawn.Rotation == desiredRotation;
-                bool movementReady = walkTarget == pawn.Position || (pawn.pather?.Moving ?? false) || (pawn.pather?.MovingNow ?? false);
+                bool movementReady = pawn.Downed || pawn.ageTracker?.CurLifeStage?.alwaysDowned == true || walkTarget == pawn.Position || (pawn.pather?.Moving ?? false) || (pawn.pather?.MovingNow ?? false);
                 if (rotationReady && movementReady)
                 {
                     readyCount++;
@@ -535,6 +576,182 @@ namespace LogSyncMod.AutoTest
                     pawnKindDef,
                     ResolveThreeViewProfileForPawnKind(pawnKindDef));
             }
+        }
+
+        private static void AddTargetModAnimalLifeStageTargets(
+            ICollection<AutoTestThreeViewTargetSpec> targets,
+            ModContentPack targetMod,
+            Func<AutoTestCaseType, string, string, string, AutoTestManifestEntry> registerDiscoveredCase)
+        {
+            if (targets == null || targetMod == null || registerDiscoveredCase == null)
+            {
+                return;
+            }
+
+            foreach (PawnKindDef pawnKindDef in DefDatabase<PawnKindDef>.AllDefsListForReading
+                .Where(def => def != null && def.modContentPack == targetMod && def.race?.race?.Animal == true)
+                .OrderBy(def => def.defName))
+            {
+                List<LifeStageAge> stages = pawnKindDef.race?.race?.lifeStageAges;
+                if (stages == null || stages.Count == 0)
+                {
+                    AddIfResolved(targets, registerDiscoveredCase, AutoTestKind.AnimalThreeView, AutoTestCaseType.AnimalThreeView, pawnKindDef, AutoTestScreenshotProfiles.ThreeViewAnimal);
+                    continue;
+                }
+
+                HashSet<LifeStageDef> seenStages = new HashSet<LifeStageDef>();
+                for (int index = 0; index < stages.Count; index++)
+                {
+                    LifeStageDef lifeStage = stages[index]?.def;
+                    if (lifeStage == null || !seenStages.Add(lifeStage))
+                    {
+                        continue;
+                    }
+
+                    float ageYears = ResolveStableLifeStageAge(stages, index);
+                    string stageLabel = ResolveLifeStageLabel(lifeStage);
+                    string identity = (pawnKindDef.defName ?? "UnknownPawn") + "@" + lifeStage.defName;
+                    targets.Add(new AutoTestThreeViewTargetSpec
+                    {
+                        Kind = AutoTestKind.AnimalThreeView,
+                        CaseType = AutoTestCaseType.AnimalThreeView,
+                        ManifestEntry = registerDiscoveredCase(AutoTestCaseType.AnimalThreeView, nameof(PawnKindDef), identity, pawnKindDef.label),
+                        TargetDef = pawnKindDef,
+                        PawnKindDef = pawnKindDef,
+                        RaceDef = pawnKindDef.race,
+                        TargetLifeStage = lifeStage,
+                        TargetLifeStageIndex = index,
+                        TargetBiologicalAgeYears = ageYears,
+                        RelativeScreenshotSubdirectory = pawnKindDef.defName,
+                        ScreenshotStageSuffix = lifeStage.defName + "_triptych",
+                        PawnRaceDefName = pawnKindDef.race?.defName,
+                        PawnRaceLabel = pawnKindDef.race?.label ?? pawnKindDef.race?.defName ?? string.Empty,
+                        DefName = identity,
+                        Label = pawnKindDef.label,
+                        OverlayLine1 = pawnKindDef.label ?? pawnKindDef.defName,
+                        OverlayLine2 = pawnKindDef.defName + " / " + (pawnKindDef.race?.defName ?? "UnknownRace"),
+                        OverlayLine3 = "Stage: " + stageLabel + " (" + lifeStage.defName + ")",
+                        OverlayLine4 = "Age: " + ageYears.ToString("0.###") + " / StageIndex=" + index,
+                        Profile = AutoTestScreenshotProfiles.ThreeViewAnimal
+                    });
+                }
+            }
+        }
+
+        private static void AddTargetModHumanlikeLifeStageTargets(
+            ICollection<AutoTestThreeViewTargetSpec> targets,
+            ModContentPack targetMod,
+            Func<AutoTestCaseType, string, string, string, AutoTestManifestEntry> registerDiscoveredCase)
+        {
+            if (targets == null || targetMod == null || registerDiscoveredCase == null)
+            {
+                return;
+            }
+
+            HashSet<ThingDef> races = new HashSet<ThingDef>(
+                DefDatabase<ThingDef>.AllDefsListForReading
+                    .Where(def => def != null && def.modContentPack == targetMod && def.race?.Humanlike == true));
+            foreach (PawnKindDef pawnKind in DefDatabase<PawnKindDef>.AllDefsListForReading
+                .Where(def => def != null && def.modContentPack == targetMod && def.race?.race?.Humanlike == true))
+            {
+                races.Add(pawnKind.race);
+            }
+
+            foreach (ThingDef raceDef in races.Where(def => def != null).OrderBy(def => def.defName))
+            {
+                List<LifeStageAge> stages = raceDef.race?.lifeStageAges;
+                PawnKindDef representative = ResolveLifeStageRepresentativePawnKind(raceDef, targetMod, stages?.Count ?? 0);
+                if (representative == null || stages == null || stages.Count == 0)
+                {
+                    continue;
+                }
+
+                HashSet<LifeStageDef> seenStages = new HashSet<LifeStageDef>();
+                for (int index = 0; index < stages.Count; index++)
+                {
+                    LifeStageDef lifeStage = stages[index]?.def;
+                    if (lifeStage == null || !seenStages.Add(lifeStage))
+                    {
+                        continue;
+                    }
+
+                    float ageYears = ResolveStableLifeStageAge(stages, index);
+                    string stageLabel = ResolveLifeStageLabel(lifeStage);
+                    string identity = (raceDef.defName ?? "UnknownRace") + "@" + lifeStage.defName;
+                    targets.Add(new AutoTestThreeViewTargetSpec
+                    {
+                        Kind = AutoTestKind.PawnLifeStageThreeView,
+                        CaseType = AutoTestCaseType.PawnLifeStageThreeView,
+                        ManifestEntry = registerDiscoveredCase(AutoTestCaseType.PawnLifeStageThreeView, nameof(ThingDef), identity, raceDef.label),
+                        TargetDef = raceDef,
+                        PawnKindDef = representative,
+                        RaceDef = raceDef,
+                        ForceStripLoadout = true,
+                        TargetLifeStage = lifeStage,
+                        TargetLifeStageIndex = index,
+                        TargetBiologicalAgeYears = ageYears,
+                        RelativeScreenshotSubdirectory = raceDef.defName,
+                        ScreenshotStageSuffix = lifeStage.defName + "_triptych",
+                        PawnRaceDefName = raceDef.defName,
+                        PawnRaceLabel = raceDef.label ?? raceDef.defName,
+                        DefName = identity,
+                        Label = raceDef.label,
+                        OverlayLine1 = raceDef.label ?? representative.label ?? raceDef.defName,
+                        OverlayLine2 = raceDef.defName + " / " + representative.defName,
+                        OverlayLine3 = "Stage: " + stageLabel + " (" + lifeStage.defName + ")",
+                        OverlayLine4 = "Age: " + ageYears.ToString("0.###") + " / StageIndex=" + index,
+                        Profile = IsAlienHumanlike(raceDef)
+                            ? AutoTestScreenshotProfiles.ThreeViewAlien
+                            : AutoTestScreenshotProfiles.ThreeViewHumanoid
+                    });
+                }
+            }
+        }
+
+        private static PawnKindDef ResolveLifeStageRepresentativePawnKind(ThingDef raceDef, ModContentPack targetMod, int expectedStageCount)
+        {
+            return DefDatabase<PawnKindDef>.AllDefsListForReading
+                .Where(def => def != null && def.race == raceDef)
+                .OrderByDescending(def => def.modContentPack == targetMod)
+                .ThenByDescending(def => def.lifeStages != null && def.lifeStages.Count >= expectedStageCount)
+                .ThenByDescending(def => string.Equals(def.defName, "Colonist", StringComparison.OrdinalIgnoreCase))
+                .ThenBy(def => def.defName)
+                .FirstOrDefault();
+        }
+
+        private static float ResolveStableLifeStageAge(IReadOnlyList<LifeStageAge> stages, int index)
+        {
+            float minAge = Math.Max(0f, stages?[index]?.minAge ?? 0f);
+            if (stages != null && index + 1 < stages.Count)
+            {
+                float nextAge = Math.Max(minAge, stages[index + 1]?.minAge ?? minAge);
+                if (nextAge > minAge)
+                {
+                    return minAge + (nextAge - minAge) * 0.5f;
+                }
+            }
+
+            return minAge + Math.Max(0.1f, minAge * 0.05f);
+        }
+
+        private static string ResolveLifeStageLabel(LifeStageDef lifeStage)
+        {
+            if (lifeStage == null)
+            {
+                return "UnknownStage";
+            }
+
+            if (!string.IsNullOrWhiteSpace(lifeStage.label))
+            {
+                return lifeStage.label;
+            }
+
+            if (!string.IsNullOrWhiteSpace(lifeStage.Adjective))
+            {
+                return lifeStage.Adjective;
+            }
+
+            return lifeStage.defName ?? "UnknownStage";
         }
 
         private static void AddTargetModApparelTargets(
@@ -960,8 +1177,19 @@ namespace LogSyncMod.AutoTest
                         PawnGenerationContext.NonPlayer,
                         tile,
                         forceGenerateNewPawn: true,
+                        allowDowned: spec.TargetLifeStage?.alwaysDowned == true,
                         canGeneratePawnRelations: false,
-                        mustBeCapableOfViolence: false);
+                        mustBeCapableOfViolence: false,
+                        fixedBiologicalAge: spec.TargetLifeStage != null && spec.TargetBiologicalAgeYears >= 0f
+                            ? spec.TargetBiologicalAgeYears
+                            : (float?)null,
+                        fixedChronologicalAge: spec.TargetLifeStage != null && spec.TargetBiologicalAgeYears >= 0f
+                            ? spec.TargetBiologicalAgeYears
+                            : (float?)null,
+                        fixedGender: spec.ForcedGender,
+                        developmentalStages: spec.TargetLifeStage?.developmentalStage ?? DevelopmentalStage.Adult,
+                        dontGiveWeapon: spec.ForceStripLoadout,
+                        forceNoGear: spec.ForceStripLoadout);
                     Pawn candidate = PawnGenerator.GeneratePawn(request);
                     if (candidate == null)
                     {
@@ -1052,6 +1280,17 @@ namespace LogSyncMod.AutoTest
                 if (pawn.story != null && spec?.ForcedBodyType != null)
                 {
                     pawn.story.bodyType = spec.ForcedBodyType;
+                }
+
+                if (!EnsureTargetLifeStage(pawn, spec, out bool usedLifeStageLock, out string lifeStageError))
+                {
+                    errorMessage = lifeStageError;
+                    return false;
+                }
+
+                if (usedLifeStageLock)
+                {
+                    spec.LifeStageLockFallbackUsed = true;
                 }
 
                 if (ShouldStripGeneratedPawnLoadout(spec, pawn))
@@ -1283,6 +1522,11 @@ namespace LogSyncMod.AutoTest
                 return true;
             }
 
+            if (spec.ForceStripLoadout)
+            {
+                return true;
+            }
+
             if (spec.WearAsApparel || spec.HoldAsWeapon)
             {
                 return true;
@@ -1296,6 +1540,57 @@ namespace LogSyncMod.AutoTest
                 default:
                     return true;
             }
+        }
+
+        private static bool EnsureTargetLifeStage(
+            Pawn pawn,
+            AutoTestThreeViewTargetSpec spec,
+            out bool usedLockFallback,
+            out string errorMessage)
+        {
+            usedLockFallback = false;
+            errorMessage = null;
+            if (spec?.TargetLifeStage == null || spec.TargetLifeStageIndex < 0)
+            {
+                return true;
+            }
+
+            if (pawn?.ageTracker == null)
+            {
+                errorMessage = "Generated pawn did not have an age tracker for target stage " + spec.TargetLifeStage.defName + ".";
+                return false;
+            }
+
+            if (pawn.ageTracker.CurLifeStageIndex == spec.TargetLifeStageIndex && pawn.ageTracker.CurLifeStage == spec.TargetLifeStage)
+            {
+                return true;
+            }
+
+            if (spec.TargetBiologicalAgeYears >= 0f)
+            {
+                long targetTicks = Math.Max(0L, (long)(spec.TargetBiologicalAgeYears * 3600000f));
+                pawn.ageTracker.AgeBiologicalTicks = targetTicks;
+                pawn.ageTracker.AgeChronologicalTicks = Math.Max(pawn.ageTracker.AgeChronologicalTicks, targetTicks);
+                RecalculateLifeStageIndexMethod?.Invoke(pawn.ageTracker, null);
+            }
+
+            if (pawn.ageTracker.CurLifeStageIndex != spec.TargetLifeStageIndex || pawn.ageTracker.CurLifeStage != spec.TargetLifeStage)
+            {
+                pawn.ageTracker.LockCurrentLifeStageIndex(spec.TargetLifeStageIndex);
+                usedLockFallback = true;
+            }
+
+            if (pawn.ageTracker.CurLifeStageIndex != spec.TargetLifeStageIndex || pawn.ageTracker.CurLifeStage != spec.TargetLifeStage)
+            {
+                errorMessage =
+                    "Generated pawn life stage mismatch. expected=" + spec.TargetLifeStage.defName +
+                    "/" + spec.TargetLifeStageIndex +
+                    " actual=" + (pawn.ageTracker.CurLifeStage?.defName ?? "null") +
+                    "/" + pawn.ageTracker.CurLifeStageIndex + ".";
+                return false;
+            }
+
+            return true;
         }
 
         private static ThingDef ResolveStuff(ThingDef def)
@@ -1384,11 +1679,15 @@ namespace LogSyncMod.AutoTest
 
                 pawn.jobs?.StopAll();
                 pawn.pather?.StopDead();
-                pawn.rotationTracker?.FaceCell(cell + rotation.FacingCell);
                 pawn.Rotation = rotation;
-                if (pawn.drafter != null)
+                bool immobile = pawn.Downed || pawn.ageTracker?.CurLifeStage?.alwaysDowned == true;
+                if (!immobile)
                 {
-                    pawn.drafter.Drafted = true;
+                    pawn.rotationTracker?.FaceCell(cell + rotation.FacingCell);
+                    if (pawn.drafter != null)
+                    {
+                        pawn.drafter.Drafted = true;
+                    }
                 }
             }
             catch

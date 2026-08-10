@@ -80,6 +80,11 @@ namespace LogSyncMod.AutoTest
                 AutoTestScreenshotOverlay.Request(activeThreeViewUiSession.Result);
             }
 
+            if (activeStaticViewUiSession != null)
+            {
+                AutoTestScreenshotOverlay.Request(activeStaticViewUiSession.Result);
+            }
+
             if (activeSession != null)
             {
                 AutoTestScreenshotOverlay.Request(activeSession.Result);
@@ -98,6 +103,19 @@ namespace LogSyncMod.AutoTest
                 {
                     activeThreeViewUiSession.FailFromUi("ui_capture_failed", ex.ToString());
                     activeThreeViewUiSession = null;
+                }
+            }
+
+            if (activeStaticViewUiSession != null)
+            {
+                try
+                {
+                    ProcessStaticViewUiSession();
+                }
+                catch (Exception ex)
+                {
+                    activeStaticViewUiSession.FailFromUi("ui_capture_failed", ex.ToString());
+                    activeStaticViewUiSession = null;
                 }
             }
 
@@ -180,6 +198,20 @@ namespace LogSyncMod.AutoTest
             if (session.ProcessUiFrame())
             {
                 activeThreeViewUiSession = null;
+            }
+        }
+
+        private void ProcessStaticViewUiSession()
+        {
+            StaticViewTestSession session = activeStaticViewUiSession;
+            if (session == null)
+            {
+                return;
+            }
+
+            if (session.ProcessUiFrame())
+            {
+                activeStaticViewUiSession = null;
             }
         }
 

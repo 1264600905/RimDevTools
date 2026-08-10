@@ -9,6 +9,7 @@ namespace LogSyncMod.AutoTest
 {
     internal sealed class AutoTestScreenshotService
     {
+        private const int MaxScreenshotLabelLength = 72;
         private readonly AutoTestRunArtifacts runArtifacts;
         private readonly Func<string, string, string> appendNote;
         private readonly Func<string, string> trimForNote;
@@ -149,12 +150,7 @@ namespace LogSyncMod.AutoTest
                 string screenshotDirectory = ResolveScreenshotDirectory(request);
                 Directory.CreateDirectory(screenshotDirectory);
 
-                string suffix = string.IsNullOrWhiteSpace(request.StageSuffix)
-                    ? null
-                    : SanitizeFileName(request.StageSuffix);
-                string fileName = string.IsNullOrWhiteSpace(suffix)
-                    ? string.Format("{0:D4}_{1}.png", request.ResultIndex, SanitizeFileName(result.DefName))
-                    : string.Format("{0:D4}_{1}_{2}.png", request.ResultIndex, SanitizeFileName(result.DefName), suffix);
+                string fileName = BuildScreenshotFileName(request);
                 string screenshotPath = Path.Combine(screenshotDirectory, fileName);
 
                 AutoTestScreenshotOverlay.Request(result);
@@ -219,30 +215,51 @@ namespace LogSyncMod.AutoTest
 
         private static string ResolveTopLevelGroup(AutoTestScreenshotRequest request)
         {
-            if (request != null && request.IsFailureArtifact)
+            string formalScope = (request?.Result?.Scope ?? string.Empty).Trim();
+            if (string.Equals(formalScope, "UI", StringComparison.OrdinalIgnoreCase))
             {
-                return "fail";
+                return "UI";
+            }
+
+            if (string.Equals(formalScope, "Combat", StringComparison.OrdinalIgnoreCase))
+            {
+                return "Combat";
+            }
+
+            if (string.Equals(formalScope, "View", StringComparison.OrdinalIgnoreCase))
+            {
+                return "View";
+            }
+
+            if (string.Equals(formalScope, "Misc", StringComparison.OrdinalIgnoreCase))
+            {
+                return "Misc";
             }
 
             switch ((request?.Result?.CaseType ?? string.Empty).Trim())
             {
                 case "BuildingInfoCard":
                 case "ItemInfoCard":
+                case "PlantInfoCard":
                 case "TerrainInfoCard":
                 case "RecipeInfoCard":
                 case "RecipeBillUi":
                 case "HediffInfoCard":
+                case "AnimalInfoCard":
+                case "MechanoidInfoCard":
+                case "PawnInfoCard":
+                case "GeneInfoCard":
+                case "XenotypeInfoCard":
                     return "UI";
 
                 case "TurretPocketMap":
                 case "RangedWeaponPocketMap":
                 case "MeleeWeaponPocketMap":
-                case "SkillPocketMap":
                 case "ApparelCombat":
                 case "AnimalCombat":
                 case "MechanoidCombat":
                 case "AlienCombat":
-                    return "combat";
+                    return "Combat";
 
                 case "HumanoidThreeView":
                 case "AnimalThreeView":
@@ -250,11 +267,45 @@ namespace LogSyncMod.AutoTest
                 case "AlienThreeView":
                 case "ApparelThreeView":
                 case "WeaponThreeView":
-                    return "ThreeView";
+                case "PlantGrowthView":
+                case "BuildingView":
+                case "TerrainPatchView":
+                case "PawnLifeStageThreeView":
+                case "HairThreeView":
+                case "HeadTypeThreeView":
+                case "GeneThreeView":
+                case "XenotypeThreeView":
+                    return "View";
+
+                case "SkillPocketMap":
+                    return "Misc";
 
                 default:
-                    return string.Empty;
+                    return "Misc";
             }
+        }
+
+        private static string BuildScreenshotFileName(AutoTestScreenshotRequest request)
+        {
+            AutoTestResult result = request?.Result;
+            string defName = SanitizeFileName(result?.DefName);
+            string rawLabel = string.IsNullOrWhiteSpace(result?.Label) ? result?.DefName : result.Label;
+            string label = TruncateLabel(SanitizeFileName(rawLabel));
+            string suffix = string.IsNullOrWhiteSpace(request?.StageSuffix)
+                ? null
+                : SanitizeFileName(request.StageSuffix);
+            string identity = defName + "(" + label + ")";
+            return string.IsNullOrWhiteSpace(suffix)
+                ? string.Format("{0:D4}_{1}.png", request?.ResultIndex ?? 0, identity)
+                : string.Format("{0:D4}_{1}_{2}.png", request?.ResultIndex ?? 0, identity, suffix);
+        }
+
+        private static string TruncateLabel(string label)
+        {
+            string value = string.IsNullOrWhiteSpace(label) ? "autotest" : label;
+            return value.Length <= MaxScreenshotLabelLength
+                ? value
+                : value.Substring(0, MaxScreenshotLabelLength);
         }
 
         public int ResolveTurretResultIndex(IReadOnlyList<AutoTestResult> results, int activeSessionIndex)

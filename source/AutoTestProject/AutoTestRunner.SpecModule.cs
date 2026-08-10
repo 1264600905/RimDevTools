@@ -153,6 +153,14 @@ namespace LogSyncMod.AutoTest
                 case AutoTestKind.AlienThreeView:
                 case AutoTestKind.ApparelThreeView:
                 case AutoTestKind.WeaponThreeView:
+                case AutoTestKind.PlantGrowthView:
+                case AutoTestKind.BuildingView:
+                case AutoTestKind.TerrainPatchView:
+                case AutoTestKind.PawnLifeStageThreeView:
+                case AutoTestKind.HairThreeView:
+                case AutoTestKind.HeadTypeThreeView:
+                case AutoTestKind.GeneThreeView:
+                case AutoTestKind.XenotypeThreeView:
                     return AutoTestScope.View;
                 case AutoTestKind.SkillPocketMap:
                     return AutoTestScope.Misc;
@@ -190,6 +198,14 @@ namespace LogSyncMod.AutoTest
                 case AutoTestKind.AlienThreeView:
                 case AutoTestKind.ApparelThreeView:
                 case AutoTestKind.WeaponThreeView:
+                case AutoTestKind.PlantGrowthView:
+                case AutoTestKind.BuildingView:
+                case AutoTestKind.TerrainPatchView:
+                case AutoTestKind.PawnLifeStageThreeView:
+                case AutoTestKind.HairThreeView:
+                case AutoTestKind.HeadTypeThreeView:
+                case AutoTestKind.GeneThreeView:
+                case AutoTestKind.XenotypeThreeView:
                     return AutoTestScope.ThreeViews;
                 case AutoTestKind.ApparelCombat:
                 case AutoTestKind.AnimalCombat:
@@ -247,6 +263,22 @@ namespace LogSyncMod.AutoTest
                     return "ApparelThreeView";
                 case AutoTestKind.WeaponThreeView:
                     return "WeaponThreeView";
+                case AutoTestKind.PlantGrowthView:
+                    return "PlantGrowthView";
+                case AutoTestKind.BuildingView:
+                    return "BuildingView";
+                case AutoTestKind.TerrainPatchView:
+                    return "TerrainPatchView";
+                case AutoTestKind.PawnLifeStageThreeView:
+                    return "PawnLifeStageThreeView";
+                case AutoTestKind.HairThreeView:
+                    return "HairThreeView";
+                case AutoTestKind.HeadTypeThreeView:
+                    return "HeadTypeThreeView";
+                case AutoTestKind.GeneThreeView:
+                    return "GeneThreeView";
+                case AutoTestKind.XenotypeThreeView:
+                    return "XenotypeThreeView";
                 case AutoTestKind.ApparelCombat:
                     return "ApparelCombat";
                 case AutoTestKind.AnimalCombat:

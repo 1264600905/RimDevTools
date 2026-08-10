@@ -115,6 +115,8 @@ namespace LogSyncMod.AutoTest
         private readonly Queue<AbilityDef> pendingSkillAbilityDefs = new Queue<AbilityDef>();
         private readonly List<ThreeViewTestSession> activeThreeViewSessions = new List<ThreeViewTestSession>();
         private readonly Queue<AutoTestThreeViewTargetSpec> pendingThreeViewTargets = new Queue<AutoTestThreeViewTargetSpec>();
+        private readonly List<StaticViewTestSession> activeStaticViewSessions = new List<StaticViewTestSession>();
+        private readonly Queue<AutoTestStaticViewTargetSpec> pendingStaticViewTargets = new Queue<AutoTestStaticViewTargetSpec>();
         private readonly List<CombatPawnTestSession> activeCombatPawnSessions = new List<CombatPawnTestSession>();
         private readonly Queue<AutoTestCombatPawnTargetSpec> pendingCombatPawnTargets = new Queue<AutoTestCombatPawnTargetSpec>();
         private int pocketMapCooldownUntilTick = -1;
@@ -131,6 +133,7 @@ namespace LogSyncMod.AutoTest
         private bool completed;
         private ActiveSession activeSession;
         private ThreeViewTestSession activeThreeViewUiSession;
+        private StaticViewTestSession activeStaticViewUiSession;
         private AutoTestRunArtifacts runArtifacts;
         private AutoTestRunSummary runSummary;
         private AutoTestScreenshotService screenshotService;
@@ -281,6 +284,7 @@ namespace LogSyncMod.AutoTest
 
             if (settings.ShouldTestThreeViews())
             {
+                BeginStaticViewTestSession();
                 BeginThreeViewTestSession();
             }
 
@@ -297,7 +301,7 @@ namespace LogSyncMod.AutoTest
             ApplyBatchLimit();
             BuildPlannedManifest();
 
-            int totalPending = pendingItems.Count + pendingTurretDefs.Count + pendingRangedWeaponDefs.Count + pendingMeleeWeaponDefs.Count + pendingSkillAbilityDefs.Count + pendingThreeViewTargets.Count + pendingCombatPawnTargets.Count;
+            int totalPending = pendingItems.Count + pendingTurretDefs.Count + pendingRangedWeaponDefs.Count + pendingMeleeWeaponDefs.Count + pendingSkillAbilityDefs.Count + pendingStaticViewTargets.Count + pendingThreeViewTargets.Count + pendingCombatPawnTargets.Count;
             int pocketMapMaxConcurrent = settings.GetPocketMapMaxConcurrent();
             Log.Message(string.Format(
                 "[LogSyncAutoTest] START packageId={0} map={1} scope={2} pending={3} pocketMapMaxConcurrent={4}",
@@ -406,6 +410,12 @@ namespace LogSyncMod.AutoTest
                 }
             }
 
+            if (Find.TickManager.TicksGame % 500 == 0 && activeStaticViewSessions.Count > 0)
+            {
+                string statusReport = string.Join(", ", activeStaticViewSessions.Select(s => $"{s.Spec.DefName}({s.Phase})"));
+                Log.Message($"[LogSyncAutoTest] StaticView heartbeat: {activeStaticViewSessions.Count} active sessions. Details: {statusReport}");
+            }
+
             if (Find.TickManager.TicksGame % 500 == 0 && activeCombatPawnSessions.Count > 0)
             {
                 string statusReport = string.Join(", ", activeCombatPawnSessions.Select(s => $"{s.Spec.DefName}({s.Phase}) {s.BuildDebugStatus()}"));
@@ -433,6 +443,11 @@ namespace LogSyncMod.AutoTest
             }
 
             foreach (var session in activeThreeViewSessions)
+            {
+                using (AutoTestOperationContext.PushCase(session.Result?.CaseId)) session.Update();
+            }
+
+            foreach (var session in activeStaticViewSessions)
             {
                 using (AutoTestOperationContext.PushCase(session.Result?.CaseId)) session.Update();
             }
@@ -482,6 +497,14 @@ namespace LogSyncMod.AutoTest
                 return false;
             });
 
+            activeStaticViewSessions.RemoveAll(session => {
+                if (session.Phase == StaticViewTestPhase.Done) {
+                    RecordResult(session.Result);
+                    return true;
+                }
+                return false;
+            });
+
             activeCombatPawnSessions.RemoveAll(session => {
                 if (session.Phase == CombatPawnTestPhase.Done) {
                     RecordResult(session.Result);
@@ -496,12 +519,14 @@ namespace LogSyncMod.AutoTest
                 pendingRangedWeaponDefs.Count == 0 &&
                 pendingMeleeWeaponDefs.Count == 0 &&
                 pendingSkillAbilityDefs.Count == 0 &&
+                pendingStaticViewTargets.Count == 0 &&
                 pendingThreeViewTargets.Count == 0 &&
                 pendingCombatPawnTargets.Count == 0 &&
                 activeTurretSessions.Count == 0 &&
                 activeRangedWeaponSessions.Count == 0 &&
                 activeMeleeWeaponSessions.Count == 0 &&
                 activeSkillPocketMapSessions.Count == 0 &&
+                activeStaticViewSessions.Count == 0 &&
                 activeThreeViewSessions.Count == 0 &&
                 activeCombatPawnSessions.Count == 0)
             {
@@ -542,6 +567,22 @@ namespace LogSyncMod.AutoTest
                 return true;
             }
 
+            if (pendingStaticViewTargets.Count > 0)
+            {
+                if (HasPendingOrActivePreThreeViewPocketMapWork() || activeStaticViewSessions.Count > 0 || activeThreeViewSessions.Count > 0)
+                {
+                    return false;
+                }
+
+                if (IsThreeViewCooldownActive())
+                {
+                    return false;
+                }
+
+                StartNewStaticViewSession(pendingStaticViewTargets.Dequeue());
+                return true;
+            }
+
             if (pendingThreeViewTargets.Count > 0)
             {
                 if (HasPendingOrActivePreThreeViewPocketMapWork())
@@ -554,7 +595,7 @@ namespace LogSyncMod.AutoTest
                     return false;
                 }
 
-                if (activeThreeViewSessions.Count > 0)
+                if (activeThreeViewSessions.Count > 0 || activeStaticViewSessions.Count > 0 || pendingStaticViewTargets.Count > 0)
                 {
                     if (Find.TickManager != null && Find.TickManager.TicksGame % 300 == 0)
                     {
@@ -585,7 +626,7 @@ namespace LogSyncMod.AutoTest
                     return false;
                 }
 
-                if (pendingThreeViewTargets.Count > 0 || activeThreeViewSessions.Count > 0)
+                if (pendingStaticViewTargets.Count > 0 || activeStaticViewSessions.Count > 0 || pendingThreeViewTargets.Count > 0 || activeThreeViewSessions.Count > 0)
                 {
                     if (Find.TickManager != null && Find.TickManager.TicksGame % 300 == 0)
                     {
@@ -712,6 +753,7 @@ namespace LogSyncMod.AutoTest
             pendingRangedWeaponDefs.Clear();
             pendingMeleeWeaponDefs.Clear();
             pendingSkillAbilityDefs.Clear();
+            pendingStaticViewTargets.Clear();
             pendingThreeViewTargets.Clear();
             pendingCombatPawnTargets.Clear();
             if (activeSession != null)
@@ -722,6 +764,7 @@ namespace LogSyncMod.AutoTest
             foreach (RangedWeaponTestSession session in activeRangedWeaponSessions) { session.Result.Status = "cancelled"; session.Result.ErrorMessage = "Auto-test run cancelled."; session.Phase = RangedWeaponTestPhase.CleaningUp; }
             foreach (MeleeWeaponTestSession session in activeMeleeWeaponSessions) { session.Result.Status = "cancelled"; session.Result.ErrorMessage = "Auto-test run cancelled."; session.Phase = MeleeWeaponTestPhase.CleaningUp; }
             foreach (SkillPocketMapTestSession session in activeSkillPocketMapSessions) { session.Result.Status = "cancelled"; session.Result.ErrorMessage = "Auto-test run cancelled."; session.Phase = SkillPocketMapTestPhase.CleaningUp; }
+            foreach (StaticViewTestSession session in activeStaticViewSessions) { session.Result.Status = "cancelled"; session.Result.ErrorMessage = "Auto-test run cancelled."; session.Phase = StaticViewTestPhase.CleaningUp; }
             foreach (ThreeViewTestSession session in activeThreeViewSessions) { session.Result.Status = "cancelled"; session.Result.ErrorMessage = "Auto-test run cancelled."; session.Phase = ThreeViewTestPhase.CleaningUp; }
             foreach (CombatPawnTestSession session in activeCombatPawnSessions) { session.Result.Status = "cancelled"; session.Result.ErrorMessage = "Auto-test run cancelled."; session.Phase = CombatPawnTestPhase.CleaningUp; }
         }
@@ -794,7 +837,7 @@ namespace LogSyncMod.AutoTest
             }
 
             int limit = Math.Max(1, settings.autoTestBatchSize);
-            int originalTotal = pendingItems.Count + pendingTurretDefs.Count + pendingRangedWeaponDefs.Count + pendingMeleeWeaponDefs.Count + pendingSkillAbilityDefs.Count + pendingThreeViewTargets.Count + pendingCombatPawnTargets.Count;
+            int originalTotal = pendingItems.Count + pendingTurretDefs.Count + pendingRangedWeaponDefs.Count + pendingMeleeWeaponDefs.Count + pendingSkillAbilityDefs.Count + pendingStaticViewTargets.Count + pendingThreeViewTargets.Count + pendingCombatPawnTargets.Count;
             if (originalTotal <= limit)
             {
                 return;
@@ -805,6 +848,7 @@ namespace LogSyncMod.AutoTest
             var limitedRangedWeapons = new Queue<ThingDef>();
             var limitedMeleeWeapons = new Queue<ThingDef>();
             var limitedSkillAbilities = new Queue<AbilityDef>();
+            var limitedStaticViews = new Queue<AutoTestStaticViewTargetSpec>();
             var limitedThreeViews = new Queue<AutoTestThreeViewTargetSpec>();
             var limitedCombatPawns = new Queue<AutoTestCombatPawnTargetSpec>();
             int keptCount = 0;
@@ -853,6 +897,14 @@ namespace LogSyncMod.AutoTest
                     if (keptCount >= limit) break;
                 }
 
+                if (pendingStaticViewTargets.Count > 0)
+                {
+                    limitedStaticViews.Enqueue(pendingStaticViewTargets.Dequeue());
+                    keptCount++;
+                    itemAddedInRound = true;
+                    if (keptCount >= limit) break;
+                }
+
                 if (pendingThreeViewTargets.Count > 0)
                 {
                     limitedThreeViews.Enqueue(pendingThreeViewTargets.Dequeue());
@@ -881,6 +933,7 @@ namespace LogSyncMod.AutoTest
             pendingRangedWeaponDefs.Clear();
             pendingMeleeWeaponDefs.Clear();
             pendingSkillAbilityDefs.Clear();
+            pendingStaticViewTargets.Clear();
             pendingThreeViewTargets.Clear();
             pendingCombatPawnTargets.Clear();
 
@@ -890,6 +943,7 @@ namespace LogSyncMod.AutoTest
             foreach (var item in limitedRangedWeapons) pendingRangedWeaponDefs.Enqueue(item);
             foreach (var item in limitedMeleeWeapons) pendingMeleeWeaponDefs.Enqueue(item);
             foreach (var item in limitedSkillAbilities) pendingSkillAbilityDefs.Enqueue(item);
+            foreach (var item in limitedStaticViews) pendingStaticViewTargets.Enqueue(item);
             foreach (var item in limitedThreeViews) pendingThreeViewTargets.Enqueue(item);
             foreach (var item in limitedCombatPawns) pendingCombatPawnTargets.Enqueue(item);
 
@@ -947,6 +1001,22 @@ namespace LogSyncMod.AutoTest
                     return AutoTestCaseType.ApparelThreeView;
                 case AutoTestKind.WeaponThreeView:
                     return AutoTestCaseType.WeaponThreeView;
+                case AutoTestKind.PlantGrowthView:
+                    return AutoTestCaseType.PlantGrowthView;
+                case AutoTestKind.BuildingView:
+                    return AutoTestCaseType.BuildingView;
+                case AutoTestKind.TerrainPatchView:
+                    return AutoTestCaseType.TerrainPatchView;
+                case AutoTestKind.PawnLifeStageThreeView:
+                    return AutoTestCaseType.PawnLifeStageThreeView;
+                case AutoTestKind.HairThreeView:
+                    return AutoTestCaseType.HairThreeView;
+                case AutoTestKind.HeadTypeThreeView:
+                    return AutoTestCaseType.HeadTypeThreeView;
+                case AutoTestKind.GeneThreeView:
+                    return AutoTestCaseType.GeneThreeView;
+                case AutoTestKind.XenotypeThreeView:
+                    return AutoTestCaseType.XenotypeThreeView;
                 case AutoTestKind.ApparelCombat:
                     return AutoTestCaseType.ApparelCombat;
                 case AutoTestKind.AnimalCombat:
@@ -1007,6 +1077,22 @@ namespace LogSyncMod.AutoTest
                     return "ApparelThreeView";
                 case AutoTestCaseType.WeaponThreeView:
                     return "WeaponThreeView";
+                case AutoTestCaseType.PlantGrowthView:
+                    return "PlantGrowthView";
+                case AutoTestCaseType.BuildingView:
+                    return "BuildingView";
+                case AutoTestCaseType.TerrainPatchView:
+                    return "TerrainPatchView";
+                case AutoTestCaseType.PawnLifeStageThreeView:
+                    return "PawnLifeStageThreeView";
+                case AutoTestCaseType.HairThreeView:
+                    return "HairThreeView";
+                case AutoTestCaseType.HeadTypeThreeView:
+                    return "HeadTypeThreeView";
+                case AutoTestCaseType.GeneThreeView:
+                    return "GeneThreeView";
+                case AutoTestCaseType.XenotypeThreeView:
+                    return "XenotypeThreeView";
                 case AutoTestCaseType.ApparelCombat:
                     return "ApparelCombat";
                 case AutoTestCaseType.AnimalCombat:
@@ -1051,6 +1137,14 @@ namespace LogSyncMod.AutoTest
                 case AutoTestCaseType.AlienThreeView:
                 case AutoTestCaseType.ApparelThreeView:
                 case AutoTestCaseType.WeaponThreeView:
+                case AutoTestCaseType.PlantGrowthView:
+                case AutoTestCaseType.BuildingView:
+                case AutoTestCaseType.TerrainPatchView:
+                case AutoTestCaseType.PawnLifeStageThreeView:
+                case AutoTestCaseType.HairThreeView:
+                case AutoTestCaseType.HeadTypeThreeView:
+                case AutoTestCaseType.GeneThreeView:
+                case AutoTestCaseType.XenotypeThreeView:
                     return AutoTestScope.View;
                 case AutoTestCaseType.SkillPocketMap:
                     return AutoTestScope.Misc;
@@ -1224,6 +1318,11 @@ namespace LogSyncMod.AutoTest
                 AddPlannedManifestEntry(RegisterDiscoveredCase(AutoTestCaseType.SkillPocketMap, nameof(AbilityDef), def?.defName, def?.label));
             }
 
+            foreach (AutoTestStaticViewTargetSpec spec in pendingStaticViewTargets)
+            {
+                AddPlannedManifestEntry(spec?.ManifestEntry);
+            }
+
             foreach (AutoTestThreeViewTargetSpec spec in pendingThreeViewTargets)
             {
                 AddPlannedManifestEntry(spec?.ManifestEntry);
@@ -1298,7 +1397,8 @@ namespace LogSyncMod.AutoTest
                 {
                     bool matched = plannedManifest.Any(entry =>
                         string.Equals(entry.DefName, requested, StringComparison.OrdinalIgnoreCase) ||
-                        entry.DefName.StartsWith(requested + "@", StringComparison.OrdinalIgnoreCase));
+                        entry.DefName.StartsWith(requested + "@", StringComparison.OrdinalIgnoreCase) ||
+                        entry.DefName.EndsWith("@" + requested, StringComparison.OrdinalIgnoreCase));
                     if (!matched) summary.MissingDefNames.Add(requested);
                 }
                 foreach (string missing in summary.MissingDefNames)
