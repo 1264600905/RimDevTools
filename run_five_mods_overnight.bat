@@ -21,24 +21,40 @@ if not exist "%LOG_DIR%" mkdir "%LOG_DIR%"
 for /f %%I in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd_HHmmss"') do set "RUN_STAMP=%%I"
 set "MASTER_LOG=%LOG_DIR%\overnight_%RUN_STAMP%.log"
 set "SUMMARY_LOG=%LOG_DIR%\overnight_%RUN_STAMP%_summary.txt"
+set "BUILD_LOG=%LOG_DIR%\%RUN_STAMP%_build.log"
+set "DEPLOY_LOG=%LOG_DIR%\%RUN_STAMP%_deploy.log"
 set /a FAILURES=0
 set "FINAL_EXIT=0"
+
+> "%MASTER_LOG%" echo Overnight run initialized at %RUN_STAMP%.
+> "%SUMMARY_LOG%" echo RunStamp=%RUN_STAMP%
+if not exist "%MASTER_LOG%" (
+    echo Failed to create master log: %MASTER_LOG%
+    set "FINAL_EXIT=12"
+    goto :ExitScript
+)
 
 call :Log "Five-mod overnight test started."
 call :Log "ValidationOnly=%VALIDATION_ONLY% Scope=%SCOPE% BatchSize=%BATCH_SIZE% Timeout=%TIMEOUT_SECONDS%"
 call :Log "ModList=%MOD_LIST%"
 
 call :Log "Building RimDevTools once..."
-dotnet build "%TOOL_PROJECT%" -c Release >> "%MASTER_LOG%" 2>&1
-if errorlevel 1 (
+dotnet build "%TOOL_PROJECT%" -c Release > "%BUILD_LOG%" 2>&1
+set "BUILD_EXIT=!ERRORLEVEL!"
+type "%BUILD_LOG%" >> "%MASTER_LOG%"
+if not "!BUILD_EXIT!"=="0" (
+    type "%BUILD_LOG%"
     call :Log "RimDevTools build failed. No game tests were started."
     set "FINAL_EXIT=10"
     goto :ExitScript
 )
 
 call :Log "Deploying current LogSyncMod source once..."
-dotnet "%TOOL_DLL%" deploy >> "%MASTER_LOG%" 2>&1
-if errorlevel 1 (
+dotnet "%TOOL_DLL%" deploy > "%DEPLOY_LOG%" 2>&1
+set "DEPLOY_EXIT=!ERRORLEVEL!"
+type "%DEPLOY_LOG%" >> "%MASTER_LOG%"
+if not "!DEPLOY_EXIT!"=="0" (
+    type "%DEPLOY_LOG%"
     call :Log "Deployment failed. No game tests were started."
     set "FINAL_EXIT=11"
     goto :ExitScript
