@@ -9,9 +9,15 @@ namespace LogSyncMod.AutoTest
     {
         Building,
         Item,
+        Plant,
         Terrain,
         Recipe,
         Hediff,
+        AnimalInfoCard,
+        MechanoidInfoCard,
+        PawnInfoCard,
+        GeneInfoCard,
+        XenotypeInfoCard,
         TurretPocketMap,
         RangedWeaponPocketMap,
         MeleeWeaponPocketMap,
@@ -32,10 +38,16 @@ namespace LogSyncMod.AutoTest
     {
         BuildingInfoCard,
         ItemInfoCard,
+        PlantInfoCard,
         TerrainInfoCard,
         RecipeInfoCard,
         RecipeBillUi,
         HediffInfoCard,
+        AnimalInfoCard,
+        MechanoidInfoCard,
+        PawnInfoCard,
+        GeneInfoCard,
+        XenotypeInfoCard,
         TurretPocketMap,
         RangedWeaponPocketMap,
         MeleeWeaponPocketMap,
@@ -63,6 +75,9 @@ namespace LogSyncMod.AutoTest
         public AbilityDef AbilityDef;
         public ThingDef WorktableDef;
         public HediffDef HediffDef;
+        public PawnKindDef PawnKindDef;
+        public GeneDef GeneDef;
+        public XenotypeDef XenotypeDef;
         public LogSyncAutoTestSpecDef SpecDef;
         public AutoTestManifestEntry ManifestEntry;
     }

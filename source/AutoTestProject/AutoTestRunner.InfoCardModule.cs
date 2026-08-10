@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using RimWorld;
 using UnityEngine;
 using Verse;
@@ -58,6 +59,16 @@ namespace LogSyncMod.AutoTest
             public long CloseRequestedAtRealtimeMs;
             public bool OpenAssertionRecorded;
             public bool CloseAssertionRecorded;
+            public readonly List<Dialog_InfoCard.InfoCardTab> RequiredInfoCardTabs = new List<Dialog_InfoCard.InfoCardTab>();
+            public readonly List<Dialog_InfoCard.InfoCardTab> VerifiedInfoCardTabs = new List<Dialog_InfoCard.InfoCardTab>();
+            public int InfoCardTabProbeIndex;
+            public bool InfoCardTabAwaitingRepaint;
+            public bool InfoCardTabsRestored;
+            public bool RestoreTerrainAfterCleanup;
+            public IntVec3 RestoreTerrainCell;
+            public TerrainDef OriginalTerrain;
+            public bool RestorePollutionAfterCleanup;
+            public bool OriginalPollution;
         }
 
         public void ProcessUi()
@@ -405,12 +416,60 @@ namespace LogSyncMod.AutoTest
                 return;
             }
 
+            if (ProcessInfoCardTabProbe())
+            {
+                return;
+            }
+
             activeSession.RemainingUiFrames--;
             if (activeSession.RemainingUiFrames > 0) return;
 
             TryCaptureInfoCardScreenshot(false);
             activeSession.Phase = SessionPhase.WaitingBeforeClose;
             activeSession.RemainingUiFrames = WaitBeforeCloseRepaintFrames;
+        }
+
+        private bool ProcessInfoCardTabProbe()
+        {
+            if (activeSession == null || activeSession.RequiredInfoCardTabs.Count == 0)
+            {
+                return false;
+            }
+
+            Dialog_InfoCard infoCard = Find.WindowStack?.WindowOfType<Dialog_InfoCard>();
+            if (infoCard == null)
+            {
+                return false;
+            }
+
+            if (activeSession.InfoCardTabAwaitingRepaint)
+            {
+                Dialog_InfoCard.InfoCardTab verified = activeSession.RequiredInfoCardTabs[activeSession.InfoCardTabProbeIndex - 1];
+                if (!activeSession.VerifiedInfoCardTabs.Contains(verified))
+                {
+                    activeSession.VerifiedInfoCardTabs.Add(verified);
+                }
+                activeSession.InfoCardTabAwaitingRepaint = false;
+            }
+
+            if (activeSession.InfoCardTabProbeIndex < activeSession.RequiredInfoCardTabs.Count)
+            {
+                Dialog_InfoCard.InfoCardTab nextTab = activeSession.RequiredInfoCardTabs[activeSession.InfoCardTabProbeIndex++];
+                infoCard.SetTab(nextTab);
+                activeSession.InfoCardTabAwaitingRepaint = true;
+                activeSession.Result.Notes = AppendNote(activeSession.Result.Notes, "TabProbe=" + nextTab);
+                return true;
+            }
+
+            if (!activeSession.InfoCardTabsRestored)
+            {
+                infoCard.SetTab(Dialog_InfoCard.InfoCardTab.Stats);
+                activeSession.InfoCardTabsRestored = true;
+                activeSession.Result.Notes = AppendNote(activeSession.Result.Notes, "TabsVerified=" + string.Join(",", activeSession.VerifiedInfoCardTabs));
+                return true;
+            }
+
+            return false;
         }
 
         private void ProcessWaitingBeforeClose()
@@ -613,6 +672,58 @@ namespace LogSyncMod.AutoTest
                 }
             }
 
+            if (activeSession?.SpawnedThing != null && !activeSession.SpawnedThing.Destroyed)
+            {
+                try
+                {
+                    activeSession.SpawnedThing.Destroy(DestroyMode.Vanish);
+                }
+                catch
+                {
+                }
+            }
+
+            if (activeSession?.SpawnedThing != null)
+            {
+                bool targetRemoved = activeSession.SpawnedThing.Destroyed || !activeSession.SpawnedThing.Spawned;
+                activeSession.Result.Notes = AppendNote(activeSession.Result.Notes, "TargetRemoved=" + targetRemoved);
+                activeSession.EvidenceAdapter?.AssertTrue("cleanup.target_removed", targetRemoved, "Expected destroyed or despawned; actual=" + (activeSession.SpawnedThing.Destroyed ? "destroyed" : (activeSession.SpawnedThing.Spawned ? "spawned" : "despawned")));
+            }
+
+            if (activeSession?.RestorePollutionAfterCleanup == true &&
+                activeSession.RestoreTerrainCell.IsValid &&
+                activeSession.RestoreTerrainCell.InBounds(map) &&
+                map.pollutionGrid != null)
+            {
+                try
+                {
+                    map.pollutionGrid.SetPolluted(activeSession.RestoreTerrainCell, activeSession.OriginalPollution, silent: true);
+                    bool pollutionRestored = map.pollutionGrid.IsPolluted(activeSession.RestoreTerrainCell) == activeSession.OriginalPollution;
+                    activeSession.Result.Notes = AppendNote(activeSession.Result.Notes, "PollutionRestored=" + pollutionRestored);
+                    activeSession.EvidenceAdapter?.AssertTrue("cleanup.pollution_restored", pollutionRestored, "Expected=" + activeSession.OriginalPollution + " Actual=" + map.pollutionGrid.IsPolluted(activeSession.RestoreTerrainCell));
+                }
+                catch
+                {
+                }
+            }
+
+            if (activeSession?.RestoreTerrainAfterCleanup == true &&
+                activeSession.OriginalTerrain != null &&
+                activeSession.RestoreTerrainCell.IsValid &&
+                activeSession.RestoreTerrainCell.InBounds(map))
+            {
+                try
+                {
+                    map.terrainGrid.SetTerrain(activeSession.RestoreTerrainCell, activeSession.OriginalTerrain);
+                    bool terrainRestored = map.terrainGrid.TerrainAt(activeSession.RestoreTerrainCell) == activeSession.OriginalTerrain;
+                    activeSession.Result.Notes = AppendNote(activeSession.Result.Notes, "TerrainRestored=" + terrainRestored);
+                    activeSession.EvidenceAdapter?.AssertTrue("cleanup.terrain_restored", terrainRestored, "Expected=" + activeSession.OriginalTerrain.defName + " Actual=" + (map.terrainGrid.TerrainAt(activeSession.RestoreTerrainCell)?.defName ?? "null"));
+                }
+                catch
+                {
+                }
+            }
+
             if (activeSession?.AttachedHediff == null || activeSession.TestPawn?.health == null)
             {
                 return;
@@ -671,7 +782,10 @@ namespace LogSyncMod.AutoTest
             }
             else if (activeSession.SpawnedThing != null && !activeSession.SpawnedThing.Destroyed)
             {
-                activeSession.Result.Label = activeSession.SpawnedThing.LabelCap;
+                if (!IsPawnInfoCardKind(activeSession.Item.Kind))
+                {
+                    activeSession.Result.Label = activeSession.SpawnedThing.LabelCap;
+                }
                 activeSession.Result.Notes = AppendNote(activeSession.Result.Notes, "InfoCardOpened=True");
             }
             else if (activeSession.TerrainDef != null)
@@ -679,6 +793,10 @@ namespace LogSyncMod.AutoTest
                 activeSession.Result.Notes = AppendNote(activeSession.Result.Notes, "InfoCardOpened=True");
             }
             else if (activeSession.AttachedHediff != null)
+            {
+                activeSession.Result.Notes = AppendNote(activeSession.Result.Notes, "InfoCardOpened=True");
+            }
+            else if (activeSession.InfoCardDef != null)
             {
                 activeSession.Result.Notes = AppendNote(activeSession.Result.Notes, "InfoCardOpened=True");
             }

@@ -131,7 +131,13 @@ namespace LogSyncMod.AutoTest
                 case AutoTestKind.Hediff:
                 case AutoTestKind.Building:
                 case AutoTestKind.Item:
+                case AutoTestKind.Plant:
                 case AutoTestKind.Terrain:
+                case AutoTestKind.AnimalInfoCard:
+                case AutoTestKind.MechanoidInfoCard:
+                case AutoTestKind.PawnInfoCard:
+                case AutoTestKind.GeneInfoCard:
+                case AutoTestKind.XenotypeInfoCard:
                     return AutoTestScope.UI;
                 case AutoTestKind.TurretPocketMap:
                 case AutoTestKind.RangedWeaponPocketMap:
@@ -163,6 +169,13 @@ namespace LogSyncMod.AutoTest
                     return AutoTestScope.Recipes;
                 case AutoTestKind.Hediff:
                     return AutoTestScope.Hediffs;
+                case AutoTestKind.Plant:
+                case AutoTestKind.AnimalInfoCard:
+                case AutoTestKind.MechanoidInfoCard:
+                case AutoTestKind.PawnInfoCard:
+                case AutoTestKind.GeneInfoCard:
+                case AutoTestKind.XenotypeInfoCard:
+                    return AutoTestScope.Content;
                 case AutoTestKind.TurretPocketMap:
                     return AutoTestScope.Turrets;
                 case AutoTestKind.RangedWeaponPocketMap:
@@ -196,12 +209,24 @@ namespace LogSyncMod.AutoTest
                     return "Building";
                 case AutoTestKind.Item:
                     return "Item";
+                case AutoTestKind.Plant:
+                    return "Plant";
                 case AutoTestKind.Terrain:
                     return "Terrain";
                 case AutoTestKind.Recipe:
                     return "Recipe";
                 case AutoTestKind.Hediff:
                     return "Hediff";
+                case AutoTestKind.AnimalInfoCard:
+                    return "AnimalInfoCard";
+                case AutoTestKind.MechanoidInfoCard:
+                    return "MechanoidInfoCard";
+                case AutoTestKind.PawnInfoCard:
+                    return "PawnInfoCard";
+                case AutoTestKind.GeneInfoCard:
+                    return "GeneInfoCard";
+                case AutoTestKind.XenotypeInfoCard:
+                    return "XenotypeInfoCard";
                 case AutoTestKind.TurretPocketMap:
                     return "Turret";
                 case AutoTestKind.RangedWeaponPocketMap:

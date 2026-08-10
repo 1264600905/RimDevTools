@@ -250,6 +250,7 @@ namespace LogSyncMod.AutoTest
             {
                 EnqueueThingDefs();
                 EnqueueTerrainDefs();
+                EnqueueExtendedInfoCardDefs();
             }
 
             if (settings.ShouldTestRecipes())
@@ -908,12 +909,24 @@ namespace LogSyncMod.AutoTest
                     return AutoTestCaseType.BuildingInfoCard;
                 case AutoTestKind.Item:
                     return AutoTestCaseType.ItemInfoCard;
+                case AutoTestKind.Plant:
+                    return AutoTestCaseType.PlantInfoCard;
                 case AutoTestKind.Terrain:
                     return AutoTestCaseType.TerrainInfoCard;
                 case AutoTestKind.Recipe:
                     return AutoTestCaseType.RecipeBillUi;
                 case AutoTestKind.Hediff:
                     return AutoTestCaseType.HediffInfoCard;
+                case AutoTestKind.AnimalInfoCard:
+                    return AutoTestCaseType.AnimalInfoCard;
+                case AutoTestKind.MechanoidInfoCard:
+                    return AutoTestCaseType.MechanoidInfoCard;
+                case AutoTestKind.PawnInfoCard:
+                    return AutoTestCaseType.PawnInfoCard;
+                case AutoTestKind.GeneInfoCard:
+                    return AutoTestCaseType.GeneInfoCard;
+                case AutoTestKind.XenotypeInfoCard:
+                    return AutoTestCaseType.XenotypeInfoCard;
                 case AutoTestKind.TurretPocketMap:
                     return AutoTestCaseType.TurretPocketMap;
                 case AutoTestKind.RangedWeaponPocketMap:
@@ -955,6 +968,8 @@ namespace LogSyncMod.AutoTest
                     return "Building";
                 case AutoTestCaseType.ItemInfoCard:
                     return "Item";
+                case AutoTestCaseType.PlantInfoCard:
+                    return "Plant";
                 case AutoTestCaseType.TerrainInfoCard:
                     return "Terrain";
                 case AutoTestCaseType.RecipeInfoCard:
@@ -962,6 +977,16 @@ namespace LogSyncMod.AutoTest
                     return "Recipe";
                 case AutoTestCaseType.HediffInfoCard:
                     return "Hediff";
+                case AutoTestCaseType.AnimalInfoCard:
+                    return "AnimalInfoCard";
+                case AutoTestCaseType.MechanoidInfoCard:
+                    return "MechanoidInfoCard";
+                case AutoTestCaseType.PawnInfoCard:
+                    return "PawnInfoCard";
+                case AutoTestCaseType.GeneInfoCard:
+                    return "GeneInfoCard";
+                case AutoTestCaseType.XenotypeInfoCard:
+                    return "XenotypeInfoCard";
                 case AutoTestCaseType.TurretPocketMap:
                     return "Turret";
                 case AutoTestCaseType.RangedWeaponPocketMap:
@@ -1004,7 +1029,13 @@ namespace LogSyncMod.AutoTest
                 case AutoTestCaseType.HediffInfoCard:
                 case AutoTestCaseType.BuildingInfoCard:
                 case AutoTestCaseType.ItemInfoCard:
+                case AutoTestCaseType.PlantInfoCard:
                 case AutoTestCaseType.TerrainInfoCard:
+                case AutoTestCaseType.AnimalInfoCard:
+                case AutoTestCaseType.MechanoidInfoCard:
+                case AutoTestCaseType.PawnInfoCard:
+                case AutoTestCaseType.GeneInfoCard:
+                case AutoTestCaseType.XenotypeInfoCard:
                     return AutoTestScope.UI;
                 case AutoTestCaseType.TurretPocketMap:
                 case AutoTestCaseType.RangedWeaponPocketMap:
@@ -1064,12 +1095,15 @@ namespace LogSyncMod.AutoTest
             RecipeDef recipeDef = null,
             ThingDef worktableDef = null,
             HediffDef hediffDef = null,
+            PawnKindDef pawnKindDef = null,
+            GeneDef geneDef = null,
+            XenotypeDef xenotypeDef = null,
             LogSyncAutoTestSpecDef specDef = null)
         {
             AutoTestCaseType caseType = ResolveCaseType(kind);
             // Recipe cases are keyed by the RecipeDef even though the produced ThingDef
             // is also carried on the work item for setup and result labeling.
-            Def targetDef = (Def)recipeDef ?? (Def)thingDef ?? (Def)terrainDef ?? hediffDef;
+            Def targetDef = (Def)recipeDef ?? (Def)thingDef ?? (Def)terrainDef ?? (Def)hediffDef ?? (Def)pawnKindDef ?? (Def)geneDef ?? xenotypeDef;
             string defType = targetDef?.GetType().Name ?? string.Empty;
             AutoTestManifestEntry entry = RegisterDiscoveredCase(caseType, defType, targetDef?.defName, targetDef?.label);
 
@@ -1083,6 +1117,9 @@ namespace LogSyncMod.AutoTest
                 RecipeDef = recipeDef,
                 WorktableDef = worktableDef,
                 HediffDef = hediffDef,
+                PawnKindDef = pawnKindDef,
+                GeneDef = geneDef,
+                XenotypeDef = xenotypeDef,
                 SpecDef = specDef,
                 ManifestEntry = entry
             };

@@ -104,9 +104,15 @@ Def 根类型必须写全限定名：`LogSyncMod.LogSyncAutoTestSpecDef`
 
 - `Building`
 - `Item`
+- `Plant`
 - `Terrain`
 - `Recipe`
 - `Hediff`
+- `AnimalInfoCard`
+- `MechanoidInfoCard`
+- `PawnInfoCard`
+- `GeneInfoCard`
+- `XenotypeInfoCard`
 - `Turret`
 - `RangedWeapon`
 - `MeleeWeapon`

@@ -16,6 +16,7 @@ namespace LogSyncMod.AutoTest
             {
                 case AutoTestKind.Building:
                 case AutoTestKind.Item:
+                case AutoTestKind.Plant:
                     StartThingSession(item);
                     break;
                 case AutoTestKind.Terrain:
@@ -26,6 +27,15 @@ namespace LogSyncMod.AutoTest
                     break;
                 case AutoTestKind.Hediff:
                     StartHediffSession(item);
+                    break;
+                case AutoTestKind.AnimalInfoCard:
+                case AutoTestKind.MechanoidInfoCard:
+                case AutoTestKind.PawnInfoCard:
+                    StartPawnInfoCardSession(item);
+                    break;
+                case AutoTestKind.GeneInfoCard:
+                case AutoTestKind.XenotypeInfoCard:
+                    StartDefInfoCardSession(item);
                     break;
             }
         }
@@ -40,12 +50,26 @@ namespace LogSyncMod.AutoTest
             IDisposable caseScope = adapter.BeginCase();
             bool noSpace = false;
             Thing preparedThing = null;
+            bool restoreTerrain = false;
+            IntVec3 restoreTerrainCell = IntVec3.Invalid;
+            TerrainDef originalTerrain = null;
+            bool restorePollution = false;
+            bool originalPollution = false;
             AutoTestOperationEnvelope prepare = adapter.Run("spawn_or_prepare_target", delegate
             {
                 ThingDef def = item.ThingDef;
                 ThingDef stuff = ResolveStuff(def);
                 Thing thing = ThingMaker.MakeThing(def, stuff);
-                preparedThing = thing;
+                if (def.useHitPoints && thing.HitPoints <= 0)
+                {
+                    thing.HitPoints = thing.MaxHitPoints;
+                }
+                if (thing is Plant preparedPlant)
+                {
+                    preparedPlant.HitPoints = preparedPlant.MaxHitPoints;
+                    preparedPlant.Growth = 1f;
+                    preparedPlant.sown = true;
+                }
                 result.Stage = "create";
 
                 IntVec2 size = def.Size;
@@ -59,19 +83,76 @@ namespace LogSyncMod.AutoTest
                 }
 
                 ClearArea(rootCell, width, height);
+                if (item.Kind == AutoTestKind.Plant)
+                {
+                    restoreTerrain = true;
+                    restoreTerrainCell = rootCell;
+                    originalTerrain = map.terrainGrid.TerrainAt(rootCell);
+                    TerrainDef plantTerrain = TerrainDefOf.SoilRich ?? TerrainDefOf.Soil ?? DefDatabase<TerrainDef>.GetNamedSilentFail("Soil");
+                    if (plantTerrain == null)
+                    {
+                        throw new InvalidOperationException("No fertile terrain was available for Plant InfoCard setup.");
+                    }
+                    map.terrainGrid.SetTerrain(rootCell, plantTerrain);
+
+                    if (map.pollutionGrid != null && (def.plant.RequiresPollution || def.plant.RequiresNoPollution))
+                    {
+                        restorePollution = true;
+                        originalPollution = map.pollutionGrid.IsPolluted(rootCell);
+                        map.pollutionGrid.SetPolluted(rootCell, def.plant.RequiresPollution, silent: true);
+                    }
+                }
+
                 if (item.Kind == AutoTestKind.Building)
-                    GenSpawn.Spawn(thing, rootCell, map, Rot4.North, WipeMode.Vanish, false, false);
+                    thing = GenSpawn.Spawn(thing, rootCell, map, Rot4.North, WipeMode.Vanish, false, false);
                 else
-                    GenSpawn.Spawn(thing, rootCell, map, WipeMode.Vanish);
+                    thing = GenSpawn.Spawn(thing, rootCell, map, WipeMode.Vanish);
+
+                preparedThing = thing;
+                if (thing == null || thing.Destroyed || !thing.Spawned)
+                {
+                    throw new InvalidOperationException(
+                        "Spawned target was immediately destroyed or never entered the map." +
+                        " null=" + (thing == null) +
+                        " destroyed=" + (thing?.Destroyed.ToString() ?? "unknown") +
+                        " spawned=" + (thing?.Spawned.ToString() ?? "unknown") +
+                        " hitPoints=" + (thing?.HitPoints.ToString() ?? "unknown") +
+                        " maxHitPoints=" + (thing?.MaxHitPoints.ToString() ?? "unknown") +
+                        " terrain=" + (map.terrainGrid.TerrainAt(rootCell)?.defName ?? "unknown"));
+                }
+
+                if (thing is Plant plant)
+                {
+                    // A mature plant avoids environment-dependent growth-rate stats while
+                    // still exercising the actual Plant instance InfoCard path.
+                    plant.Growth = 1f;
+                    if (plant.HitPoints <= 0)
+                    {
+                        plant.HitPoints = plant.MaxHitPoints;
+                    }
+                    map.mapDrawer.MapMeshDirty(rootCell, MapMeshFlagDefOf.Things);
+                    result.Notes = AppendNote(result.Notes, "PlantLifeStage=" + plant.LifeStage);
+                    result.Notes = AppendNote(result.Notes, "Growth=" + plant.Growth.ToString("0.####"));
+                }
 
                 result.Stage = "spawn";
                 result.Label = thing.LabelCap;
-                result.Notes = TrimForNote(thing.GetInspectString());
+                try
+                {
+                    result.Notes = AppendNote(result.Notes, TrimForNote(thing.GetInspectString()));
+                }
+                catch (Exception ex)
+                {
+                    result.Notes = AppendNote(result.Notes, "InspectProbeError=" + TrimForNote(ex.Message));
+                }
                 int gizmoCount = 0;
                 foreach (Gizmo gizmo in thing.GetGizmos()) if (gizmo != null) gizmoCount++;
                 result.Notes = AppendNote(result.Notes, "Gizmos=" + gizmoCount);
                 Find.Selector.ClearSelection();
-                Find.Selector.Select(thing, false, false);
+                if (!thing.Destroyed && thing.Spawned)
+                {
+                    Find.Selector.Select(thing, false, false);
+                }
                 return thing;
             }, thing => thing == null ? "no_layout_space" : thing.def.defName);
             adapter.AssertOperation("target.prepared", prepare);
@@ -84,6 +165,7 @@ namespace LogSyncMod.AutoTest
                 adapter.AssertTrue("target.preparation_assertion", false, result.ErrorMessage, prepare.OperationId);
                 adapter.CompleteCase(false, result.ErrorMessage);
                 caseScope.Dispose();
+                RestorePreparedInfoCardEnvironment(restoreTerrain, restoreTerrainCell, originalTerrain, restorePollution, originalPollution);
                 CompleteSemanticCase(result);
                 return;
             }
@@ -96,6 +178,7 @@ namespace LogSyncMod.AutoTest
                 adapter.AssertTrue("target.preparation_assertion", false, result.ErrorMessage, prepare.OperationId);
                 adapter.CompleteCase(false, result.ErrorMessage);
                 caseScope.Dispose();
+                RestorePreparedInfoCardEnvironment(restoreTerrain, restoreTerrainCell, originalTerrain, restorePollution, originalPollution);
                 CompleteSemanticCase(result);
                 return;
             }
@@ -111,9 +194,46 @@ namespace LogSyncMod.AutoTest
                 RemainingUiFrames = PreOpenSettleRepaintFrames,
                 Phase = SessionPhase.WaitingForPreOpenSettle,
                 EvidenceAdapter = adapter,
-                EvidenceCaseScope = caseScope
+                EvidenceCaseScope = caseScope,
+                RestoreTerrainAfterCleanup = restoreTerrain,
+                RestoreTerrainCell = restoreTerrainCell,
+                OriginalTerrain = originalTerrain,
+                RestorePollutionAfterCleanup = restorePollution,
+                OriginalPollution = originalPollution
             };
             result.Stage = "info_open";
+        }
+
+        private void RestorePreparedInfoCardEnvironment(bool restoreTerrain, IntVec3 cell, TerrainDef terrain, bool restorePollution, bool originalPollution)
+        {
+            if (!cell.IsValid || !cell.InBounds(map))
+            {
+                return;
+            }
+
+            if (restorePollution && map.pollutionGrid != null)
+            {
+                try
+                {
+                    map.pollutionGrid.SetPolluted(cell, originalPollution, silent: true);
+                }
+                catch
+                {
+                }
+            }
+
+            if (!restoreTerrain || terrain == null)
+            {
+                return;
+            }
+
+            try
+            {
+                map.terrainGrid.SetTerrain(cell, terrain);
+            }
+            catch
+            {
+            }
         }
 
         private void StartTerrainSession(AutoTestWorkItem item)
@@ -408,6 +528,7 @@ namespace LogSyncMod.AutoTest
             return def != null &&
                    def.modContentPack == targetMod &&
                    def.category == ThingCategory.Item &&
+                   def.plant == null &&
                    def.thingClass != null &&
                    !typeof(Corpse).IsAssignableFrom(def.thingClass) &&
                    !def.IsBlueprint &&
