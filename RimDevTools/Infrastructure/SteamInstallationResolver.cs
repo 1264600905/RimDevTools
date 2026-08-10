@@ -26,7 +26,7 @@ public sealed record SteamSessionStatus(
 
 public static class SteamSessionGuard
 {
-    // Tests inject a deterministic probe; production always uses the real Steam process and VDF.
+    // Tests inject a deterministic probe; production only requires the Steam process to be running.
     internal static Func<SteamSessionStatus>? ProbeOverride { get; set; }
 
     public static SteamSessionStatus CheckForLaunch()
@@ -38,44 +38,14 @@ public static class SteamSessionGuard
         var running = isRunning?.Invoke() ?? IsSteamRunning();
         if (!running)
             return new(false, false, steamRoot, null, "STEAM_NOT_RUNNING", "Steam 未运行，拒绝启动 RimWorld");
-        if (string.IsNullOrWhiteSpace(steamRoot))
-            return new(true, false, null, null, "STEAM_INSTALLATION_UNKNOWN", "无法定位 Steam 安装目录，拒绝启动 RimWorld");
-
-        var loginUsersPath = Path.Combine(steamRoot, "config", "loginusers.vdf");
-        if (!File.Exists(loginUsersPath))
-            return new(true, false, steamRoot, loginUsersPath, "STEAM_NOT_LOGGED_IN", "Steam 登录状态文件不存在，拒绝启动 RimWorld");
-        try { return Evaluate(true, steamRoot, File.ReadAllText(loginUsersPath)) with { LoginUsersPath = loginUsersPath }; }
-        catch (Exception ex) { return new(true, false, steamRoot, loginUsersPath, "STEAM_LOGIN_STATE_INVALID", $"无法读取 Steam 登录状态: {ex.Message}"); }
+        return new(true, true, steamRoot, null, "STEAM_RUNNING", "Steam 已运行");
     }
 
     public static SteamSessionStatus Evaluate(bool isRunning, string? steamRoot, string? loginUsersVdf)
     {
         if (!isRunning) return new(false, false, steamRoot, null, "STEAM_NOT_RUNNING", "Steam 未运行，拒绝启动 RimWorld");
-        if (string.IsNullOrWhiteSpace(loginUsersVdf)) return new(true, false, steamRoot, null, "STEAM_NOT_LOGGED_IN", "Steam 登录状态文件不存在，拒绝启动 RimWorld");
-        try
-        {
-            var users = ValveKeyValues.Parse(loginUsersVdf).FirstOrDefault(value => value.Name.Equals("users", StringComparison.OrdinalIgnoreCase));
-            var accounts = users?.Children
-                .Where(user => user.IsObject && !string.IsNullOrWhiteSpace(user.Scalar("AccountName")))
-                .ToArray() ?? [];
-            var explicitlyRecent = accounts.Where(user => user.Scalar("MostRecent") == "1").ToArray();
-            var candidates = explicitlyRecent.Length > 0
-                ? explicitlyRecent
-                : accounts
-                    .Where(user => user.Scalar("RememberPassword") == "1" && ParseTimestamp(user.Scalar("Timestamp")) != long.MinValue)
-                    .OrderByDescending(user => ParseTimestamp(user.Scalar("Timestamp")))
-                    .Take(1)
-                    .ToArray();
-            var loggedIn = candidates.Any(user => user.Scalar("WantsOfflineMode") != "1");
-            return loggedIn
-                ? new(true, true, steamRoot, null, "STEAM_LOGGED_IN", "Steam 已运行且已登录")
-                : new(true, false, steamRoot, null, "STEAM_NOT_LOGGED_IN", "Steam 未登录或处于离线模式，拒绝启动 RimWorld");
-        }
-        catch (Exception ex) { return new(true, false, steamRoot, null, "STEAM_LOGIN_STATE_INVALID", $"无法解析 Steam 登录状态: {ex.Message}"); }
+        return new(true, true, steamRoot, null, "STEAM_RUNNING", "Steam 已运行");
     }
-
-    private static long ParseTimestamp(string? value)
-        => long.TryParse(value, out var timestamp) ? timestamp : long.MinValue;
 
     private static bool IsSteamRunning()
     {

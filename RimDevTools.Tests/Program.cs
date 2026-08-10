@@ -186,15 +186,13 @@ internal sealed class TestSuite
         Assert(manual is { Enabled: false, Source: "mode_default" }, "manual isolation ignores the enabled project default");
         var steamLoggedIn = SteamSessionGuard.Evaluate(true, "C:\\Steam", "\"users\" { \"76561198000000000\" { \"AccountName\" \"tester\" \"MostRecent\" \"1\" \"WantsOfflineMode\" \"0\" } }");
         var steamOffline = SteamSessionGuard.Evaluate(true, "C:\\Steam", "\"users\" { \"76561198000000000\" { \"AccountName\" \"tester\" \"MostRecent\" \"1\" \"WantsOfflineMode\" \"1\" } }");
-        var steamLoggedInNewFormat = SteamSessionGuard.Evaluate(true, "C:\\Steam", "\"users\" { \"1\" { \"AccountName\" \"older\" \"RememberPassword\" \"1\" \"WantsOfflineMode\" \"0\" \"Timestamp\" \"10\" } \"2\" { \"AccountName\" \"current\" \"RememberPassword\" \"1\" \"WantsOfflineMode\" \"0\" \"Timestamp\" \"20\" } }");
-        var steamOfflineNewFormat = SteamSessionGuard.Evaluate(true, "C:\\Steam", "\"users\" { \"1\" { \"AccountName\" \"older\" \"RememberPassword\" \"1\" \"WantsOfflineMode\" \"0\" \"Timestamp\" \"10\" } \"2\" { \"AccountName\" \"current\" \"RememberPassword\" \"1\" \"WantsOfflineMode\" \"1\" \"Timestamp\" \"20\" } }");
-        var steamHistoricalAccount = SteamSessionGuard.Evaluate(true, "C:\\Steam", "\"users\" { \"1\" { \"AccountName\" \"historical\" \"RememberPassword\" \"1\" \"WantsOfflineMode\" \"0\" } }");
+        var steamMissingLoginState = SteamSessionGuard.Evaluate(true, "C:\\Steam", null);
+        var steamMalformedLoginState = SteamSessionGuard.Evaluate(true, "C:\\Steam", "not-vdf");
         var steamStopped = SteamSessionGuard.Evaluate(false, "C:\\Steam", null);
-        Assert(steamLoggedIn.IsLoggedIn && steamLoggedIn.Code == "STEAM_LOGGED_IN", "Steam session guard accepts a running online account");
-        Assert(!steamOffline.IsLoggedIn && steamOffline.Code == "STEAM_NOT_LOGGED_IN", "Steam session guard rejects offline mode");
-        Assert(steamLoggedInNewFormat.IsLoggedIn && steamLoggedInNewFormat.Code == "STEAM_LOGGED_IN", "Steam session guard accepts the newest remembered account in the current Steam format");
-        Assert(!steamOfflineNewFormat.IsLoggedIn && steamOfflineNewFormat.Code == "STEAM_NOT_LOGGED_IN", "Steam session guard rejects the newest current-format account when it requests offline mode");
-        Assert(!steamHistoricalAccount.IsLoggedIn && steamHistoricalAccount.Code == "STEAM_NOT_LOGGED_IN", "Steam session guard does not treat an undated remembered account as an active session");
+        Assert(steamLoggedIn.IsRunning && steamLoggedIn.IsLoggedIn && steamLoggedIn.Code == "STEAM_RUNNING", "Steam session guard accepts a running online account");
+        Assert(steamOffline.IsRunning && steamOffline.IsLoggedIn && steamOffline.Code == "STEAM_RUNNING", "Steam session guard ignores offline login metadata when Steam is running");
+        Assert(steamMissingLoginState.IsRunning && steamMissingLoginState.IsLoggedIn && steamMissingLoginState.Code == "STEAM_RUNNING", "Steam session guard accepts a running client without login state");
+        Assert(steamMalformedLoginState.IsRunning && steamMalformedLoginState.IsLoggedIn && steamMalformedLoginState.Code == "STEAM_RUNNING", "Steam session guard ignores malformed login state when Steam is running");
         Assert(!steamStopped.IsLoggedIn && steamStopped.Code == "STEAM_NOT_RUNNING", "Steam session guard rejects a stopped client");
         var child = NewDirectory(Path.Combine("discovery-project", "source"));
         Assert(ProjectDiscovery.Find(child, out _)?.Root == root, "project discovery checks direct parent");
@@ -1198,10 +1196,10 @@ internal sealed class TestSuite
 
         var steamBlocked = CreateProjectEnvironment("steam-blocked", createGameExecutable: true);
         using var blockedScope = UseEnvironment(steamBlocked);
-        SteamSessionGuard.ProbeOverride = () => new SteamSessionStatus(true, false, "test", "test\\loginusers.vdf", "STEAM_NOT_LOGGED_IN", "测试 Steam 未登录");
+        SteamSessionGuard.ProbeOverride = () => new SteamSessionStatus(false, false, "test", null, "STEAM_NOT_RUNNING", "测试 Steam 未运行");
         var blocked = await CaptureAsync(() => TestCommand.RunAsync(["test", "run", "--mode", "quick", "--timeout-seconds", "1"]));
-        Assert(blocked.ExitCode == ExitCodes.GameFailed && JsonErrorCode(blocked.Output) == "STEAM_NOT_LOGGED_IN", "test run rejects an unlogged Steam session before mutation");
-        Assert(File.ReadAllText(steamBlocked.ModsConfigPath) == steamBlocked.OriginalMods && File.ReadAllText(steamBlocked.SettingsPath) == steamBlocked.OriginalSettings, "Steam login rejection preserves global configuration");
+        Assert(blocked.ExitCode == ExitCodes.GameFailed && JsonErrorCode(blocked.Output) == "STEAM_NOT_RUNNING", "test run rejects a stopped Steam client before mutation");
+        Assert(File.ReadAllText(steamBlocked.ModsConfigPath) == steamBlocked.OriginalMods && File.ReadAllText(steamBlocked.SettingsPath) == steamBlocked.OriginalSettings, "Steam process rejection preserves global configuration");
     }
 
     private async Task TestGameWorkflowsAsync()
@@ -1462,7 +1460,7 @@ internal sealed class TestSuite
         var oldSteamProbe = SteamSessionGuard.ProbeOverride;
         Environment.CurrentDirectory = environment.Root;
         Environment.SetEnvironmentVariable("RIMDEVTOOLS_CONFIG_DIR", environment.ConfigDirectory);
-        SteamSessionGuard.ProbeOverride = () => new SteamSessionStatus(true, true, "test", null, "STEAM_LOGGED_IN", "测试 Steam 会话已登录");
+        SteamSessionGuard.ProbeOverride = () => new SteamSessionStatus(true, true, "test", null, "STEAM_RUNNING", "测试 Steam 已运行");
         return new ActionScope(() =>
         {
             Environment.CurrentDirectory = oldDirectory;

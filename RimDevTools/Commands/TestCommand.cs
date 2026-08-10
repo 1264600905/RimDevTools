@@ -196,7 +196,7 @@ public static class TestCommand
         if (!File.Exists(gamePath))
             return CliResult.WriteFailure(command, ExitCodes.MissingDependency, "GAME_NOT_FOUND", $"找不到游戏可执行文件: {gamePath}", context.Root);
         var steam = SteamSessionGuard.CheckForLaunch();
-        if (!steam.IsLoggedIn)
+        if (!steam.IsRunning)
             return CliResult.WriteFailure(command, ExitCodes.GameFailed, steam.Code, steam.Message, context.Root, new { steam.IsRunning, steam.SteamRoot, steam.LoginUsersPath });
 
         var modsFileValue = CliArgs.Value(args, "--active-mods-file");
