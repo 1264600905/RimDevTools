@@ -43,6 +43,7 @@ namespace LogSyncMod.AutoTest
 
         public static void Tick()
         {
+            global::LogSyncMod.TestAudioController.MaintainMuted("autotest_tick");
             if (!startupReady) return;
 
             LogSyncSettings settings = global::LogSyncMod.LogSyncMod.settings;
@@ -76,7 +77,7 @@ namespace LogSyncMod.AutoTest
             if (string.IsNullOrEmpty(packageId))
             {
                 RestoreLogAutoOpen();
-                global::LogSyncMod.TestAudioController.Restore();
+                global::LogSyncMod.TestAudioController.Restore("autotest_startup_missing_package");
                 Log.Warning("[LogSyncAutoTest] Missing target packageId. Auto test aborted.");
                 settings.autoTestEnabled = false;
                 settings.Write();
@@ -154,6 +155,7 @@ namespace LogSyncMod.AutoTest
 
         public static void OnGui()
         {
+            global::LogSyncMod.TestAudioController.MaintainMuted("autotest_gui");
             LogSyncSettings settings = global::LogSyncMod.LogSyncMod.settings;
             if (settings != null)
             {

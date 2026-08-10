@@ -8,7 +8,9 @@ namespace LogSyncMod
     {
         private static readonly object Sync = new object();
         private static bool armed;
-        private static float previousVolume;
+        private static float previousPrefsVolumeMaster;
+        private static float previousListenerVolume;
+        private static int correctionCount;
 
         public static void ArmIfRequested()
         {
@@ -21,10 +23,18 @@ namespace LogSyncMod
 
                 try
                 {
-                    previousVolume = AudioListener.volume;
+                    previousPrefsVolumeMaster = Prefs.VolumeMaster;
+                    previousListenerVolume = AudioListener.volume;
+                    Prefs.VolumeMaster = 0f;
                     AudioListener.volume = 0f;
+                    correctionCount = 0;
                     armed = true;
-                    Log.Message("[LogSyncMod] Test audio muted. previousVolume=" + previousVolume.ToString("R"));
+                    Log.Message(
+                        "[LogSyncMod] Test audio muted. reason=arm" +
+                        " previousPrefsVolumeMaster=" + previousPrefsVolumeMaster.ToString("R") +
+                        " previousAudioListenerVolume=" + previousListenerVolume.ToString("R") +
+                        " currentPrefsVolumeMaster=" + Prefs.VolumeMaster.ToString("R") +
+                        " currentAudioListenerVolume=" + AudioListener.volume.ToString("R"));
                 }
                 catch (Exception ex)
                 {
@@ -34,7 +44,7 @@ namespace LogSyncMod
             }
         }
 
-        public static void Restore()
+        public static void MaintainMuted(string reason)
         {
             lock (Sync)
             {
@@ -45,8 +55,49 @@ namespace LogSyncMod
 
                 try
                 {
-                    AudioListener.volume = previousVolume;
-                    Log.Message("[LogSyncMod] Test audio restored. volume=" + previousVolume.ToString("R"));
+                    float prefsVolume = Prefs.VolumeMaster;
+                    float listenerVolume = AudioListener.volume;
+                    if (Math.Abs(prefsVolume) <= 0.0001f && Math.Abs(listenerVolume) <= 0.0001f)
+                    {
+                        return;
+                    }
+
+                    Prefs.VolumeMaster = 0f;
+                    AudioListener.volume = 0f;
+                    correctionCount++;
+                    Log.Message(
+                        "[LogSyncMod] Test audio mute re-applied. reason=" + (reason ?? "unknown") +
+                        " observedPrefsVolumeMaster=" + prefsVolume.ToString("R") +
+                        " observedAudioListenerVolume=" + listenerVolume.ToString("R") +
+                        " correctionCount=" + correctionCount);
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning("[LogSyncMod] Failed to maintain test audio mute. reason=" + (reason ?? "unknown") + " error=" + ex.Message);
+                }
+            }
+        }
+
+        public static void Restore(string reason = "restore")
+        {
+            lock (Sync)
+            {
+                if (!armed)
+                {
+                    return;
+                }
+
+                try
+                {
+                    Prefs.VolumeMaster = previousPrefsVolumeMaster;
+                    AudioListener.volume = previousListenerVolume;
+                    Log.Message(
+                        "[LogSyncMod] Test audio restored. reason=" + (reason ?? "unknown") +
+                        " restoredPrefsVolumeMaster=" + previousPrefsVolumeMaster.ToString("R") +
+                        " restoredAudioListenerVolume=" + previousListenerVolume.ToString("R") +
+                        " currentPrefsVolumeMaster=" + Prefs.VolumeMaster.ToString("R") +
+                        " currentAudioListenerVolume=" + AudioListener.volume.ToString("R") +
+                        " correctionCount=" + correctionCount);
                 }
                 catch (Exception ex)
                 {
@@ -55,6 +106,7 @@ namespace LogSyncMod
                 finally
                 {
                     armed = false;
+                    correctionCount = 0;
                 }
             }
         }

@@ -39,7 +39,7 @@ namespace LogSyncMod
                     var timer = new System.Timers.Timer(10000);
                     timer.Elapsed += (s, e) =>
                     {
-                        TestAudioController.Restore();
+                        TestAudioController.Restore("quick_ready");
                         Log.Message("[LogSyncMod] RUNTIME_READY_TO_CLOSE");
                         timer.Stop();
                         timer.Dispose();
@@ -210,15 +210,10 @@ namespace LogSyncMod
             }
             listingStandard.Label("LogSyncMod.AutoTestScopes".Translate());
             DrawAutoTestScopeCheckbox(listingStandard, AutoTestScope.Standard, "LogSyncMod.AutoTestScopeStandard".Translate());
-            DrawAutoTestScopeCheckbox(listingStandard, AutoTestScope.Content, "LogSyncMod.AutoTestScopeContent".Translate());
-            DrawAutoTestScopeCheckbox(listingStandard, AutoTestScope.Recipes, "LogSyncMod.AutoTestScopeRecipes".Translate());
-            DrawAutoTestScopeCheckbox(listingStandard, AutoTestScope.Hediffs, "LogSyncMod.AutoTestScopeHediffs".Translate());
-            DrawAutoTestScopeCheckbox(listingStandard, AutoTestScope.Turrets, "LogSyncMod.AutoTestScopeTurrets".Translate());
-            DrawAutoTestScopeCheckbox(listingStandard, AutoTestScope.RangedWeapons, "LogSyncMod.AutoTestScopeRangedWeapons".Translate());
-            DrawAutoTestScopeCheckbox(listingStandard, AutoTestScope.MeleeWeapons, "LogSyncMod.AutoTestScopeMeleeWeapons".Translate());
-            DrawAutoTestScopeCheckbox(listingStandard, AutoTestScope.ThreeViews, "LogSyncMod.AutoTestScopeThreeViews".Translate());
-            DrawAutoTestScopeCheckbox(listingStandard, AutoTestScope.CombatPawns, "LogSyncMod.AutoTestScopeCombatPawns".Translate());
-            DrawAutoTestScopeCheckbox(listingStandard, AutoTestScope.SkillPocketMaps, "LogSyncMod.AutoTestScopeSkillPocketMaps".Translate());
+            DrawAutoTestScopeCheckbox(listingStandard, AutoTestScope.UI, "LogSyncMod.AutoTestScopeUI".Translate());
+            DrawAutoTestScopeCheckbox(listingStandard, AutoTestScope.Combat, "LogSyncMod.AutoTestScopeCombat".Translate());
+            DrawAutoTestScopeCheckbox(listingStandard, AutoTestScope.View, "LogSyncMod.AutoTestScopeView".Translate());
+            DrawAutoTestScopeCheckbox(listingStandard, AutoTestScope.Misc, "LogSyncMod.AutoTestScopeMisc".Translate());
             listingStandard.Label("LogSyncMod.AutoTestTargetDefNames".Translate());
             bool targetNamesEnabled = settings.autoTestMode == AutoTestMode.Automatic;
             GUI.enabled = targetNamesEnabled;
@@ -319,6 +314,14 @@ namespace LogSyncMod
         {
             switch (scope)
             {
+                case AutoTestScope.UI:
+                    return "LogSyncMod.AutoTestScopeUI".Translate();
+                case AutoTestScope.Combat:
+                    return "LogSyncMod.AutoTestScopeCombat".Translate();
+                case AutoTestScope.View:
+                    return "LogSyncMod.AutoTestScopeView".Translate();
+                case AutoTestScope.Misc:
+                    return "LogSyncMod.AutoTestScopeMisc".Translate();
                 case AutoTestScope.Content:
                     return "LogSyncMod.AutoTestScopeContent".Translate();
                 case AutoTestScope.Recipes:

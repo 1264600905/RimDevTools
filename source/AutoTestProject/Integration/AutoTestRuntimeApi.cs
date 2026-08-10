@@ -12,10 +12,11 @@ namespace LogSyncMod.AutoTest
         {
             return new List<AutoTestSuiteDescriptorDto>
             {
-                Suite("standard", "Standard", true), Suite("content", "Content", true), Suite("recipes", "Recipes", true),
-                Suite("hediffs", "Hediffs", true), Suite("turrets", "Turrets", true), Suite("rangedweapons", "Ranged Weapons", true),
-                Suite("meleeweapons", "Melee Weapons", true), Suite("skillpocketmaps", "Skill Pocket Maps", true),
-                Suite("combatpawns", "Combat Pawns", true), Suite("threeviews", "Three Views", true)
+                Suite("standard", "Standard", true),
+                Suite("ui", "UI", true),
+                Suite("combat", "Combat", true),
+                Suite("view", "View", true),
+                Suite("misc", "Misc", true)
             }.AsReadOnly();
         }
 

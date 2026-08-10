@@ -15,7 +15,11 @@ namespace LogSyncMod
         MeleeWeapons = 6,
         ThreeViews = 7,
         CombatPawns = 8,
-        SkillPocketMaps = 9
+        SkillPocketMaps = 9,
+        UI = 10,
+        Combat = 11,
+        View = 12,
+        Misc = 13
     }
 
     public enum AutoTestMode
@@ -155,7 +159,7 @@ namespace LogSyncMod
 
         public bool ShouldTestContent()
         {
-            return HasScope(AutoTestScope.Content) || ShouldRunStandardSuite();
+            return HasAnyScope(AutoTestScope.UI, AutoTestScope.Content) || ShouldRunStandardSuite();
         }
 
         public bool UseXmlDrivenAutoTest()
@@ -165,48 +169,51 @@ namespace LogSyncMod
 
         public bool ShouldTestRecipes()
         {
-            return HasScope(AutoTestScope.Recipes) || ShouldRunStandardSuite();
+            return HasAnyScope(AutoTestScope.UI, AutoTestScope.Recipes) || ShouldRunStandardSuite();
         }
 
         public bool ShouldTestHediffs()
         {
-            return HasScope(AutoTestScope.Hediffs) || ShouldRunStandardSuite();
+            return HasAnyScope(AutoTestScope.UI, AutoTestScope.Hediffs) || ShouldRunStandardSuite();
         }
 
         public bool ShouldTestTurrets()
         {
-            return HasScope(AutoTestScope.Turrets) || ShouldRunStandardSuite();
+            return HasAnyScope(AutoTestScope.Combat, AutoTestScope.Turrets) || ShouldRunStandardSuite();
         }
 
         public bool ShouldTestRangedWeapons()
         {
-            return HasScope(AutoTestScope.RangedWeapons) || ShouldRunStandardSuite();
+            return HasAnyScope(AutoTestScope.Combat, AutoTestScope.RangedWeapons) || ShouldRunStandardSuite();
         }
 
         public bool ShouldTestMeleeWeapons()
         {
-            return HasScope(AutoTestScope.MeleeWeapons) || ShouldRunStandardSuite();
+            return HasAnyScope(AutoTestScope.Combat, AutoTestScope.MeleeWeapons) || ShouldRunStandardSuite();
         }
 
         public bool ShouldTestThreeViews()
         {
-            return HasScope(AutoTestScope.ThreeViews) || ShouldRunStandardSuite();
+            return HasAnyScope(AutoTestScope.View, AutoTestScope.ThreeViews) || ShouldRunStandardSuite();
         }
 
         public bool ShouldTestCombatPawns()
         {
-            return HasScope(AutoTestScope.CombatPawns);
+            return HasAnyScope(AutoTestScope.Combat, AutoTestScope.CombatPawns);
         }
 
         public bool ShouldTestSkillPocketMaps()
         {
-            return HasScope(AutoTestScope.SkillPocketMaps);
+            return HasAnyScope(AutoTestScope.Misc, AutoTestScope.SkillPocketMaps);
         }
 
         public IReadOnlyList<AutoTestScope> EffectiveAutoTestScopes()
             => autoTestScopes != null && autoTestScopes.Count > 0 ? autoTestScopes : new List<AutoTestScope> { autoTestScope };
 
         public bool HasScope(AutoTestScope scope) => EffectiveAutoTestScopes().Contains(scope);
+
+        public bool HasAnyScope(params AutoTestScope[] scopes)
+            => scopes != null && scopes.Any(HasScope);
 
         public bool MatchesAutoTestTargetDefName(string defName)
         {

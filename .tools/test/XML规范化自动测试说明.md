@@ -63,6 +63,7 @@ Def 根类型必须写全限定名：`LogSyncMod.LogSyncAutoTestSpecDef`
 
 内部规则是：
 
+- `testTypes` 精确限制 CaseType；写入后必须命中相应 CaseType
 - `categories` 和 `defNames` 之间是“任一命中即可”
 - 如果两者都不写，则表示命中该 `scope` 下全部目标
 - 同一个目标如果命中多条规则，会按更精确的规则优先，例如精确 `defName` 优先于纯分类
@@ -71,9 +72,16 @@ Def 根类型必须写全限定名：`LogSyncMod.LogSyncAutoTestSpecDef`
 
 当前代码中的 `AutoTestScope` 可用值为：
 
-自动模式支持全局可重复参数 `--scope`（兼容单值 `--auto-test-scope`）和可重复的 `--defname`（兼容单值 `--auto-test-defname`）。`all` 始终等价于 `Standard`；Standard 不包含 CombatPawns、SkillPocketMaps。`--defname` 与范围取交集，未命中目标会让结果 JSON/Markdown 标记为 Incomplete。XML 模式可用多个全局范围扩大可发现类别，但具体用例仍由单条 `LogSyncAutoTestSpecDef` 的 `scope`、`categories`、`defNames` 决定。
+自动模式支持全局可重复参数 `--scope` 和 `--defname`；旧的 `--auto-test-scope`、`--auto-test-defname` 与 `scope=all` 不再接受。正式 Scope 为 `UI`、`Combat`、`View`、`Misc`。`Standard` 是横跨四类的兼容预设，但不隐式启用 CombatPawns、SkillPocketMaps。旧细分 Scope 仍可在旧配置、XML 和 CLI 中作为窄范围兼容值使用。`--defname` 与范围取交集，未命中目标会让结果 JSON/Markdown 标记为 Incomplete。XML 模式可用多个全局范围扩大可发现类别，但具体用例优先由单条 `LogSyncAutoTestSpecDef` 的 `testTypes`、`categories`、`defNames` 决定。
 
 - `Standard`
+- `UI`
+- `Combat`
+- `View`
+- `Misc`
+
+兼容细分值：
+
 - `Content`
 - `Recipes`
 - `Hediffs`
@@ -86,10 +94,9 @@ Def 根类型必须写全限定名：`LogSyncMod.LogSyncAutoTestSpecDef`
 
 说明：
 
-- `Standard` 表示标准自动枚举套件
+- `Standard` 表示标准自动枚举预设，横跨四类但排除 CombatPawns 和 SkillPocketMaps
 - `XmlDriven` 模式下，是否真的会被选中，仍然取决于 XML 规则是否命中
-- 三视图相关目标统一归在 `ThreeViews`
-- 技能口袋地图现在已有独立范围 `SkillPocketMaps`
+- 新结果统一报告四个正式 Scope；旧细分值只用于兼容筛选
 
 ## Categories 可用值
 
@@ -117,10 +124,10 @@ Def 根类型必须写全限定名：`LogSyncMod.LogSyncAutoTestSpecDef`
 
 常见搭配：
 
-- `scope=Content` 通常配 `Building`、`Item`、`Terrain`
-- `scope=ThreeViews` 可配 `HumanoidThreeView`、`AlienThreeView`、`ApparelThreeView`、`WeaponThreeView` 等
-- `scope=SkillPocketMaps` 配 `SkillPocketMap`
-- `scope=Turrets` 配 `Turret`
+- `scope=UI` 通常配 `Building`、`Item`、`Terrain`、`Recipe`、`Hediff`
+- `scope=View` 可配 `HumanoidThreeView`、`AlienThreeView`、`ApparelThreeView`、`WeaponThreeView` 等
+- `scope=Misc` 可用 `testTypes=SkillPocketMap` 精确选择技能口袋地图
+- `scope=Combat` 可用 `testTypes=TurretPocketMap` 精确选择炮塔测试
 
 ## 三视图规则说明
 

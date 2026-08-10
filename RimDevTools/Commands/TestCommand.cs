@@ -383,6 +383,10 @@ public static class AutoTestSelectionParser
     private static readonly IReadOnlyDictionary<string, string> ScopeNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
     {
         ["standard"] = "Standard",
+        ["ui"] = "UI",
+        ["combat"] = "Combat",
+        ["view"] = "View",
+        ["misc"] = "Misc",
         ["content"] = "Content",
         ["recipes"] = "Recipes",
         ["hediffs"] = "Hediffs",

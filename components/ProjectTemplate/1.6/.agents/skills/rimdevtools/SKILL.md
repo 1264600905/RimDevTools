@@ -55,10 +55,10 @@ description: 操作项目本地的 RimDevTools CLI，处理 RimWorld 1.6 模组�
 
 auto 测试参数遵循以下规则：
 
-- `--scope <value>` 可重复，多个 scope 取并集。支持 `standard/content/recipes/hediffs/turrets/rangedweapons/meleeweapons/threeviews/combatpawns/skillpocketmaps`。
+- `--scope <value>` 可重复，多个 scope 取并集。正式值为 `standard/ui/combat/view/misc`；旧细分值仍以原窄范围语义兼容。
 - `--defname <value>` 可重复，仅适用于 auto。DefName 是精确白名单，与 scope 取交集；不传 DefName 时枚举所选 scope 下的目标。
 - `--batch-size <n>` 适用于 auto/xml，默认 40。它只限制普通 Targeted 计划；Standard 全量和显式 DefName 运行忽略该限制。
-- 未传 scope 时默认为 `Standard`；Standard 不包含 `CombatPawns` 和 `SkillPocketMaps`。
+- 未传 scope 时默认为 `Standard`；Standard 横跨 UI、Combat、View、Misc，但不隐式启用 `CombatPawns` 和 `SkillPocketMaps`。
 - 非 Standard 且未指定 DefName 的定向范围仍受 `autoTestBatchSize` 限制；Standard 或精确 DefName 测试不受该限制。
 - 启用模组缺少必要上级依赖时只输出 warning，不阻挡测试；应根据 warning 补齐 `min_active_mods` 或 `--active-mods-file`。
 

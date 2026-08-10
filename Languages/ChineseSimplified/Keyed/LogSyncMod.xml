@@ -22,6 +22,10 @@
   <LogSyncMod.AutoTestScope>测试范围：{0}</LogSyncMod.AutoTestScope>
   <LogSyncMod.AutoTestScopeSelect>选择测试范围（当前：{0}）</LogSyncMod.AutoTestScopeSelect>
   <LogSyncMod.AutoTestScopeStandard>标准测试</LogSyncMod.AutoTestScopeStandard>
+  <LogSyncMod.AutoTestScopeUI>UI</LogSyncMod.AutoTestScopeUI>
+  <LogSyncMod.AutoTestScopeCombat>战斗</LogSyncMod.AutoTestScopeCombat>
+  <LogSyncMod.AutoTestScopeView>视图</LogSyncMod.AutoTestScopeView>
+  <LogSyncMod.AutoTestScopeMisc>杂项</LogSyncMod.AutoTestScopeMisc>
   <LogSyncMod.AutoTestScopeContent>建筑物品</LogSyncMod.AutoTestScopeContent>
   <LogSyncMod.AutoTestScopeRecipes>工作台配方</LogSyncMod.AutoTestScopeRecipes>
   <LogSyncMod.AutoTestScopeHediffs>小人 Hediff</LogSyncMod.AutoTestScopeHediffs>
@@ -31,7 +35,7 @@
   <LogSyncMod.AutoTestScopeThreeViews>三视图静态摄影棚</LogSyncMod.AutoTestScopeThreeViews>
   <LogSyncMod.AutoTestScopeCombatPawns>受击向战斗口袋地图</LogSyncMod.AutoTestScopeCombatPawns>
   <LogSyncMod.AutoTestScopeSkillPocketMaps>技能口袋地图</LogSyncMod.AutoTestScopeSkillPocketMaps>
-  <LogSyncMod.AutoTestScopes>测试范围（可多选；标准测试不包含战斗 Pawn 与技能口袋地图）：</LogSyncMod.AutoTestScopes>
+  <LogSyncMod.AutoTestScopes>测试范围（可多选；Standard 跨四类，但不包含战斗 Pawn 与技能口袋地图）：</LogSyncMod.AutoTestScopes>
   <LogSyncMod.AutoTestTargetDefNames>精确 DefName 白名单（逗号分隔，留空表示全部）：</LogSyncMod.AutoTestTargetDefNames>
   <LogSyncMod.AutoTestTargetDefNamesXmlHint>XML 规范驱动模式忽略此白名单，具体目标由 Spec 决定。</LogSyncMod.AutoTestTargetDefNamesXmlHint>
   <LogSyncMod.AutoTestCaptureScreenshots>为已打开的 InfoCard 自动截图</LogSyncMod.AutoTestCaptureScreenshots>

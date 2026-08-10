@@ -243,7 +243,7 @@ namespace LogSyncMod.AutoTest
 
             if (settings.ShouldRunStandardSuite())
             {
-                Log.Message("[LogSyncAutoTest] Standard suite enabled.");
+                Log.Message("[LogSyncAutoTest] Standard preset enabled across UI/Combat/View/Misc; CombatPawns and SkillPocketMaps remain excluded.");
             }
 
             if (settings.ShouldTestContent())
@@ -306,7 +306,7 @@ namespace LogSyncMod.AutoTest
                 totalPending,
                 pocketMapMaxConcurrent));
             Log.Message(string.Format(
-                "[LogSyncAutoTest] ENABLED scopes: content={0}, recipes={1}, hediffs={2}, turrets={3}, ranged={4}, melee={5}, threeViews={6}, combatPawns={7}",
+                "[LogSyncAutoTest] ENABLED modules: content={0}, recipes={1}, hediffs={2}, turrets={3}, ranged={4}, melee={5}, threeViews={6}, combatPawns={7}, skillPocketMaps={8}",
                 settings.ShouldTestContent(),
                 settings.ShouldTestRecipes(),
                 settings.ShouldTestHediffs(),
@@ -314,7 +314,8 @@ namespace LogSyncMod.AutoTest
                 settings.ShouldTestRangedWeapons(),
                 settings.ShouldTestMeleeWeapons(),
                 settings.ShouldTestThreeViews(),
-                settings.ShouldTestCombatPawns()));
+                settings.ShouldTestCombatPawns(),
+                settings.ShouldTestSkillPocketMaps()));
             Log.Message("[LogSyncAutoTest] TARGET DefNames: " + (settings.autoTestTargetDefNames.Count == 0 ? "<all>" : string.Join(",", settings.autoTestTargetDefNames)));
 
             if (totalPending == 0)
@@ -688,7 +689,7 @@ namespace LogSyncMod.AutoTest
                 logCaptureSubscription?.Dispose();
                 runContextScope?.Dispose();
                 runContextScope = null;
-                global::LogSyncMod.TestAudioController.Restore();
+                global::LogSyncMod.TestAudioController.Restore("autotest_runner_finally");
             }
             Log.Message(string.Format(
                 "[LogSyncAutoTest] COMPLETED runId={0} packageId={1} total={2} passed={3} failed={4} discovered={5} planned={6} missing={7} missingDefNames={8}",
@@ -1000,31 +1001,30 @@ namespace LogSyncMod.AutoTest
             {
                 case AutoTestCaseType.RecipeInfoCard:
                 case AutoTestCaseType.RecipeBillUi:
-                    return AutoTestScope.Recipes;
                 case AutoTestCaseType.HediffInfoCard:
-                    return AutoTestScope.Hediffs;
+                case AutoTestCaseType.BuildingInfoCard:
+                case AutoTestCaseType.ItemInfoCard:
+                case AutoTestCaseType.TerrainInfoCard:
+                    return AutoTestScope.UI;
                 case AutoTestCaseType.TurretPocketMap:
-                    return AutoTestScope.Turrets;
                 case AutoTestCaseType.RangedWeaponPocketMap:
-                    return AutoTestScope.RangedWeapons;
                 case AutoTestCaseType.MeleeWeaponPocketMap:
-                    return AutoTestScope.MeleeWeapons;
-                case AutoTestCaseType.SkillPocketMap:
-                    return AutoTestScope.SkillPocketMaps;
+                case AutoTestCaseType.ApparelCombat:
+                case AutoTestCaseType.AnimalCombat:
+                case AutoTestCaseType.MechanoidCombat:
+                case AutoTestCaseType.AlienCombat:
+                    return AutoTestScope.Combat;
                 case AutoTestCaseType.HumanoidThreeView:
                 case AutoTestCaseType.AnimalThreeView:
                 case AutoTestCaseType.MechanoidThreeView:
                 case AutoTestCaseType.AlienThreeView:
                 case AutoTestCaseType.ApparelThreeView:
                 case AutoTestCaseType.WeaponThreeView:
-                    return AutoTestScope.ThreeViews;
-                case AutoTestCaseType.ApparelCombat:
-                case AutoTestCaseType.AnimalCombat:
-                case AutoTestCaseType.MechanoidCombat:
-                case AutoTestCaseType.AlienCombat:
-                    return AutoTestScope.CombatPawns;
+                    return AutoTestScope.View;
+                case AutoTestCaseType.SkillPocketMap:
+                    return AutoTestScope.Misc;
                 default:
-                    return AutoTestScope.Content;
+                    return AutoTestScope.Misc;
             }
         }
 

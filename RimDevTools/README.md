@@ -77,7 +77,7 @@ RimDevTools.exe mods install-tools [--mods-path <path>] [--dry-run]
 
 quick 是启动烟雾测试；manual 用于交互；auto/XML 验证结构化 AutoTest 结果。auto/xml 支持可重复的 `--scope`，范围按首次出现顺序去重，未传时默认为 Standard。`--defname` 仅适用于 auto，可重复指定精确目标；任何未命中目标都会使结果不完整并失败。`--batch-size` 是 auto/xml 的正整数 Targeted 计划上限，默认 40；Standard 全量和显式 DefName 运行忽略该限制。XML 模式的具体用例仍由 Spec 决定。RimWorld stdout/stderr 写入 `.tools/log/RimWorldProcess.log`，CLI stdout 只保留最终 JSON。测试会检查本轮 activeMods 中每个可解析模组的必要硬依赖；依赖已安装但未启用、或完全找不到时，会在成功/失败 JSON 的 `warnings` 或 `details.dependencyWarnings` 中提示，但不会阻挡执行。`doctor` 通过 `mods.min_active_dependencies` 以非必需 warning 检查 `min_active_mods`。测试通过共享环境锁与配置事务恢复 `mods_config_path` 所在目录中的 RimWorld 配置。无论使用 `min_active_mods` 还是外部 `--active-mods-file`，都必须启用 `min_active_mods` 中的全部模组。`--deploy` 用于测试当前源码改动。事务冲突后，可在 RimWorld 完全退出后运行 `test cleanup`；`--dry-run` 只检查不修改，`--status` 只读报告锁、游戏、事务和部署现场。
 
-支持的 scope 值为：`standard`、`content`、`recipes`、`hediffs`、`turrets`、`rangedweapons`、`meleeweapons`、`threeviews`、`combatpawns`、`skillpocketmaps`。
+正式 scope 值为：`standard`、`ui`、`combat`、`view`、`misc`。Standard 横跨四类常规测试，但不隐式启用 `combatpawns` 与 `skillpocketmaps`；旧细分值继续作为窄范围兼容入口。
 
 `doctor` 还会读取已解析的 `0Harmony.dll` AssemblyVersion。低于工具要求版本时只给出 warning，并提示重新订阅 Harmony。
 

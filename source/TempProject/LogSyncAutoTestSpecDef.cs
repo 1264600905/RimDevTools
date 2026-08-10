@@ -8,6 +8,7 @@ namespace LogSyncMod
     {
         public bool enabled = true;
         public AutoTestScope scope = AutoTestScope.Standard;
+        public List<string> testTypes = new List<string>();
         public List<string> categories = new List<string>();
         public List<string> defNames = new List<string>();
         public bool captureScreenshots = false;
@@ -21,6 +22,7 @@ namespace LogSyncMod
         public override void ResolveReferences()
         {
             base.ResolveReferences();
+            testTypes = NormalizeStrings(testTypes);
             categories = NormalizeStrings(categories);
             defNames = NormalizeStrings(defNames);
             turretProjectileScreenshotTicks = NormalizeTicks(turretProjectileScreenshotTicks);

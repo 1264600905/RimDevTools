@@ -55,12 +55,14 @@ namespace LogSyncMod.AutoTest
             }
 
             AutoTestScope targetScope = ResolveScopeForKind(kind);
+            AutoTestScope legacyScope = ResolveLegacyScopeForKind(kind);
+            string testType = ResolveCaseType(kind).ToString();
             string categoryKey = ResolveCategoryKey(kind);
             string defName = def.defName ?? string.Empty;
 
             return activeSpecDefs
-                .Where(spec => SpecMatchesTarget(spec, targetScope, categoryKey, defName))
-                .OrderByDescending(spec => ScoreSpecMatch(spec, targetScope, categoryKey, defName))
+                .Where(spec => SpecMatchesTarget(spec, targetScope, legacyScope, testType, categoryKey, defName))
+                .OrderByDescending(spec => ScoreSpecMatch(spec, targetScope, legacyScope, testType, categoryKey, defName))
                 .ThenBy(spec => spec.defName)
                 .FirstOrDefault();
         }
@@ -122,6 +124,38 @@ namespace LogSyncMod.AutoTest
         }
 
         private static AutoTestScope ResolveScopeForKind(AutoTestKind kind)
+        {
+            switch (kind)
+            {
+                case AutoTestKind.Recipe:
+                case AutoTestKind.Hediff:
+                case AutoTestKind.Building:
+                case AutoTestKind.Item:
+                case AutoTestKind.Terrain:
+                    return AutoTestScope.UI;
+                case AutoTestKind.TurretPocketMap:
+                case AutoTestKind.RangedWeaponPocketMap:
+                case AutoTestKind.MeleeWeaponPocketMap:
+                case AutoTestKind.ApparelCombat:
+                case AutoTestKind.AnimalCombat:
+                case AutoTestKind.MechanoidCombat:
+                case AutoTestKind.AlienCombat:
+                    return AutoTestScope.Combat;
+                case AutoTestKind.HumanoidThreeView:
+                case AutoTestKind.AnimalThreeView:
+                case AutoTestKind.MechanoidThreeView:
+                case AutoTestKind.AlienThreeView:
+                case AutoTestKind.ApparelThreeView:
+                case AutoTestKind.WeaponThreeView:
+                    return AutoTestScope.View;
+                case AutoTestKind.SkillPocketMap:
+                    return AutoTestScope.Misc;
+                default:
+                    return AutoTestScope.Misc;
+            }
+        }
+
+        private static AutoTestScope ResolveLegacyScopeForKind(AutoTestKind kind)
         {
             switch (kind)
             {
@@ -201,14 +235,20 @@ namespace LogSyncMod.AutoTest
             }
         }
 
-        private static bool SpecMatchesTarget(LogSyncAutoTestSpecDef spec, AutoTestScope scope, string categoryKey, string defName)
+        private static bool SpecMatchesTarget(LogSyncAutoTestSpecDef spec, AutoTestScope scope, AutoTestScope legacyScope, string testType, string categoryKey, string defName)
         {
             if (spec == null)
             {
                 return false;
             }
 
-            if (spec.scope != AutoTestScope.Standard && spec.scope != scope)
+            if (spec.scope != AutoTestScope.Standard && spec.scope != scope && spec.scope != legacyScope)
+            {
+                return false;
+            }
+
+            bool hasTestTypeFilters = spec.testTypes != null && spec.testTypes.Count > 0;
+            if (hasTestTypeFilters && !spec.testTypes.Any(value => string.Equals(value, testType, StringComparison.OrdinalIgnoreCase)))
             {
                 return false;
             }
@@ -225,7 +265,7 @@ namespace LogSyncMod.AutoTest
             return categoryMatched || defNameMatched;
         }
 
-        private static int ScoreSpecMatch(LogSyncAutoTestSpecDef spec, AutoTestScope scope, string categoryKey, string defName)
+        private static int ScoreSpecMatch(LogSyncAutoTestSpecDef spec, AutoTestScope scope, AutoTestScope legacyScope, string testType, string categoryKey, string defName)
         {
             if (spec == null)
             {
@@ -233,9 +273,18 @@ namespace LogSyncMod.AutoTest
             }
 
             int score = 0;
+            if (spec.testTypes != null && spec.testTypes.Any(value => string.Equals(value, testType, StringComparison.OrdinalIgnoreCase)))
+            {
+                score += 2000;
+            }
+
             if (spec.scope == scope)
             {
                 score += 100;
+            }
+            else if (spec.scope == legacyScope)
+            {
+                score += 110;
             }
 
             if (spec.defNames != null && spec.defNames.Any(value => string.Equals(value, defName, StringComparison.OrdinalIgnoreCase)))

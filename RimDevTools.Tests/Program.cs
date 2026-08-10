@@ -617,6 +617,10 @@ internal sealed class TestSuite
         Assert(AutoTestSelectionParser.TryParse(["test", "run", "--mode", "auto", "--scope", "turrets", "--scope", "THREEVIEWS", "--scope", "turrets", "--defname", "Coat", "--defname", "coat"], "auto", out var selection, out _)
             && selection.Scopes.SequenceEqual(["Turrets", "ThreeViews"])
             && selection.DefNames.SequenceEqual(["Coat"]), "selection parser normalizes and preserves first-seen order");
+        Assert(AutoTestSelectionParser.TryParse(["test", "run", "--mode", "auto", "--scope", "ui", "--scope", "COMBAT", "--scope", "view", "--scope", "misc"], "auto", out var formalSelection, out _)
+            && formalSelection.Scopes.SequenceEqual(["UI", "Combat", "View", "Misc"]), "selection parser accepts the four formal scopes");
+        Assert(AutoTestSelectionParser.TryParse(["test", "run", "--mode", "auto", "--scope", "content", "--scope", "combatpawns"], "auto", out var legacySelection, out _)
+            && legacySelection.Scopes.SequenceEqual(["Content", "CombatPawns"]), "selection parser preserves legacy narrow scopes");
         Assert(!AutoTestSelectionParser.TryParse(["test", "run", "--mode", "xml", "--scope", "all"], "xml", out _, out _), "all scope alias is no longer accepted");
         Assert(!AutoTestSelectionParser.TryParse(["test", "run", "--mode", "quick", "--scope", "turrets"], "quick", out _, out _), "scope is rejected outside auto/xml modes");
         Assert(!AutoTestSelectionParser.TryParse(["test", "run", "--mode", "xml", "--defname", "Coat"], "xml", out _, out _), "defname is rejected outside auto mode");

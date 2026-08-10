@@ -272,11 +272,11 @@ public static class CliHelp
 
         Examples:
           RimDevTools.exe test run --mode quick --timeout-seconds 120
-          RimDevTools.exe test run --mode auto --scope turrets --scope threeviews --defname MyMod_ArmorCoat
+          RimDevTools.exe test run --mode auto --scope combat --scope view --defname MyMod_ArmorCoat
 
         Scope values:
-          standard, content, recipes, hediffs, turrets, rangedweapons, meleeweapons,
-          threeviews, combatpawns, skillpocketmaps.
+          standard, ui, combat, view, misc.
+          Legacy detailed values remain accepted with their original narrow behavior.
 
         Batch behavior:
           Standard full-coverage runs and explicit --defname runs ignore the batch limit.

@@ -22,6 +22,10 @@
   <LogSyncMod.AutoTestScope>Test scope: {0}</LogSyncMod.AutoTestScope>
   <LogSyncMod.AutoTestScopeSelect>Select test scope (current: {0})</LogSyncMod.AutoTestScopeSelect>
   <LogSyncMod.AutoTestScopeStandard>Standard</LogSyncMod.AutoTestScopeStandard>
+  <LogSyncMod.AutoTestScopeUI>UI</LogSyncMod.AutoTestScopeUI>
+  <LogSyncMod.AutoTestScopeCombat>Combat</LogSyncMod.AutoTestScopeCombat>
+  <LogSyncMod.AutoTestScopeView>View</LogSyncMod.AutoTestScopeView>
+  <LogSyncMod.AutoTestScopeMisc>Misc</LogSyncMod.AutoTestScopeMisc>
   <LogSyncMod.AutoTestScopeContent>Buildings and items</LogSyncMod.AutoTestScopeContent>
   <LogSyncMod.AutoTestScopeRecipes>Workbench recipes</LogSyncMod.AutoTestScopeRecipes>
   <LogSyncMod.AutoTestScopeHediffs>Pawn hediffs</LogSyncMod.AutoTestScopeHediffs>
@@ -31,7 +35,7 @@
   <LogSyncMod.AutoTestScopeThreeViews>Three-view studio screenshots</LogSyncMod.AutoTestScopeThreeViews>
   <LogSyncMod.AutoTestScopeCombatPawns>Combat pawn pocket maps</LogSyncMod.AutoTestScopeCombatPawns>
   <LogSyncMod.AutoTestScopeSkillPocketMaps>Skill pocket maps</LogSyncMod.AutoTestScopeSkillPocketMaps>
-  <LogSyncMod.AutoTestScopes>Test scopes (multiple allowed; Standard excludes combat pawns and skill pocket maps):</LogSyncMod.AutoTestScopes>
+  <LogSyncMod.AutoTestScopes>Test scopes (multiple allowed; Standard spans all four groups but excludes combat pawns and skill pocket maps):</LogSyncMod.AutoTestScopes>
   <LogSyncMod.AutoTestTargetDefNames>Exact DefName allowlist (comma-separated; blank means all):</LogSyncMod.AutoTestTargetDefNames>
   <LogSyncMod.AutoTestTargetDefNamesXmlHint>XML-driven mode ignores this allowlist; Specs select the targets.</LogSyncMod.AutoTestTargetDefNamesXmlHint>
   <LogSyncMod.AutoTestCaptureScreenshots>Capture screenshots for opened InfoCards</LogSyncMod.AutoTestCaptureScreenshots>
