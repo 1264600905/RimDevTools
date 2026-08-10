@@ -8,6 +8,8 @@ set "TOOL_PROJECT=%ROOT%\RimDevTools\RimDevTools.csproj"
 set "TOOL_DLL=%ROOT%\RimDevTools\bin\Release\net10.0\RimDevTools.dll"
 set "MOD_LIST=%ROOT%\.tools\test\modlist\overnight-five-mods.xml"
 set "LOG_DIR=%ROOT%\.tools\log\overnight-five-mods"
+set "PAUSE_ON_EXIT=1"
+if /I "%~1"=="--no-pause" set "PAUSE_ON_EXIT=0"
 
 rem Final overnight settings. Set VALIDATION_ONLY=1 and BATCH_SIZE=1 for a short validation run.
 set "VALIDATION_ONLY=0"
@@ -20,6 +22,7 @@ for /f %%I in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd_HHmmss
 set "MASTER_LOG=%LOG_DIR%\overnight_%RUN_STAMP%.log"
 set "SUMMARY_LOG=%LOG_DIR%\overnight_%RUN_STAMP%_summary.txt"
 set /a FAILURES=0
+set "FINAL_EXIT=0"
 
 call :Log "Five-mod overnight test started."
 call :Log "ValidationOnly=%VALIDATION_ONLY% Scope=%SCOPE% BatchSize=%BATCH_SIZE% Timeout=%TIMEOUT_SECONDS%"
@@ -29,14 +32,16 @@ call :Log "Building RimDevTools once..."
 dotnet build "%TOOL_PROJECT%" -c Release >> "%MASTER_LOG%" 2>&1
 if errorlevel 1 (
     call :Log "RimDevTools build failed. No game tests were started."
-    exit /b 10
+    set "FINAL_EXIT=10"
+    goto :ExitScript
 )
 
 call :Log "Deploying current LogSyncMod source once..."
 dotnet "%TOOL_DLL%" deploy >> "%MASTER_LOG%" 2>&1
 if errorlevel 1 (
     call :Log "Deployment failed. No game tests were started."
-    exit /b 11
+    set "FINAL_EXIT=11"
+    goto :ExitScript
 )
 
 if "%VALIDATION_ONLY%"=="1" (
@@ -56,8 +61,18 @@ echo Failures=!FAILURES!>> "%SUMMARY_LOG%"
 echo MasterLog=%MASTER_LOG%>> "%SUMMARY_LOG%"
 echo AutoTestOutput=%ROOT%\.tools\log\AutoTestOutput>> "%SUMMARY_LOG%"
 
-if !FAILURES! GTR 0 exit /b 1
-exit /b 0
+if !FAILURES! GTR 0 set "FINAL_EXIT=1"
+goto :ExitScript
+
+:ExitScript
+if "%PAUSE_ON_EXIT%"=="1" (
+    echo.
+    echo Script finished with ExitCode=!FINAL_EXIT!.
+    echo Summary: %SUMMARY_LOG%
+    echo Press any key to close this window.
+    pause >nul
+)
+exit /b !FINAL_EXIT!
 
 :RunTarget
 set "TARGET_PACKAGE=%~1"
