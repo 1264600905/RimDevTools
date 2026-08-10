@@ -295,14 +295,23 @@ namespace LogSyncMod.AutoTest
             SemanticAssert(session.Result, "threeview.position_map_stable", positionsStable, "same map and planned positions", string.Join(",", pawns.Select(pawn => pawn.Position.ToString()).ToArray()));
             string rotations = session.Context == null ? string.Empty : string.Join(",", session.Context.Rotations.Select(rotation => rotation.ToString()).ToArray());
             SemanticAssert(session.Result, "threeview.directions_applied", session.Context != null && session.Context.Rotations.Count == 3 && session.Context.Rotations.Distinct().Count() == 3, "three distinct planned directions", rotations);
+            if (session.Spec?.TargetGeneDef != null)
+            {
+                SemanticAssert(session.Result, "gene.target_present", session.Context?.TargetGenePresent == true, session.Spec.TargetGeneDef.defName, session.Context?.TargetGeneLocation ?? "Missing");
+                SemanticAssert(session.Result, "gene.total_count_is_one", session.Context?.TargetGeneCount == 1, "1", (session.Context?.TargetGeneCount ?? 0).ToString());
+                SemanticAssert(session.Result, "gene.unique_target_matches", session.Context?.TargetGeneOnly == true, session.Spec.TargetGeneDef.defName, "targetOnly=" + (session.Context?.TargetGeneOnly ?? false));
+                SemanticAssert(session.Result, "gene.triptych_gene_sets_match", session.Context?.TriptychGeneSetsMatch == true, "three identical one-gene sets", "matches=" + (session.Context?.TriptychGeneSetsMatch ?? false));
+                SemanticAssert(session.Result, "gene.visual_signature_changed", session.Context?.VisualEffectDetected == true, "visual signature changed", "changed=" + (session.Context?.VisualEffectDetected ?? false));
+            }
             SemanticAssert(session.Result, "threeview.capture_completed", !session.AllowScreenshots || session.Result.ScreenshotPaths.Count > 0, session.AllowScreenshots ? "capture produced" : "capture optional", "captures=" + session.Result.ScreenshotPaths.Count);
             TickManager tickManager = Find.TickManager;
             SemanticAssert(session.Result, "threeview.speed_restored", !session.PauseBypassArmed && (tickManager == null || tickManager.CurTimeSpeed == session.ResumeSpeed), "time speed restored", "bypass=" + session.PauseBypassArmed + " current=" + tickManager?.CurTimeSpeed + " expected=" + session.ResumeSpeed);
         }
 
-        private void RecordThreeViewCleanupSemantic(ThreeViewTestSession session, bool targetsRemoved)
+        private void RecordThreeViewCleanupSemantic(ThreeViewTestSession session, bool targetsRemoved, bool renderSuppressionCleared)
         {
             SemanticAssert(session.Result, "threeview.cleanup_complete", targetsRemoved, "spawned targets removed and studio restored", "targetsRemoved=" + targetsRemoved);
+            SemanticAssert(session.Result, "threeview.render_suppression_cleared", renderSuppressionCleared, "all three-view Pawn registrations removed", "cleared=" + renderSuppressionCleared);
         }
 
         private static bool TurretUsesProjectile(ThingDef turretDef) { return WeaponUsesProjectile(turretDef?.building?.turretGunDef); }

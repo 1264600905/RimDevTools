@@ -1013,6 +1013,8 @@ namespace LogSyncMod.AutoTest
                     return AutoTestCaseType.HairThreeView;
                 case AutoTestKind.HeadTypeThreeView:
                     return AutoTestCaseType.HeadTypeThreeView;
+                case AutoTestKind.BodyTypeThreeView:
+                    return AutoTestCaseType.BodyTypeThreeView;
                 case AutoTestKind.GeneThreeView:
                     return AutoTestCaseType.GeneThreeView;
                 case AutoTestKind.XenotypeThreeView:
@@ -1089,6 +1091,8 @@ namespace LogSyncMod.AutoTest
                     return "HairThreeView";
                 case AutoTestCaseType.HeadTypeThreeView:
                     return "HeadTypeThreeView";
+                case AutoTestCaseType.BodyTypeThreeView:
+                    return "BodyTypeThreeView";
                 case AutoTestCaseType.GeneThreeView:
                     return "GeneThreeView";
                 case AutoTestCaseType.XenotypeThreeView:
@@ -1143,6 +1147,7 @@ namespace LogSyncMod.AutoTest
                 case AutoTestCaseType.PawnLifeStageThreeView:
                 case AutoTestCaseType.HairThreeView:
                 case AutoTestCaseType.HeadTypeThreeView:
+                case AutoTestCaseType.BodyTypeThreeView:
                 case AutoTestCaseType.GeneThreeView:
                 case AutoTestCaseType.XenotypeThreeView:
                     return AutoTestScope.View;

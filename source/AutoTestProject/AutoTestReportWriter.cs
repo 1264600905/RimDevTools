@@ -31,6 +31,8 @@ namespace LogSyncMod.AutoTest
             string safePackageId = Sanitize(packageId);
             string stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
             string basePath = Path.Combine(outputDirectory, safePackageId + "_" + Sanitize(runId));
+            string runBaseName = Path.GetFileName(basePath);
+            string screenshotDirectory = basePath + "_Screenshots";
 
             return new AutoTestRunArtifacts
             {
@@ -38,11 +40,11 @@ namespace LogSyncMod.AutoTest
                 SafePackageId = safePackageId,
                 Stamp = stamp,
                 BasePath = basePath,
-                ReportPath = basePath + "_Report.md",
+                ReportPath = Path.Combine(screenshotDirectory, runBaseName + "_Report.md"),
                 ResultPath = basePath + "_Result.json",
-                ManifestPath = basePath + "_Manifest.json",
-                EvidencePath = basePath + "_Evidence.json",
-                ScreenshotDirectory = basePath + "_Screenshots"
+                ManifestPath = Path.Combine(screenshotDirectory, runBaseName + "_Manifest.json"),
+                EvidencePath = Path.Combine(screenshotDirectory, runBaseName + "_Evidence.json"),
+                ScreenshotDirectory = screenshotDirectory
             };
         }
 
@@ -65,6 +67,7 @@ namespace LogSyncMod.AutoTest
                 }
 
                 Directory.CreateDirectory(artifacts.OutputDirectory);
+                Directory.CreateDirectory(artifacts.ScreenshotDirectory);
                 if (evidence != null) AutoTestEvidenceSerializer.Write(artifacts.EvidencePath, evidence);
                 File.WriteAllText(artifacts.ReportPath, BuildMarkdown(artifacts, packageId, modName, results, runSummary, evidence), Encoding.UTF8);
                 File.WriteAllText(artifacts.ResultPath, BuildJson(artifacts, packageId, runId, modName, results, runSummary, evidence), Encoding.UTF8);

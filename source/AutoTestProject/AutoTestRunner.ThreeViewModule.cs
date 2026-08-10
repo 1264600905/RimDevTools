@@ -93,6 +93,8 @@ namespace LogSyncMod.AutoTest
                     : Spec.OverlayLine4;
                 Result.Notes = AppendNote(Result.Notes, "ThreeViewTriptych=True");
                 Result.Notes = AppendNote(Result.Notes, "SpawnedPawns=" + Context.Pawns.Count);
+                Result.Notes = AppendNote(Result.Notes, "SuppressedMissingEyeOverlay=True");
+                Result.Notes = AppendNote(Result.Notes, "RegisteredThreeViewPawnCount=" + AutoTestThreeViewRenderSuppression.RegisteredCount);
                 if (!string.IsNullOrWhiteSpace(Spec.PawnRaceDefName))
                 {
                     Result.Notes = AppendNote(Result.Notes, "ThreeViewPawnRace=" + Spec.PawnRaceDefName);
@@ -125,7 +127,7 @@ namespace LogSyncMod.AutoTest
                         return;
                     }
                 }
-                if (Spec.TargetHairDef != null || Spec.TargetHeadTypeDef != null || Spec.TargetGeneDef != null || Spec.TargetXenotypeDef != null)
+                if (Spec.TargetHairDef != null || Spec.TargetHeadTypeDef != null || Spec.TargetBodyTypeDef != null || Spec.TargetGeneDef != null || Spec.TargetXenotypeDef != null)
                 {
                     Result.Notes = AppendNote(Result.Notes, "PresenterPawnKind=" + (Spec.PawnKindDef?.defName ?? "null"));
                     Result.Notes = AppendNote(Result.Notes, "PresenterRace=" + (Spec.RaceDef?.defName ?? "null"));
@@ -136,9 +138,14 @@ namespace LogSyncMod.AutoTest
                     {
                         Result.Notes = AppendNote(Result.Notes, "TargetGenePresent=" + Context.TargetGenePresent);
                         Result.Notes = AppendNote(Result.Notes, "TargetGeneLocation=" + (Context.TargetGeneLocation ?? "Missing"));
-                        if (!Context.TargetGenePresent)
+                        Result.Notes = AppendNote(Result.Notes, "TargetGeneCount=" + Context.TargetGeneCount);
+                        Result.Notes = AppendNote(Result.Notes, "TargetEndogeneCount=" + Context.TargetEndogeneCount);
+                        Result.Notes = AppendNote(Result.Notes, "TargetXenogeneCount=" + Context.TargetXenogeneCount);
+                        Result.Notes = AppendNote(Result.Notes, "TargetGeneOnly=" + Context.TargetGeneOnly);
+                        Result.Notes = AppendNote(Result.Notes, "TriptychGeneSetsMatch=" + Context.TriptychGeneSetsMatch);
+                        if (!Context.TargetGenePresent || !Context.TargetGeneOnly || !Context.TriptychGeneSetsMatch)
                         {
-                            Fail("gene_apply_failed", "Target Gene was not present on the generated presenter.");
+                            Fail("gene_apply_failed", "Triptych presenters did not retain exactly one copy of the target Gene.");
                             return;
                         }
                     }
@@ -254,11 +261,13 @@ namespace LogSyncMod.AutoTest
                 List<Pawn> trackedPawns = Context?.Pawns?.Where(pawn => pawn != null).ToList() ?? new List<Pawn>();
                 owner.threeViewService.Cleanup(Context);
                 bool targetsRemoved = trackedPawns.All(pawn => pawn.Destroyed || !pawn.Spawned);
+                bool renderSuppressionCleared = trackedPawns.All(pawn => !AutoTestThreeViewRenderSuppression.IsRegistered(pawn));
+                Result.Notes = AppendNote(Result.Notes, "ThreeViewRenderSuppressionCleared=" + renderSuppressionCleared);
                 Context = null;
                 bool studioRestored = owner.RestoreStaticViewContext(StudioSnapshot, Result);
                 Result.Notes = AppendNote(Result.Notes, "ThreeViewStudioRestored=" + studioRestored);
                 owner.RefreshThreeViewCooldown("cleanup");
-                owner.RecordThreeViewCleanupSemantic(this, targetsRemoved);
+                owner.RecordThreeViewCleanupSemantic(this, targetsRemoved, renderSuppressionCleared);
                 if (!studioRestored && Result.Status == "passed")
                 {
                     Result.Status = "failed";

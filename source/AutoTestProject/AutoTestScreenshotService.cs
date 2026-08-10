@@ -275,6 +275,7 @@ namespace LogSyncMod.AutoTest
                 case "PawnLifeStageThreeView":
                 case "HairThreeView":
                 case "HeadTypeThreeView":
+                case "BodyTypeThreeView":
                 case "GeneThreeView":
                 case "XenotypeThreeView":
                     return "View";

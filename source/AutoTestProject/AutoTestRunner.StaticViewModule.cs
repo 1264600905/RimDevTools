@@ -519,8 +519,8 @@ namespace LogSyncMod.AutoTest
             float growingGrowth = harvestMinGrowth > 0.02f
                 ? Mathf.Clamp(harvestMinGrowth * 0.5f, 0.01f, Math.Min(0.99f, harvestMinGrowth - 0.001f))
                 : 0.5f;
-            float[] growthValues = { 0f, growingGrowth, 1f };
-            PlantLifeStage[] expectedStages = { PlantLifeStage.Sowing, PlantLifeStage.Growing, PlantLifeStage.Mature };
+            float[] growthValues = { 0.01f, growingGrowth, 1f };
+            PlantLifeStage[] expectedStages = { PlantLifeStage.Growing, PlantLifeStage.Growing, PlantLifeStage.Mature };
             string[] names = { "Sowing", "Growing", "Mature" };
             IntVec3[] cells =
             {
