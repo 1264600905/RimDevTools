@@ -17,6 +17,7 @@ internal sealed class CoreTestSuite
         TestEvidence();
         TestBoundedBuffer();
         TestEvidenceRoundTrip();
+        TestGeneDependencyResolver();
         TestTargetIds();
         TestSelectionFingerprint();
         TestReadiness();
@@ -221,15 +222,54 @@ internal sealed class CoreTestSuite
     {
         var clock = new FakeClock();
         var manifest = NewManifest(clock);
-        new AutoTestEvidenceBuilder(manifest, clock).Pass("roundtrip", "ok");
+        const string escapedText = "中文, \"quoted\" \\ path\nnext line";
+        var builder = new AutoTestEvidenceBuilder(manifest, clock);
+        builder.Pass("roundtrip", escapedText, escapedText);
+        manifest.Logs.Add(new AutoTestLogEvidence
+        {
+            Sequence = 1,
+            TimestampUtc = clock.UtcNow,
+            Level = "info",
+            Message = escapedText,
+            RepeatCount = 1,
+            RunId = manifest.RunId
+        });
         var path = Path.Combine(Path.GetTempPath(), "autotest-evidence-" + Guid.NewGuid().ToString("N") + ".json");
         try
         {
             AutoTestEvidenceSerializer.Write(path, manifest);
+            string json = File.ReadAllText(path);
             var restored = AutoTestEvidenceSerializer.Read(path);
-            Assert(restored.SchemaVersion == 1 && restored.RunId == "run" && restored.Assertions.Count == 1, "evidence JSON round trip");
+            Assert(json.Contains(Environment.NewLine) && json.Contains(Environment.NewLine + "  \"runId\"") &&
+                json.Contains(Environment.NewLine + "  \"assertions\"") && json.Contains(Environment.NewLine + "    {"),
+                "evidence JSON is indented");
+            Assert(restored.SchemaVersion == 1 && restored.RunId == "run" && restored.Assertions.Count == 1 && restored.Logs.Count == 1 &&
+                restored.Assertions[0].Actual == escapedText && restored.Assertions[0].Details == escapedText && restored.Logs[0].Message == escapedText &&
+                restored.StartedAtUtc == manifest.StartedAtUtc,
+                "evidence JSON formatting preserves escaped strings and round trips");
         }
         finally { if (File.Exists(path)) File.Delete(path); }
+    }
+
+    private void TestGeneDependencyResolver()
+    {
+        var a = new GeneDependencyFixture("A");
+        var b = new GeneDependencyFixture("B") { Prerequisite = a };
+        var c = new GeneDependencyFixture("C") { Prerequisite = b };
+        bool resolved = AutoTestGeneDependencyResolver.TryResolve(c, item => item.Prerequisite, item => item.Name, item => true,
+            out List<GeneDependencyFixture> dependencies, out string errorCode, out _);
+        Assert(resolved && errorCode == null && dependencies.Select(item => item.Name).SequenceEqual(new[] { "A", "B" }),
+            "gene dependency resolver returns prerequisite-first order");
+
+        a.Prerequisite = b;
+        resolved = AutoTestGeneDependencyResolver.TryResolve(c, item => item.Prerequisite, item => item.Name, item => true,
+            out dependencies, out errorCode, out _);
+        Assert(!resolved && errorCode == "gene_dependency_cycle", "gene dependency resolver rejects cycles");
+
+        a.Prerequisite = null;
+        resolved = AutoTestGeneDependencyResolver.TryResolve(c, item => item.Prerequisite, item => item.Name, item => item.Name != "A",
+            out dependencies, out errorCode, out _);
+        Assert(!resolved && errorCode == "gene_dependency_missing", "gene dependency resolver rejects missing prerequisites");
     }
 
     private void TestTargetIds()
@@ -396,5 +436,12 @@ internal sealed class CoreTestSuite
         public GraphFixture Self { get; set; }
         public List<int> Values { get; set; }
         public string Throwing { get { throw new InvalidOperationException("getter failed"); } }
+    }
+
+    private sealed class GeneDependencyFixture
+    {
+        public GeneDependencyFixture(string name) { Name = name; }
+        public string Name { get; }
+        public GeneDependencyFixture Prerequisite { get; set; }
     }
 }

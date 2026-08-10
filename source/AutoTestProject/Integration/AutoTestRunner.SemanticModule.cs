@@ -298,9 +298,18 @@ namespace LogSyncMod.AutoTest
             if (session.Spec?.TargetGeneDef != null)
             {
                 SemanticAssert(session.Result, "gene.target_present", session.Context?.TargetGenePresent == true, session.Spec.TargetGeneDef.defName, session.Context?.TargetGeneLocation ?? "Missing");
-                SemanticAssert(session.Result, "gene.total_count_is_one", session.Context?.TargetGeneCount == 1, "1", (session.Context?.TargetGeneCount ?? 0).ToString());
-                SemanticAssert(session.Result, "gene.unique_target_matches", session.Context?.TargetGeneOnly == true, session.Spec.TargetGeneDef.defName, "targetOnly=" + (session.Context?.TargetGeneOnly ?? false));
-                SemanticAssert(session.Result, "gene.triptych_gene_sets_match", session.Context?.TriptychGeneSetsMatch == true, "three identical one-gene sets", "matches=" + (session.Context?.TriptychGeneSetsMatch ?? false));
+                SemanticAssert(session.Result, "gene.target_count_is_one", session.Context?.TargetGeneCount == 1, "1", (session.Context?.TargetGeneCount ?? 0).ToString());
+                SemanticAssert(session.Result, "gene.dependencies_present", session.Context?.DependencyGenesPresent == true,
+                    session.Spec.TargetGeneDependencies.Count == 0 ? "no prerequisites" : string.Join(",", session.Spec.TargetGeneDependencies.Select(gene => gene.defName).ToArray()),
+                    "present=" + (session.Context?.DependencyGenesPresent ?? false));
+                SemanticAssert(session.Result, "gene.dependencies_active", session.Context?.GeneDependenciesActive == true, "all prerequisites active", "active=" + (session.Context?.GeneDependenciesActive ?? false));
+                SemanticAssert(session.Result, "gene.target_active", session.Context?.TargetGeneActive == true, "target active", "active=" + (session.Context?.TargetGeneActive ?? false));
+                SemanticAssert(session.Result, "gene.total_count_matches_expected", session.Context != null && session.Context.ActualTotalGeneCount == session.Context.ExpectedTotalGeneCount,
+                    (session.Context?.ExpectedTotalGeneCount ?? 0).ToString(), (session.Context?.ActualTotalGeneCount ?? 0).ToString());
+                SemanticAssert(session.Result, "gene.only_target_and_dependencies", session.Context?.OnlyTargetAndDependencies == true,
+                    string.Join(",", session.Spec.ExpectedGeneSet.Select(gene => gene.defName).ToArray()),
+                    "matches=" + (session.Context?.OnlyTargetAndDependencies ?? false));
+                SemanticAssert(session.Result, "gene.triptych_gene_sets_match", session.Context?.TriptychGeneSetsMatch == true, "three identical target-plus-prerequisite sets", "matches=" + (session.Context?.TriptychGeneSetsMatch ?? false));
                 SemanticAssert(session.Result, "gene.visual_signature_changed", session.Context?.VisualEffectDetected == true, "visual signature changed", "changed=" + (session.Context?.VisualEffectDetected ?? false));
             }
             SemanticAssert(session.Result, "threeview.capture_completed", !session.AllowScreenshots || session.Result.ScreenshotPaths.Count > 0, session.AllowScreenshots ? "capture produced" : "capture optional", "captures=" + session.Result.ScreenshotPaths.Count);

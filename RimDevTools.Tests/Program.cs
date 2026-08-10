@@ -1077,6 +1077,8 @@ internal sealed class TestSuite
 
         var evidenceSnapshot = AutoResultValidator.Snapshot(output);
         WriteEvidence(output, "demo.current", "run-evidence", "valid_Evidence.json");
+        Assert(File.ReadAllText(Path.Combine(output, "valid_Evidence.json")).Contains(Environment.NewLine + "  \"packageId\""),
+            "auto result validator fixture uses multiline evidence JSON");
         WriteResultWithEvidence(output, "demo.current", "run-evidence", "valid_Evidence.json", "valid_Result.json");
         var evidencePassed = AutoResultValidator.Validate(output, "demo.current", "run-evidence", evidenceSnapshot);
         Assert(evidencePassed.Ok, "auto result validator accepts matching evidence");
@@ -1450,7 +1452,7 @@ internal sealed class TestSuite
     private static void WriteEvidence(string output, string packageId, string runId, string name, bool success = true)
     {
         var value = new { schemaVersion = 1, packageId, runId, success, operations = Array.Empty<object>(), assertions = Array.Empty<object>() };
-        File.WriteAllText(Path.Combine(output, name), JsonSerializer.Serialize(value));
+        File.WriteAllText(Path.Combine(output, name), JsonSerializer.Serialize(value, new JsonSerializerOptions { WriteIndented = true }));
     }
 
     private IDisposable UseEnvironment(ProjectEnvironment environment)

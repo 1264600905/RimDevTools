@@ -2,6 +2,8 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Runtime.Serialization.Json;
+using System.Text;
+using System.Xml;
 
 namespace LogSyncMod.AutoTest
 {
@@ -97,7 +99,16 @@ namespace LogSyncMod.AutoTest
         public static void Write(string path, AutoTestEvidenceManifest manifest)
         {
             using (FileStream stream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.Read))
-                new DataContractJsonSerializer(typeof(AutoTestEvidenceManifest)).WriteObject(stream, manifest);
+            using (XmlDictionaryWriter writer = JsonReaderWriterFactory.CreateJsonWriter(
+                stream,
+                Encoding.UTF8,
+                false,
+                true,
+                "  "))
+            {
+                new DataContractJsonSerializer(typeof(AutoTestEvidenceManifest)).WriteObject(writer, manifest);
+                writer.Flush();
+            }
         }
 
         public static AutoTestEvidenceManifest Read(string path)

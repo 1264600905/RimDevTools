@@ -139,13 +139,19 @@ namespace LogSyncMod.AutoTest
                         Result.Notes = AppendNote(Result.Notes, "TargetGenePresent=" + Context.TargetGenePresent);
                         Result.Notes = AppendNote(Result.Notes, "TargetGeneLocation=" + (Context.TargetGeneLocation ?? "Missing"));
                         Result.Notes = AppendNote(Result.Notes, "TargetGeneCount=" + Context.TargetGeneCount);
+                        Result.Notes = AppendNote(Result.Notes, "ActualTotalGeneCount=" + Context.ActualTotalGeneCount);
                         Result.Notes = AppendNote(Result.Notes, "TargetEndogeneCount=" + Context.TargetEndogeneCount);
                         Result.Notes = AppendNote(Result.Notes, "TargetXenogeneCount=" + Context.TargetXenogeneCount);
-                        Result.Notes = AppendNote(Result.Notes, "TargetGeneOnly=" + Context.TargetGeneOnly);
+                        Result.Notes = AppendNote(Result.Notes, "DependencyGenesPresent=" + Context.DependencyGenesPresent);
+                        Result.Notes = AppendNote(Result.Notes, "OnlyTargetAndDependencies=" + Context.OnlyTargetAndDependencies);
+                        Result.Notes = AppendNote(Result.Notes, "GeneDependenciesActive=" + Context.GeneDependenciesActive);
+                        Result.Notes = AppendNote(Result.Notes, "TargetGeneActive=" + Context.TargetGeneActive);
                         Result.Notes = AppendNote(Result.Notes, "TriptychGeneSetsMatch=" + Context.TriptychGeneSetsMatch);
-                        if (!Context.TargetGenePresent || !Context.TargetGeneOnly || !Context.TriptychGeneSetsMatch)
+                        if (!Context.TargetGenePresent || !Context.DependencyGenesPresent || !Context.OnlyTargetAndDependencies ||
+                            !Context.GeneDependenciesActive || !Context.TargetGeneActive || !Context.TriptychGeneSetsMatch ||
+                            Context.TargetGeneCount != 1 || Context.ActualTotalGeneCount != Context.ExpectedTotalGeneCount)
                         {
-                            Fail("gene_apply_failed", "Triptych presenters did not retain exactly one copy of the target Gene.");
+                            Fail("gene_expected_set_mismatch", "Triptych presenters did not retain exactly the target Gene and its prerequisite closure.");
                             return;
                         }
                     }
@@ -515,6 +521,16 @@ namespace LogSyncMod.AutoTest
             if (!string.IsNullOrWhiteSpace(spec.CompatibilitySource))
             {
                 result.Notes = AppendNote(result.Notes, "CompatibilitySource=" + spec.CompatibilitySource);
+            }
+            if (spec.TargetGeneDef != null)
+            {
+                result.Notes = AppendNote(result.Notes, "TargetGeneDef=" + spec.TargetGeneDef.defName);
+                result.Notes = AppendNote(result.Notes, "GeneDependencyChain=" + (spec.GeneDependencyChain ?? "None"));
+                result.Notes = AppendNote(result.Notes, "DependencyGeneCount=" + spec.TargetGeneDependencies.Count);
+                result.Notes = AppendNote(result.Notes, "DependencyGenes=" + (spec.TargetGeneDependencies.Count == 0
+                    ? "None"
+                    : string.Join(",", spec.TargetGeneDependencies.Select(gene => gene.defName).ToArray())));
+                result.Notes = AppendNote(result.Notes, "ExpectedTotalGeneCount=" + spec.ExpectedGeneSet.Count);
             }
 
             if (!string.IsNullOrWhiteSpace(spec.SkipReason))

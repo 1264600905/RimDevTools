@@ -25,6 +25,10 @@ namespace LogSyncMod.AutoTest
         public HeadTypeDef TargetHeadTypeDef;
         public BodyTypeDef TargetBodyTypeDef;
         public GeneDef TargetGeneDef;
+        public readonly List<GeneDef> TargetGeneDependencies = new List<GeneDef>();
+        public readonly List<GeneDef> ExpectedGeneSet = new List<GeneDef>();
+        public string GeneDependencyChain = "None";
+        public bool GeneDependenciesResolved;
         public XenotypeDef TargetXenotypeDef;
         public List<PawnKindDef> PresenterCandidates;
         public string CompatibilitySource;
@@ -74,10 +78,16 @@ namespace LogSyncMod.AutoTest
         public bool TargetGenePresent;
         public string TargetGeneLocation;
         public int TargetGeneCount;
+        public int DependencyGeneCount;
+        public int ExpectedTotalGeneCount;
+        public int ActualTotalGeneCount;
         public int TargetEndogeneCount;
         public int TargetXenogeneCount;
-        public bool TargetGeneOnly;
+        public bool DependencyGenesPresent;
+        public bool OnlyTargetAndDependencies;
         public bool TriptychGeneSetsMatch;
+        public bool GeneDependenciesActive;
+        public bool TargetGeneActive;
         public bool TargetXenotypeMatches;
         public bool TargetXenotypeGeneSetMatches;
     }
@@ -202,6 +212,12 @@ namespace LogSyncMod.AutoTest
                 return true;
             }
 
+            if (spec.TargetGeneDef != null && !EnsureGeneDependencySpec(spec, out string dependencyErrorCode, out string dependencyErrorMessage))
+            {
+                skipReason = FormatGeneError(dependencyErrorCode, dependencyErrorMessage);
+                return false;
+            }
+
             if (spec.TargetHairDef?.noGraphic == true)
             {
                 skipReason = "no_graphic";
@@ -239,11 +255,33 @@ namespace LogSyncMod.AutoTest
                         pawn.equipment?.DestroyAllEquipment();
                         if (spec.TargetGeneDef != null)
                         {
-                            ClearAllGenes(pawn);
+                            if (!PrepareGeneDependencyBaseline(pawn, spec, out string baselineErrorCode, out string baselineErrorMessage))
+                            {
+                                lastReason = FormatGeneError(baselineErrorCode, baselineErrorMessage);
+                                continue;
+                            }
                         }
-                        RefreshPawnGraphics(pawn);
+                        else
+                        {
+                            RefreshPawnGraphics(pawn);
+                        }
+
                         string before = BuildPawnVisualSignature(pawn);
-                        if (!ApplyAppearanceTarget(pawn, spec, out string compatibilitySource, out string applyError))
+                        string compatibilitySource;
+                        string applyError;
+                        bool applied;
+                        if (spec.TargetGeneDef != null)
+                        {
+                            compatibilitySource = "DynamicVisualSignature";
+                            applied = ApplyTargetGeneToDependencyBaseline(pawn, spec, out string targetErrorCode, out string targetErrorMessage);
+                            applyError = FormatGeneError(targetErrorCode, targetErrorMessage);
+                        }
+                        else
+                        {
+                            applied = ApplyAppearanceTarget(pawn, spec, out compatibilitySource, out applyError);
+                        }
+
+                        if (!applied)
                         {
                             lastReason = string.IsNullOrWhiteSpace(applyError) ? "appearance_apply_failed" : applyError;
                             continue;
@@ -449,8 +487,18 @@ namespace LogSyncMod.AutoTest
                         return false;
                     }
 
-                    ClearAllGenes(pawn);
-                    pawn.genes.AddGene(spec.TargetGeneDef, xenogene: true);
+                    if (!EnsureGeneDependencySpec(spec, out string dependencyErrorCode, out string dependencyErrorMessage))
+                    {
+                        errorMessage = FormatGeneError(dependencyErrorCode, dependencyErrorMessage);
+                        return false;
+                    }
+
+                    if (!PrepareGeneDependencyBaseline(pawn, spec, out dependencyErrorCode, out dependencyErrorMessage) ||
+                        !ApplyTargetGeneToDependencyBaseline(pawn, spec, out dependencyErrorCode, out dependencyErrorMessage))
+                    {
+                        errorMessage = FormatGeneError(dependencyErrorCode, dependencyErrorMessage);
+                        return false;
+                    }
                     compatibilitySource = "DynamicVisualSignature";
                 }
                 else if (spec.TargetXenotypeDef != null)
@@ -513,10 +561,9 @@ namespace LogSyncMod.AutoTest
                     return false;
                 }
 
-                if (spec.TargetGeneDef != null &&
-                    (pawn.genes?.GenesListForReading.Count != 1 || pawn.genes.GenesListForReading[0]?.def != spec.TargetGeneDef))
+                if (spec.TargetGeneDef != null && !TryValidateExpectedGeneSet(pawn, spec.ExpectedGeneSet, out string geneErrorCode, out string geneErrorMessage))
                 {
-                    errorMessage = "single_gene_invariant_failed";
+                    errorMessage = FormatGeneError(geneErrorCode, geneErrorMessage);
                     return false;
                 }
 
@@ -625,25 +672,29 @@ namespace LogSyncMod.AutoTest
                 createdContext.LifeStageLockFallbackUsed = spec.LifeStageLockFallbackUsed;
             }
             createdContext.VisualEffectDetected = spec.VisualEffectDetected;
-            createdContext.TargetGenePresent = spec.TargetGeneDef == null || sourcePawn?.genes?.GetGene(spec.TargetGeneDef) != null;
+            createdContext.TargetGenePresent = spec.TargetGeneDef == null || createdContext.Pawns.All(candidate => CountGene(candidate, spec.TargetGeneDef) == 1);
             if (spec.TargetGeneDef != null && sourcePawn?.genes != null)
             {
-                createdContext.TargetGeneCount = sourcePawn.genes.GenesListForReading.Count;
-                createdContext.TargetEndogeneCount = sourcePawn.genes.Endogenes.Count;
-                createdContext.TargetXenogeneCount = sourcePawn.genes.Xenogenes.Count;
+                createdContext.TargetGeneCount = CountGene(sourcePawn, spec.TargetGeneDef);
+                createdContext.DependencyGeneCount = spec.TargetGeneDependencies.Count;
+                createdContext.ExpectedTotalGeneCount = spec.ExpectedGeneSet.Count;
+                createdContext.ActualTotalGeneCount = sourcePawn.genes.GenesListForReading.Count;
+                createdContext.TargetEndogeneCount = sourcePawn.genes.Endogenes.Count(gene => gene?.def == spec.TargetGeneDef);
+                createdContext.TargetXenogeneCount = sourcePawn.genes.Xenogenes.Count(gene => gene?.def == spec.TargetGeneDef);
                 bool endogene = sourcePawn.genes.Endogenes.Any(gene => gene?.def == spec.TargetGeneDef);
                 bool xenogene = sourcePawn.genes.Xenogenes.Any(gene => gene?.def == spec.TargetGeneDef);
                 createdContext.TargetGeneLocation = endogene && xenogene
                     ? "Endogene+Xenogene"
                     : (endogene ? "Endogene" : (xenogene ? "Xenogene" : "Missing"));
-                createdContext.TargetGeneOnly = createdContext.Pawns.All(candidate =>
-                    candidate?.genes != null &&
-                    candidate.genes.GenesListForReading.Count == 1 &&
-                    candidate.genes.GenesListForReading[0]?.def == spec.TargetGeneDef);
+                createdContext.DependencyGenesPresent = createdContext.Pawns.All(candidate =>
+                    spec.TargetGeneDependencies.All(dependency => CountGene(candidate, dependency) == 1));
+                createdContext.OnlyTargetAndDependencies = createdContext.Pawns.All(candidate =>
+                    TryValidateExpectedGeneSet(candidate, spec.ExpectedGeneSet, out string ignoredCode, out string ignoredMessage));
+                createdContext.GeneDependenciesActive = createdContext.Pawns.All(candidate =>
+                    spec.TargetGeneDependencies.All(dependency => IsGeneActive(candidate, dependency)));
+                createdContext.TargetGeneActive = createdContext.Pawns.All(candidate => IsGeneActive(candidate, spec.TargetGeneDef));
                 createdContext.TriptychGeneSetsMatch = createdContext.Pawns
-                    .Select(candidate => candidate?.genes == null
-                        ? string.Empty
-                        : string.Join(",", candidate.genes.GenesListForReading.Select(gene => gene?.def?.defName ?? "null").OrderBy(name => name).ToArray()))
+                    .Select(BuildGeneSetSignature)
                     .Distinct(StringComparer.Ordinal)
                     .Count() == 1;
             }
@@ -2568,6 +2619,225 @@ namespace LogSyncMod.AutoTest
                     pawn.genes.AddGene(geneDef, xenogene: false);
                 }
             }
+        }
+
+        private static bool EnsureGeneDependencySpec(
+            AutoTestThreeViewTargetSpec spec,
+            out string errorCode,
+            out string errorMessage)
+        {
+            errorCode = null;
+            errorMessage = null;
+            if (spec?.TargetGeneDef == null)
+            {
+                errorCode = "gene_dependency_missing";
+                errorMessage = "Target GeneDef was missing.";
+                return false;
+            }
+
+            if (spec.GeneDependenciesResolved)
+            {
+                return true;
+            }
+
+            if (!AutoTestGeneDependencyResolver.TryResolve(
+                spec.TargetGeneDef,
+                gene => gene.prerequisite,
+                gene => gene.defName,
+                gene => !string.IsNullOrWhiteSpace(gene?.defName) && DefDatabase<GeneDef>.GetNamedSilentFail(gene.defName) != null,
+                out List<GeneDef> dependencies,
+                out errorCode,
+                out errorMessage))
+            {
+                return false;
+            }
+
+            spec.TargetGeneDependencies.Clear();
+            spec.TargetGeneDependencies.AddRange(dependencies);
+            spec.ExpectedGeneSet.Clear();
+            spec.ExpectedGeneSet.AddRange(dependencies);
+            spec.ExpectedGeneSet.Add(spec.TargetGeneDef);
+            spec.GeneDependencyChain = dependencies.Count == 0
+                ? "None"
+                : string.Join(" -> ", dependencies.Select(gene => gene.defName).ToArray());
+            spec.GeneDependenciesResolved = true;
+            return true;
+        }
+
+        private static bool PrepareGeneDependencyBaseline(
+            Pawn pawn,
+            AutoTestThreeViewTargetSpec spec,
+            out string errorCode,
+            out string errorMessage)
+        {
+            errorCode = null;
+            errorMessage = null;
+            if (pawn?.genes == null)
+            {
+                errorCode = "gene_dependency_missing";
+                errorMessage = "Biotech GeneTracker was missing.";
+                return false;
+            }
+
+            if (!EnsureGeneDependencySpec(spec, out errorCode, out errorMessage))
+            {
+                return false;
+            }
+
+            try
+            {
+                ClearAllGenes(pawn);
+                foreach (GeneDef dependency in spec.TargetGeneDependencies)
+                {
+                    pawn.genes.AddGene(dependency, xenogene: true);
+                    if (CountGene(pawn, dependency) != 1)
+                    {
+                        errorCode = "gene_dependency_add_failed";
+                        errorMessage = "Gene prerequisite was not added exactly once: " + dependency.defName;
+                        return false;
+                    }
+                }
+
+                RefreshPawnGraphics(pawn);
+                RefreshOptionalAlienGraphics(pawn);
+                if (!TryValidateExpectedGeneSet(pawn, spec.TargetGeneDependencies, out errorCode, out errorMessage))
+                {
+                    return false;
+                }
+
+                GeneDef inactiveDependency = spec.TargetGeneDependencies.FirstOrDefault(dependency => !IsGeneActive(pawn, dependency));
+                if (inactiveDependency != null)
+                {
+                    errorCode = "gene_dependency_inactive";
+                    errorMessage = "Gene prerequisite was not active: " + inactiveDependency.defName;
+                    return false;
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                errorCode = "gene_dependency_add_failed";
+                errorMessage = ex.Message;
+                return false;
+            }
+        }
+
+        private static bool ApplyTargetGeneToDependencyBaseline(
+            Pawn pawn,
+            AutoTestThreeViewTargetSpec spec,
+            out string errorCode,
+            out string errorMessage)
+        {
+            errorCode = null;
+            errorMessage = null;
+            if (pawn?.genes == null || spec?.TargetGeneDef == null)
+            {
+                errorCode = "gene_dependency_missing";
+                errorMessage = "Target Gene or GeneTracker was missing.";
+                return false;
+            }
+
+            if (!EnsureGeneDependencySpec(spec, out errorCode, out errorMessage) ||
+                !TryValidateExpectedGeneSet(pawn, spec.TargetGeneDependencies, out errorCode, out errorMessage))
+            {
+                return false;
+            }
+
+            try
+            {
+                pawn.genes.AddGene(spec.TargetGeneDef, xenogene: true);
+                if (CountGene(pawn, spec.TargetGeneDef) != 1)
+                {
+                    errorCode = "gene_dependency_add_failed";
+                    errorMessage = "Target Gene was not added exactly once: " + spec.TargetGeneDef.defName;
+                    return false;
+                }
+
+                RefreshPawnGraphics(pawn);
+                RefreshOptionalAlienGraphics(pawn);
+                if (!IsGeneActive(pawn, spec.TargetGeneDef))
+                {
+                    errorCode = "gene_target_inactive";
+                    errorMessage = "Target Gene was not active: " + spec.TargetGeneDef.defName;
+                    return false;
+                }
+
+                GeneDef inactiveDependency = spec.TargetGeneDependencies.FirstOrDefault(dependency => !IsGeneActive(pawn, dependency));
+                if (inactiveDependency != null)
+                {
+                    errorCode = "gene_dependency_inactive";
+                    errorMessage = "Gene prerequisite became inactive: " + inactiveDependency.defName;
+                    return false;
+                }
+
+                return TryValidateExpectedGeneSet(pawn, spec.ExpectedGeneSet, out errorCode, out errorMessage);
+            }
+            catch (Exception ex)
+            {
+                errorCode = "gene_dependency_add_failed";
+                errorMessage = ex.Message;
+                return false;
+            }
+        }
+
+        private static bool TryValidateExpectedGeneSet(
+            Pawn pawn,
+            IEnumerable<GeneDef> expectedGenes,
+            out string errorCode,
+            out string errorMessage)
+        {
+            errorCode = null;
+            errorMessage = null;
+            List<GeneDef> expected = (expectedGenes ?? Enumerable.Empty<GeneDef>()).Where(gene => gene != null).ToList();
+            List<Gene> actual = pawn?.genes?.GenesListForReading?.Where(gene => gene != null).ToList();
+            bool matches = actual != null && actual.Count == expected.Count &&
+                expected.GroupBy(gene => gene.defName, StringComparer.OrdinalIgnoreCase).All(group => group.Count() == 1) &&
+                actual.GroupBy(gene => gene.def?.defName ?? string.Empty, StringComparer.OrdinalIgnoreCase).All(group => group.Count() == 1) &&
+                new HashSet<string>(actual.Select(gene => gene.def?.defName ?? string.Empty), StringComparer.OrdinalIgnoreCase)
+                    .SetEquals(expected.Select(gene => gene.defName));
+            if (matches)
+            {
+                return true;
+            }
+
+            errorCode = "gene_expected_set_mismatch";
+            errorMessage = "Expected Gene set [" + string.Join(",", expected.Select(gene => gene.defName).ToArray()) +
+                "] but found [" + (actual == null ? "missing" : string.Join(",", actual.Select(gene => gene.def?.defName ?? "null").ToArray())) + "].";
+            return false;
+        }
+
+        private static int CountGene(Pawn pawn, GeneDef geneDef)
+        {
+            return pawn?.genes?.GenesListForReading?.Count(gene => gene?.def == geneDef) ?? 0;
+        }
+
+        private static string BuildGeneSetSignature(Pawn pawn)
+        {
+            if (pawn?.genes == null)
+            {
+                return string.Empty;
+            }
+
+            IEnumerable<string> endogenes = pawn.genes.Endogenes.Select(gene => "E:" + (gene?.def?.defName ?? "null"));
+            IEnumerable<string> xenogenes = pawn.genes.Xenogenes.Select(gene => "X:" + (gene?.def?.defName ?? "null"));
+            return string.Join(",", endogenes.Concat(xenogenes).OrderBy(value => value, StringComparer.Ordinal).ToArray());
+        }
+
+        private static bool IsGeneActive(Pawn pawn, GeneDef geneDef)
+        {
+            List<Gene> matches = pawn?.genes?.GenesListForReading?.Where(gene => gene?.def == geneDef).ToList();
+            return matches != null && matches.Count == 1 && matches[0].Active;
+        }
+
+        private static string FormatGeneError(string errorCode, string errorMessage)
+        {
+            if (string.IsNullOrWhiteSpace(errorCode))
+            {
+                return errorMessage;
+            }
+
+            return string.IsNullOrWhiteSpace(errorMessage) ? errorCode : errorCode + ":" + errorMessage;
         }
 
         private static void ClearAllGenes(Pawn pawn)
