@@ -18,6 +18,7 @@ RimDevTools/packages.lock.json
 精选日志.log
 修改方案.txt
 *.log
+.tools/log/overnight-five-mods/
 *.tmp
 *.cache
 __pycache__/

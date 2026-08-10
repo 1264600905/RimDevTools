@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ModsConfigData>
+    <activeMods>
+        <li>brrainz.harmony</li>
+        <li>brrainz.visualexceptions</li>
+        <li>ludeon.rimworld</li>
+        <li>automatic.autolinks</li>
+        <li>brrainz.cameraplus</li>
+        <li>rwzh.chinesepack.cameraplus</li>
+        <li>ludeon.rimworld.royalty</li>
+        <li>ludeon.rimworld.ideology</li>
+        <li>ludeon.rimworld.biotech</li>
+        <li>ludeon.rimworld.anomaly</li>
+        <li>void.charactereditor</li>
+        <li>hailuan.translate</li>
+        <li>erdelf.humanoidalienraces</li>
+        <li>rwzh.chinesepack.humanoidalienraces</li>
+        <li>mlie.logafterdeferror</li>
+        <li>hentailoliteam.axolotl</li>
+        <li>solaris.ratkinracemod</li>
+        <li>ludeon.rimworld.odyssey</li>
+        <li>jaxe.rimhud</li>
+        <li>shouer.chinesepack.rimhud</li>
+        <li>arandomkiwi.rimsaves</li>
+        <li>rwzh.chinesepack.rimsaves</li>
+        <li>aoba.framework</li>
+        <li>aoba.deadmanswitch.core</li>
+        <li>memegoddess.searchanddestroy</li>
+        <li>sarg.smartspeed</li>
+        <li>trigger.universalblueprints</li>
+        <li>trigger.logsyncmod</li>
+        <li>kindseal.ufli</li>
+    </activeMods>
+</ModsConfigData>
