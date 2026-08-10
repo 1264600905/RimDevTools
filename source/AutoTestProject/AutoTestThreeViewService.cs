@@ -240,7 +240,7 @@ namespace LogSyncMod.AutoTest
 
                         string after = BuildPawnVisualSignature(pawn);
                         bool visualEffect = !string.Equals(before, after, StringComparison.Ordinal);
-                        if (!visualEffect)
+                        if (!visualEffect && spec.TargetXenotypeDef == null)
                         {
                             lastReason = "no_visual_effect:" + candidate.defName;
                             continue;
@@ -528,6 +528,11 @@ namespace LogSyncMod.AutoTest
                     }
 
                     sourcePawn = pawn;
+                    if (spec.Kind == AutoTestKind.XenotypeThreeView && sourcePawn.story?.bodyType != null)
+                    {
+                        spec.PawnBodyTypeDefName = sourcePawn.story.bodyType.defName ?? string.Empty;
+                        spec.PawnBodyTypeLabel = sourcePawn.story.bodyType.label ?? sourcePawn.story.bodyType.defName ?? string.Empty;
+                    }
                 }
                 else if (!TryCreateReplicaPawn(spec, map.Tile, sourcePawn, out pawn, out string pawnError))
                 {
@@ -1326,7 +1331,7 @@ namespace LogSyncMod.AutoTest
                     RaceDef = presenter?.race,
                     PresenterCandidates = candidates,
                     ForceStripLoadout = true,
-                    CompatibilitySource = "XenotypeGenes=" + (xenotypeDef.genes?.Count ?? 0),
+                    CompatibilitySource = "XenotypeGenes=" + (xenotypeDef.genes?.Count ?? 0) + ";Replica=VanillaPawnDuplicator",
                     DefName = xenotypeDef.defName,
                     Label = xenotypeDef.label,
                     ScreenshotStageSuffix = "triptych",
@@ -2146,6 +2151,43 @@ namespace LogSyncMod.AutoTest
             {
                 errorMessage = "Source pawn was null.";
                 return false;
+            }
+
+            if (spec?.Kind == AutoTestKind.XenotypeThreeView)
+            {
+                try
+                {
+                    GameComponent_PawnDuplicator duplicator = Find.PawnDuplicator;
+                    if (duplicator == null)
+                    {
+                        errorMessage = "Vanilla PawnDuplicator was unavailable.";
+                        return false;
+                    }
+
+                    pawn = duplicator.Duplicate(sourcePawn);
+                    if (pawn == null)
+                    {
+                        errorMessage = "Vanilla PawnDuplicator returned null.";
+                        return false;
+                    }
+
+                    RefreshPawnGraphics(pawn);
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    try
+                    {
+                        pawn?.Destroy(DestroyMode.Vanish);
+                    }
+                    catch
+                    {
+                    }
+
+                    pawn = null;
+                    errorMessage = ex.Message;
+                    return false;
+                }
             }
 
             if (!TryGeneratePawn(spec, tile, out pawn, out errorMessage))
