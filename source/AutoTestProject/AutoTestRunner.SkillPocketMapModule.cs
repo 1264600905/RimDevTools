@@ -1315,7 +1315,7 @@ namespace LogSyncMod.AutoTest
                     result.Status = "failed_map_generation";
                     result.Stage = "setup";
                     result.ErrorMessage = errorMessage ?? "Failed to create SkillPocketMap.";
-                    results.Add(result);
+                    RecordResult(result);
                     return;
                 }
 
@@ -1328,7 +1328,7 @@ namespace LogSyncMod.AutoTest
                 result.Status = "failed_map_creation";
                 result.Stage = "setup";
                 result.ErrorMessage = ex.ToString();
-                results.Add(result);
+                RecordResult(result);
             }
         }
 

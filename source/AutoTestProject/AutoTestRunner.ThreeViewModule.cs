@@ -376,7 +376,7 @@ namespace LogSyncMod.AutoTest
             ThreeViewTestSession session = ThreeViewTestSession.Create(this, spec, result, allowScreenshots);
             if (session.Phase == ThreeViewTestPhase.Done)
             {
-                results.Add(result);
+                RecordResult(result);
                 return;
             }
 

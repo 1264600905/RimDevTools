@@ -91,9 +91,11 @@ namespace LogSyncMod.AutoTest
         [DataMember(Name = "caseId", Order = 1)] public string CaseId { get; set; }
         [DataMember(Name = "eventAfterSequence", Order = 2)] public long EventAfterSequence { get; set; }
         [DataMember(Name = "logAfterSequence", Order = 3)] public long LogAfterSequence { get; set; }
-        [DataMember(Name = "operations", Order = 4)] public List<AutoTestOperationEnvelope> Operations { get; set; }
-        [DataMember(Name = "events", Order = 5)] public List<AutoTestEventEvidence> Events { get; set; }
-        [DataMember(Name = "logs", Order = 6)] public List<AutoTestLogEvidence> Logs { get; set; }
+        [DataMember(Name = "eventThroughSequence", Order = 4)] public long EventThroughSequence { get; set; }
+        [DataMember(Name = "logThroughSequence", Order = 5)] public long LogThroughSequence { get; set; }
+        [DataMember(Name = "operations", Order = 6)] public List<AutoTestOperationEnvelope> Operations { get; set; }
+        [DataMember(Name = "events", Order = 7)] public List<AutoTestEventEvidence> Events { get; set; }
+        [DataMember(Name = "logs", Order = 8)] public List<AutoTestLogEvidence> Logs { get; set; }
     }
 
     [DataContract]

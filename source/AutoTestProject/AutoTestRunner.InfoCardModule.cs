@@ -153,6 +153,7 @@ namespace LogSyncMod.AutoTest
                 {
                     InfoCardCloseTrace.Stop();
                 }
+                CompleteSemanticCase(activeSession.Result);
                 activeSession = null;
             }
         }

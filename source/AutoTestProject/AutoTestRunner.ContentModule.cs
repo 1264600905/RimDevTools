@@ -84,6 +84,7 @@ namespace LogSyncMod.AutoTest
                 adapter.AssertTrue("target.preparation_assertion", false, result.ErrorMessage, prepare.OperationId);
                 adapter.CompleteCase(false, result.ErrorMessage);
                 caseScope.Dispose();
+                CompleteSemanticCase(result);
                 return;
             }
 
@@ -95,6 +96,7 @@ namespace LogSyncMod.AutoTest
                 adapter.AssertTrue("target.preparation_assertion", false, result.ErrorMessage, prepare.OperationId);
                 adapter.CompleteCase(false, result.ErrorMessage);
                 caseScope.Dispose();
+                CompleteSemanticCase(result);
                 return;
             }
 
@@ -126,6 +128,7 @@ namespace LogSyncMod.AutoTest
                     result.Status = "skipped";
                     result.Stage = "layout";
                     result.ErrorMessage = "No free terrain layout space remained on the current map.";
+                    CompleteSemanticCase(result);
                     return;
                 }
 
@@ -152,6 +155,7 @@ namespace LogSyncMod.AutoTest
                 result.Stage = "terrain";
                 result.ErrorMessage = ex.ToString();
                 CleanupSelectionAndWindows();
+                CompleteSemanticCase(result);
             }
         }
 
@@ -167,6 +171,7 @@ namespace LogSyncMod.AutoTest
                 result.Stage = "setup";
                 result.ErrorMessage = "Required worktable could not be placed or was lost.";
                 result.Notes = AppendNote(result.Notes, "Worktable=" + SafeDefName(item.WorktableDef));
+                CompleteSemanticCase(result);
                 return;
             }
 
@@ -176,6 +181,7 @@ namespace LogSyncMod.AutoTest
                 result.Stage = "setup";
                 result.ErrorMessage = "Placed worktable does not implement IBillGiver.";
                 result.Notes = AppendNote(result.Notes, "Worktable=" + SafeDefName(item.WorktableDef));
+                CompleteSemanticCase(result);
                 return;
             }
 
@@ -211,6 +217,7 @@ namespace LogSyncMod.AutoTest
                     result.Status = "skipped";
                     result.Stage = "pawn";
                     result.ErrorMessage = "No test pawn could be generated for Hediff validation.";
+                    CompleteSemanticCase(result);
                     return;
                 }
 
@@ -223,6 +230,7 @@ namespace LogSyncMod.AutoTest
                     result.Status = "skipped";
                     result.Stage = "hediff";
                     result.ErrorMessage = "HediffMaker.MakeHediff returned null.";
+                    CompleteSemanticCase(result);
                     return;
                 }
 
@@ -258,6 +266,7 @@ namespace LogSyncMod.AutoTest
                 result.Stage = "hediff";
                 result.ErrorMessage = ex.ToString();
                 CleanupSelectionAndWindows();
+                CompleteSemanticCase(result);
             }
         }
 

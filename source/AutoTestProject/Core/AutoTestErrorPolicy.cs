@@ -43,13 +43,13 @@ namespace LogSyncMod.AutoTest
             return result;
         }
 
-        public AutoTestErrorPolicyResult Evaluate(AutoTestLogJournal journal, long afterSequence, string runId, string caseId, IEnumerable<string> allowedErrorPatterns = null, IEnumerable<string> allowedWarningPatterns = null)
+        public AutoTestErrorPolicyResult Evaluate(AutoTestLogJournal journal, long afterSequence, string runId, string caseId, IEnumerable<string> allowedErrorPatterns = null, IEnumerable<string> allowedWarningPatterns = null, long throughSequence = long.MaxValue)
         {
-            // A game-tick Error/Fatal often occurs outside an operation scope and therefore
-            // has no CaseId. The authoritative case boundary is the cursor captured when the
-            // case started; filtering by CaseId here would silently miss those asynchronous
-            // errors. Keep the run filter and evaluate the complete cursor window.
-            List<AutoTestLogEvidence> logs = journal == null ? new List<AutoTestLogEvidence>() : journal.GetEntries(afterSequence, "info", runId, null, null, 2000);
+            // Include run-scoped asynchronous logs without a CaseId, but never borrow a
+            // correlated log from another concurrent case.
+            List<AutoTestLogEvidence> logs = journal == null ? new List<AutoTestLogEvidence>() : journal.GetEntries(afterSequence, "info", runId, null, null, 2000, throughSequence)
+                .Where(item => string.IsNullOrEmpty(item.CaseId) || string.Equals(item.CaseId, caseId, StringComparison.OrdinalIgnoreCase))
+                .ToList();
             return Evaluate(logs, allowedErrorPatterns, allowedWarningPatterns);
         }
 

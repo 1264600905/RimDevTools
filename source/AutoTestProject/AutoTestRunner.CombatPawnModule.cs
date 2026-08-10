@@ -659,7 +659,7 @@ namespace LogSyncMod.AutoTest
                 CombatPawnTestSession session = CombatPawnTestSession.Create(this, spec, result, ShouldCaptureScreenshots(specDef));
                 if (session.Phase == CombatPawnTestPhase.Done)
                 {
-                    results.Add(result);
+                    RecordResult(result);
                     return;
                 }
 
@@ -671,7 +671,7 @@ namespace LogSyncMod.AutoTest
                 result.Status = "failed_session_start";
                 result.Stage = "prepare_session";
                 result.ErrorMessage = ex.ToString();
-                results.Add(result);
+                RecordResult(result);
                 Log.Error("[LogSyncAutoTest] Combat pawn session start failed for '" + spec.DefName + "': " + ex);
             }
         }

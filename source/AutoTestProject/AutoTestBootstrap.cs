@@ -22,8 +22,7 @@ namespace LogSyncMod.AutoTest
         private static AutoTestOperationJournal readinessJournal;
         private static AutoTestGameClock readinessClock;
         private static AutoTestReadinessSnapshot readinessSnapshot;
-        private static AutoTestEvidenceSnapshotDto lastEvidenceSnapshot;
-        private static string lastRuntimeRunId;
+        private static readonly AutoTestRuntimeHistory RuntimeHistory = new AutoTestRuntimeHistory();
         private static bool? previousLogAutoOpenState;
         private static TimeSpeed? previousTimeSpeed;
         private static bool runtimeGuardsArmed;
@@ -59,8 +58,7 @@ namespace LogSyncMod.AutoTest
                 runner.Tick();
                 if (runner.Completed)
                 {
-                    lastEvidenceSnapshot = runner.GetRuntimeEvidenceSnapshot();
-                    lastRuntimeRunId = runner.RuntimeRunId;
+                    RuntimeHistory.Retain(runner.RuntimeRunId, runner.GetRuntimeEvidenceSnapshot());
                     RestoreLogAutoOpen();
                     RestoreRuntimeGuards();
                     runner = null;
@@ -134,7 +132,9 @@ namespace LogSyncMod.AutoTest
             {
                 readinessSnapshot = AutoTestReadinessProbe.Capture();
                 Log.Error("[LogSyncAutoTest] automation.ready timed out: " + AutoTestWaitHandle.Describe(readinessOutcome));
-                new AutoTestRunner(settings, map, readinessSnapshot).Initialize();
+                AutoTestRunner timedOutRunner = new AutoTestRunner(settings, map, readinessSnapshot);
+                timedOutRunner.Initialize();
+                RuntimeHistory.Retain(timedOutRunner.RuntimeRunId, timedOutRunner.GetRuntimeEvidenceSnapshot());
                 settings.autoTestEnabled = false;
                 settings.Write();
                 readinessWait = null;
@@ -367,7 +367,9 @@ namespace LogSyncMod.AutoTest
             {
                 return new AutoTestRuntimeStatusDto { State = "queued", RunId = settings.autoTestRunId, PackageId = settings.autoTestTargetPackageId, Summary = "run requested but not started" };
             }
-            return new AutoTestRuntimeStatusDto { State = string.IsNullOrEmpty(lastRuntimeRunId) ? "idle" : "completed", RunId = lastRuntimeRunId, Completed = lastEvidenceSnapshot?.Found == true, ResultCount = 0, Summary = "no active run" };
+            AutoTestEvidenceSnapshotDto lastEvidenceSnapshot = RuntimeHistory.LastSnapshot;
+            string lastRuntimeRunId = lastEvidenceSnapshot?.RunId;
+            return new AutoTestRuntimeStatusDto { State = string.IsNullOrEmpty(lastRuntimeRunId) ? "idle" : "completed", RunId = lastRuntimeRunId, Completed = lastEvidenceSnapshot?.Found == true, ResultCount = lastEvidenceSnapshot?.CaseCount ?? 0, Summary = "no active run" };
         }
 
         internal static AutoTestRunRequestResultDto RequestRuntimeRun(AutoTestRunRequestDto request)
@@ -405,13 +407,26 @@ namespace LogSyncMod.AutoTest
                 runner.RequestCancel(runId);
                 return new AutoTestCancelResultDto { Accepted = true, RunId = runId, Message = "Cancellation queued on the game thread." };
             }
+            LogSyncSettings settings = global::LogSyncMod.LogSyncMod.settings;
+            if (settings != null && AutoTestRuntimeQueue.MatchesQueuedRun(runId, settings.autoTestRunId, settings.autoTestEnabled))
+            {
+                settings.ConsumeAutoTestRunRequest();
+                settings.autoTestEnabled = false;
+                settings.Write();
+                readinessWait = null;
+                readinessJournal = null;
+                readinessClock = null;
+                readinessSnapshot = null;
+                return new AutoTestCancelResultDto { Accepted = true, RunId = runId, Message = "Queued run cancelled before it started." };
+            }
             return new AutoTestCancelResultDto { Accepted = false, RunId = runId, ErrorCode = "autotest.run_not_found", Message = "No active run matches runId." };
         }
 
         internal static AutoTestEvidenceSnapshotDto GetRuntimeEvidence(string runId)
         {
             if (runner != null && string.Equals(runner.RuntimeRunId, runId, StringComparison.OrdinalIgnoreCase)) return runner.GetRuntimeEvidenceSnapshot();
-            if (lastEvidenceSnapshot != null && string.Equals(lastEvidenceSnapshot.RunId, runId, StringComparison.OrdinalIgnoreCase)) return lastEvidenceSnapshot;
+            AutoTestEvidenceSnapshotDto retained = RuntimeHistory.GetEvidence(runId);
+            if (retained != null) return retained;
             return new AutoTestEvidenceSnapshotDto { Found = false, RunId = runId, ErrorCode = "autotest.run_not_found" };
         }
 

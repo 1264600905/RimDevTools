@@ -195,8 +195,9 @@ namespace LogSyncMod.AutoTest
             foreach (AutoTestResult failedResult in failedResults)
             {
                 List<AutoTestAssertionEvidence> assertions = evidence?.Assertions?.Where(item => item.CaseId == failedResult.CaseId && !item.Success).ToList() ?? new List<AutoTestAssertionEvidence>();
-                List<AutoTestOperationEnvelope> operations = evidence?.Operations?.Where(item => item.CaseId == failedResult.CaseId).ToList() ?? new List<AutoTestOperationEnvelope>();
-                List<AutoTestLogEvidence> logs = evidence?.Cases?.FirstOrDefault(item => item.CaseId == failedResult.CaseId)?.Logs ?? new List<AutoTestLogEvidence>();
+                AutoTestCaseEvidence caseEvidence = evidence?.Cases?.FirstOrDefault(item => item.CaseId == failedResult.CaseId);
+                List<AutoTestOperationEnvelope> operations = caseEvidence?.Operations?.ToList() ?? new List<AutoTestOperationEnvelope>();
+                List<AutoTestLogEvidence> logs = caseEvidence?.Logs?.ToList() ?? new List<AutoTestLogEvidence>();
                 builder.AppendLine();
                 builder.AppendLine("## Failure Details: " + failedResult.DefName);
                 builder.AppendLine();

@@ -65,7 +65,8 @@ namespace LogSyncMod.AutoTest
         public void CompleteCase(bool success, string message)
         {
             journal.RecordEvent(success ? "case.completed" : "case.failed", runId, caseId, null, null, "ui.info_card", message, clock.UtcNow);
-            evidence.AddCaseWindow(caseId, eventAfterSequence, logAfterSequence, journal, logJournal);
+            evidence.AddCaseWindow(caseId, eventAfterSequence, logAfterSequence, journal, logJournal,
+                journal.LastEventSequence, logJournal == null ? long.MaxValue : logJournal.LastSequence);
         }
     }
 }

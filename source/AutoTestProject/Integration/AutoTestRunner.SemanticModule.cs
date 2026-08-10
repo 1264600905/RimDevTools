@@ -66,8 +66,9 @@ namespace LogSyncMod.AutoTest
         private void CompleteSemanticCase(AutoTestResult result)
         {
             if (result == null || !semanticCases.TryGetValue(result.CaseId, out SemanticCaseState state) || state.Completed) return;
+            long logThroughSequence = logJournal?.LastSequence ?? long.MaxValue;
             ResolveAllowPatterns(result, out List<string> allowedErrors, out List<string> allowedWarnings);
-            AutoTestErrorPolicyResult policy = semanticErrorPolicy.Evaluate(logJournal, state.LogAfterSequence, runId, result.CaseId, allowedErrors, allowedWarnings);
+            AutoTestErrorPolicyResult policy = semanticErrorPolicy.Evaluate(logJournal, state.LogAfterSequence, runId, result.CaseId, allowedErrors, allowedWarnings, logThroughSequence);
             result.UnexpectedSevereLogCount = policy.UnexpectedSevereLogs.Count;
             SemanticAssert(result, "logs.no_unexpected_severe", policy.Success, "0 unexpected Error/Fatal logs", policy.Summary,
                 policy.Success ? "Allowed rules: " + string.Join(",", policy.AllowedRules.ToArray()) : string.Join(" | ", policy.UnexpectedSevereLogs.Select(item => item.Level + ":" + item.Message).ToArray()),
@@ -88,7 +89,8 @@ namespace LogSyncMod.AutoTest
             operationJournal.RecordEvent(success ? "case.completed" : "case.failed", runId, result.CaseId, null, null, "semantic." + result.Category,
                 success ? "Semantic case completed." : result.ErrorMessage, evidenceClock.UtcNow);
             if (!evidenceManifest.Cases.Any(item => item.CaseId == result.CaseId))
-                evidenceBuilder.AddCaseWindow(result.CaseId, state.EventAfterSequence, state.LogAfterSequence, operationJournal, logJournal);
+                evidenceBuilder.AddCaseWindow(result.CaseId, state.EventAfterSequence, state.LogAfterSequence, operationJournal, logJournal,
+                    operationJournal?.LastEventSequence ?? long.MaxValue, logThroughSequence);
             foreach (string screenshotPath in (result.ScreenshotPaths ?? new List<string>()).Where(path => !string.IsNullOrWhiteSpace(path)))
             {
                 if (!evidenceManifest.Captures.Any(item => string.Equals(item.Path, screenshotPath, StringComparison.OrdinalIgnoreCase)))

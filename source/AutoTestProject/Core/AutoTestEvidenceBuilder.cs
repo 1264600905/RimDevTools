@@ -44,16 +44,19 @@ namespace LogSyncMod.AutoTest
 
         public void AddError(AutoTestOperationError error) { if (error != null) manifest.Errors.Add(error); }
 
-        public AutoTestCaseEvidence AddCaseWindow(string caseId, long eventAfterSequence, long logAfterSequence, AutoTestOperationJournal operationJournal, AutoTestLogJournal logJournal)
+        public AutoTestCaseEvidence AddCaseWindow(string caseId, long eventAfterSequence, long logAfterSequence, AutoTestOperationJournal operationJournal, AutoTestLogJournal logJournal, long eventThroughSequence = long.MaxValue, long logThroughSequence = long.MaxValue)
         {
             AutoTestCaseEvidence value = new AutoTestCaseEvidence
             {
                 CaseId = caseId,
                 EventAfterSequence = eventAfterSequence,
                 LogAfterSequence = logAfterSequence,
+                EventThroughSequence = eventThroughSequence,
+                LogThroughSequence = logThroughSequence,
                 Operations = operationJournal == null ? new AutoTestOperationEnvelope[0].ToList() : operationJournal.GetRecentOperations(500, true).Where(item => item.CaseId == caseId).ToList(),
-                Events = operationJournal == null ? new AutoTestEventEvidence[0].ToList() : operationJournal.GetEvents(eventAfterSequence, 2000).Where(item => item.CaseId == caseId).ToList(),
-                Logs = logJournal == null ? new AutoTestLogEvidence[0].ToList() : logJournal.GetEntries(logAfterSequence, "info", manifest.RunId, caseId, null, 2000)
+                Events = operationJournal == null ? new AutoTestEventEvidence[0].ToList() : operationJournal.GetEvents(eventAfterSequence, 2000).Where(item => item.Sequence <= eventThroughSequence && item.CaseId == caseId).ToList(),
+                Logs = logJournal == null ? new AutoTestLogEvidence[0].ToList() : logJournal.GetEntries(logAfterSequence, "info", manifest.RunId, null, null, 2000, logThroughSequence)
+                    .Where(item => string.IsNullOrEmpty(item.CaseId) || string.Equals(item.CaseId, caseId, StringComparison.OrdinalIgnoreCase)).ToList()
             };
             manifest.Cases.Add(value);
             return value;

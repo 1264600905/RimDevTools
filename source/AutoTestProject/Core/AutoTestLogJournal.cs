@@ -48,12 +48,12 @@ namespace LogSyncMod.AutoTest
             }
         }
 
-        public List<AutoTestLogEvidence> GetEntries(long afterSequence, string minimumLevel = null, string runId = null, string caseId = null, string operationId = null, int limit = 2000)
+        public List<AutoTestLogEvidence> GetEntries(long afterSequence, string minimumLevel = null, string runId = null, string caseId = null, string operationId = null, int limit = 2000, long throughSequence = long.MaxValue)
         {
             int minimum = Rank(NormalizeLevel(minimumLevel ?? "info"));
             lock (gate)
             {
-                return entries.Where(item => item.Sequence > afterSequence && Rank(item.Level) >= minimum &&
+                return entries.Where(item => item.Sequence > afterSequence && item.Sequence <= throughSequence && Rank(item.Level) >= minimum &&
                     (runId == null || item.RunId == runId) && (caseId == null || item.CaseId == caseId) &&
                     (operationId == null || item.OperationId == operationId))
                     .OrderBy(item => item.Sequence).Take(Math.Max(0, limit)).Select(Clone).ToList();

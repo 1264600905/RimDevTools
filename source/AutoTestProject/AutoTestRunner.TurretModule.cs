@@ -1427,7 +1427,7 @@ namespace LogSyncMod.AutoTest
                 {
                     result.Status = "failed_map_generation";
                     result.ErrorMessage = errorMessage ?? "Failed to create PocketMapParent.";
-                    results.Add(result);
+                    RecordResult(result);
                     return;
                 }
 
@@ -1444,14 +1444,14 @@ namespace LogSyncMod.AutoTest
                 {
                     result.Status = "failed_map_generation";
                     result.ErrorMessage = "Managed pocket map generation returned null Map.";
-                    results.Add(result);
+                    RecordResult(result);
                 }
             }
             catch (Exception ex)
             {
                 result.Status = "failed_map_creation";
                 result.ErrorMessage = ex.ToString();
-                results.Add(result);
+                RecordResult(result);
                 DestroyPocketMap(session.TestMap, session.Parent);
             }
         }

@@ -22,6 +22,9 @@ internal sealed class CoreTestSuite
         TestReadiness();
         TestSemanticValueGraph();
         TestErrorPolicy();
+        TestRuntimeQueue();
+        TestRuntimeHistory();
+        TestCaseEvidenceRetention();
         TestDomainAssertions();
         Console.WriteLine($"AutoTest.Core.Tests passed: {passed}");
     }
@@ -198,9 +201,13 @@ internal sealed class CoreTestSuite
         new AutoTestOperationRunner("run", clock, windowJournal).Run("cap", "case", "step", () => { });
         windowJournal.RecordEvent("case.completed", "run", "case", null, null, "cap", "done");
         windowLogs.Record("info", "inside", null, "run", "case", "step", null, "cap");
-        var caseWindow = windowBuilder.AddCaseWindow("case", eventCursor, logCursor, windowJournal, windowLogs);
+        windowLogs.Record("error", "other case severe", null, "run", "other", null, null, null);
+        windowLogs.Record("error", "async severe", null, "run", null, null, null, null);
+        long logThrough = windowLogs.LastSequence;
+        windowLogs.Record("error", "too late", null, "run", null, null, null, null);
+        var caseWindow = windowBuilder.AddCaseWindow("case", eventCursor, logCursor, windowJournal, windowLogs, windowJournal.LastEventSequence, logThrough);
         Assert(caseWindow.Operations.Count == 1 && caseWindow.Events.All(item => item.Sequence > eventCursor && item.CaseId == "case") &&
-            caseWindow.Logs.Count == 1 && caseWindow.Logs[0].Message == "inside", "case evidence uses event and log cursors");
+            caseWindow.Logs.Select(item => item.Message).SequenceEqual(new[] { "inside", "async severe" }), "case evidence uses bounded cursors and retains uncorrelated severe logs");
     }
 
     private void TestBoundedBuffer()
@@ -296,9 +303,51 @@ internal sealed class CoreTestSuite
         journal.Record("error", "old", null, "run", "case", null, null, null);
         long cursor = journal.LastSequence;
         journal.Record("error", "new", null, "run", "case", null, null, null);
+        journal.Record("error", "other case", null, "run", "other", null, null, null);
         journal.Record("error", "async uncorrelated", null, "run", null, null, null, null);
         AutoTestErrorPolicyResult cursorResult = new AutoTestErrorPolicy().Evaluate(journal, cursor, "run", "case");
-        Assert(cursorResult.UnexpectedSevereLogs.Select(item => item.Message).SequenceEqual(new[] { "new", "async uncorrelated" }), "error policy honors case cursor and includes asynchronous logs");
+        Assert(cursorResult.UnexpectedSevereLogs.Select(item => item.Message).SequenceEqual(new[] { "new", "async uncorrelated" }), "error policy isolates concurrent case logs and includes asynchronous logs");
+        AutoTestErrorPolicyResult bounded = new AutoTestErrorPolicy().Evaluate(journal, cursor, "run", "case", null, null, cursor + 2);
+        Assert(bounded.UnexpectedSevereLogs.Select(item => item.Message).SequenceEqual(new[] { "new" }), "error policy honors case end cursor");
+    }
+
+    private void TestRuntimeQueue()
+    {
+        Assert(AutoTestRuntimeQueue.MatchesQueuedRun("RUN-1", "run-1", true), "queued cancellation matches run id case-insensitively");
+        Assert(!AutoTestRuntimeQueue.MatchesQueuedRun("run-2", "run-1", true) &&
+            !AutoTestRuntimeQueue.MatchesQueuedRun("run-1", "run-1", false), "queued cancellation rejects stale or inactive requests");
+    }
+
+    private void TestRuntimeHistory()
+    {
+        var history = new AutoTestRuntimeHistory();
+        history.Retain("timeout-run", new AutoTestEvidenceSnapshotDto { Found = true, RunId = "timeout-run", ErrorCount = 1 });
+        AutoTestEvidenceSnapshotDto retained = history.GetEvidence("TIMEOUT-RUN");
+        Assert(history.LastRunId == "timeout-run" && retained?.Found == true && retained.ErrorCount == 1, "runtime history retains timeout evidence for API lookup");
+        Assert(history.GetEvidence("other-run") == null, "runtime history rejects unrelated run ids");
+    }
+
+    private void TestCaseEvidenceRetention()
+    {
+        var clock = new FakeClock();
+        var manifest = NewManifest(clock);
+        var journal = new AutoTestOperationJournal();
+        var logs = new AutoTestLogJournal();
+        var builder = new AutoTestEvidenceBuilder(manifest, clock);
+        using (AutoTestOperationContext.PushRun("run"))
+        using (AutoTestOperationContext.PushCase("early"))
+        {
+            new AutoTestOperationRunner("run", clock, journal).Run("cap", "early", "early_step", () => { });
+        }
+        long earlyEvent = journal.LastEventSequence;
+        long earlyLog = logs.LastSequence;
+        var early = builder.AddCaseWindow("early", 0, earlyLog, journal, logs, earlyEvent, logs.LastSequence);
+        using (AutoTestOperationContext.PushCase("later"))
+        {
+            var runner = new AutoTestOperationRunner("run", clock, journal);
+            for (int i = 0; i < 501; i++) runner.Run("cap", "later", "later_" + i, () => { });
+        }
+        Assert(early.Operations.Count == 1 && early.Operations[0].StepId == "early_step", "case evidence retains early operation timeline after global truncation");
     }
 
     private void TestDomainAssertions()
