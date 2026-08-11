@@ -61,6 +61,17 @@ namespace LogSyncMod.AutoTest
             public readonly Dictionary<int, int> ProjectileLastTicks = new Dictionary<int, int>();
             public StageScreenshotRequest ActiveStageScreenshot;
             public string TargetingMode = "unsupported";
+            public Verb CombatVerb;
+            public VerbProperties CombatVerbProps;
+            public AutoTestCombatPlacementResult CombatPlacement;
+            public Thing AttackTargetBuilding;
+            public IntVec3 AttackTargetCell = IntVec3.Invalid;
+            public int AttackTargetBuildingInitialHitPoints = -1;
+            public int FirstAttackInitiatedTick = -1;
+            public string CombatPassEvidence = string.Empty;
+            private bool attackVerbUnavailableRecorded;
+            private bool attackInitiationRecorded;
+            private bool combatVerbEvidenceRecorded;
 
             public RangedWeaponTestSession(AutoTestRunner owner, ThingDef weaponDef, AutoTestResult result)
             {
@@ -116,13 +127,14 @@ namespace LogSyncMod.AutoTest
                                 return;
                             }
 
+                            ResolveCombatVerbProperties();
                             TargetingMode = ClassifyTargetingMode();
                             Result.Notes = AppendNote(Result.Notes, "TargetingMode=" + TargetingMode);
-                            if (TargetingMode != "pawn_target")
+                            if (TargetingMode == "unsupported")
                             {
                                 Result.Status = "unsupported";
                                 Result.Stage = "targeting_classification";
-                                Result.ErrorMessage = "Targeting mode '" + TargetingMode + "' is classified explicitly and is not executed through the pawn-target harness.";
+                                Result.ErrorMessage = "The equipped combat Verb does not expose a supported Pawn, Location, or Building target type.";
                                 Phase = RangedWeaponTestPhase.CleaningUp;
                                 return;
                             }
@@ -353,12 +365,58 @@ namespace LogSyncMod.AutoTest
 
             private void SpawnEnemies(int count)
             {
-                float range = ResolveWeaponRange();
-                List<IntVec3> spawnCells = FindEnemySpawnCells(count, range);
-                if (spawnCells.Count == 0)
+                ResolveCombatVerbProperties();
+                if (CombatVerbProps == null)
                 {
-                    Fail("failed_enemy_spawn_pos", "No valid enemy spawn cells were found within weapon range and edge-safe area.");
+                    Fail("unsupported_harness", "No ranged VerbProperties were available after equipping the weapon.");
                     return;
+                }
+
+                bool buildingTarget = TargetingMode == "building_target";
+                int requestedCells = count + (buildingTarget ? 1 : 0);
+                CellRect safeRect = CellRect.FromLimits(5, 5, TestMap.Size.x - 6, TestMap.Size.z - 6);
+                IntVec3 preferredAnchor = new IntVec3(Mathf.RoundToInt(TestMap.Size.x * 0.625f), 0, TestMap.Size.z / 2);
+                CombatPlacement = new AutoTestCombatPlacementService().FindTargets(new AutoTestCombatPlacementRequest
+                {
+                    Map = TestMap,
+                    Attacker = ShooterPawn,
+                    AttackerCell = ShooterPawn.Position,
+                    VerbProps = CombatVerbProps,
+                    EffectiveRange = CombatVerb?.EffectiveRange ?? CombatVerbProps.range,
+                    TargetCount = requestedCells,
+                    PreferredAnchor = preferredAnchor,
+                    SafeRect = safeRect,
+                    RequireLineOfSight = CombatVerbProps.requireLineOfSight,
+                    RequireWalkable = true,
+                    MinimumSeparationMargin = 0.5f,
+                    MaximumRangeMargin = 0.5f,
+                    MinimumDistanceFloor = 2f
+                });
+                RecordCombatPlacementEvidence(CombatPlacement);
+                if (CombatPlacement.SelectedCells.Count == 0)
+                {
+                    string failure = CombatPlacement.FailureReason == "no_legal_distance_interval"
+                        ? "unsupported_harness"
+                        : "failed_enemy_spawn_pos";
+                    Fail(failure, "No valid ranged target cells were found. reason=" + CombatPlacement.FailureReason +
+                        " diagnostics=" + CombatPlacement.DiagnosticsSummary);
+                    return;
+                }
+
+                List<IntVec3> spawnCells = CombatPlacement.SelectedCells.ToList();
+                if (buildingTarget)
+                {
+                    AttackTargetCell = spawnCells[0];
+                    if (!TrySpawnBuildingAttackTarget(AttackTargetCell))
+                    {
+                        Fail("unsupported_harness", "The building-target harness could not create a valid target building.");
+                        return;
+                    }
+                    spawnCells.RemoveAt(0);
+                }
+                else
+                {
+                    AttackTargetCell = spawnCells[0];
                 }
 
                 for (int i = 0; i < count && i < spawnCells.Count; i++)
@@ -398,104 +456,82 @@ namespace LogSyncMod.AutoTest
                 }
 
                 Result.Notes = AppendNote(Result.Notes, "EnemyCount=" + EnemyPawns.Count);
+                Result.Notes = AppendNote(Result.Notes, "ActualTargetDistances=" + BuildActualTargetDistances());
+                if (!TryValidateAttackTarget(out string validationError))
+                {
+                    Fail("failed_target_validation", validationError);
+                }
             }
 
-            private float ResolveWeaponRange()
+            private void ResolveCombatVerbProperties()
             {
-                Verb verb = ResolveAttackVerb(ResolvePrimaryTarget());
-                if (verb?.verbProps != null && verb.verbProps.range > 0f)
-                {
-                    return verb.verbProps.range;
-                }
-
-                VerbProperties verbProps = WeaponDef?.Verbs?
-                    .Where(value => value != null && value.range > 1f)
-                    .OrderByDescending(value => value.range)
+                CombatVerb = ShooterPawn?.equipment?.AllEquipmentVerbs?
+                    .Where(value => value?.verbProps != null && value.verbProps.range > 1f)
+                    .OrderByDescending(value => value.verbProps.isPrimary)
+                    .ThenByDescending(value => value.verbProps.range)
                     .FirstOrDefault();
-                return verbProps?.range ?? 15f;
+                CombatVerbProps = CombatVerb?.verbProps ?? WeaponDef?.Verbs?
+                    .Where(value => value != null && value.range > 1f)
+                    .OrderByDescending(value => value.isPrimary)
+                    .ThenByDescending(value => value.range)
+                    .FirstOrDefault();
+                if (CombatVerbProps == null)
+                {
+                    return;
+                }
+
+                if (!combatVerbEvidenceRecorded)
+                {
+                    Result.Notes = AppendNote(Result.Notes, "VerbDef=" + (WeaponDef?.defName ?? "unknown"));
+                    Result.Notes = AppendNote(Result.Notes, "VerbClass=" + (CombatVerb?.GetType().FullName ?? CombatVerbProps.verbClass?.FullName ?? "unknown"));
+                    Result.Notes = AppendNote(Result.Notes, "MinRange=" + CombatVerbProps.minRange.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture));
+                    Result.Notes = AppendNote(Result.Notes, "Range=" + (CombatVerb?.EffectiveRange ?? CombatVerbProps.range).ToString("0.00", System.Globalization.CultureInfo.InvariantCulture));
+                    Result.Notes = AppendNote(Result.Notes, "RequireLineOfSight=" + CombatVerbProps.requireLineOfSight);
+                    Result.Notes = AppendNote(Result.Notes, "OnlyManualCast=" + CombatVerbProps.onlyManualCast);
+                    combatVerbEvidenceRecorded = true;
+                }
             }
 
-            private List<IntVec3> FindEnemySpawnCells(int count, float range)
+            private void RecordCombatPlacementEvidence(AutoTestCombatPlacementResult placement)
             {
-                List<IntVec3> result = new List<IntVec3>();
-                if (TestMap == null || ShooterPawn == null || count <= 0)
+                if (placement == null)
                 {
-                    return result;
+                    return;
                 }
 
-                CellRect safeRect = CellRect.FromLimits(5, 5, TestMap.Size.x - 6, TestMap.Size.z - 6);
-                IntVec3 shooterCell = ShooterPawn.Position;
-                IntVec3 forward = new IntVec3(1, 0, 0);
-                IntVec3 lateral = new IntVec3(0, 0, 1);
-
-                int maxDistance = MaxDistanceInSafeRect(shooterCell, forward, safeRect);
-                int preferredDistance = Mathf.RoundToInt(Mathf.Min(range * 0.8f, TestMap.Size.x * 0.5f));
-                int targetDistance = Mathf.Clamp(preferredDistance, 5, maxDistance);
-
-                if (targetDistance < 2)
-                {
-                    return result;
-                }
-
-                IntVec3 anchor = new IntVec3(Mathf.RoundToInt(TestMap.Size.x * 0.625f), 0, TestMap.Size.z / 2);
-                int lateralRadius = Mathf.Max(count, 3);
-                List<IntVec3> candidates = new List<IntVec3>();
-                for (int offset = -lateralRadius; offset <= lateralRadius; offset++)
-                {
-                    IntVec3 candidate = anchor + lateral * offset;
-                    if (!candidate.InBounds(TestMap) || !safeRect.Contains(candidate))
-                    {
-                        continue;
-                    }
-
-                    if (candidate.z < 15 || candidate.z > 35)
-                    {
-                        continue;
-                    }
-
-                    if (candidate.DistanceTo(shooterCell) > range || candidate.DistanceTo(shooterCell) < 2f)
-                    {
-                        continue;
-                    }
-
-                    if (!GenSight.LineOfSight(shooterCell, candidate, TestMap))
-                    {
-                        continue;
-                    }
-
-                    candidates.Add(candidate);
-                }
-
-                foreach (IntVec3 candidate in candidates.OrderBy(cell => Mathf.Abs(cell.z - anchor.z)))
-                {
-                    if (result.Count >= count)
-                    {
-                        break;
-                    }
-
-                    result.Add(candidate);
-                }
-
-                return result;
+                Result.Notes = AppendNote(Result.Notes, "CombatMinRange=" + placement.MinValidDistance.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture));
+                Result.Notes = AppendNote(Result.Notes, "CombatMaxRange=" + placement.MaxValidDistance.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture));
+                Result.Notes = AppendNote(Result.Notes, "PreferredTargetDistance=" + placement.PreferredDistance.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture));
+                Result.Notes = AppendNote(Result.Notes, "PreferredCellWasValid=" + placement.PreferredCellWasValid);
+                Result.Notes = AppendNote(Result.Notes, "EnemyRepositioned=" + placement.EnemyRepositioned);
+                Result.Notes = AppendNote(Result.Notes, "RepositionReason=" + placement.RepositionReason);
+                Result.Notes = AppendNote(Result.Notes, "CandidateDiagnostics=" + placement.DiagnosticsSummary);
             }
 
-            private int MaxDistanceInSafeRect(IntVec3 start, IntVec3 direction, CellRect safeRect)
+            private bool TrySpawnBuildingAttackTarget(IntVec3 cell)
             {
-                int distance = 0;
-                IntVec3 current = start;
-                while (true)
+                try
                 {
-                    IntVec3 next = current + direction;
-                    if (!next.InBounds(TestMap) || !safeRect.Contains(next))
+                    ThingDef wallDef = ThingDefOf.Wall;
+                    ThingDef stuffDef = ThingDefOf.Steel;
+                    Thing wall = ThingMaker.MakeThing(wallDef, stuffDef);
+                    if (wall == null)
                     {
-                        break;
+                        return false;
                     }
 
-                    distance++;
-                    current = next;
+                    Faction targetFaction = Faction.OfAncientsHostile ?? Faction.OfPirates ?? Faction.OfMechanoids;
+                    owner.PrepareBuildingFactionBeforeSpawn(wall, AutoTestBuildingContext.InteractiveBuilding, Result, targetFaction);
+                    AttackTargetBuilding = GenSpawn.Spawn(wall, cell, TestMap);
+                    AttackTargetBuildingInitialHitPoints = AttackTargetBuilding?.HitPoints ?? -1;
+                    Result.Notes = AppendNote(Result.Notes, "BuildingAttackTarget=" + (AttackTargetBuilding?.def?.defName ?? "missing"));
+                    return AttackTargetBuilding != null;
                 }
-
-                return distance;
+                catch (Exception ex)
+                {
+                    Result.Notes = AppendNote(Result.Notes, "BuildingTargetSpawnError=" + TrimForNote(ex.Message));
+                    return false;
+                }
             }
 
             private void UpdateFightingPhase()
@@ -507,7 +543,7 @@ namespace LogSyncMod.AutoTest
                     return;
                 }
 
-                if (TryBeginPostKillObservation() || TryBeginPostDamageObservation())
+                if (TryBeginPostKillObservation() || TryBeginPostDamageObservation() || TryBeginPostProjectileObservation())
                 {
                     return;
                 }
@@ -560,8 +596,8 @@ namespace LogSyncMod.AutoTest
                     return;
                 }
 
-                Pawn target = ResolvePrimaryTarget();
-                if (target == null)
+                LocalTargetInfo target = ResolveAttackTarget();
+                if (!target.IsValid)
                 {
                     return;
                 }
@@ -573,16 +609,41 @@ namespace LogSyncMod.AutoTest
                 }
 
                 Verb attackVerb = ResolveAttackVerb(target);
-                if (attackVerb == null || !attackVerb.Available() || !attackVerb.CanHitTarget(target))
+                if (attackVerb == null || !attackVerb.Available() || !IsTargetAllowed(attackVerb, target) || !attackVerb.CanHitTarget(target))
                 {
-                    Result.Notes = AppendNote(Result.Notes, "AttackVerbUnavailable=True");
+                    if (!attackVerbUnavailableRecorded)
+                    {
+                        Result.Notes = AppendNote(Result.Notes, "AttackVerbUnavailable=True");
+                        attackVerbUnavailableRecorded = true;
+                    }
                     return;
                 }
 
                 int currentTick = Find.TickManager.TicksGame;
+                if (attackVerb.verbProps.onlyManualCast)
+                {
+                    if (attackVerb.state == VerbState.Bursting || ShooterPawn.stances?.curStance is Stance_Warmup)
+                    {
+                        return;
+                    }
+
+                    if (currentTick - lastAttackOrderTick < 60)
+                    {
+                        return;
+                    }
+
+                    if (attackVerb.TryStartCastOn(target, surpriseAttack: false, canHitNonTargetPawns: true, preventFriendlyFire: false))
+                    {
+                        lastAttackOrderTick = currentTick;
+                        FirstAttackInitiatedTick = FirstAttackInitiatedTick < 0 ? currentTick : FirstAttackInitiatedTick;
+                        RecordAttackInitiation("ManualVerbCast");
+                    }
+                    return;
+                }
+
                 bool needsNewJob = ShooterPawn.CurJob == null ||
                     ShooterPawn.CurJob.def != JobDefOf.AttackStatic ||
-                    ShooterPawn.CurJob.targetA.Thing != target;
+                    ShooterPawn.CurJob.targetA != target;
                 if (!needsNewJob && currentTick - lastAttackOrderTick < 60)
                 {
                     return;
@@ -596,8 +657,12 @@ namespace LogSyncMod.AutoTest
                 attackJob.endIfCantShootInMelee = false;
                 attackJob.collideWithPawns = false;
                 attackJob.verbToUse = attackVerb;
-                ShooterPawn.jobs?.TryTakeOrderedJob(attackJob, null, false);
-                lastAttackOrderTick = currentTick;
+                if (ShooterPawn.jobs?.TryTakeOrderedJob(attackJob, null, false) ?? false)
+                {
+                    lastAttackOrderTick = currentTick;
+                    FirstAttackInitiatedTick = FirstAttackInitiatedTick < 0 ? currentTick : FirstAttackInitiatedTick;
+                    RecordAttackInitiation("AttackStaticJob");
+                }
             }
 
             public Pawn ResolvePrimaryTarget()
@@ -609,11 +674,16 @@ namespace LogSyncMod.AutoTest
                     .FirstOrDefault();
             }
 
-            private Verb ResolveAttackVerb(Thing target)
+            private Verb ResolveAttackVerb(LocalTargetInfo target)
             {
-                Verb verb = target == null || ShooterPawn == null
+                if (CombatVerb != null)
+                {
+                    return CombatVerb;
+                }
+
+                Verb verb = !target.IsValid || ShooterPawn == null
                     ? null
-                    : ShooterPawn.TryGetAttackVerb(target, true, false);
+                    : ShooterPawn.TryGetAttackVerb(target.Thing, true, false);
                 if (verb != null)
                 {
                     return verb;
@@ -623,6 +693,127 @@ namespace LogSyncMod.AutoTest
                     .Where(value => value != null && value.verbProps != null && value.verbProps.range > 1f)
                     .OrderByDescending(value => value.verbProps.range)
                     .FirstOrDefault();
+            }
+
+            private LocalTargetInfo ResolveAttackTarget()
+            {
+                if (TargetingMode == "building_target")
+                {
+                    return AttackTargetBuilding == null || AttackTargetBuilding.Destroyed
+                        ? LocalTargetInfo.Invalid
+                        : new LocalTargetInfo(AttackTargetBuilding);
+                }
+
+                if (TargetingMode == "location_target")
+                {
+                    return AttackTargetCell.IsValid ? new LocalTargetInfo(AttackTargetCell) : LocalTargetInfo.Invalid;
+                }
+
+                Pawn pawn = ResolvePrimaryTarget();
+                return pawn == null ? LocalTargetInfo.Invalid : new LocalTargetInfo(pawn);
+            }
+
+            private bool IsTargetAllowed(Verb verb, LocalTargetInfo target)
+            {
+                if (verb?.targetParams == null || !target.IsValid)
+                {
+                    return false;
+                }
+
+                TargetInfo targetInfo = target.HasThing
+                    ? new TargetInfo(target.Thing)
+                    : new TargetInfo(target.Cell, TestMap);
+                return verb.targetParams.CanTarget(targetInfo, verb) && verb.ValidateTarget(target, showMessages: false);
+            }
+
+            private void RecordAttackInitiation(string initiation)
+            {
+                if (attackInitiationRecorded)
+                {
+                    return;
+                }
+
+                Result.Notes = AppendNote(Result.Notes, "AttackInitiation=" + initiation);
+                Result.Notes = AppendNote(Result.Notes, "FirstAttackInitiatedTick=" + FirstAttackInitiatedTick);
+                attackInitiationRecorded = true;
+            }
+
+            private bool TryValidateAttackTarget(out string errorMessage)
+            {
+                errorMessage = string.Empty;
+                LocalTargetInfo target = ResolveAttackTarget();
+                if (!target.IsValid)
+                {
+                    errorMessage = "The selected target type did not produce a valid LocalTargetInfo.";
+                    return false;
+                }
+
+                if (CombatPlacement == null)
+                {
+                    errorMessage = "Combat placement evidence was missing after target spawn.";
+                    return false;
+                }
+
+                foreach (IntVec3 cell in EnemyPawns
+                    .Where(pawn => pawn != null && pawn.Spawned && pawn.Map == TestMap)
+                    .Select(pawn => pawn.Position)
+                    .Concat(AttackTargetBuilding != null && AttackTargetBuilding.Spawned
+                        ? new[] { AttackTargetBuilding.Position }
+                        : Enumerable.Empty<IntVec3>()))
+                {
+                    float distance = cell.DistanceTo(ShooterPawn.Position);
+                    if (distance < CombatPlacement.MinValidDistance - 0.01f || distance > CombatPlacement.MaxValidDistance + 0.01f)
+                    {
+                        errorMessage = "Spawned target at " + cell + " has illegal distance " +
+                            distance.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) + ".";
+                        return false;
+                    }
+                }
+
+                Verb verb = ResolveAttackVerb(target);
+                if (verb == null)
+                {
+                    errorMessage = "No equipped attack Verb was available after target spawn.";
+                    return false;
+                }
+
+                if (!IsTargetAllowed(verb, target))
+                {
+                    errorMessage = "TargetingParameters rejected the prepared " + TargetingMode + " target.";
+                    return false;
+                }
+
+                if (!verb.CanHitTarget(target))
+                {
+                    errorMessage = "The equipped Verb could not hit the prepared target after spawn.";
+                    return false;
+                }
+
+                Result.Notes = AppendNote(Result.Notes, "VerbCanHitTarget=True");
+                return true;
+            }
+
+            private string BuildActualTargetDistances()
+            {
+                if (ShooterPawn == null)
+                {
+                    return "none";
+                }
+
+                List<IntVec3> cells = EnemyPawns
+                    .Where(pawn => pawn != null && pawn.Spawned && pawn.Map == TestMap)
+                    .Select(pawn => pawn.Position)
+                    .ToList();
+                if (AttackTargetBuilding != null && AttackTargetBuilding.Spawned)
+                {
+                    cells.Add(AttackTargetBuilding.Position);
+                }
+
+                return cells.Count == 0
+                    ? "none"
+                    : string.Join(",", cells
+                        .Select(cell => cell.DistanceTo(ShooterPawn.Position).ToString("0.00", System.Globalization.CultureInfo.InvariantCulture))
+                        .ToArray());
             }
 
             private void UpdateProjectileScreenshotSchedule()
@@ -762,12 +953,11 @@ namespace LogSyncMod.AutoTest
 
             private string ClassifyTargetingMode()
             {
-                Verb verb = ShooterPawn?.equipment?.AllEquipmentVerbs?.FirstOrDefault(value => value?.verbProps != null && value.verbProps.range > 1f);
-                TargetingParameters parameters = verb?.verbProps?.targetParams ?? WeaponDef?.Verbs?.FirstOrDefault(value => value != null && value.range > 1f)?.targetParams;
+                TargetingParameters parameters = CombatVerbProps?.targetParams;
                 if (parameters == null) return "unsupported";
                 if (parameters.canTargetPawns) return "pawn_target";
-                if (parameters.canTargetBuildings) return "building_target";
                 if (parameters.canTargetLocations) return "location_target";
+                if (parameters.canTargetBuildings) return "building_target";
                 return "unsupported";
             }
 
@@ -901,6 +1091,11 @@ namespace LogSyncMod.AutoTest
             {
                 try
                 {
+                    if (AttackTargetBuilding != null && !AttackTargetBuilding.Destroyed)
+                    {
+                        AttackTargetBuilding.Destroy(DestroyMode.Vanish);
+                    }
+
                     if (ShooterPawn != null && !ShooterPawn.Destroyed)
                     {
                         ShooterPawn.Destroy(DestroyMode.Vanish);
@@ -912,6 +1107,7 @@ namespace LogSyncMod.AutoTest
 
                 ShooterPawn = null;
                 EquippedWeapon = null;
+                AttackTargetBuilding = null;
             }
 
             private void RecordPostHitSuccessIfNeeded()
@@ -922,6 +1118,7 @@ namespace LogSyncMod.AutoTest
                 }
 
                 Result.Status = "passed";
+                Result.Notes = AppendNote(Result.Notes, "CombatPassEvidence=" + (string.IsNullOrEmpty(CombatPassEvidence) ? "DamageOrKill" : CombatPassEvidence));
                 Result.Notes = AppendNote(Result.Notes, "TargetsDownedOrKilled=" + EnemyPawns.Count(pawn => pawn == null || pawn.Destroyed || pawn.Dead || pawn.Downed));
                 PostHitResultRecorded = true;
             }
@@ -978,6 +1175,19 @@ namespace LogSyncMod.AutoTest
 
             private bool TryBeginPostKillObservation()
             {
+                if (TargetingMode == "building_target" && AttackTargetBuilding != null && AttackTargetBuilding.Destroyed)
+                {
+                    FirstKillTick = Find.TickManager.TicksGame;
+                    FirstKillPawnLabel = "building_target";
+                    CombatPassEvidence = "BuildingTargetDestroyed";
+                    DelayTicks = ObservationTicks;
+                    Result.Stage = "post_kill_10s";
+                    Result.Notes = AppendNote(Result.Notes, "FirstKillTarget=building_target");
+                    Phase = RangedWeaponTestPhase.WaitingAfterHit;
+                    CleanupReason = "waiting_post_kill_delay";
+                    return true;
+                }
+
                 Pawn firstKilledPawn = EnemyPawns.FirstOrDefault(pawn => pawn == null || pawn.Destroyed || pawn.Dead || pawn.Downed);
                 if (firstKilledPawn == null && EnemyPawns.All(pawn => pawn != null && !pawn.Destroyed && !pawn.Dead && !pawn.Downed))
                 {
@@ -986,6 +1196,7 @@ namespace LogSyncMod.AutoTest
 
                 FirstKillTick = Find.TickManager.TicksGame;
                 FirstKillPawnLabel = firstKilledPawn == null ? "destroyed_target" : firstKilledPawn.LabelShortCap;
+                CombatPassEvidence = "TargetDownedOrKilled";
                 DelayTicks = ObservationTicks;
                 Result.Stage = "post_kill_10s";
                 Result.Notes = AppendNote(Result.Notes, "FirstKillTarget=" + FirstKillPawnLabel);
@@ -996,6 +1207,20 @@ namespace LogSyncMod.AutoTest
 
             private bool TryBeginPostDamageObservation()
             {
+                if (AttackTargetBuilding != null && !AttackTargetBuilding.Destroyed &&
+                    AttackTargetBuildingInitialHitPoints >= 0 && AttackTargetBuilding.HitPoints < AttackTargetBuildingInitialHitPoints)
+                {
+                    FirstDamageTick = Find.TickManager.TicksGame;
+                    FirstDamagePawnLabel = "building_target";
+                    CombatPassEvidence = "BuildingTargetDamaged";
+                    DelayTicks = PostDamageObservationTicks;
+                    Result.Stage = "post_damage_30s";
+                    Result.Notes = AppendNote(Result.Notes, "FirstDamageTarget=building_target");
+                    Phase = RangedWeaponTestPhase.WaitingAfterHit;
+                    CleanupReason = "waiting_post_damage_delay";
+                    return true;
+                }
+
                 Pawn firstDamagedPawn = EnemyPawns.FirstOrDefault(pawn =>
                     pawn != null &&
                     !pawn.Destroyed &&
@@ -1010,11 +1235,28 @@ namespace LogSyncMod.AutoTest
 
                 FirstDamageTick = Find.TickManager.TicksGame;
                 FirstDamagePawnLabel = firstDamagedPawn.LabelShortCap;
+                CombatPassEvidence = "TargetDamaged";
                 DelayTicks = PostDamageObservationTicks;
                 Result.Stage = "post_damage_30s";
                 Result.Notes = AppendNote(Result.Notes, "FirstDamageTarget=" + FirstDamagePawnLabel);
                 Phase = RangedWeaponTestPhase.WaitingAfterHit;
                 CleanupReason = "waiting_post_damage_delay";
+                return true;
+            }
+
+            private bool TryBeginPostProjectileObservation()
+            {
+                if (!ProjectileShotDetected)
+                {
+                    return false;
+                }
+
+                CombatPassEvidence = "ProjectileObserved";
+                DelayTicks = ObservationTicks;
+                Result.Stage = "post_projectile_10s";
+                Result.Notes = AppendNote(Result.Notes, "ProjectileCombatEvidence=True");
+                Phase = RangedWeaponTestPhase.WaitingAfterHit;
+                CleanupReason = "waiting_post_projectile_delay";
                 return true;
             }
 

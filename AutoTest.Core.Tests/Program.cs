@@ -31,7 +31,51 @@ internal sealed class CoreTestSuite
         TestCaseEvidenceRetention();
         TestDomainAssertions();
         TestRecipeExecutionPolicies();
+        TestCombatDistancePolicy();
         Console.WriteLine($"AutoTest.Core.Tests passed: {passed}");
+    }
+
+    private void TestCombatDistancePolicy()
+    {
+        var shortRange = AutoTestCombatDistancePolicy.Calculate(new AutoTestCombatDistanceRequest
+        {
+            VerbMinRange = 0f,
+            VerbRange = 7.9f,
+            MinimumSeparationMargin = 0.5f,
+            MaximumRangeMargin = 0.5f,
+            MinimumDistanceFloor = 2f,
+            MapSafeMaximum = 30f
+        });
+        Assert(shortRange.IsValid && Math.Abs(shortRange.MinValidDistance - 2f) < 0.001f &&
+            Math.Abs(shortRange.MaxValidDistance - 7.4f) < 0.001f &&
+            shortRange.PreferredDistance > 6f && shortRange.PreferredDistance < 6.5f,
+            "combat distance policy keeps short-range weapons below the old five-cell floor");
+
+        var indirect = AutoTestCombatDistancePolicy.Calculate(new AutoTestCombatDistanceRequest
+        {
+            VerbMinRange = 19.9f,
+            VerbRange = 89.9f,
+            MinimumSeparationMargin = 0.5f,
+            MaximumRangeMargin = 0.5f,
+            MinimumDistanceFloor = 5f,
+            MapSafeMaximum = 25f
+        });
+        Assert(indirect.IsValid && Math.Abs(indirect.MinValidDistance - 20.4f) < 0.001f &&
+            Math.Abs(indirect.MaxValidDistance - 25f) < 0.001f &&
+            Math.Abs(indirect.PreferredDistance - 25f) < 0.001f,
+            "combat distance policy respects minRange and clamps indirect fire to map capacity");
+
+        var impossible = AutoTestCombatDistancePolicy.Calculate(new AutoTestCombatDistanceRequest
+        {
+            VerbMinRange = 19.9f,
+            VerbRange = 89.9f,
+            MinimumSeparationMargin = 0.5f,
+            MaximumRangeMargin = 0.5f,
+            MinimumDistanceFloor = 5f,
+            MapSafeMaximum = 18f
+        });
+        Assert(!impossible.IsValid && impossible.FailureReason == "no_legal_distance_interval",
+            "combat distance policy reports maps that cannot contain a legal firing interval");
     }
 
     private void TestRecipeExecutionPolicies()

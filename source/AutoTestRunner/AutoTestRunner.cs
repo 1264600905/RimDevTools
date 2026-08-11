@@ -1584,6 +1584,7 @@ namespace LogSyncMod.AutoTest
 
             try
             {
+                ClearCombatScreenshotSelection(session.Result);
                 if (Current.Game != null) Current.Game.CurrentMap = session.TestMap;
                 CameraDriver cameraDriver = Find.CameraDriver;
                 if (cameraDriver == null) return false;
@@ -1616,6 +1617,7 @@ namespace LogSyncMod.AutoTest
 
             try
             {
+                ClearCombatScreenshotSelection(session.Result);
                 if (Current.Game != null) Current.Game.CurrentMap = session.TestMap;
 
                 CameraDriver cameraDriver = Find.CameraDriver;
@@ -1639,6 +1641,20 @@ namespace LogSyncMod.AutoTest
                 session.Result.Notes = AppendNote(session.Result.Notes, "RangedScreenshotFocusError=" + TrimForNote(ex.Message));
                 Log.Warning("[LogSyncAutoTest] Ranged screenshot focus failed for " + session.Result.DefName + ": " + ex.Message);
                 return false;
+            }
+        }
+
+        private static void ClearCombatScreenshotSelection(AutoTestResult result)
+        {
+            if (Find.Selector == null || Find.Selector.NumSelected <= 0)
+            {
+                return;
+            }
+
+            Find.Selector.ClearSelection();
+            if (result != null && (result.Notes == null || result.Notes.IndexOf("CombatScreenshotSelection=Cleared", StringComparison.Ordinal) < 0))
+            {
+                result.Notes = AppendNote(result.Notes, "CombatScreenshotSelection=Cleared");
             }
         }
 

@@ -61,6 +61,10 @@ namespace LogSyncMod.AutoTest
             private readonly Queue<StageScreenshotRequest> PendingStageScreenshots = new Queue<StageScreenshotRequest>();
             internal StageScreenshotRequest ActiveStageScreenshot;
             private int PendingStageScreenshotDelayTicks;
+            public Verb CombatVerb;
+            public VerbProperties CombatVerbProps;
+            public AutoTestCombatPlacementResult CombatPlacement;
+            private bool combatVerbEvidenceRecorded;
 
             public TurretTestSession(AutoTestRunner owner, ThingDef turretDef, AutoTestResult result)
             {
@@ -168,6 +172,10 @@ namespace LogSyncMod.AutoTest
                         case TurretTestPhase.SpawningEnemies:
                             LogMapState("before_spawn_enemies");
                             SpawnEnemies(5);
+                            if (Phase != TurretTestPhase.SpawningEnemies)
+                            {
+                                break;
+                            }
                             EnsureOperatorManning();
                             LogTurretState("after_spawn_enemies");
                             Result.Stage = "fighting_60s";
@@ -579,34 +587,40 @@ namespace LogSyncMod.AutoTest
                     return;
                 }
 
-                float range = 15f;
-                if (SpawnedTurret is Building_TurretGun turretGun)
+                ResolveCombatVerbProperties();
+                if (CombatVerbProps == null)
                 {
-                    if (turretGun.GunCompEq?.PrimaryVerb != null) range = turretGun.GunCompEq.PrimaryVerb.verbProps.range;
-                    else if (turretGun.AttackVerb != null) range = turretGun.AttackVerb.verbProps.range;
-                }
-                else
-                {
-                    try
-                    {
-                        var gunProp = SpawnedTurret.GetType().GetProperty("Gun");
-                        var gun = gunProp?.GetValue(SpawnedTurret, null);
-                        if (gun is ThingWithComps twc)
-                        {
-                            var verbs = (twc as IVerbOwner)?.VerbTracker?.AllVerbs;
-                            var mainVerb = verbs?.FirstOrDefault(v => v != null && v.verbProps != null && v.verbProps.range > 0);
-                            if (mainVerb != null) range = mainVerb.verbProps.range;
-                        }
-                    }
-                    catch
-                    {
-                    }
+                    Fail("unsupported_harness", "No turret attack VerbProperties were available after combat preparation.");
+                    return;
                 }
 
-                List<IntVec3> spawnCells = FindEnemySpawnCells(count, range);
+                CellRect safeRect = CellRect.FromLimits(5, 5, TestMap.Size.x - 6, TestMap.Size.z - 6);
+                IntVec3 preferredAnchor = new IntVec3(Mathf.RoundToInt(TestMap.Size.x * 0.625f), 0, TestMap.Size.z / 2);
+                CombatPlacement = new AutoTestCombatPlacementService().FindTargets(new AutoTestCombatPlacementRequest
+                {
+                    Map = TestMap,
+                    Attacker = SpawnedTurret,
+                    AttackerCell = SpawnedTurret.Position,
+                    VerbProps = CombatVerbProps,
+                    EffectiveRange = CombatVerb?.EffectiveRange ?? CombatVerbProps.range,
+                    TargetCount = count,
+                    PreferredAnchor = preferredAnchor,
+                    SafeRect = safeRect,
+                    RequireLineOfSight = CombatVerbProps.requireLineOfSight,
+                    RequireWalkable = true,
+                    MinimumSeparationMargin = 0.5f,
+                    MaximumRangeMargin = 0.5f,
+                    MinimumDistanceFloor = 5f
+                });
+                RecordCombatPlacementEvidence(CombatPlacement);
+                List<IntVec3> spawnCells = CombatPlacement.SelectedCells;
                 if (spawnCells.Count == 0)
                 {
-                    Fail("failed_enemy_spawn_pos", "No valid enemy spawn cells were found within turret range and edge-safe area.");
+                    string failure = CombatPlacement.FailureReason == "no_legal_distance_interval"
+                        ? "unsupported_harness"
+                        : "failed_enemy_spawn_pos";
+                    Fail(failure, "No valid turret target cells were found. reason=" + CombatPlacement.FailureReason +
+                        " diagnostics=" + CombatPlacement.DiagnosticsSummary);
                     return;
                 }
 
@@ -652,6 +666,21 @@ namespace LogSyncMod.AutoTest
                 }
 
                 Log.Message($"[LogSyncAutoTest] Spawn process for '{TurretDef.defName}' finished. Total enemy count: {EnemyPawns.Count}.");
+                Result.Notes = AppendNote(Result.Notes, "EnemyCount=" + EnemyPawns.Count);
+                Result.Notes = AppendNote(Result.Notes, "ActualTargetDistances=" + BuildActualTargetDistances());
+                if (EnemyPawns.Count == 0)
+                {
+                    Fail("failed_enemy_spawn", "No enemies were spawned for the turret test after valid cells were selected.");
+                    return;
+                }
+
+                if (!TryValidateSpawnedTargets(out string validationError))
+                {
+                    Fail("failed_target_validation", validationError);
+                    return;
+                }
+
+                Result.Notes = AppendNote(Result.Notes, "AttackInitiation=AutomaticTurret");
             }
 
             private void UpdateProjectileScreenshotSchedule()
@@ -935,104 +964,107 @@ namespace LogSyncMod.AutoTest
                 return Mathf.Sqrt(value.x * value.x + value.z * value.z);
             }
 
-            private List<IntVec3> FindEnemySpawnCells(int count, float range)
+            private void ResolveCombatVerbProperties()
             {
-                List<IntVec3> result = new List<IntVec3>();
-                if (TestMap == null || SpawnedTurret == null || count <= 0)
+                CombatVerb = null;
+                if (SpawnedTurret is Building_TurretGun turretGun)
                 {
-                    return result;
+                    CombatVerb = turretGun.AttackVerb ?? turretGun.GunCompEq?.PrimaryVerb;
                 }
 
-                CellRect safeRect = CellRect.FromLimits(5, 5, TestMap.Size.x - 6, TestMap.Size.z - 6);
-                if (safeRect.Width <= 0 || safeRect.Height <= 0)
+                if (CombatVerb == null && SpawnedTurret != null)
                 {
-                    return result;
+                    try
+                    {
+                        object reflectedVerb = SpawnedTurret.GetType().GetProperty("AttackVerb")?.GetValue(SpawnedTurret, null);
+                        CombatVerb = reflectedVerb as Verb;
+                        if (CombatVerb == null)
+                        {
+                            object gun = SpawnedTurret.GetType().GetProperty("Gun")?.GetValue(SpawnedTurret, null);
+                            CombatVerb = (gun as IVerbOwner)?.VerbTracker?.AllVerbs?
+                                .Where(value => value?.verbProps != null && value.verbProps.range > 0f)
+                                .OrderByDescending(value => value.verbProps.isPrimary)
+                                .ThenByDescending(value => value.verbProps.range)
+                                .FirstOrDefault();
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Result.Notes = AppendNote(Result.Notes, "TurretVerbReflectionError=" + TrimForNote(ex.Message));
+                    }
                 }
 
-                IntVec3 turretCell = SpawnedTurret.Position;
-                IntVec3 forward = new IntVec3(1, 0, 0);
-
-                int maxDistanceInSafeRect = MaxDistanceInSafeRect(turretCell, forward, safeRect);
-                int preferredDistance = Mathf.RoundToInt(Mathf.Min(range * 0.8f, TestMap.Size.x * 0.5f));
-                int targetDistance = Mathf.Clamp(preferredDistance, 5, maxDistanceInSafeRect);
-
-                if (targetDistance < 1)
+                CombatVerbProps = CombatVerb?.verbProps ?? TurretDef?.building?.turretGunDef?.Verbs?
+                    .Where(value => value != null && value.range > 0f)
+                    .OrderByDescending(value => value.isPrimary)
+                    .ThenByDescending(value => value.range)
+                    .FirstOrDefault();
+                if (CombatVerbProps == null || combatVerbEvidenceRecorded)
                 {
-                    return result;
+                    return;
                 }
 
-                // 布局 5/8
-                IntVec3 anchor = new IntVec3(Mathf.RoundToInt(TestMap.Size.x * 0.625f), 0, TestMap.Size.z / 2);
-                if (!anchor.InBounds(TestMap) || !safeRect.Contains(anchor))
-                {
-                    return result;
-                }
-
-                IntVec3 lateral = new IntVec3(0, 0, 1);
-                int lateralRadius = Mathf.Max(count, 3);
-                List<IntVec3> candidates = new List<IntVec3>();
-                for (int offset = -lateralRadius; offset <= lateralRadius; offset++)
-                {
-                    IntVec3 candidate = anchor + lateral * offset;
-                    if (!candidate.InBounds(TestMap) || !safeRect.Contains(candidate))
-                    {
-                        continue;
-                    }
-
-                    if (candidate.z < 15 || candidate.z > 35)
-                    {
-                        continue;
-                    }
-
-                    float distanceToTurret = candidate.DistanceTo(SpawnedTurret.Position);
-                    if (distanceToTurret > range)
-                    {
-                        continue;
-                    }
-
-                    if (SpawnedTurret.Position.DistanceTo(candidate) < 5f)
-                    {
-                        continue;
-                    }
-
-                    if (!GenSight.LineOfSight(SpawnedTurret.Position, candidate, TestMap))
-                    {
-                        continue;
-                    }
-
-                    candidates.Add(candidate);
-                }
-
-                foreach (IntVec3 candidate in candidates.OrderBy(cell => Mathf.Abs(cell.z - anchor.z)))
-                {
-                    if (result.Count >= count)
-                    {
-                        break;
-                    }
-
-                    result.Add(candidate);
-                }
-
-                return result;
+                Result.Notes = AppendNote(Result.Notes, "VerbDef=" + (TurretDef?.building?.turretGunDef?.defName ?? TurretDef?.defName ?? "unknown"));
+                Result.Notes = AppendNote(Result.Notes, "VerbClass=" + (CombatVerb?.GetType().FullName ?? CombatVerbProps.verbClass?.FullName ?? "unknown"));
+                Result.Notes = AppendNote(Result.Notes, "MinRange=" + CombatVerbProps.minRange.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture));
+                Result.Notes = AppendNote(Result.Notes, "Range=" + (CombatVerb?.EffectiveRange ?? CombatVerbProps.range).ToString("0.00", System.Globalization.CultureInfo.InvariantCulture));
+                Result.Notes = AppendNote(Result.Notes, "RequireLineOfSight=" + CombatVerbProps.requireLineOfSight);
+                Result.Notes = AppendNote(Result.Notes, "OnlyManualCast=" + CombatVerbProps.onlyManualCast);
+                combatVerbEvidenceRecorded = true;
             }
 
-            private int MaxDistanceInSafeRect(IntVec3 start, IntVec3 direction, CellRect safeRect)
+            private void RecordCombatPlacementEvidence(AutoTestCombatPlacementResult placement)
             {
-                int distance = 0;
-                IntVec3 current = start;
-                while (true)
+                if (placement == null)
                 {
-                    IntVec3 next = current + direction;
-                    if (!next.InBounds(TestMap) || !safeRect.Contains(next))
-                    {
-                        break;
-                    }
-
-                    distance++;
-                    current = next;
+                    return;
                 }
 
-                return distance;
+                Result.Notes = AppendNote(Result.Notes, "CombatMinRange=" + placement.MinValidDistance.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture));
+                Result.Notes = AppendNote(Result.Notes, "CombatMaxRange=" + placement.MaxValidDistance.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture));
+                Result.Notes = AppendNote(Result.Notes, "PreferredTargetDistance=" + placement.PreferredDistance.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture));
+                Result.Notes = AppendNote(Result.Notes, "PreferredCellWasValid=" + placement.PreferredCellWasValid);
+                Result.Notes = AppendNote(Result.Notes, "EnemyRepositioned=" + placement.EnemyRepositioned);
+                Result.Notes = AppendNote(Result.Notes, "RepositionReason=" + placement.RepositionReason);
+                Result.Notes = AppendNote(Result.Notes, "CandidateDiagnostics=" + placement.DiagnosticsSummary);
+            }
+
+            private bool TryValidateSpawnedTargets(out string errorMessage)
+            {
+                errorMessage = string.Empty;
+                if (CombatVerb == null)
+                {
+                    errorMessage = "The turret attack Verb was unavailable after enemy spawn.";
+                    return false;
+                }
+
+                foreach (Pawn pawn in EnemyPawns.Where(value => value != null && value.Spawned && value.Map == TestMap))
+                {
+                    float distance = pawn.Position.DistanceTo(SpawnedTurret.Position);
+                    if (distance < CombatPlacement.MinValidDistance - 0.01f || distance > CombatPlacement.MaxValidDistance + 0.01f)
+                    {
+                        errorMessage = "Spawned turret target at " + pawn.Position + " has illegal distance " +
+                            distance.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) + ".";
+                        return false;
+                    }
+
+                    if (!CombatVerb.CanHitTarget(pawn))
+                    {
+                        errorMessage = "Turret Verb.CanHitTarget rejected pawn at " + pawn.Position + ".";
+                        return false;
+                    }
+                }
+
+                Result.Notes = AppendNote(Result.Notes, "VerbCanHitTarget=True");
+                return true;
+            }
+
+            private string BuildActualTargetDistances()
+            {
+                return string.Join(",", EnemyPawns
+                    .Where(pawn => pawn != null && pawn.Spawned && pawn.Map == TestMap)
+                    .Select(pawn => pawn.Position.DistanceTo(SpawnedTurret.Position).ToString("0.00", System.Globalization.CultureInfo.InvariantCulture))
+                    .ToArray());
             }
 
             private void EnsureOperatorManning()

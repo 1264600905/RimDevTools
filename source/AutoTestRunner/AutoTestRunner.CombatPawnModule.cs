@@ -236,33 +236,17 @@ namespace LogSyncMod.AutoTest
 
             private List<IntVec3> FindEnemySpawnCells(int count)
             {
-                List<IntVec3> result = new List<IntVec3>();
                 if (TestMap == null || TargetPawn == null || count <= 0)
                 {
-                    return result;
+                    return new List<IntVec3>();
                 }
 
                 CellRect safeRect = CellRect.FromLimits(5, 5, TestMap.Size.x - 6, TestMap.Size.z - 6);
-                IntVec3 anchor = new IntVec3(Mathf.RoundToInt(TestMap.Size.x * 0.625f), 0, TestMap.Size.z / 2);
-                int[] lateralOffsets = { 0, -1, 1, -2, 2, -3, 3, -4, 4 };
-
-                foreach (int offset in lateralOffsets)
-                {
-                    if (result.Count >= count)
-                    {
-                        break;
-                    }
-
-                    IntVec3 candidate = anchor + new IntVec3(0, 0, offset);
-                    if (!candidate.InBounds(TestMap) || !safeRect.Contains(candidate) || !candidate.Walkable(TestMap))
-                    {
-                        continue;
-                    }
-
-                    result.Add(candidate);
-                }
-
-                return result;
+                AutoTestCombatPlacementResult placement = new AutoTestCombatPlacementService()
+                    .FindCloseCombatTargets(TestMap, TargetPawn, count, safeRect);
+                Result.Notes = AppendNote(Result.Notes, "CombatPawnTargetDistances=" + placement.ActualDistancesSummary(TargetPawn.Position));
+                Result.Notes = AppendNote(Result.Notes, "CombatPawnPlacementDiagnostics=" + placement.DiagnosticsSummary);
+                return placement.SelectedCells;
             }
 
             private void UpdateFighting()

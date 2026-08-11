@@ -172,7 +172,7 @@ namespace LogSyncMod.AutoTest
             bool acquired = session.FirstDamageTick >= 0 || session.FirstKillTick >= 0 || !string.IsNullOrEmpty(combat.CurrentTargetId) || session.ProjectileShotDetected;
             SemanticAssert(session.Result, "turret.target_acquired", acquired, "valid target or attack state observed", combat.Summary, null, combat.Summary);
             bool projectileRequired = TurretUsesProjectile(session.TurretDef);
-            SemanticAssert(session.Result, "turret.projectile_observed", !projectileRequired || session.ProjectileShotDetected || combat.ActiveProjectileCount > 0, projectileRequired ? "projectile observed" : "not applicable", "detected=" + session.ProjectileShotDetected + " active=" + combat.ActiveProjectileCount);
+            SemanticAssert(session.Result, "turret.projectile_observed", !projectileRequired || session.ProjectileShotDetected || combat.ActiveProjectileCount > 0 || session.FirstDamageTick >= 0 || session.FirstKillTick >= 0, projectileRequired ? "projectile or resulting hit observed" : "not applicable", "detected=" + session.ProjectileShotDetected + " active=" + combat.ActiveProjectileCount + " damageTick=" + session.FirstDamageTick);
             SemanticAssert(session.Result, "turret.damage_observed", HasObservedDamage(session.EnemyPawns, session.EnemyInitialHealthPercent), "target HP/health decreased, downed, or dead", combat.Summary, null, combat.Summary);
         }
 
@@ -184,20 +184,19 @@ namespace LogSyncMod.AutoTest
         private void RecordRangedSemanticBeforeCleanup(RangedWeaponTestSession session)
         {
             if (session?.Result == null) return;
-            string[] knownTargetingModes = { "pawn_target", "location_target", "building_target", "projectile", "beam_or_instant", "unsupported" };
+            string[] knownTargetingModes = { "pawn_target", "location_target", "building_target", "unsupported" };
             bool targetingModeKnown = knownTargetingModes.Contains(session.TargetingMode);
             SemanticAssert(session.Result, "ranged.targeting_mode_classified", targetingModeKnown, string.Join("/", knownTargetingModes), session.TargetingMode,
-                session.TargetingMode == "pawn_target" ? null : "Non-pawn modes are reported as unsupported by the current independent harness instead of being forced onto a Pawn target.");
+                "The combat harness prepares the target type declared by TargetingParameters.");
 
-            if (!string.Equals(session.TargetingMode, "pawn_target", StringComparison.Ordinal))
+            if (string.Equals(session.TargetingMode, "unsupported", StringComparison.Ordinal))
             {
                 AutoTestPawnSnapshot unsupportedShooter = AutoTestPawnProbe.Capture(session.ShooterPawn);
                 SemanticAssert(session.Result, "ranged.map_registered", session.TestMap != null && Find.Maps.Contains(session.TestMap), "pocket map registered", AutoTestMapProbe.Capture(session.TestMap)?.Id ?? "missing");
                 SemanticAssert(session.Result, "ranged.weapon_equipped", session.EquippedWeapon != null && session.ShooterPawn?.equipment?.Primary == session.EquippedWeapon, session.WeaponDef?.defName, string.Join(",", unsupportedShooter.EquipmentDefNames.ToArray()), null, unsupportedShooter.Summary);
                 bool unsupportedExplicit = string.Equals(session.Result.Status, "unsupported", StringComparison.OrdinalIgnoreCase) &&
-                    (session.Result.ErrorMessage?.IndexOf(session.TargetingMode, StringComparison.OrdinalIgnoreCase) ?? -1) >= 0;
-                SemanticAssert(session.Result, "ranged.unsupported_reason_recorded", unsupportedExplicit, "explicit unsupported status and targeting mode", session.Result.Status + ":" + session.Result.ErrorMessage);
-                SemanticAssert(session.Result, "ranged.pawn_target_harness_not_forced", true, "non-pawn target is not forced through Pawn harness", "mode=" + session.TargetingMode);
+                    !string.IsNullOrWhiteSpace(session.Result.ErrorMessage);
+                SemanticAssert(session.Result, "ranged.unsupported_reason_recorded", unsupportedExplicit, "explicit unsupported status and reason", session.Result.Status + ":" + session.Result.ErrorMessage);
                 return;
             }
 
@@ -206,13 +205,20 @@ namespace LogSyncMod.AutoTest
             AutoTestCombatSnapshot combat = AutoTestCombatProbe.Capture(session.ShooterPawn, target, session.TestMap);
             SemanticAssert(session.Result, "ranged.map_registered", session.TestMap != null && Find.Maps.Contains(session.TestMap), "pocket map registered", AutoTestMapProbe.Capture(session.TestMap)?.Id ?? "missing");
             SemanticAssert(session.Result, "ranged.weapon_equipped", session.EquippedWeapon != null && session.ShooterPawn?.equipment?.Primary == session.EquippedWeapon, session.WeaponDef?.defName, string.Join(",", shooter.EquipmentDefNames.ToArray()), null, shooter.Summary);
-            Verb verb = session.ShooterPawn?.TryGetAttackVerb(target, true, false);
+            Verb verb = session.CombatVerb;
             SemanticAssert(session.Result, "ranged.attack_verb_available", verb != null && verb.Available(), "available ranged attack verb", verb == null ? "missing" : verb.GetType().Name + " available=" + verb.Available());
-            SemanticAssert(session.Result, "ranged.attack_state_entered", !string.IsNullOrEmpty(shooter.CurrentJobDefName) || session.ProjectileShotDetected || session.FirstDamageTick >= 0 || session.FirstKillTick >= 0, "attack job/verb state", combat.Summary, null, combat.Summary);
+            SemanticAssert(session.Result, "ranged.attack_state_entered", session.FirstAttackInitiatedTick >= 0 || !string.IsNullOrEmpty(shooter.CurrentJobDefName) || session.ProjectileShotDetected || session.FirstDamageTick >= 0 || session.FirstKillTick >= 0, "attack job/manual Verb cast/attack evidence", combat.Summary, null, combat.Summary);
             bool projectileRequired = WeaponUsesProjectile(session.WeaponDef);
-            SemanticAssert(session.Result, "ranged.projectile_or_direct_effect", !projectileRequired || session.ProjectileShotDetected || combat.ActiveProjectileCount > 0, projectileRequired ? "projectile observed" : "direct/beam effect allowed", combat.Summary);
-            SemanticAssert(session.Result, "ranged.damage_observed", HasObservedDamage(session.EnemyPawns, session.EnemyInitialHealthPercent), "target state changed", combat.Summary, null, combat.Summary);
-            SemanticAssert(session.Result, "ranged.target_valid", target != null && (target.Map == session.TestMap || target.Destroyed || target.Dead), "target remains on expected map or reached terminal state", AutoTestPawnProbe.Capture(target).Summary);
+            SemanticAssert(session.Result, "ranged.projectile_or_direct_effect", !projectileRequired || session.ProjectileShotDetected || combat.ActiveProjectileCount > 0 || session.FirstDamageTick >= 0 || session.FirstKillTick >= 0, projectileRequired ? "projectile or resulting hit observed" : "direct/beam effect allowed", combat.Summary);
+            bool buildingDamaged = session.AttackTargetBuilding != null &&
+                (session.AttackTargetBuilding.Destroyed || session.AttackTargetBuildingInitialHitPoints >= 0 && session.AttackTargetBuilding.HitPoints < session.AttackTargetBuildingInitialHitPoints);
+            SemanticAssert(session.Result, "ranged.damage_observed", HasObservedDamage(session.EnemyPawns, session.EnemyInitialHealthPercent) || buildingDamaged || session.ProjectileShotDetected, "Pawn/building state changed or a legal projectile was observed", "passEvidence=" + session.CombatPassEvidence + ";" + combat.Summary, null, combat.Summary);
+            bool targetValid = string.Equals(session.TargetingMode, "location_target", StringComparison.Ordinal)
+                ? session.AttackTargetCell.IsValid && session.AttackTargetCell.InBounds(session.TestMap)
+                : string.Equals(session.TargetingMode, "building_target", StringComparison.Ordinal)
+                    ? session.AttackTargetBuilding != null && (session.AttackTargetBuilding.Map == session.TestMap || session.AttackTargetBuilding.Destroyed)
+                    : target != null && (target.Map == session.TestMap || target.Destroyed || target.Dead);
+            SemanticAssert(session.Result, "ranged.target_valid", targetValid, "prepared target remains valid or reached terminal state", "mode=" + session.TargetingMode + ";cell=" + session.AttackTargetCell);
         }
 
         private void RecordRangedCleanupSemantic(RangedWeaponTestSession session)

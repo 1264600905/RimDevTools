@@ -317,40 +317,17 @@ namespace LogSyncMod.AutoTest
 
             private List<IntVec3> FindEnemySpawnCells(int count)
             {
-                List<IntVec3> result = new List<IntVec3>();
                 if (TestMap == null || ShooterPawn == null)
                 {
-                    return result;
+                    return new List<IntVec3>();
                 }
 
                 CellRect safeRect = CellRect.FromLimits(5, 5, TestMap.Size.x - 6, TestMap.Size.z - 6);
-                // 敌人生成在地图 X 轴 5/8 处 (31.25)
-                IntVec3 anchor = new IntVec3(Mathf.RoundToInt(TestMap.Size.x * 0.625f), 0, TestMap.Size.z / 2);
-                // 纵向分布偏移
-                int[] lateralOffsets = { 0, -1, 1, -2, 2, -3, 3 };
-
-                foreach (int offset in lateralOffsets)
-                {
-                    if (result.Count >= count)
-                    {
-                        break;
-                    }
-
-                    IntVec3 candidate = anchor + new IntVec3(0, 0, offset);
-                    if (!candidate.InBounds(TestMap) || !safeRect.Contains(candidate))
-                    {
-                        continue;
-                    }
-
-                    if (!candidate.Walkable(TestMap))
-                    {
-                        continue;
-                    }
-
-                    result.Add(candidate);
-                }
-
-                return result;
+                AutoTestCombatPlacementResult placement = new AutoTestCombatPlacementService()
+                    .FindCloseCombatTargets(TestMap, ShooterPawn, count, safeRect);
+                Result.Notes = AppendNote(Result.Notes, "MeleeTargetDistances=" + placement.ActualDistancesSummary(ShooterPawn.Position));
+                Result.Notes = AppendNote(Result.Notes, "MeleePlacementDiagnostics=" + placement.DiagnosticsSummary);
+                return placement.SelectedCells;
             }
 
             private void UpdateFightingPhase()
