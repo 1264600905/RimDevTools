@@ -85,7 +85,7 @@ using (var manifestDocument = JsonDocument.Parse(File.ReadAllText(Path.Combine(d
 
 var logSyncAbout = XDocument.Load(Path.Combine(data, "LogSyncMod", "About", "About.xml"));
 Assert(logSyncAbout.Root?.Element("packageId")?.Value.Equals("trigger.logsyncmod", StringComparison.OrdinalIgnoreCase) == true, "packaged LogSyncMod has the expected packageId");
-Assert(logSyncAbout.Root?.Element("modVersion")?.Value == "1.1.6", "packaged LogSyncMod declares version 1.1.6");
+Assert(logSyncAbout.Root?.Element("modVersion")?.Value == "1.1.7", "packaged LogSyncMod declares version 1.1.7");
 var logSyncAssembly = AssemblyName.GetAssemblyName(Path.Combine(data, "LogSyncMod", "1.6", "Assemblies", "LogSyncMod.dll")).Version;
 var autoTestAssembly = AssemblyName.GetAssemblyName(Path.Combine(data, "LogSyncMod", "1.6", "Assemblies", "AutoTestRunner.dll")).Version;
 Assert(logSyncAssembly is not null && autoTestAssembly is not null && logSyncAssembly.Major == autoTestAssembly.Major && logSyncAssembly.Minor == autoTestAssembly.Minor && logSyncAssembly.Build == autoTestAssembly.Build, "packaged LogSync assemblies share a product version");
@@ -132,7 +132,9 @@ Assert(modCopyHelp.Contains("--include-ignored", StringComparison.Ordinal)
 var testRunHelp = Run(Path.Combine(tools, "RimDevTools.exe"), release, "test", "run", "--help");
 Assert(testRunHelp.Contains("--batch-size", StringComparison.Ordinal)
     && testRunHelp.Contains("defaults to 40", StringComparison.Ordinal)
-    && testRunHelp.Contains("ignore the batch limit", StringComparison.Ordinal), "packaged CLI exposes the automatic-test batch contract");
+    && testRunHelp.Contains("including Standard", StringComparison.Ordinal)
+    && testRunHelp.Contains("uniformly at random without replacement", StringComparison.Ordinal)
+    && testRunHelp.Contains("Explicit --defname runs ignore", StringComparison.Ordinal), "packaged CLI exposes the automatic-test batch contract");
 var removedInit = RunResult(Path.Combine(tools, "RimDevTools.exe"), release, "init", "1.6", "--output", Path.Combine(Path.GetTempPath(), "removed-init"));
 Assert(removedInit.ExitCode == 2 && removedInit.Stdout.Contains("UNKNOWN_COMMAND", StringComparison.Ordinal), "packaged CLI no longer exposes init");
 var removedRef = RunResult(Path.Combine(tools, "RimDevTools.exe"), release, "ref", "search", "anything");

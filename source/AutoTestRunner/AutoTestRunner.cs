@@ -97,6 +97,7 @@ namespace LogSyncMod.AutoTest
         private readonly LogSyncSettings settings;
         private readonly Map map; // 主地图，用于UI测试等
         private readonly Queue<AutoTestWorkItem> pendingItems = new Queue<AutoTestWorkItem>();
+        private readonly Queue<AutoTestDeferredResult> pendingImmediateResults = new Queue<AutoTestDeferredResult>();
         private readonly List<AutoTestResult> results = new List<AutoTestResult>();
         private readonly List<AutoTestManifestEntry> discoveredManifest = new List<AutoTestManifestEntry>();
         private readonly List<AutoTestManifestEntry> plannedManifest = new List<AutoTestManifestEntry>();
@@ -299,6 +300,7 @@ namespace LogSyncMod.AutoTest
             }
 
             ApplyBatchLimit();
+            MaterializeImmediateResults();
             BuildPlannedManifest();
 
             int totalPending = pendingItems.Count + pendingTurretDefs.Count + pendingRangedWeaponDefs.Count + pendingMeleeWeaponDefs.Count + pendingSkillAbilityDefs.Count + pendingStaticViewTargets.Count + pendingThreeViewTargets.Count + pendingCombatPawnTargets.Count;
@@ -712,6 +714,46 @@ namespace LogSyncMod.AutoTest
             RecordResult(result);
         }
 
+        private void QueueImmediateResult(
+            AutoTestManifestEntry manifestEntry,
+            string defType,
+            string defName,
+            string label,
+            string status,
+            string stage,
+            string errorMessage,
+            params string[] notes)
+        {
+            string combinedNotes = string.Empty;
+            if (notes != null)
+            {
+                foreach (string note in notes) combinedNotes = AppendNote(combinedNotes, note);
+            }
+
+            pendingImmediateResults.Enqueue(new AutoTestDeferredResult
+            {
+                ManifestEntry = manifestEntry,
+                DefType = defType ?? string.Empty,
+                DefName = defName ?? string.Empty,
+                Label = label ?? string.Empty,
+                Status = status ?? string.Empty,
+                Stage = stage ?? string.Empty,
+                ErrorMessage = errorMessage ?? string.Empty,
+                Notes = combinedNotes
+            });
+        }
+
+        private void MaterializeImmediateResults()
+        {
+            while (pendingImmediateResults.Count > 0)
+            {
+                AutoTestDeferredResult deferred = pendingImmediateResults.Dequeue();
+                AutoTestResult result = CreateResult(deferred.ManifestEntry, deferred.DefType, deferred.DefName, deferred.Label);
+                result.Notes = AppendNote(result.Notes, deferred.Notes);
+                AddImmediateResult(result, deferred.Status, deferred.Stage, deferred.ErrorMessage);
+            }
+        }
+
         private void Finish()
         {
             if (completed) return;
@@ -813,129 +855,50 @@ namespace LogSyncMod.AutoTest
 
         private void ApplyBatchLimit()
         {
-            if (IsFullCoverageRun() || (settings.autoTestTargetDefNames != null && settings.autoTestTargetDefNames.Count > 0))
+            if (settings.autoTestTargetDefNames != null && settings.autoTestTargetDefNames.Count > 0)
             {
-                Log.Message("[LogSyncAutoTest] Full-coverage or exact-target run detected. Batch limit is ignored.");
+                Log.Message("[LogSyncAutoTest] Exact-target run detected. Batch limit is ignored.");
                 return;
             }
 
             int limit = Math.Max(1, settings.autoTestBatchSize);
-            int originalTotal = pendingItems.Count + pendingTurretDefs.Count + pendingRangedWeaponDefs.Count + pendingMeleeWeaponDefs.Count + pendingSkillAbilityDefs.Count + pendingStaticViewTargets.Count + pendingThreeViewTargets.Count + pendingCombatPawnTargets.Count;
+            int originalTotal = pendingItems.Count + pendingTurretDefs.Count + pendingRangedWeaponDefs.Count + pendingMeleeWeaponDefs.Count + pendingSkillAbilityDefs.Count + pendingStaticViewTargets.Count + pendingThreeViewTargets.Count + pendingCombatPawnTargets.Count + pendingImmediateResults.Count;
             if (originalTotal <= limit)
             {
                 return;
             }
 
-            var limitedItems = new Queue<AutoTestWorkItem>();
-            var limitedTurrets = new Queue<ThingDef>();
-            var limitedRangedWeapons = new Queue<ThingDef>();
-            var limitedMeleeWeapons = new Queue<ThingDef>();
-            var limitedSkillAbilities = new Queue<AbilityDef>();
-            var limitedStaticViews = new Queue<AutoTestStaticViewTargetSpec>();
-            var limitedThreeViews = new Queue<AutoTestThreeViewTargetSpec>();
-            var limitedCombatPawns = new Queue<AutoTestCombatPawnTargetSpec>();
-            int keptCount = 0;
-
-            while (keptCount < limit)
-            {
-                bool itemAddedInRound = false;
-
-                if (pendingItems.Count > 0)
-                {
-                    limitedItems.Enqueue(pendingItems.Dequeue());
-                    keptCount++;
-                    itemAddedInRound = true;
-                    if (keptCount >= limit) break;
-                }
-
-                if (pendingTurretDefs.Count > 0)
-                {
-                    limitedTurrets.Enqueue(pendingTurretDefs.Dequeue());
-                    keptCount++;
-                    itemAddedInRound = true;
-                    if (keptCount >= limit) break;
-                }
-
-                if (pendingRangedWeaponDefs.Count > 0)
-                {
-                    limitedRangedWeapons.Enqueue(pendingRangedWeaponDefs.Dequeue());
-                    keptCount++;
-                    itemAddedInRound = true;
-                    if (keptCount >= limit) break;
-                }
-
-                if (pendingMeleeWeaponDefs.Count > 0)
-                {
-                    limitedMeleeWeapons.Enqueue(pendingMeleeWeaponDefs.Dequeue());
-                    keptCount++;
-                    itemAddedInRound = true;
-                    if (keptCount >= limit) break;
-                }
-
-                if (pendingSkillAbilityDefs.Count > 0)
-                {
-                    limitedSkillAbilities.Enqueue(pendingSkillAbilityDefs.Dequeue());
-                    keptCount++;
-                    itemAddedInRound = true;
-                    if (keptCount >= limit) break;
-                }
-
-                if (pendingStaticViewTargets.Count > 0)
-                {
-                    limitedStaticViews.Enqueue(pendingStaticViewTargets.Dequeue());
-                    keptCount++;
-                    itemAddedInRound = true;
-                    if (keptCount >= limit) break;
-                }
-
-                if (pendingThreeViewTargets.Count > 0)
-                {
-                    limitedThreeViews.Enqueue(pendingThreeViewTargets.Dequeue());
-                    keptCount++;
-                    itemAddedInRound = true;
-                    if (keptCount >= limit) break;
-                }
-
-                if (pendingCombatPawnTargets.Count > 0)
-                {
-                    limitedCombatPawns.Enqueue(pendingCombatPawnTargets.Dequeue());
-                    keptCount++;
-                    itemAddedInRound = true;
-                    if (keptCount >= limit) break;
-                }
-
-                if (!itemAddedInRound)
-                {
-                    break; // All queues are empty
-                }
-            }
-
-            // Clear the remaining items in the original queues
-            pendingItems.Clear();
-            pendingTurretDefs.Clear();
-            pendingRangedWeaponDefs.Clear();
-            pendingMeleeWeaponDefs.Clear();
-            pendingSkillAbilityDefs.Clear();
-            pendingStaticViewTargets.Clear();
-            pendingThreeViewTargets.Clear();
-            pendingCombatPawnTargets.Clear();
-
-            // Repopulate with the limited items
-            foreach (var item in limitedItems) pendingItems.Enqueue(item);
-            foreach (var item in limitedTurrets) pendingTurretDefs.Enqueue(item);
-            foreach (var item in limitedRangedWeapons) pendingRangedWeaponDefs.Enqueue(item);
-            foreach (var item in limitedMeleeWeapons) pendingMeleeWeaponDefs.Enqueue(item);
-            foreach (var item in limitedSkillAbilities) pendingSkillAbilityDefs.Enqueue(item);
-            foreach (var item in limitedStaticViews) pendingStaticViewTargets.Enqueue(item);
-            foreach (var item in limitedThreeViews) pendingThreeViewTargets.Enqueue(item);
-            foreach (var item in limitedCombatPawns) pendingCombatPawnTargets.Enqueue(item);
+            HashSet<int> selectedIndices = new HashSet<int>(AutoTestBatchSelector.SelectIndices(originalTotal, limit));
+            int candidateIndex = 0;
+            RetainSelected(pendingItems, selectedIndices, ref candidateIndex);
+            RetainSelected(pendingTurretDefs, selectedIndices, ref candidateIndex);
+            RetainSelected(pendingRangedWeaponDefs, selectedIndices, ref candidateIndex);
+            RetainSelected(pendingMeleeWeaponDefs, selectedIndices, ref candidateIndex);
+            RetainSelected(pendingSkillAbilityDefs, selectedIndices, ref candidateIndex);
+            RetainSelected(pendingStaticViewTargets, selectedIndices, ref candidateIndex);
+            RetainSelected(pendingThreeViewTargets, selectedIndices, ref candidateIndex);
+            RetainSelected(pendingCombatPawnTargets, selectedIndices, ref candidateIndex);
+            RetainSelected(pendingImmediateResults, selectedIndices, ref candidateIndex);
 
             batchLimitApplied = true;
 
             Log.Message(string.Format(
-                "[LogSyncAutoTest] Batch limit applied. Original={0}, Kept={1}",
+                "[LogSyncAutoTest] Random batch limit applied. Original={0}, Kept={1}",
                 originalTotal,
-                keptCount));
+                selectedIndices.Count));
+        }
+
+        private static void RetainSelected<T>(Queue<T> queue, HashSet<int> selectedIndices, ref int candidateIndex)
+        {
+            Queue<T> retained = new Queue<T>();
+            while (queue.Count > 0)
+            {
+                T candidate = queue.Dequeue();
+                if (selectedIndices.Contains(candidateIndex)) retained.Enqueue(candidate);
+                candidateIndex++;
+            }
+
+            while (retained.Count > 0) queue.Enqueue(retained.Dequeue());
         }
 
         private AutoTestCaseType ResolveCaseType(AutoTestKind kind)

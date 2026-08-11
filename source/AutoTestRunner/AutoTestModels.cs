@@ -102,6 +102,18 @@ namespace LogSyncMod.AutoTest
         public AutoTestManifestEntry ManifestEntry;
     }
 
+    internal sealed class AutoTestDeferredResult
+    {
+        public AutoTestManifestEntry ManifestEntry;
+        public string DefType;
+        public string DefName;
+        public string Label;
+        public string Status;
+        public string Stage;
+        public string ErrorMessage;
+        public string Notes;
+    }
+
     internal sealed class AutoTestManifestEntry
     {
         public string CaseId;

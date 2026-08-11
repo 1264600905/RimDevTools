@@ -33,7 +33,28 @@ internal sealed class CoreTestSuite
         TestDomainAssertions();
         TestRecipeExecutionPolicies();
         TestCombatDistancePolicy();
+        TestBatchSelector();
         Console.WriteLine($"AutoTest.Core.Tests passed: {passed}");
+    }
+
+    private void TestBatchSelector()
+    {
+        var all = AutoTestBatchSelector.SelectIndices(5, 5);
+        Assert(all.SequenceEqual(new[] { 0, 1, 2, 3, 4 }), "batch selector keeps every candidate when the limit is not exceeded");
+
+        var observedSelections = new HashSet<string>(StringComparer.Ordinal);
+        for (var attempt = 0; attempt < 12; attempt++)
+        {
+            var selected = AutoTestBatchSelector.SelectIndices(20, 6);
+            Assert(selected.Count == 6 && selected.Distinct().Count() == 6 && selected.All(index => index >= 0 && index < 20),
+                "batch selector returns an in-range sample without replacement");
+            Assert(selected.SequenceEqual(selected.OrderBy(index => index)), "batch selector preserves stable execution ordering after random selection");
+            observedSelections.Add(string.Join(",", selected));
+        }
+        Assert(observedSelections.Count > 1, "batch selector uses fresh non-reproducible randomness for each limited selection");
+
+        var empty = AutoTestBatchSelector.SelectIndices(0, 3);
+        Assert(empty.Count == 0, "batch selector accepts an empty candidate set");
     }
 
     private void TestCombatDistancePolicy()

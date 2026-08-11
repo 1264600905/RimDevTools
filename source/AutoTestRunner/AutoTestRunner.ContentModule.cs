@@ -501,12 +501,11 @@ namespace LogSyncMod.AutoTest
                 AutoTestRecipeClassification classification = ClassifyRecipe(recipe, ResolveRecipeWorktable(recipe), ResolveBestMatchingSpec(AutoTestKind.Recipe, recipe));
                 if (productDef == null && classification.Kind != AutoTestRecipeExecutionKind.MechResurrection)
                 {
-                    AddImmediateResult(
-                        CreateResult(
-                            RegisterDiscoveredCase(AutoTestCaseType.RecipeBillUi, "RecipeDef", recipe.defName, recipe.label),
-                            "RecipeDef",
-                            recipe.defName,
-                            recipe.label),
+                    QueueImmediateResult(
+                        RegisterDiscoveredCase(AutoTestCaseType.RecipeBillUi, "RecipeDef", recipe.defName, recipe.label),
+                        "RecipeDef",
+                        recipe.defName,
+                        recipe.label,
                         "skipped",
                         "collect",
                         "No supported product ThingDef was found for this recipe.");
@@ -516,18 +515,15 @@ namespace LogSyncMod.AutoTest
                 ThingDef worktableDef = ResolveRecipeWorktable(recipe);
                 if (worktableDef == null)
                 {
-                    AutoTestResult result = CreateResult(
+                    QueueImmediateResult(
                         RegisterDiscoveredCase(AutoTestCaseType.RecipeBillUi, "RecipeDef", recipe.defName, recipe.label),
                         "RecipeDef",
                         recipe.defName,
-                        recipe.label);
-                    result.Label = productDef?.label ?? recipe.label ?? string.Empty;
-                    result.Notes = AppendNote(result.Notes, "Product=" + SafeDefName(productDef));
-                    AddImmediateResult(
-                        result,
+                        productDef?.label ?? recipe.label ?? string.Empty,
                         "skipped",
                         "collect",
-                        "No usable worktable recipe user was found.");
+                        "No usable worktable recipe user was found.",
+                        "Product=" + SafeDefName(productDef));
                     continue;
                 }
 
@@ -550,15 +546,16 @@ namespace LogSyncMod.AutoTest
                     continue;
                 }
 
-                AutoTestResult result = CreateResult(item.ManifestEntry, "RecipeDef", item.RecipeDef.defName, item.RecipeDef.label);
-                result.Label = item.ThingDef?.label ?? item.RecipeDef.label ?? string.Empty;
-                result.Notes = AppendNote(result.Notes, "Product=" + SafeDefName(item.ThingDef));
-                result.Notes = AppendNote(result.Notes, "Worktable=" + SafeDefName(item.WorktableDef));
-                AddImmediateResult(
-                    result,
+                QueueImmediateResult(
+                    item.ManifestEntry,
+                    "RecipeDef",
+                    item.RecipeDef.defName,
+                    item.ThingDef?.label ?? item.RecipeDef.label ?? string.Empty,
                     "skipped",
                     "setup",
-                    "Required worktable could not be placed.");
+                    "Required worktable could not be placed.",
+                    "Product=" + SafeDefName(item.ThingDef),
+                    "Worktable=" + SafeDefName(item.WorktableDef));
             }
         }
 

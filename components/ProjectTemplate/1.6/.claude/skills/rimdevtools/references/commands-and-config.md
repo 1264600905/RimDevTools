@@ -58,7 +58,7 @@ quick 是启动冒烟测试。manual 是用户手动的。auto 和 XML 验证结
 
 `--scope` 可在 auto/XML 中重复，多个 scope 取并集。正式值为 `standard`、`ui`、`combat`、`view`、`misc`；旧细分值继续以原窄范围语义兼容。未传时默认为 `Standard`；Standard 横跨四类常规测试，但不隐式启用 CombatPawns 或 SkillPocketMaps。
 
-`--defname` 仅适用于 auto，可重复且按不区分大小写去重。scope 选择测试类型，DefName 选择目标，两者取交集；不传 DefName 时枚举所选范围。任何请求的 DefName 未产生用例时，本轮失败并在 JSON/Markdown 中列出未命中名称。`--batch-size` 适用于 auto/xml，默认 40；非 Standard 且不指定 DefName 时限制计划数量，Standard 全量和显式 DefName 运行忽略该限制。游戏进程 stdout/stderr 会被安静丢弃，不生成独立进程日志；自动测试不落盘独立 Evidence JSON。
+`--defname` 仅适用于 auto，可重复且按不区分大小写去重。scope 选择测试类型，DefName 选择目标，两者取交集；不传 DefName 时枚举所选范围。任何请求的 DefName 未产生用例时，本轮失败并在 JSON/Markdown 中列出未命中名称。`--batch-size` 适用于 auto/xml，默认 40；包括 Standard 在内的枚举运行都限制最终计划数量，候选超限时从全部候选中全局均匀、无放回随机抽取。显式 DefName 运行继续忽略该限制。游戏进程 stdout/stderr 会被安静丢弃，不生成独立进程日志；自动测试不落盘独立 Evidence JSON。
 
 例 1，只测试三视图：
 

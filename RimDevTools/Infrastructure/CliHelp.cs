@@ -259,7 +259,7 @@ public static class CliHelp
           --target-package-id <id>    Auto/XML target; defaults to current project.
           --scope <value>             Repeatable auto/xml scope; defaults to Standard.
           --defname <value>           Repeatable auto-mode DefName allowlist.
-          --batch-size <n>            Positive auto/xml targeted-case limit; defaults to 40.
+          --batch-size <n>            Positive auto/xml random-case limit; defaults to 40.
           --capture-screenshots       Enable AutoTest screenshots for auto/xml only.
           --isolated-desktop          Force a private Windows desktop for this run.
           --no-isolated-desktop       Force the current visible desktop for this run.
@@ -279,8 +279,9 @@ public static class CliHelp
           Legacy detailed values remain accepted with their original narrow behavior.
 
         Batch behavior:
-          Standard full-coverage runs and explicit --defname runs ignore the batch limit.
-          Other targeted auto/xml runs plan at most --batch-size cases.
+          Auto/XML runs, including Standard, plan at most --batch-size cases.
+          If more candidates are available, targets are sampled uniformly at random without replacement.
+          Explicit --defname runs ignore the batch limit.
 
         Output:
           JSON runId, mode, target, mods/additions, isolation source, signal, result, and
