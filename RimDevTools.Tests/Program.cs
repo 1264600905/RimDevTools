@@ -1249,8 +1249,8 @@ internal sealed class TestSuite
         var isolatedDesktop = File.ReadAllText(Path.Combine(environment.ConfigDirectory, "fake-desktop.txt"));
         var quickSettings = XDocument.Parse(File.ReadAllText(Path.Combine(environment.ConfigDirectory, "fake-settings.xml")));
         Assert(quick.ExitCode == 0 && quick.Output.Contains("\"isolatedDesktop\": false") && !File.ReadAllText(Path.Combine(environment.ConfigDirectory, "fake-args.txt")).Contains("quicktest"), "quick mode waits for ready signal on the normal desktop by default");
-        Assert(File.ReadAllText(SettingsEditor.GameProcessLogPath(ProjectDiscovery.Find(environment.Root, out _)!)).Contains("FAKE_GAME_STDOUT", StringComparison.Ordinal)
-            && !quick.Output.Contains("FAKE_GAME_STDOUT", StringComparison.Ordinal), "normal desktop game output is captured outside the final JSON");
+        var legacyProcessLog = Path.Combine(environment.Root, ".tools", "log", "RimWorldProcess.log");
+        Assert(!File.Exists(legacyProcessLog) && !quick.Output.Contains("FAKE_GAME_STDOUT", StringComparison.Ordinal), "normal desktop game output is discarded without creating a process log or polluting final JSON");
         using (var quickJson = JsonDocument.Parse(quick.Output))
         {
             Assert(quickJson.RootElement.GetProperty("warnings").GetArrayLength() == 1
@@ -1329,8 +1329,7 @@ internal sealed class TestSuite
         Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", "manual");
         var isolatedManual = await CaptureAsync(() => TestCommand.RunAsync(["test", "run", "--mode", "manual", "--isolated-desktop", "--timeout-seconds", "5"]));
         Assert(isolatedManual.ExitCode == 0 && isolatedManual.Output.Contains("\"isolatedDesktop\": true") && File.ReadAllText(Path.Combine(environment.ConfigDirectory, "fake-desktop.txt")).StartsWith("RimDevTools.", StringComparison.Ordinal), "manual mode supports an explicit isolated desktop override");
-        Assert(File.ReadAllText(SettingsEditor.GameProcessLogPath(ProjectDiscovery.Find(environment.Root, out _)!)).Contains("FAKE_GAME_STDOUT", StringComparison.Ordinal)
-            && !isolatedManual.Output.Contains("FAKE_GAME_STDOUT", StringComparison.Ordinal), "isolated desktop game output is captured outside the final JSON");
+        Assert(!File.Exists(legacyProcessLog) && !isolatedManual.Output.Contains("FAKE_GAME_STDOUT", StringComparison.Ordinal), "isolated desktop game output is discarded without creating a process log or polluting final JSON");
 
         Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", "hang");
         var timeout = await CaptureAsync(() => TestCommand.RunAsync(["test", "run", "--mode", "manual", "--timeout-seconds", "1"]));

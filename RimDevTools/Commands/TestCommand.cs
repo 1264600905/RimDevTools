@@ -235,7 +235,6 @@ public static class TestCommand
         TestOutcome outcome;
         var gameExited = true;
         var outputPath = SettingsEditor.AutoTestOutputPath(context);
-        var gameProcessLogPath = SettingsEditor.GameProcessLogPath(context);
         var resultSnapshot = AutoResultValidator.Snapshot(outputPath);
         var logOffset = 0L;
         try
@@ -248,11 +247,10 @@ public static class TestCommand
             await SettingsEditor.UpdateAsync(context, mode, transaction, runId, targetPackageId, captureScreenshots, muteAudio: mode != "manual", selection.Scopes, selection.HasExplicitScopes, selection.DefNames, batchSize);
 
             LogArchive.Rotate(SettingsEditor.SyncLogPath(context), context.Config.Retention.MaxLogFiles);
-            if (gameProcessLogPath is not null) LogArchive.Rotate(gameProcessLogPath, context.Config.Retention.MaxLogFiles);
 
             var gameArguments = new List<string> { "-popupwindow" };
             if (mode is "auto" or "xml") gameArguments.Add("quicktest");
-            gameSession = GameProcessLauncher.Start(gamePath, context.Config.RimWorldDir, gameArguments, isolation.Enabled, runId, gameProcessLogPath);
+            gameSession = GameProcessLauncher.Start(gamePath, context.Config.RimWorldDir, gameArguments, isolation.Enabled, runId);
             outcome = await WaitForModeAsync(mode, gameSession.Process, timeout, syncLogPath, logOffset, outputPath, targetPackageId, runId, resultSnapshot, cancellationToken);
         }
         catch (OperationCanceledException)
@@ -284,7 +282,7 @@ public static class TestCommand
         }
 
         if (!gameExited)
-            return CliResult.WriteFailure(command, outcome.ExitCode, outcome.Code, outcome.Message, context.Root, new { runId, mode, batchSize, dependencyWarnings, isolatedDesktop = isolation.Enabled, isolatedDesktopSource = isolation.Source, gameProcessLogPath, transactionRetained = transaction is not null }, dependencyWarnings);
+            return CliResult.WriteFailure(command, outcome.ExitCode, outcome.Code, outcome.Message, context.Root, new { runId, mode, batchSize, dependencyWarnings, isolatedDesktop = isolation.Enabled, isolatedDesktopSource = isolation.Source, transactionRetained = transaction is not null }, dependencyWarnings);
 
         if (transaction is not null)
         {
@@ -299,7 +297,7 @@ public static class TestCommand
         }
 
         if (!outcome.Ok)
-            return CliResult.WriteFailure(command, outcome.ExitCode, outcome.Code, outcome.Message, context.Root, new { runId, mode, scopes = selection.Scopes, defNames = selection.DefNames, batchSize, dependencyWarnings, isolatedDesktop = isolation.Enabled, isolatedDesktopSource = isolation.Source, gameProcessLogPath, mods = modList.Mods, additions = modList.Additions, outcome.Details }, dependencyWarnings);
+            return CliResult.WriteFailure(command, outcome.ExitCode, outcome.Code, outcome.Message, context.Root, new { runId, mode, scopes = selection.Scopes, defNames = selection.DefNames, batchSize, dependencyWarnings, isolatedDesktop = isolation.Enabled, isolatedDesktopSource = isolation.Source, mods = modList.Mods, additions = modList.Additions, outcome.Details }, dependencyWarnings);
 
         return CliResult.WriteSuccess(command, context.Root, new
         {
@@ -312,7 +310,6 @@ public static class TestCommand
             captureScreenshots,
             isolatedDesktop = isolation.Enabled,
             isolatedDesktopSource = isolation.Source,
-            gameProcessLogPath,
             mods = modList.Mods,
             additions = modList.Additions,
             signal = outcome.Message,
@@ -664,7 +661,6 @@ public static class ModListParser
 public static class SettingsEditor
 {
     public static string SyncLogPath(ProjectContext context) => Path.Combine(context.Root, ".tools", "log", "精选日志.log");
-    public static string GameProcessLogPath(ProjectContext context) => Path.Combine(context.Root, ".tools", "log", "RimWorldProcess.log");
     public static string AutoTestOutputPath(ProjectContext context) => Path.Combine(context.Root, ".tools", "log", "AutoTestOutput");
 
     public static async Task<bool> UpdateAsync(ProjectContext context, string mode, ConfigTransaction? transaction = null, string? runId = null, string? targetPackageId = null, bool captureScreenshots = false, bool? muteAudio = null, IReadOnlyList<string>? scopes = null, bool hasExplicitScopes = false, IReadOnlyList<string>? defNames = null, int? batchSize = null)

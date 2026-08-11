@@ -16,7 +16,6 @@ namespace LogSyncMod.AutoTest
         public string ReportPath;
         public string ResultPath;
         public string ManifestPath;
-        public string EvidencePath;
         public string ScreenshotDirectory;
     }
 
@@ -43,7 +42,6 @@ namespace LogSyncMod.AutoTest
                 ReportPath = Path.Combine(screenshotDirectory, runBaseName + "_Report.md"),
                 ResultPath = basePath + "_Result.json",
                 ManifestPath = Path.Combine(screenshotDirectory, runBaseName + "_Manifest.json"),
-                EvidencePath = Path.Combine(screenshotDirectory, runBaseName + "_Evidence.json"),
                 ScreenshotDirectory = screenshotDirectory
             };
         }
@@ -68,7 +66,6 @@ namespace LogSyncMod.AutoTest
 
                 Directory.CreateDirectory(artifacts.OutputDirectory);
                 Directory.CreateDirectory(artifacts.ScreenshotDirectory);
-                if (evidence != null) AutoTestEvidenceSerializer.Write(artifacts.EvidencePath, evidence);
                 File.WriteAllText(artifacts.ReportPath, BuildMarkdown(artifacts, packageId, modName, results, runSummary, evidence), Encoding.UTF8);
                 File.WriteAllText(artifacts.ResultPath, BuildJson(artifacts, packageId, runId, modName, results, runSummary, evidence), Encoding.UTF8);
                 File.WriteAllText(artifacts.ManifestPath, BuildManifestJson(packageId, modName, discoveredManifest, plannedManifest, runSummary), Encoding.UTF8);
@@ -247,8 +244,6 @@ namespace LogSyncMod.AutoTest
             {
                 int failedAssertions = evidence.Assertions.Count(item => !item.Success);
                 int severeLogs = evidence.Logs.Count(item => item.Level == "error" || item.Level == "fatal");
-                builder.AppendLine("  \"evidenceSchemaVersion\": " + evidence.SchemaVersion + ",");
-                builder.AppendLine("  \"evidencePath\": \"" + EscapeJson(artifacts.EvidencePath) + "\",");
                 builder.AppendLine("  \"operationCount\": " + evidence.Operations.Count + ",");
                 builder.AppendLine("  \"assertionCount\": " + evidence.Assertions.Count + ",");
                 builder.AppendLine("  \"failedAssertionCount\": " + failedAssertions + ",");
