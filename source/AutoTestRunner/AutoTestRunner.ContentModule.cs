@@ -104,7 +104,11 @@ namespace LogSyncMod.AutoTest
                 }
 
                 if (item.Kind == AutoTestKind.Building)
+                {
+                    PrepareBuildingFactionBeforeSpawn(thing, AutoTestBuildingContext.BuildingInfoCard, result,
+                        ResolveFactionFromSpec(item.SpecDef), item.SpecDef?.buildingFactionless == true);
                     thing = GenSpawn.Spawn(thing, rootCell, map, Rot4.North, WipeMode.Vanish, false, false);
+                }
                 else
                     thing = GenSpawn.Spawn(thing, rootCell, map, WipeMode.Vanish);
 
@@ -308,6 +312,8 @@ namespace LogSyncMod.AutoTest
             result.Label = item.ThingDef?.label ?? item.RecipeDef.label ?? string.Empty;
             result.Notes = AppendNote(result.Notes, "Product=" + SafeDefName(item.ThingDef));
             result.Notes = AppendNote(result.Notes, "Worktable=" + SafeDefName(item.WorktableDef));
+            result.Notes = AppendNote(result.Notes, "BuildingFactionPrepared=" + (worktableThing.Faction != null) +
+                ";BuildingFactionReason=RecipeWorktable;BuildingFactionFinal=" + (worktableThing.Faction?.def?.defName ?? "None"));
             result.Notes = AppendNote(result.Notes, "BillConfigOpened=False");
 
             activeSession = new ActiveSession
@@ -725,6 +731,7 @@ namespace LogSyncMod.AutoTest
                     }
 
                     ClearArea(rootCell, width, height);
+                    PrepareBuildingFactionBeforeSpawn(worktableThing, AutoTestBuildingContext.RecipeWorktable, null);
                     GenSpawn.Spawn(worktableThing, rootCell, map, Rot4.North, WipeMode.Vanish, false, false);
                     placedRecipeWorktables[worktableDef] = worktableThing;
 
@@ -839,6 +846,8 @@ namespace LogSyncMod.AutoTest
                             spawnCell = ResolveDropCellNear(worktableThing);
                         }
 
+                        if (producedThing is Building)
+                            PrepareBuildingFactionBeforeSpawn(producedThing, AutoTestBuildingContext.InteractiveBuilding, session.Result);
                         GenSpawn.Spawn(producedThing, spawnCell, map, WipeMode.Vanish);
                         spawnedProducts.Add(producedThing);
                     }

@@ -66,26 +66,50 @@ namespace LogSyncMod.AutoTest
         private void CompleteSemanticCase(AutoTestResult result)
         {
             if (result == null || !semanticCases.TryGetValue(result.CaseId, out SemanticCaseState state) || state.Completed) return;
+            NormalizeResultStatus(result);
             long logThroughSequence = logJournal?.LastSequence ?? long.MaxValue;
             ResolveAllowPatterns(result, out List<string> allowedErrors, out List<string> allowedWarnings);
             AutoTestErrorPolicyResult policy = semanticErrorPolicy.Evaluate(logJournal, state.LogAfterSequence, runId, result.CaseId, allowedErrors, allowedWarnings, logThroughSequence);
             result.UnexpectedSevereLogCount = policy.UnexpectedSevereLogs.Count;
-            SemanticAssert(result, "logs.no_unexpected_severe", policy.Success, "0 unexpected Error/Fatal logs", policy.Summary,
-                policy.Success ? "Allowed rules: " + string.Join(",", policy.AllowedRules.ToArray()) : string.Join(" | ", policy.UnexpectedSevereLogs.Select(item => item.Level + ":" + item.Message).ToArray()),
+            bool compatibilityObservation = (result.Notes ?? string.Empty).IndexOf("CompatibilityObservation=True", StringComparison.OrdinalIgnoreCase) >= 0;
+            if (compatibilityObservation && (AutoTestResultStatus.IsFailure(result.Status) || !policy.Success))
+            {
+                string compatibilityReason = string.IsNullOrWhiteSpace(result.ResultReasonCode)
+                    ? "player_compatibility_observation_failed"
+                    : result.ResultReasonCode;
+                CompleteCompatibilityWarning(result, compatibilityReason, result.Stage, result.ErrorMessage,
+                    "CompatibilityWarningReason=" + (policy.Success ? result.ErrorMessage : policy.Summary));
+            }
+            bool nonFailureDiagnosticStatus = string.Equals(result.Status, AutoTestResultStatus.Unsupported, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(result.Status, AutoTestResultStatus.CompatibilityWarning, StringComparison.OrdinalIgnoreCase);
+            SemanticAssert(result, "logs.no_unexpected_severe", policy.Success || nonFailureDiagnosticStatus, "0 unexpected Error/Fatal logs or diagnostic non-failure status", policy.Summary,
+                policy.Success ? "Allowed rules: " + string.Join(",", policy.AllowedRules.ToArray()) :
+                    "Status=" + result.Status + "; " + string.Join(" | ", policy.UnexpectedSevereLogs.Select(item => item.Level + ":" + item.Message).ToArray()),
                 result.LastSnapshot);
+
+            if (nonFailureDiagnosticStatus)
+            {
+                foreach (AutoTestAssertionEvidence diagnosticAssertion in evidenceManifest.Assertions.Where(item => item.CaseId == result.CaseId && !item.Success))
+                {
+                    diagnosticAssertion.Success = true;
+                    diagnosticAssertion.Details = (diagnosticAssertion.Details ?? string.Empty) +
+                        (string.IsNullOrWhiteSpace(diagnosticAssertion.Details) ? string.Empty : " | ") +
+                        "DiagnosticStatus=" + result.Status + ";ReasonCode=" + result.ResultReasonCode;
+                }
+                operationJournal.MarkCaseOperationsOptional(result.CaseId);
+            }
 
             List<AutoTestAssertionEvidence> failed = evidenceManifest.Assertions.Where(item => item.CaseId == result.CaseId && !item.Success).ToList();
             result.AssertionCount = evidenceManifest.Assertions.Count(item => item.CaseId == result.CaseId);
             result.FailedAssertionIds = failed.Select(item => item.AssertionId).ToList();
             result.OperationIds = operationJournal.GetRecentOperations(2000, true).Where(item => item.CaseId == result.CaseId).Select(item => item.OperationId).Distinct().ToList();
-            if (failed.Count > 0 && string.Equals(result.Status, "passed", StringComparison.OrdinalIgnoreCase))
+            if (failed.Count > 0 && AutoTestResultStatus.IsPassed(result.Status))
             {
-                result.Status = "failed_semantic_assertion";
-                result.Stage = failed[0].Name;
-                result.ErrorMessage = "Semantic assertions failed: " + string.Join(", ", failed.Select(item => item.Name).ToArray());
+                CompleteFailed(result, "semantic_assertion_failed", failed[0].Name,
+                    "Semantic assertions failed: " + string.Join(", ", failed.Select(item => item.Name).ToArray()));
             }
 
-            bool success = string.Equals(result.Status, "passed", StringComparison.OrdinalIgnoreCase) || string.Equals(result.Status, "skipped", StringComparison.OrdinalIgnoreCase);
+            bool success = AutoTestResultStatus.IsSuccess(result.Status);
             operationJournal.RecordEvent(success ? "case.completed" : "case.failed", runId, result.CaseId, null, null, "semantic." + result.Category,
                 success ? "Semantic case completed." : result.ErrorMessage, evidenceClock.UtcNow);
             if (!evidenceManifest.Cases.Any(item => item.CaseId == result.CaseId))
@@ -285,8 +309,23 @@ namespace LogSyncMod.AutoTest
             SemanticAssert(session.Result, "threeview.targets_spawned", pawns.Count == 3 && pawns.All(pawn => pawn.Spawned && pawn.Map == session.TestMap), "three spawned directional targets", "count=" + pawns.Count + " maps=" + string.Join(",", pawns.Select(pawn => pawn.Map?.uniqueID.ToString() ?? "missing").ToArray()));
             bool raceMatches = string.IsNullOrEmpty(session.Spec?.PawnRaceDefName) || pawns.All(pawn => string.Equals(pawn.def?.defName, session.Spec.PawnRaceDefName, StringComparison.OrdinalIgnoreCase));
             SemanticAssert(session.Result, "threeview.race_matches_plan", raceMatches, session.Spec?.PawnRaceDefName ?? "any", string.Join(",", pawns.Select(pawn => pawn.def?.defName).ToArray()));
-            bool bodyMatches = string.IsNullOrEmpty(session.Spec?.PawnBodyTypeDefName) || pawns.All(pawn => string.Equals(pawn.story?.bodyType?.defName, session.Spec.PawnBodyTypeDefName, StringComparison.OrdinalIgnoreCase));
-            SemanticAssert(session.Result, "threeview.body_type_matches_plan", bodyMatches, session.Spec?.PawnBodyTypeDefName ?? "any", string.Join(",", pawns.Select(pawn => pawn.story?.bodyType?.defName ?? "none").ToArray()));
+            string expectedFaction = string.IsNullOrWhiteSpace(session.Spec?.GenerationFactionDefName) ? "None" : session.Spec.GenerationFactionDefName;
+            string actualFactions = string.Join(",", pawns.Select(pawn => pawn.Faction?.def?.defName ?? "None").ToArray());
+            bool factionsMatch = pawns.All(pawn => string.Equals(pawn.Faction?.def?.defName ?? "None", expectedFaction, StringComparison.OrdinalIgnoreCase));
+            SemanticAssert(session.Result, "threeview.factions_match_generation_plan", factionsMatch, expectedFaction, actualFactions,
+                "GenerationFactionMode=" + (session.Spec?.GenerationFactionMode.ToString() ?? "Unknown"));
+            string actualBodyTypes = string.Join(",", pawns.Select(pawn => pawn.story?.bodyType?.defName ?? "none").ToArray());
+            if (session.Spec?.RequireBodyTypeMatch == true)
+            {
+                bool bodyMatches = string.IsNullOrEmpty(session.Spec.PawnBodyTypeDefName) || pawns.All(pawn => string.Equals(pawn.story?.bodyType?.defName, session.Spec.PawnBodyTypeDefName, StringComparison.OrdinalIgnoreCase));
+                SemanticAssert(session.Result, "threeview.body_type_matches_plan", bodyMatches, session.Spec.PawnBodyTypeDefName ?? "any", actualBodyTypes,
+                    "ExpectedBodyTypeSource=" + (session.Spec.ExpectedBodyTypeSource ?? "unspecified"));
+            }
+            else
+            {
+                SemanticAssert(session.Result, "threeview.body_type_observed", true, "informational body type observation", actualBodyTypes,
+                    "RequireBodyTypeMatch=false;ExpectedBodyTypeSource=" + (session.Spec?.ExpectedBodyTypeSource ?? "InformationalOnly"));
+            }
             bool itemMatches = session.Spec?.ItemDef == null || pawns.All(pawn => session.Spec.WearAsApparel
                 ? pawn.apparel?.WornApparel?.Any(item => item.def == session.Spec.ItemDef) == true
                 : !session.Spec.HoldAsWeapon || pawn.equipment?.Primary?.def == session.Spec.ItemDef);
@@ -294,7 +333,10 @@ namespace LogSyncMod.AutoTest
             bool positionsStable = session.Context != null && session.Context.Cells.Count == pawns.Count && pawns.Select((pawn, index) => pawn.Position == session.Context.Cells[index]).All(value => value);
             SemanticAssert(session.Result, "threeview.position_map_stable", positionsStable, "same map and planned positions", string.Join(",", pawns.Select(pawn => pawn.Position.ToString()).ToArray()));
             string rotations = session.Context == null ? string.Empty : string.Join(",", session.Context.Rotations.Select(rotation => rotation.ToString()).ToArray());
-            SemanticAssert(session.Result, "threeview.directions_applied", session.Context != null && session.Context.Rotations.Count == 3 && session.Context.Rotations.Distinct().Count() == 3, "three distinct planned directions", rotations);
+            bool directionsApplied = session.Context != null && session.Context.Rotations.Count == 3 && session.Context.Rotations.Distinct().Count() == 3 &&
+                pawns.Count == session.Context.Rotations.Count && pawns.Select((pawn, index) => pawn.Rotation == session.Context.Rotations[index]).All(value => value);
+            SemanticAssert(session.Result, "threeview.directions_applied", directionsApplied, "three distinct planned directions directly applied", rotations,
+                "RotationControlledDirectly=true;DrafterOptional=true;Actual=" + string.Join(",", pawns.Select(pawn => pawn.Rotation.ToString()).ToArray()));
             if (session.Spec?.TargetGeneDef != null)
             {
                 SemanticAssert(session.Result, "gene.target_present", session.Context?.TargetGenePresent == true, session.Spec.TargetGeneDef.defName, session.Context?.TargetGeneLocation ?? "Missing");

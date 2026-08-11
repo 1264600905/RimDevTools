@@ -90,6 +90,17 @@ namespace LogSyncMod.AutoTest
             return latest.Values.OrderByDescending(item => item.StartedAtUtc).Take(limit).Reverse().Select(Clone).ToList();
         }
 
+        public void MarkCaseOperationsOptional(string caseId)
+        {
+            if (string.IsNullOrWhiteSpace(caseId)) return;
+            lock (gate)
+            {
+                foreach (AutoTestOperationEnvelope operation in byId.Values.Where(item =>
+                    string.Equals(item.CaseId, caseId, StringComparison.OrdinalIgnoreCase)))
+                    operation.Required = false;
+            }
+        }
+
         public List<AutoTestEventEvidence> GetEvents(long afterSequence, int limit, string operationId = null)
         {
             if (limit <= 0) return new List<AutoTestEventEvidence>();

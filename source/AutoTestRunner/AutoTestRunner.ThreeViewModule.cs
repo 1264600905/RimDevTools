@@ -95,6 +95,23 @@ namespace LogSyncMod.AutoTest
                 Result.Notes = AppendNote(Result.Notes, "SpawnedPawns=" + Context.Pawns.Count);
                 Result.Notes = AppendNote(Result.Notes, "SuppressedMissingEyeOverlay=True");
                 Result.Notes = AppendNote(Result.Notes, "RegisteredThreeViewPawnCount=" + AutoTestThreeViewRenderSuppression.RegisteredCount);
+                Result.Notes = AppendNote(Result.Notes, "GenerationFactionRequestedMode=" + Spec.RequestedFactionMode);
+                Result.Notes = AppendNote(Result.Notes, "GenerationFactionMode=" + Spec.GenerationFactionMode);
+                Result.Notes = AppendNote(Result.Notes, "GenerationFactionDef=" + (string.IsNullOrWhiteSpace(Spec.GenerationFactionDefName) ? "None" : Spec.GenerationFactionDefName));
+                Result.Notes = AppendNote(Result.Notes, "GenerationFactionReason=" + (Spec.GenerationFactionReason ?? string.Empty));
+                if (!string.IsNullOrWhiteSpace(Spec.GenerationFallbackNotes))
+                    Result.Notes = AppendNote(Result.Notes, "GenerationFallback=" + Spec.GenerationFallbackNotes);
+                Result.Notes = AppendNote(Result.Notes, "RotationControlledDirectly=True");
+                Result.Notes = AppendNote(Result.Notes, "RequireBodyTypeMatch=" + Spec.RequireBodyTypeMatch);
+                Result.Notes = AppendNote(Result.Notes, "ExpectedBodyTypeSource=" + (Spec.ExpectedBodyTypeSource ?? "InformationalOnly"));
+                for (int pawnIndex = 0; pawnIndex < Context.Pawns.Count; pawnIndex++)
+                {
+                    Pawn statePawn = Context.Pawns[pawnIndex];
+                    Result.Notes = AppendNote(Result.Notes, "Pawn" + pawnIndex + "State=Rotation:" + statePawn.Rotation +
+                        ",Faction:" + (statePawn.Faction?.def?.defName ?? "None") +
+                        ",Job:" + (statePawn.CurJob?.def?.defName ?? "None") +
+                        ",Drafter:" + (statePawn.drafter == null ? "None" : statePawn.drafter.Drafted.ToString()));
+                }
                 if (!string.IsNullOrWhiteSpace(Spec.PawnRaceDefName))
                 {
                     Result.Notes = AppendNote(Result.Notes, "ThreeViewPawnRace=" + Spec.PawnRaceDefName);
@@ -247,7 +264,7 @@ namespace LogSyncMod.AutoTest
                     return true;
                 }
 
-                Result.Status = "passed";
+                CompletePassed(Result, "capture", "RotationControlledDirectly=True");
                 WaitTicks = CaptureWindowTailTicks;
                 PauseUiCaptureStarted = false;
                 return true;
@@ -263,6 +280,7 @@ namespace LogSyncMod.AutoTest
                     return;
                 }
 
+                owner.threeViewService.PrepareForSettle(Context);
                 owner.RecordThreeViewSemanticBeforeCleanup(this);
                 List<Pawn> trackedPawns = Context?.Pawns?.Where(pawn => pawn != null).ToList() ?? new List<Pawn>();
                 owner.threeViewService.Cleanup(Context);
@@ -276,9 +294,7 @@ namespace LogSyncMod.AutoTest
                 owner.RecordThreeViewCleanupSemantic(this, targetsRemoved, renderSuppressionCleared);
                 if (!studioRestored && Result.Status == "passed")
                 {
-                    Result.Status = "failed";
-                    Result.Stage = "cleanup";
-                    Result.ErrorMessage = "ThreeView studio map state was not restored exactly.";
+                    CompleteFailed(Result, "studio_restore_failed", "cleanup", "ThreeView studio map state was not restored exactly.");
                 }
                 Phase = ThreeViewTestPhase.Done;
             }
@@ -286,9 +302,7 @@ namespace LogSyncMod.AutoTest
             private void Fail(string stage, string message)
             {
                 RestoreTimeAfterCapture();
-                Result.Status = "failed";
-                Result.Stage = stage;
-                Result.ErrorMessage = message ?? string.Empty;
+                CompleteFailed(Result, stage, stage, message);
                 owner.TryCaptureThreeViewScreenshot(this, true);
                 Phase = ThreeViewTestPhase.CleaningUp;
             }
@@ -398,6 +412,10 @@ namespace LogSyncMod.AutoTest
                     continue;
                 }
 
+                LogSyncAutoTestSpecDef matchedSpec = ResolveBestMatchingSpec(spec.Kind, spec.TargetDef ?? (Def)spec.PawnKindDef);
+                ApplyThreeViewSpecOverrides(spec, matchedSpec);
+                bool playerCompatibilityRequested = AutoTestPawnFactionResolver.ParseRequestedMode(matchedSpec?.pawnFactionMode) == AutoTestPawnFactionMode.PlayerCompatibility;
+
                 if (!threeViewService.TryResolveAppearancePresenter(spec, out string appearanceSkipReason))
                 {
                     spec.SkipReason = string.IsNullOrWhiteSpace(appearanceSkipReason)
@@ -406,6 +424,51 @@ namespace LogSyncMod.AutoTest
                 }
 
                 pendingThreeViewTargets.Enqueue(spec);
+                if (playerCompatibilityRequested && IsPawnKindThreeViewCase(spec.CaseType))
+                {
+                    string compatibilityDefName = (spec.DefName ?? spec.PawnKindDef?.defName ?? "UnknownPawn") + "@PlayerCompatibility";
+                    AutoTestManifestEntry compatibilityEntry = RegisterDiscoveredCase(
+                        spec.CaseType,
+                        nameof(PawnKindDef),
+                        compatibilityDefName,
+                        (spec.Label ?? spec.PawnKindDef?.label ?? compatibilityDefName) + " [PlayerCompatibility]");
+                    pendingThreeViewTargets.Enqueue(spec.CloneForPlayerCompatibility(compatibilityEntry));
+                }
+            }
+        }
+
+        private static bool IsPawnKindThreeViewCase(AutoTestCaseType caseType)
+        {
+            return caseType == AutoTestCaseType.HumanoidThreeView ||
+                caseType == AutoTestCaseType.AnimalThreeView ||
+                caseType == AutoTestCaseType.MechanoidThreeView ||
+                caseType == AutoTestCaseType.AlienThreeView ||
+                caseType == AutoTestCaseType.PawnLifeStageThreeView;
+        }
+
+        private static void ApplyThreeViewSpecOverrides(AutoTestThreeViewTargetSpec spec, LogSyncAutoTestSpecDef matchedSpec)
+        {
+            if (spec == null || matchedSpec == null) return;
+            if (matchedSpec.requireBodyTypeMatch || !string.IsNullOrWhiteSpace(matchedSpec.expectedBodyTypeDefName))
+            {
+                spec.RequireBodyTypeMatch = true;
+                spec.ExpectedBodyTypeSource = string.IsNullOrWhiteSpace(matchedSpec.expectedBodyTypeSource)
+                    ? "LogSyncAutoTestSpecDef"
+                    : matchedSpec.expectedBodyTypeSource;
+                if (!string.IsNullOrWhiteSpace(matchedSpec.expectedBodyTypeDefName))
+                {
+                    BodyTypeDef expected = DefDatabase<BodyTypeDef>.GetNamedSilentFail(matchedSpec.expectedBodyTypeDefName);
+                    if (expected == null)
+                    {
+                        spec.SkipReason = "expected_body_type_missing:" + matchedSpec.expectedBodyTypeDefName;
+                    }
+                    else
+                    {
+                        spec.ForcedBodyType = expected;
+                        spec.PawnBodyTypeDefName = expected.defName;
+                        spec.PawnBodyTypeLabel = expected.label ?? expected.defName;
+                    }
+                }
             }
         }
 
@@ -518,6 +581,9 @@ namespace LogSyncMod.AutoTest
             bool allowScreenshots = ShouldCaptureScreenshots(matchedSpec);
             result.Notes = AppendNote(result.Notes, "AutoTestMode=" + (settings.UseXmlDrivenAutoTest() ? "XmlDriven" : "Automatic"));
             result.Notes = AppendNote(result.Notes, "ThreeViewProfile=" + (spec.Profile?.ProfileId ?? "Unknown"));
+            result.Notes = AppendNote(result.Notes, "CompatibilityObservation=" + (spec.RequestedFactionMode == AutoTestPawnFactionMode.PlayerCompatibility));
+            result.Notes = AppendNote(result.Notes, "RequireBodyTypeMatch=" + spec.RequireBodyTypeMatch);
+            result.Notes = AppendNote(result.Notes, "ExpectedBodyTypeSource=" + (spec.ExpectedBodyTypeSource ?? "InformationalOnly"));
             if (!string.IsNullOrWhiteSpace(spec.CompatibilitySource))
             {
                 result.Notes = AppendNote(result.Notes, "CompatibilitySource=" + spec.CompatibilitySource);
@@ -535,10 +601,7 @@ namespace LogSyncMod.AutoTest
 
             if (!string.IsNullOrWhiteSpace(spec.SkipReason))
             {
-                result.Status = "skipped";
-                result.Stage = "presenter_resolution";
-                result.ErrorMessage = spec.SkipReason;
-                result.Notes = AppendNote(result.Notes, "SkipReason=" + spec.SkipReason);
+                CompleteSkipped(result, "presenter_resolution_unsupported", "presenter_resolution", spec.SkipReason, "SkipReason=" + spec.SkipReason);
                 RecordResult(result);
                 return;
             }

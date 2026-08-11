@@ -97,6 +97,8 @@ namespace LogSyncMod.AutoTest
         public GeneDef GeneDef;
         public XenotypeDef XenotypeDef;
         public LogSyncAutoTestSpecDef SpecDef;
+        public AutoTestPawnFactionMode PawnFactionMode = AutoTestPawnFactionMode.Native;
+        public bool CompatibilityObservation;
         public AutoTestManifestEntry ManifestEntry;
     }
 
@@ -124,6 +126,9 @@ namespace LogSyncMod.AutoTest
         public int PassedCount;
         public int FailedCount;
         public int SkippedCount;
+        public int PassedAfterRetryCount;
+        public int UnsupportedCount;
+        public int CompatibilityWarningCount;
         public int MissingCount;
         public int BatchSize;
         public bool BatchLimitApplied;
@@ -144,6 +149,7 @@ namespace LogSyncMod.AutoTest
         public string Status;
         public string Stage;
         public string ErrorMessage;
+        public string ResultReasonCode;
         public string ScreenshotPath;
         public List<string> ScreenshotPaths = new List<string>();
         public string Notes;

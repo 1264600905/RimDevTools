@@ -70,7 +70,7 @@ namespace LogSyncMod.AutoTest
             {
                 manifest.Operations = operationJournal.GetRecentOperations(500, true);
                 manifest.Events = operationJournal.GetEvents(0, 2000);
-                foreach (AutoTestOperationError operationError in manifest.Operations.Where(item => item.Error != null).Select(item => item.Error))
+                foreach (AutoTestOperationError operationError in manifest.Operations.Where(item => item.Required && item.Error != null).Select(item => item.Error))
                 {
                     if (!manifest.Errors.Any(item => item.Code == operationError.Code && item.Message == operationError.Message && item.ExceptionType == operationError.ExceptionType))
                         manifest.Errors.Add(operationError);

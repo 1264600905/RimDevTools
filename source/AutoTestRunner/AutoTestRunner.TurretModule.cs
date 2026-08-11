@@ -123,7 +123,9 @@ namespace LogSyncMod.AutoTest
                         case TurretTestPhase.SpawningPower:
                             LogMapState("before_spawn_power");
                             IntVec3 powerPos = new IntVec3(3, 0, 3);
-                            PowerGenerator = GenSpawn.Spawn(ThingDef.Named("LogSync_AutoTestPowerGenerator"), powerPos, TestMap);
+                            Thing powerGeneratorThing = ThingMaker.MakeThing(ThingDef.Named("LogSync_AutoTestPowerGenerator"));
+                            owner.PrepareBuildingFactionBeforeSpawn(powerGeneratorThing, AutoTestBuildingContext.InteractiveBuilding, Result);
+                            PowerGenerator = GenSpawn.Spawn(powerGeneratorThing, powerPos, TestMap);
                             if (PowerGenerator == null)
                             {
                                 Fail("failed_power_spawn", "Power generator returned null when spawning.");
@@ -140,6 +142,7 @@ namespace LogSyncMod.AutoTest
                             LogMapState("before_spawn_turret");
                             ThingDef turretStuff = owner.ResolveStuff(TurretDef);
                             Thing turretThing = ThingMaker.MakeThing(TurretDef, turretStuff);
+                            owner.PrepareBuildingFactionBeforeSpawn(turretThing, AutoTestBuildingContext.InteractiveBuilding, Result);
                             // 布局 3/8
                             IntVec3 turretPos = new IntVec3(Mathf.RoundToInt(TestMap.Size.x * 0.375f), 0, TestMap.Size.z / 2);
                             SpawnedTurret = turretThing != null ? GenSpawn.Spawn(turretThing, turretPos, TestMap) : null;
@@ -453,8 +456,9 @@ namespace LogSyncMod.AutoTest
                     return;
                 }
 
-                Thing conduit = GenSpawn.Spawn(ThingDefOf.PowerConduit, cell, TestMap);
-                conduit.SetFaction(Faction.OfPlayer);
+                Thing conduit = ThingMaker.MakeThing(ThingDefOf.PowerConduit);
+                owner.PrepareBuildingFactionBeforeSpawn(conduit, AutoTestBuildingContext.InteractiveBuilding, null, logWithoutResult: false);
+                GenSpawn.Spawn(conduit, cell, TestMap);
             }
 
             private void PrepareTurretForCombat()

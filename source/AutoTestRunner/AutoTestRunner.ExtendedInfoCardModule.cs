@@ -24,10 +24,25 @@ namespace LogSyncMod.AutoTest
                 .OrderBy(def => def.defName))
             {
                 AutoTestKind kind = ResolvePawnInfoCardKind(def);
+                LogSyncAutoTestSpecDef matchedSpec = ResolveBestMatchingSpec(kind, def);
                 pendingItems.Enqueue(CreateWorkItem(
                     kind,
                     pawnKindDef: def,
-                    specDef: ResolveBestMatchingSpec(kind, def)));
+                    specDef: matchedSpec));
+                if (AutoTestPawnFactionResolver.ParseRequestedMode(matchedSpec?.pawnFactionMode) == AutoTestPawnFactionMode.PlayerCompatibility)
+                {
+                    AutoTestWorkItem compatibilityItem = CreateWorkItem(kind, pawnKindDef: def, specDef: matchedSpec);
+                    AutoTestManifestEntry compatibilityEntry = RegisterDiscoveredCase(
+                        compatibilityItem.CaseType,
+                        nameof(PawnKindDef),
+                        def.defName + "@PlayerCompatibility",
+                        (def.label ?? def.defName) + " [PlayerCompatibility]");
+                    compatibilityItem.CaseId = compatibilityEntry.CaseId;
+                    compatibilityItem.ManifestEntry = compatibilityEntry;
+                    compatibilityItem.PawnFactionMode = AutoTestPawnFactionMode.PlayerCompatibility;
+                    compatibilityItem.CompatibilityObservation = true;
+                    pendingItems.Enqueue(compatibilityItem);
+                }
             }
 
             foreach (GeneDef def in DefDatabase<GeneDef>.AllDefsListForReading
@@ -150,6 +165,7 @@ namespace LogSyncMod.AutoTest
             PawnKindDef pawnKind = item.PawnKindDef;
             AutoTestResult result = CreateResult(item.ManifestEntry, nameof(PawnKindDef), pawnKind?.defName, pawnKind?.label);
             results.Add(result);
+            result.Notes = AppendNote(result.Notes, "CompatibilityObservation=" + item.CompatibilityObservation);
 
             string caseId = item.CaseId ?? item.ManifestEntry?.CaseId ?? result.CaseId;
             InfoCardOperationAdapter adapter = new InfoCardOperationAdapter(runId, caseId, operationRunner, operationJournal, logJournal, evidenceBuilder, evidenceClock);
@@ -170,26 +186,41 @@ namespace LogSyncMod.AutoTest
                     return null;
                 }
 
-                Faction faction = ResolveInfoCardPawnFaction(item.Kind);
-                Exception lastError = null;
-                for (int attempt = 0; attempt < 4 && preparedPawn == null; attempt++)
+                AutoTestPawnFactionMode requestedMode = item.PawnFactionMode;
+                AutoTestPawnFactionResolution primaryResolution = AutoTestPawnFactionResolver.Resolve(pawnKind, requestedMode);
+                AutoTestPawnFactionResolution usedResolution = null;
+                System.Collections.Generic.List<AutoTestPawnFactionResolution> resolutions = new System.Collections.Generic.List<AutoTestPawnFactionResolution> { primaryResolution };
+                if (primaryResolution.EffectiveMode == AutoTestPawnFactionMode.Native && primaryResolution.Faction != null)
                 {
-                    try
+                    resolutions.Add(AutoTestPawnFactionResolver.FactionlessFallback(requestedMode,
+                        "Native PawnInfoCard generation failed; retrying with no faction without claiming PlayerCompatibility."));
+                }
+                Exception lastError = null;
+                foreach (AutoTestPawnFactionResolution resolution in resolutions)
+                {
+                    for (int attempt = 0; attempt < 4 && preparedPawn == null; attempt++)
                     {
-                        PawnGenerationRequest request = new PawnGenerationRequest(
-                            pawnKind,
-                            faction,
-                            PawnGenerationContext.NonPlayer,
-                            map.Tile,
-                            forceGenerateNewPawn: true,
-                            canGeneratePawnRelations: false,
-                            mustBeCapableOfViolence: false);
-                        preparedPawn = PawnGenerator.GeneratePawn(request);
+                        try
+                        {
+                            PawnGenerationRequest request = new PawnGenerationRequest(
+                                pawnKind,
+                                resolution.Faction,
+                                PawnGenerationContext.NonPlayer,
+                                map.Tile,
+                                forceGenerateNewPawn: true,
+                                canGeneratePawnRelations: false,
+                                mustBeCapableOfViolence: false);
+                            preparedPawn = PawnGenerator.GeneratePawn(request);
+                            if (preparedPawn != null) usedResolution = resolution;
+                        }
+                        catch (Exception ex)
+                        {
+                            lastError = ex;
+                        }
                     }
-                    catch (Exception ex)
-                    {
-                        lastError = ex;
-                    }
+
+                    if (preparedPawn != null) break;
+                    result.Notes = AppendNote(result.Notes, "GenerationFallback=" + resolution.EffectiveMode + " failed: " + TrimForNote(lastError?.Message ?? "null result"));
                 }
 
                 if (preparedPawn == null)
@@ -211,6 +242,11 @@ namespace LogSyncMod.AutoTest
                 result.Label = pawnKind.LabelCap;
                 result.Notes = AppendNote(result.Notes, "PawnInstance=" + preparedPawn.LabelShortCap);
                 result.Notes = AppendNote(result.Notes, "PawnKind=" + pawnKind.defName);
+                result.Notes = AppendNote(result.Notes, "GenerationFactionRequestedMode=" + requestedMode);
+                result.Notes = AppendNote(result.Notes, "GenerationFactionMode=" + (usedResolution?.EffectiveMode.ToString() ?? "Unknown"));
+                result.Notes = AppendNote(result.Notes, "GenerationFactionDef=" + (usedResolution?.Faction?.def?.defName ?? "None"));
+                result.Notes = AppendNote(result.Notes, "GenerationFactionReason=" + (usedResolution?.Reason ?? string.Empty));
+                result.Notes = AppendNote(result.Notes, "FinalPawnFaction=" + (preparedPawn.Faction?.def?.defName ?? "None"));
                 result.Notes = AppendNote(result.Notes, "Race=" + (preparedPawn.def?.defName ?? "unknown"));
                 result.Notes = AppendNote(result.Notes, "LifeStageDef=" + (preparedPawn.ageTracker?.CurLifeStage?.defName ?? "unknown"));
                 result.Notes = AppendNote(result.Notes, "LifeStageIndex=" + (preparedPawn.ageTracker?.CurLifeStageIndex ?? -1));
@@ -267,19 +303,5 @@ namespace LogSyncMod.AutoTest
             result.Stage = "info_open";
         }
 
-        private static Faction ResolveInfoCardPawnFaction(AutoTestKind kind)
-        {
-            if (kind == AutoTestKind.MechanoidInfoCard)
-            {
-                return Faction.OfMechanoids;
-            }
-
-            if (kind == AutoTestKind.PawnInfoCard)
-            {
-                return Faction.OfPlayer ?? Find.FactionManager?.OfPlayer;
-            }
-
-            return null;
-        }
     }
 }

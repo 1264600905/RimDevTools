@@ -12,8 +12,7 @@ namespace LogSyncMod.AutoTest
             {
                 if (result == null) continue;
                 string name = "legacy_result." + (result.CaseId ?? result.DefName ?? Guid.NewGuid().ToString("N"));
-                bool success = string.Equals(result.Status, "passed", StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(result.Status, "skipped", StringComparison.OrdinalIgnoreCase);
+                bool success = AutoTestResultStatus.IsSuccess(result.Status);
                 if (success) builder.Pass(name, result.Status, (result.Stage ?? string.Empty) + ": " + (result.ErrorMessage ?? string.Empty));
                 else builder.Fail(name, "passed", result.Status, (result.Stage ?? string.Empty) + ": " + (result.ErrorMessage ?? string.Empty));
             }

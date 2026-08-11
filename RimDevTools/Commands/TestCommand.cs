@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text.Json;
 using System.Xml.Linq;
+using LogSyncMod.AutoTest;
 
 namespace RimDevTools;
 
@@ -831,7 +832,7 @@ public static class AutoResultValidator
                 var failed = results.EnumerateArray()
                     .Where(item =>
                         !item.TryGetProperty("status", out var status) ||
-                        (status.GetString() != "passed" && status.GetString() != "skipped"))
+                        !AutoTestResultStatus.IsSuccess(status.GetString() ?? string.Empty))
                     .Select(item => item.TryGetProperty("caseId", out var caseId) ? caseId.GetString() : null)
                     .ToArray();
                 if (failed.Length > 0) return Failure("AUTO_RESULT_FAILED", "自动测试结果包含失败用例", new { path, failed });

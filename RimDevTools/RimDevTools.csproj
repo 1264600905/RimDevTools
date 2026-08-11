@@ -14,4 +14,7 @@
     <SelfContained>false</SelfContained>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
   </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\source\AutoTestRunner\Core\AutoTestResultStatus.cs" Link="Shared\AutoTestResultStatus.cs" />
+  </ItemGroup>
 </Project>

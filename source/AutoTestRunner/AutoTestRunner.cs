@@ -701,9 +701,14 @@ namespace LogSyncMod.AutoTest
 
         private void AddImmediateResult(AutoTestResult result, string status, string stage, string errorMessage)
         {
-            result.Status = status;
-            result.Stage = stage;
-            result.ErrorMessage = errorMessage ?? string.Empty;
+            if (string.Equals(status, AutoTestResultStatus.Passed, StringComparison.OrdinalIgnoreCase))
+                CompletePassed(result, stage);
+            else if (string.Equals(status, AutoTestResultStatus.Skipped, StringComparison.OrdinalIgnoreCase))
+                CompleteSkipped(result, stage, stage, errorMessage);
+            else if (string.Equals(status, AutoTestResultStatus.Unsupported, StringComparison.OrdinalIgnoreCase))
+                CompleteUnsupported(result, stage, stage, errorMessage, errorMessage);
+            else
+                CompleteFailed(result, status, stage, errorMessage);
             RecordResult(result);
         }
 
@@ -714,6 +719,7 @@ namespace LogSyncMod.AutoTest
             CleanupSelectionAndWindows();
             CleanupSharedHediffPawn();
 
+            foreach (AutoTestResult result in results) NormalizeResultStatus(result);
             runSummary = BuildRunSummary();
             AutoTestEvidenceManifest completedEvidence = null;
             try
@@ -738,8 +744,8 @@ namespace LogSyncMod.AutoTest
                 runId,
                 targetPackageId ?? "unknown",
                 results.Count,
-                results.Count(result => result.Status == "passed"),
-                results.Count(result => result.Status != "passed" && result.Status != "skipped"),
+                results.Count(result => AutoTestResultStatus.IsPassed(result.Status)),
+                results.Count(result => AutoTestResultStatus.IsFailure(result.Status)),
                 runSummary?.DiscoveredCount ?? 0,
                 runSummary?.PlannedCount ?? 0,
                 runSummary?.MissingCount ?? 0,
@@ -1245,6 +1251,7 @@ namespace LogSyncMod.AutoTest
                 Status = "pending",
                 Stage = "collect",
                 ErrorMessage = string.Empty,
+                ResultReasonCode = string.Empty,
                 ScreenshotPath = string.Empty,
                 Notes = string.Empty
             };
@@ -1375,9 +1382,12 @@ namespace LogSyncMod.AutoTest
             summary.DiscoveredCount = discoveredManifest.Count;
             summary.PlannedCount = plannedManifest.Count;
             summary.ExecutedCount = results.Count;
-            summary.PassedCount = results.Count(result => result.Status == "passed");
-            summary.SkippedCount = results.Count(result => result.Status == "skipped");
-            summary.FailedCount = results.Count(result => result.Status != "passed" && result.Status != "skipped");
+            summary.PassedCount = results.Count(result => AutoTestResultStatus.IsPassed(result.Status));
+            summary.PassedAfterRetryCount = results.Count(result => string.Equals(result.Status, AutoTestResultStatus.PassedAfterRetry, StringComparison.OrdinalIgnoreCase));
+            summary.SkippedCount = results.Count(result => string.Equals(result.Status, AutoTestResultStatus.Skipped, StringComparison.OrdinalIgnoreCase));
+            summary.UnsupportedCount = results.Count(result => string.Equals(result.Status, AutoTestResultStatus.Unsupported, StringComparison.OrdinalIgnoreCase));
+            summary.CompatibilityWarningCount = results.Count(result => string.Equals(result.Status, AutoTestResultStatus.CompatibilityWarning, StringComparison.OrdinalIgnoreCase));
+            summary.FailedCount = results.Count(result => AutoTestResultStatus.IsFailure(result.Status));
 
             HashSet<string> executedCaseIds = new HashSet<string>(
                 results

@@ -18,6 +18,9 @@ internal sealed class CoreTestSuite
         TestBoundedBuffer();
         TestEvidenceRoundTrip();
         TestGeneDependencyResolver();
+        TestResultStatusSemantics();
+        TestPawnFactionPlanner();
+        TestBodyTypeMatchPolicy();
         TestTargetIds();
         TestSelectionFingerprint();
         TestReadiness();
@@ -270,6 +273,65 @@ internal sealed class CoreTestSuite
         resolved = AutoTestGeneDependencyResolver.TryResolve(c, item => item.Prerequisite, item => item.Name, item => item.Name != "A",
             out dependencies, out errorCode, out _);
         Assert(!resolved && errorCode == "gene_dependency_missing", "gene dependency resolver rejects missing prerequisites");
+    }
+
+    private void TestResultStatusSemantics()
+    {
+        foreach (string status in new[]
+        {
+            AutoTestResultStatus.Passed,
+            AutoTestResultStatus.PassedAfterRetry,
+            AutoTestResultStatus.Skipped,
+            AutoTestResultStatus.Unsupported,
+            AutoTestResultStatus.CompatibilityWarning
+        })
+            Assert(AutoTestResultStatus.IsSuccess(status) && !AutoTestResultStatus.IsFailure(status), "result status is non-failing: " + status);
+        Assert(AutoTestResultStatus.IsFailure(AutoTestResultStatus.Failed) && AutoTestResultStatus.Canonicalize("failed_spawn") == AutoTestResultStatus.Failed,
+            "result status canonicalizes module-specific failure strings");
+
+        var clock = new FakeClock();
+        var journal = new AutoTestOperationJournal();
+        var manifest = NewManifest(clock);
+        using (AutoTestOperationContext.PushRun("run"))
+        using (AutoTestOperationContext.PushCase("compatibility"))
+            new AutoTestOperationRunner("run", clock, journal).Run("compatibility", "compatibility", "observe", () => throw new InvalidOperationException("compatibility failure"));
+        journal.MarkCaseOperationsOptional("compatibility");
+        AutoTestEvidenceManifest diagnosticEvidence = new AutoTestEvidenceBuilder(manifest, clock).Complete(journal);
+        Assert(diagnosticEvidence.Success && diagnosticEvidence.Operations.Single().Required == false && diagnosticEvidence.Errors.Count == 0,
+            "optional compatibility operation does not fail evidence");
+    }
+
+    private void TestPawnFactionPlanner()
+    {
+        AutoTestPawnFactionDecision mechanoid = AutoTestPawnFactionPlanner.Resolve(AutoTestPawnFactionMode.Native, true, null, Array.Empty<string>(), "PlayerColony");
+        Assert(mechanoid.EffectiveMode == AutoTestPawnFactionMode.Mechanoid, "faction planner selects mechanoid context");
+
+        AutoTestPawnFactionDecision native = AutoTestPawnFactionPlanner.Resolve(AutoTestPawnFactionMode.Native, false, "DMS_Army", new[] { "PlayerColony", "DMS_Army" }, "PlayerColony");
+        Assert(native.EffectiveMode == AutoTestPawnFactionMode.Native && native.FactionDefName == "DMS_Army", "faction planner preserves PawnKind native faction");
+
+        AutoTestPawnFactionDecision missing = AutoTestPawnFactionPlanner.Resolve(AutoTestPawnFactionMode.Native, false, "DMS_Army", new[] { "PlayerColony" }, "PlayerColony");
+        Assert(missing.EffectiveMode == AutoTestPawnFactionMode.FactionlessFallback && missing.FactionDefName == "DMS_Army", "faction planner uses null when native faction instance is absent");
+
+        AutoTestPawnFactionDecision compatibility = AutoTestPawnFactionPlanner.Resolve(AutoTestPawnFactionMode.PlayerCompatibility, false, "DMS_Army", new[] { "PlayerColony", "DMS_Army" }, "PlayerColony");
+        Assert(compatibility.EffectiveMode == AutoTestPawnFactionMode.PlayerCompatibility && compatibility.FactionDefName == "PlayerColony", "faction planner uses player only for explicit compatibility mode");
+    }
+
+    private void TestBodyTypeMatchPolicy()
+    {
+        var rows = new[]
+        {
+            (AutoTestBodyTypeTargetKind.BodyType, false, false, true),
+            (AutoTestBodyTypeTargetKind.Apparel, true, false, true),
+            (AutoTestBodyTypeTargetKind.Weapon, true, false, true),
+            (AutoTestBodyTypeTargetKind.PawnKind, true, false, true),
+            (AutoTestBodyTypeTargetKind.Gene, false, false, false),
+            (AutoTestBodyTypeTargetKind.Gene, false, true, true),
+            (AutoTestBodyTypeTargetKind.Xenotype, false, false, false),
+            (AutoTestBodyTypeTargetKind.Xenotype, false, true, true)
+        };
+        foreach (var row in rows)
+            Assert(AutoTestBodyTypeMatchPolicy.RequireMatch(row.Item1, row.Item2, row.Item3) == row.Item4,
+                "body type policy: " + row.Item1 + "/explicit=" + row.Item2 + "/static=" + row.Item3);
     }
 
     private void TestTargetIds()

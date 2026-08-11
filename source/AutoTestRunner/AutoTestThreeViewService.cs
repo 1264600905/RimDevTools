@@ -55,9 +55,32 @@ namespace LogSyncMod.AutoTest
         public string PawnRaceLabel;
         public string PawnBodyTypeDefName;
         public string PawnBodyTypeLabel;
+        public bool RequireBodyTypeMatch;
+        public string ExpectedBodyTypeSource;
+        public AutoTestPawnFactionMode RequestedFactionMode = AutoTestPawnFactionMode.Native;
+        public AutoTestPawnFactionMode GenerationFactionMode = AutoTestPawnFactionMode.Native;
+        public bool GenerationFactionModeResolved;
+        public string GenerationFactionDefName;
+        public string GenerationFactionReason;
+        public string GenerationFallbackNotes;
         public string DefName;
         public string Label;
         public AutoTestScreenshotProfile Profile;
+
+        public AutoTestThreeViewTargetSpec CloneForPlayerCompatibility(AutoTestManifestEntry manifestEntry)
+        {
+            AutoTestThreeViewTargetSpec clone = (AutoTestThreeViewTargetSpec)MemberwiseClone();
+            clone.ManifestEntry = manifestEntry;
+            clone.RequestedFactionMode = AutoTestPawnFactionMode.PlayerCompatibility;
+            clone.GenerationFactionMode = AutoTestPawnFactionMode.PlayerCompatibility;
+            clone.GenerationFactionModeResolved = false;
+            clone.GenerationFactionDefName = string.Empty;
+            clone.GenerationFactionReason = string.Empty;
+            clone.GenerationFallbackNotes = string.Empty;
+            clone.DefName = (DefName ?? PawnKindDef?.defName ?? "UnknownPawn") + "@PlayerCompatibility";
+            clone.Label = (Label ?? PawnKindDef?.label ?? clone.DefName) + " [PlayerCompatibility]";
+            return clone;
+        }
     }
 
     internal sealed class AutoTestThreeViewTargetContext
@@ -302,7 +325,7 @@ namespace LogSyncMod.AutoTest
                         spec.PawnRaceLabel = candidate.race?.label ?? candidate.race?.defName ?? string.Empty;
                         spec.PawnBodyTypeDefName = pawn.story?.bodyType?.defName ?? string.Empty;
                         spec.PawnBodyTypeLabel = pawn.story?.bodyType?.label ?? pawn.story?.bodyType?.defName ?? string.Empty;
-                        spec.ForcedBodyType = pawn.story?.bodyType;
+                        spec.ForcedBodyType = spec.RequireBodyTypeMatch ? pawn.story?.bodyType : null;
                         spec.Profile = ResolveThreeViewProfileForPawnKind(candidate);
                         spec.CompatibilitySource = AppendCompatibilitySource(spec.CompatibilitySource, compatibilitySource);
                         spec.BeforeVisualSignature = before;
@@ -620,7 +643,7 @@ namespace LogSyncMod.AutoTest
                     }
 
                     sourcePawn = pawn;
-                    if (spec.Kind == AutoTestKind.XenotypeThreeView && sourcePawn.story?.bodyType != null)
+                    if (sourcePawn.story?.bodyType != null)
                     {
                         spec.PawnBodyTypeDefName = sourcePawn.story.bodyType.defName ?? string.Empty;
                         spec.PawnBodyTypeLabel = sourcePawn.story.bodyType.label ?? sourcePawn.story.bodyType.defName ?? string.Empty;
@@ -748,29 +771,7 @@ namespace LogSyncMod.AutoTest
                     }
 
                     IntVec3 origin = context.Cells[i];
-                    IntVec3 walkTarget = i < context.WalkTargets.Count ? context.WalkTargets[i] : origin;
-                    if (pawn.Position != origin)
-                    {
-                        pawn.Position = origin;
-                    }
-
-                    pawn.jobs?.StopAll();
-                    pawn.pather?.StopDead();
-                    pawn.Rotation = context.Rotations[i];
-                    bool immobile = pawn.Downed || pawn.ageTracker?.CurLifeStage?.alwaysDowned == true;
-                    if (!immobile)
-                    {
-                        pawn.rotationTracker?.FaceCell(walkTarget);
-                        if (pawn.drafter != null)
-                        {
-                            pawn.drafter.Drafted = true;
-                        }
-
-                        if (walkTarget != origin)
-                        {
-                            pawn.pather?.StartPath(walkTarget, Verse.AI.PathEndMode.OnCell);
-                        }
-                    }
+                    StabilizePawnForSettle(pawn, origin, context.Rotations[i]);
                 }
 
                 context.DirectionalWalkPrimed = true;
@@ -804,28 +805,7 @@ namespace LogSyncMod.AutoTest
                     }
 
                     IntVec3 origin = context.Cells[i];
-                    IntVec3 walkTarget = i < context.WalkTargets.Count ? context.WalkTargets[i] : origin;
-                    if (pawn.Position != origin)
-                    {
-                        pawn.Position = origin;
-                    }
-
-                    pawn.jobs?.StopAll();
-                    pawn.pather?.StopDead();
-                    pawn.Rotation = context.Rotations[i];
-                    bool immobile = pawn.Downed || pawn.ageTracker?.CurLifeStage?.alwaysDowned == true;
-                    if (!immobile)
-                    {
-                        if (pawn.drafter != null)
-                        {
-                            pawn.drafter.Drafted = true;
-                        }
-
-                        if (walkTarget != origin)
-                        {
-                            pawn.pather?.StartPath(walkTarget, Verse.AI.PathEndMode.OnCell);
-                        }
-                    }
+                    StabilizePawnForSettle(pawn, origin, context.Rotations[i]);
 
                     pawn.Drawer?.renderer?.SetAllGraphicsDirty();
                 }
@@ -855,23 +835,9 @@ namespace LogSyncMod.AutoTest
                     continue;
                 }
 
-                IntVec3 walkTarget = i < context.WalkTargets.Count ? context.WalkTargets[i] : context.Cells[i];
                 try
                 {
-                    bool immobile = pawn.Downed || pawn.ageTracker?.CurLifeStage?.alwaysDowned == true;
-                    if (immobile)
-                    {
-                        pawn.Rotation = context.Rotations[i];
-                    }
-                    else
-                    {
-                        pawn.rotationTracker?.FaceCell(walkTarget);
-                        if (context.DirectionalWalkPrimed && walkTarget != pawn.Position && !(pawn.pather?.Moving ?? false))
-                        {
-                            pawn.pather?.StartPath(walkTarget, Verse.AI.PathEndMode.OnCell);
-                        }
-                    }
-
+                    StabilizePawnForSettle(pawn, context.Cells[i], context.Rotations[i]);
                     pawn.Drawer?.renderer?.SetAllGraphicsDirty();
                 }
                 catch
@@ -899,24 +865,16 @@ namespace LogSyncMod.AutoTest
                     continue;
                 }
 
-                IntVec3 walkTarget = i < context.WalkTargets.Count ? context.WalkTargets[i] : context.Cells[i];
                 Rot4 desiredRotation = context.Rotations[i];
-                try
-                {
-                    pawn.rotationTracker?.FaceCell(walkTarget);
-                }
-                catch
-                {
-                }
-
                 bool rotationReady = pawn.Rotation == desiredRotation;
-                bool movementReady = pawn.Downed || pawn.ageTracker?.CurLifeStage?.alwaysDowned == true || walkTarget == pawn.Position || (pawn.pather?.Moving ?? false) || (pawn.pather?.MovingNow ?? false);
-                if (rotationReady && movementReady)
+                bool positionReady = pawn.Position == context.Cells[i];
+                bool jobStopped = pawn.CurJob == null;
+                if (rotationReady && positionReady && jobStopped)
                 {
                     readyCount++;
                 }
 
-                states.Add("pawn" + i + "=" + pawn.Rotation + "/" + (movementReady ? "moving" : "idle"));
+                states.Add("pawn" + i + "=" + pawn.Rotation + "/position=" + positionReady + "/job=" + (pawn.CurJob?.def?.defName ?? "None"));
             }
 
             details = string.Join(",", states);
@@ -1009,6 +967,8 @@ namespace LogSyncMod.AutoTest
                 RaceDef = pawnKindDef.race,
                 PawnRaceDefName = pawnKindDef.race?.defName,
                 PawnRaceLabel = pawnKindDef.race?.label ?? pawnKindDef.race?.defName ?? string.Empty,
+                RequireBodyTypeMatch = true,
+                ExpectedBodyTypeSource = "PawnKindGeneratedPlan",
                 DefName = pawnKindDef.defName,
                 Label = pawnKindDef.label,
                 Profile = profile
@@ -1090,6 +1050,8 @@ namespace LogSyncMod.AutoTest
                         ScreenshotStageSuffix = lifeStage.defName + "_triptych",
                         PawnRaceDefName = pawnKindDef.race?.defName,
                         PawnRaceLabel = pawnKindDef.race?.label ?? pawnKindDef.race?.defName ?? string.Empty,
+                        RequireBodyTypeMatch = true,
+                        ExpectedBodyTypeSource = "PawnKindLifeStageGeneratedPlan",
                         DefName = identity,
                         Label = pawnKindDef.label,
                         OverlayLine1 = pawnKindDef.label ?? pawnKindDef.defName,
@@ -1158,6 +1120,8 @@ namespace LogSyncMod.AutoTest
                         ScreenshotStageSuffix = lifeStage.defName + "_triptych",
                         PawnRaceDefName = raceDef.defName,
                         PawnRaceLabel = raceDef.label ?? raceDef.defName,
+                        RequireBodyTypeMatch = true,
+                        ExpectedBodyTypeSource = "PawnKindLifeStageGeneratedPlan",
                         DefName = identity,
                         Label = raceDef.label,
                         OverlayLine1 = raceDef.label ?? representative.label ?? raceDef.defName,
@@ -1272,6 +1236,8 @@ namespace LogSyncMod.AutoTest
                         PawnRaceLabel = pawnKind?.race?.label ?? pawnKind?.race?.defName ?? string.Empty,
                         PawnBodyTypeDefName = bodyType?.defName ?? string.Empty,
                         PawnBodyTypeLabel = displayBodyType,
+                        RequireBodyTypeMatch = AutoTestBodyTypeMatchPolicy.RequireMatch(AutoTestBodyTypeTargetKind.Apparel, bodyType != null, false),
+                        ExpectedBodyTypeSource = "ApparelPresenterBodyType",
                         DefName = apparelDef.defName,
                         Label = apparelDef.label,
                         Profile = ResolveThreeViewProfileForPawnKind(pawnKind)
@@ -1328,6 +1294,8 @@ namespace LogSyncMod.AutoTest
                     PawnRaceLabel = pawnKind?.race?.label ?? pawnKind?.race?.defName ?? string.Empty,
                     PawnBodyTypeDefName = forcedBodyType?.defName ?? string.Empty,
                     PawnBodyTypeLabel = forcedBodyType?.label ?? forcedBodyType?.defName ?? "Default",
+                    RequireBodyTypeMatch = AutoTestBodyTypeMatchPolicy.RequireMatch(AutoTestBodyTypeTargetKind.Weapon, forcedBodyType != null, false),
+                    ExpectedBodyTypeSource = "WeaponPresenterBodyType",
                     DefName = weaponDef.defName,
                     Label = weaponDef.label,
                     Profile = ResolveThreeViewProfileForPawnKind(pawnKind)
@@ -1418,6 +1386,8 @@ namespace LogSyncMod.AutoTest
                     ForceStripLoadout = true,
                     PawnBodyTypeDefName = bodyTypeDef.defName,
                     PawnBodyTypeLabel = bodyTypeDef.label ?? bodyTypeDef.defName,
+                    RequireBodyTypeMatch = true,
+                    ExpectedBodyTypeSource = "BodyTypeTargetDef",
                     DefName = bodyTypeDef.defName,
                     Label = bodyTypeDef.label ?? bodyTypeDef.defName,
                     ScreenshotStageSuffix = "triptych",
@@ -1493,6 +1463,8 @@ namespace LogSyncMod.AutoTest
                     PresenterCandidates = candidates,
                     ForceStripLoadout = true,
                     CompatibilitySource = DescribeGeneStaticVisualHints(geneDef),
+                    RequireBodyTypeMatch = AutoTestBodyTypeMatchPolicy.RequireMatch(AutoTestBodyTypeTargetKind.Gene, false, geneDef.bodyType.HasValue),
+                    ExpectedBodyTypeSource = geneDef.bodyType.HasValue ? "GeneDef.bodyType" : "InformationalOnly",
                     DefName = geneDef.defName,
                     Label = geneDef.label,
                     ScreenshotStageSuffix = "triptych",
@@ -1524,6 +1496,11 @@ namespace LogSyncMod.AutoTest
                     PresenterCandidates = candidates,
                     ForceStripLoadout = true,
                     CompatibilitySource = "XenotypeGenes=" + (xenotypeDef.genes?.Count ?? 0) + ";Replica=VanillaPawnDuplicator",
+                    RequireBodyTypeMatch = AutoTestBodyTypeMatchPolicy.RequireMatch(AutoTestBodyTypeTargetKind.Xenotype, false,
+                        xenotypeDef.genes?.Any(gene => gene?.bodyType.HasValue == true) == true),
+                    ExpectedBodyTypeSource = xenotypeDef.genes?.Any(gene => gene?.bodyType.HasValue == true) == true
+                        ? "XenotypeGene.bodyType"
+                        : "InformationalOnly",
                     DefName = xenotypeDef.defName,
                     Label = xenotypeDef.label,
                     ScreenshotStageSuffix = "triptych",
@@ -1871,69 +1848,92 @@ namespace LogSyncMod.AutoTest
                 return false;
             }
 
-            Faction faction = ResolveFaction(spec);
             Exception lastException = null;
-            for (int attempt = 0; attempt < 6 && pawn == null; attempt++)
+            List<AutoTestPawnFactionResolution> resolutions = new List<AutoTestPawnFactionResolution>();
+            bool factionModeAlreadyResolved = spec.GenerationFactionModeResolved;
+            AutoTestPawnFactionResolution primary = factionModeAlreadyResolved
+                ? AutoTestPawnFactionResolver.ResolveEffective(spec.PawnKindDef, spec.RequestedFactionMode, spec.GenerationFactionMode)
+                : AutoTestPawnFactionResolver.Resolve(spec.PawnKindDef, spec.RequestedFactionMode);
+            resolutions.Add(primary);
+            if (!spec.GenerationFactionModeResolved && primary.Faction != null && primary.EffectiveMode == AutoTestPawnFactionMode.Native)
             {
-                try
+                resolutions.Add(AutoTestPawnFactionResolver.FactionlessFallback(
+                    spec.RequestedFactionMode,
+                    "Native faction generation failed; retrying with the documented factionless safety fallback."));
+            }
+
+            foreach (AutoTestPawnFactionResolution resolution in resolutions)
+            {
+                for (int attempt = 0; attempt < 4 && pawn == null; attempt++)
                 {
-                    PawnGenerationRequest request = new PawnGenerationRequest(
-                        spec.PawnKindDef,
-                        faction,
-                        PawnGenerationContext.NonPlayer,
-                        tile,
-                        forceGenerateNewPawn: true,
-                        allowDowned: spec.TargetLifeStage?.alwaysDowned == true,
-                        canGeneratePawnRelations: false,
-                        mustBeCapableOfViolence: false,
-                        fixedBiologicalAge: spec.TargetLifeStage != null && spec.TargetBiologicalAgeYears >= 0f
-                            ? spec.TargetBiologicalAgeYears
-                            : (float?)null,
-                        fixedChronologicalAge: spec.TargetLifeStage != null && spec.TargetBiologicalAgeYears >= 0f
-                            ? spec.TargetBiologicalAgeYears
-                            : (float?)null,
-                        fixedGender: spec.ForcedGender,
-                        developmentalStages: spec.TargetLifeStage?.developmentalStage ?? DevelopmentalStage.Adult,
-                        dontGiveWeapon: spec.ForceStripLoadout,
-                        forceNoGear: spec.ForceStripLoadout);
-                    Pawn candidate = PawnGenerator.GeneratePawn(request);
-                    if (candidate == null)
+                    try
                     {
-                        continue;
-                    }
+                        PawnGenerationRequest request = new PawnGenerationRequest(
+                            spec.PawnKindDef,
+                            resolution.Faction,
+                            PawnGenerationContext.NonPlayer,
+                            tile,
+                            forceGenerateNewPawn: true,
+                            allowDowned: spec.TargetLifeStage?.alwaysDowned == true,
+                            canGeneratePawnRelations: false,
+                            mustBeCapableOfViolence: false,
+                            fixedBiologicalAge: spec.TargetLifeStage != null && spec.TargetBiologicalAgeYears >= 0f
+                                ? spec.TargetBiologicalAgeYears
+                                : (float?)null,
+                            fixedChronologicalAge: spec.TargetLifeStage != null && spec.TargetBiologicalAgeYears >= 0f
+                                ? spec.TargetBiologicalAgeYears
+                                : (float?)null,
+                            fixedGender: spec.ForcedGender,
+                            developmentalStages: spec.TargetLifeStage?.developmentalStage ?? DevelopmentalStage.Adult,
+                            dontGiveWeapon: spec.ForceStripLoadout,
+                            forceNoGear: spec.ForceStripLoadout);
+                        Pawn candidate = PawnGenerator.GeneratePawn(request);
+                        if (candidate == null) continue;
 
-                    if (ShouldStripGeneratedPawnLoadout(spec, candidate))
+                        if (ShouldStripGeneratedPawnLoadout(spec, candidate))
+                        {
+                            try
+                            {
+                                candidate.apparel?.DestroyAll();
+                                candidate.equipment?.DestroyAllEquipment();
+                            }
+                            catch
+                            {
+                            }
+                        }
+
+                        if (!PreparePawnForSpec(candidate, spec, out string prepareError))
+                        {
+                            try
+                            {
+                                candidate.Destroy(DestroyMode.Vanish);
+                            }
+                            catch
+                            {
+                            }
+
+                            lastException = new InvalidOperationException(prepareError ?? "Failed to prepare pawn for three-view spec.");
+                            continue;
+                        }
+
+                        pawn = candidate;
+                        if (!factionModeAlreadyResolved)
+                        {
+                            spec.GenerationFactionMode = resolution.EffectiveMode;
+                            spec.GenerationFactionModeResolved = true;
+                            spec.GenerationFactionDefName = resolution.Faction?.def?.defName ?? string.Empty;
+                            spec.GenerationFactionReason = resolution.Reason;
+                        }
+                    }
+                    catch (Exception ex)
                     {
-                        try
-                        {
-                            candidate.apparel?.DestroyAll();
-                            candidate.equipment?.DestroyAllEquipment();
-                        }
-                        catch
-                        {
-                        }
+                        lastException = ex;
                     }
-
-                    if (!PreparePawnForSpec(candidate, spec, out string prepareError))
-                    {
-                        try
-                        {
-                            candidate.Destroy(DestroyMode.Vanish);
-                        }
-                        catch
-                        {
-                        }
-
-                        lastException = new InvalidOperationException(prepareError ?? "Failed to prepare pawn for three-view spec.");
-                        continue;
-                    }
-
-                    pawn = candidate;
                 }
-                catch (Exception ex)
-                {
-                    lastException = ex;
-                }
+
+                if (pawn != null) break;
+                spec.GenerationFallbackNotes = AppendContextNote(spec.GenerationFallbackNotes,
+                    resolution.EffectiveMode + " failed: " + (lastException?.Message ?? "Pawn generation returned null."));
             }
 
             if (pawn != null)
@@ -1947,24 +1947,10 @@ namespace LogSyncMod.AutoTest
             return false;
         }
 
-        private static Faction ResolveFaction(AutoTestThreeViewTargetSpec spec)
+        private static string AppendContextNote(string current, string value)
         {
-            if (spec == null)
-            {
-                return null;
-            }
-
-            if (spec.Kind == AutoTestKind.MechanoidThreeView)
-            {
-                return Faction.OfMechanoids;
-            }
-
-            if (spec.RaceDef?.race?.Humanlike == true)
-            {
-                return Faction.OfPlayer ?? Find.FactionManager?.OfPlayer;
-            }
-
-            return null;
+            if (string.IsNullOrWhiteSpace(value)) return current ?? string.Empty;
+            return string.IsNullOrWhiteSpace(current) ? value : current + " | " + value;
         }
 
         private static bool PreparePawnForSpec(Pawn pawn, AutoTestThreeViewTargetSpec spec, out string errorMessage)
@@ -2197,14 +2183,7 @@ namespace LogSyncMod.AutoTest
             {
                 PawnGenerationRequest request = new PawnGenerationRequest(
                     pawnKindDef,
-                    ResolveFaction(new AutoTestThreeViewTargetSpec
-                    {
-                        PawnKindDef = pawnKindDef,
-                        RaceDef = pawnKindDef.race,
-                        Kind = pawnKindDef.race?.race?.IsMechanoid == true
-                            ? AutoTestKind.MechanoidThreeView
-                            : AutoTestKind.HumanoidThreeView
-                    }),
+                    AutoTestPawnFactionResolver.Resolve(pawnKindDef, AutoTestPawnFactionMode.Native).Faction,
                     PawnGenerationContext.NonPlayer,
                     -1,
                     forceGenerateNewPawn: true,
@@ -2433,16 +2412,12 @@ namespace LogSyncMod.AutoTest
 
                 pawn.jobs?.StopAll();
                 pawn.pather?.StopDead();
-                pawn.Rotation = rotation;
                 bool immobile = pawn.Downed || pawn.ageTracker?.CurLifeStage?.alwaysDowned == true;
                 if (!immobile)
                 {
                     pawn.rotationTracker?.FaceCell(cell + rotation.FacingCell);
-                    if (pawn.drafter != null)
-                    {
-                        pawn.drafter.Drafted = true;
-                    }
                 }
+                pawn.Rotation = rotation;
             }
             catch
             {

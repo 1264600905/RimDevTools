@@ -18,6 +18,12 @@ namespace LogSyncMod
         public List<int> projectileScreenshotTicks = new List<int> { 20, 40 };
         public List<string> allowedErrorPatterns = new List<string>();
         public List<string> allowedWarningPatterns = new List<string>();
+        public string pawnFactionMode = "Native";
+        public bool requireBodyTypeMatch = false;
+        public string expectedBodyTypeDefName;
+        public string expectedBodyTypeSource;
+        public string buildingFactionDefName;
+        public bool buildingFactionless = false;
 
         public override void ResolveReferences()
         {

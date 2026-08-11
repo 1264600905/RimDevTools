@@ -610,6 +610,9 @@ namespace LogSyncMod.AutoTest
             }
 
             Rot4 rotation = buildingDef.rotatable ? Rot4.East : Rot4.North;
+            LogSyncAutoTestSpecDef matchedSpec = ResolveBestMatchingSpec(session.Spec.Kind, buildingDef);
+            PrepareBuildingFactionBeforeSpawn(building, AutoTestBuildingContext.BuildingStaticView, session.Result,
+                ResolveFactionFromSpec(matchedSpec), matchedSpec?.buildingFactionless == true);
             GenSpawn.Spawn(building, session.Context.AnchorCell, session.Context.Map, rotation, WipeMode.Vanish, false, false);
             if (building.Destroyed || !building.Spawned)
             {

@@ -1099,6 +1099,15 @@ internal sealed class TestSuite
         var skipped = AutoResultValidator.Validate(output, "demo.current", "run-skipped", skippedSnapshot);
         Assert(skipped.Ok, "auto result validator accepts explicit skipped cases");
 
+        foreach (string status in new[] { "passed_after_retry", "unsupported", "compatibility_warning" })
+        {
+            var diagnosticSnapshot = AutoResultValidator.Snapshot(output);
+            string diagnosticRunId = "run-" + status;
+            WriteResult(output, "demo.current", diagnosticRunId, status, status + "_Result.json");
+            var diagnostic = AutoResultValidator.Validate(output, "demo.current", diagnosticRunId, diagnosticSnapshot);
+            Assert(diagnostic.Ok, "auto result validator accepts non-failure status " + status);
+        }
+
         var stale = AutoResultValidator.Validate(output, "demo.current", "run-three", AutoResultValidator.Snapshot(output));
         Assert(!stale.Ok && stale.Code == "AUTO_RESULT_MISSING", "old result files cannot satisfy a new run");
 

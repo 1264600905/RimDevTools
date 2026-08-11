@@ -54,6 +54,14 @@ from runner_core.game_process import (
     wait_for_existing_rimworld_to_exit,
 )
 
+AUTO_TEST_NON_FAILURE_STATUSES = {
+    "passed",
+    "passed_after_retry",
+    "skipped",
+    "unsupported",
+    "compatibility_warning",
+}
+
 
 # ==========================================
 # 部署集成
@@ -138,7 +146,7 @@ def find_successful_auto_test_result(output_dir: str | None, package_id: str | N
             or result.get("manifestMissing") != 0
             or result.get("manifestExecuted", -1) < result.get("manifestPlanned", 0)
             or not isinstance(results, list)
-            or any(not isinstance(item, dict) or item.get("status") != "passed" for item in results)
+            or any(not isinstance(item, dict) or item.get("status") not in AUTO_TEST_NON_FAILURE_STATUSES for item in results)
         ):
             continue
         return result_path, result

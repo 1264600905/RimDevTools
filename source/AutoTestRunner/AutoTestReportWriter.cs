@@ -83,9 +83,12 @@ namespace LogSyncMod.AutoTest
         private static string BuildMarkdown(AutoTestRunArtifacts artifacts, string packageId, string modName, List<AutoTestResult> results, AutoTestRunSummary runSummary, AutoTestEvidenceManifest evidence)
         {
             StringBuilder builder = new StringBuilder();
-            int passed = results.Count(result => result.Status == "passed");
-            int skipped = results.Count(result => result.Status == "skipped");
-            int failed = results.Count(result => result.Status != "passed" && result.Status != "skipped");
+            int passed = results.Count(result => AutoTestResultStatus.IsPassed(result.Status));
+            int passedAfterRetry = results.Count(result => string.Equals(result.Status, AutoTestResultStatus.PassedAfterRetry, StringComparison.OrdinalIgnoreCase));
+            int skipped = results.Count(result => string.Equals(result.Status, AutoTestResultStatus.Skipped, StringComparison.OrdinalIgnoreCase));
+            int unsupported = results.Count(result => string.Equals(result.Status, AutoTestResultStatus.Unsupported, StringComparison.OrdinalIgnoreCase));
+            int compatibilityWarnings = results.Count(result => string.Equals(result.Status, AutoTestResultStatus.CompatibilityWarning, StringComparison.OrdinalIgnoreCase));
+            int failed = results.Count(result => AutoTestResultStatus.IsFailure(result.Status));
 
             builder.AppendLine("# Auto Test Report");
             builder.AppendLine();
@@ -94,8 +97,16 @@ namespace LogSyncMod.AutoTest
             builder.AppendLine("- GeneratedAt: " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
             builder.AppendLine("- Total: " + results.Count);
             builder.AppendLine("- Passed: " + passed);
+            builder.AppendLine("- PassedAfterRetry: " + passedAfterRetry);
             builder.AppendLine("- Failed: " + failed);
             builder.AppendLine("- Skipped: " + skipped);
+            builder.AppendLine("- Unsupported: " + unsupported);
+            builder.AppendLine("- CompatibilityWarnings: " + compatibilityWarnings);
+            if (evidence != null)
+            {
+                builder.AppendLine("- UnexpectedSevereLogs: " + results.Sum(result => result?.UnexpectedSevereLogCount ?? 0));
+                builder.AppendLine("- CapturedSevereLogs: " + evidence.Logs.Count(item => item.Level == "error" || item.Level == "fatal"));
+            }
             if (runSummary != null)
             {
                 builder.AppendLine("- RunMode: " + runSummary.RunMode);
@@ -129,6 +140,11 @@ namespace LogSyncMod.AutoTest
                     screenshotValue,
                     EscapePipe(string.IsNullOrWhiteSpace(result.ErrorMessage) ? result.Notes : Trim(result.ErrorMessage, 160))));
             }
+
+            AppendStatusGroup(builder, "Unsupported", results.Where(result =>
+                string.Equals(result.Status, AutoTestResultStatus.Unsupported, StringComparison.OrdinalIgnoreCase)));
+            AppendStatusGroup(builder, "Compatibility Warnings", results.Where(result =>
+                string.Equals(result.Status, AutoTestResultStatus.CompatibilityWarning, StringComparison.OrdinalIgnoreCase)));
 
             if (runSummary != null && runSummary.MissingCaseIds.Count > 0)
             {
@@ -196,7 +212,7 @@ namespace LogSyncMod.AutoTest
                 }
             }
 
-            List<AutoTestResult> failedResults = results.Where(result => result.Status != "passed" && result.Status != "skipped").ToList();
+            List<AutoTestResult> failedResults = results.Where(result => AutoTestResultStatus.IsFailure(result.Status)).ToList();
             foreach (AutoTestResult failedResult in failedResults)
             {
                 List<AutoTestAssertionEvidence> assertions = evidence?.Assertions?.Where(item => item.CaseId == failedResult.CaseId && !item.Success).ToList() ?? new List<AutoTestAssertionEvidence>();
@@ -246,14 +262,16 @@ namespace LogSyncMod.AutoTest
             if (evidence != null)
             {
                 int failedAssertions = evidence.Assertions.Count(item => !item.Success);
-                int severeLogs = evidence.Logs.Count(item => item.Level == "error" || item.Level == "fatal");
+                int capturedSevereLogs = evidence.Logs.Count(item => item.Level == "error" || item.Level == "fatal");
+                int unexpectedSevereLogs = results.Sum(item => item?.UnexpectedSevereLogCount ?? 0);
                 builder.AppendLine("  \"evidenceSchemaVersion\": " + evidence.SchemaVersion + ",");
                 builder.AppendLine("  \"evidencePath\": \"" + EscapeJson(artifacts.EvidencePath) + "\",");
                 builder.AppendLine("  \"operationCount\": " + evidence.Operations.Count + ",");
                 builder.AppendLine("  \"assertionCount\": " + evidence.Assertions.Count + ",");
                 builder.AppendLine("  \"failedAssertionCount\": " + failedAssertions + ",");
                 builder.AppendLine("  \"capturedLogCount\": " + evidence.Logs.Count + ",");
-                builder.AppendLine("  \"severeLogCount\": " + severeLogs + ",");
+                builder.AppendLine("  \"severeLogCount\": " + unexpectedSevereLogs + ",");
+                builder.AppendLine("  \"capturedSevereLogCount\": " + capturedSevereLogs + ",");
             }
             if (runSummary != null)
             {
@@ -263,6 +281,12 @@ namespace LogSyncMod.AutoTest
                 builder.AppendLine("  \"manifestPlanned\": " + runSummary.PlannedCount + ",");
                 builder.AppendLine("  \"manifestExecuted\": " + runSummary.ExecutedCount + ",");
                 builder.AppendLine("  \"manifestMissing\": " + runSummary.MissingCount + ",");
+                builder.AppendLine("  \"passedCount\": " + runSummary.PassedCount + ",");
+                builder.AppendLine("  \"passedAfterRetryCount\": " + runSummary.PassedAfterRetryCount + ",");
+                builder.AppendLine("  \"failedCount\": " + runSummary.FailedCount + ",");
+                builder.AppendLine("  \"skippedCount\": " + runSummary.SkippedCount + ",");
+                builder.AppendLine("  \"unsupportedCount\": " + runSummary.UnsupportedCount + ",");
+                builder.AppendLine("  \"compatibilityWarningCount\": " + runSummary.CompatibilityWarningCount + ",");
                 builder.AppendLine("  \"batchSize\": " + runSummary.BatchSize + ",");
                 builder.AppendLine("  \"batchLimitApplied\": " + (runSummary.BatchLimitApplied ? "true" : "false") + ",");
                 builder.AppendLine("  \"missingDefNames\": " + BuildJsonArray(runSummary.MissingDefNames) + ",");
@@ -283,6 +307,7 @@ namespace LogSyncMod.AutoTest
                 builder.AppendLine("      \"status\": \"" + EscapeJson(result.Status) + "\",");
                 builder.AppendLine("      \"stage\": \"" + EscapeJson(result.Stage) + "\",");
                 builder.AppendLine("      \"errorMessage\": \"" + EscapeJson(result.ErrorMessage) + "\",");
+                builder.AppendLine("      \"reasonCode\": \"" + EscapeJson(result.ResultReasonCode) + "\",");
                 builder.AppendLine("      \"screenshotPath\": \"" + EscapeJson(result.ScreenshotPath) + "\",");
                 builder.AppendLine("      \"screenshotPaths\": " + BuildJsonArray(result.ScreenshotPaths) + ",");
                 builder.AppendLine("      \"notes\": \"" + EscapeJson(result.Notes) + "\",");
@@ -300,6 +325,21 @@ namespace LogSyncMod.AutoTest
             builder.AppendLine("  ]");
             builder.AppendLine("}");
             return builder.ToString();
+        }
+
+        private static void AppendStatusGroup(StringBuilder builder, string heading, IEnumerable<AutoTestResult> groupedResults)
+        {
+            List<AutoTestResult> items = groupedResults?.ToList() ?? new List<AutoTestResult>();
+            if (items.Count == 0) return;
+            builder.AppendLine();
+            builder.AppendLine("## " + heading);
+            builder.AppendLine();
+            foreach (AutoTestResult result in items)
+            {
+                builder.AppendLine("- `" + (result.CaseId ?? result.DefName ?? "unknown") + "`: " +
+                    (string.IsNullOrWhiteSpace(result.ResultReasonCode) ? result.Status : result.ResultReasonCode) +
+                    (string.IsNullOrWhiteSpace(result.Notes) ? string.Empty : " — " + Trim(result.Notes, 240)));
+            }
         }
 
         private static string BuildManifestJson(
