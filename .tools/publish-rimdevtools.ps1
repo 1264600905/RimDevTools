@@ -98,9 +98,9 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "RimDevTools publish 失败" }
     Copy-Item -LiteralPath (Join-Path $rimDevToolsPublish "RimDevTools.exe") -Destination (Join-Path $toolRoot "RimDevTools.exe") -Force
 
-    dotnet build (Join-Path $projectRoot "source\TempProject\TempProject.csproj") -c Release -t:Rebuild
+    dotnet build (Join-Path $projectRoot "source\LogSyncMod\LogSyncMod.csproj") -c Release -t:Rebuild
     if ($LASTEXITCODE -ne 0) { throw "LogSyncMod build 失败" }
-    dotnet build (Join-Path $projectRoot "source\AutoTestProject\AutoTestProject.csproj") -c Release -t:Rebuild
+    dotnet build (Join-Path $projectRoot "source\AutoTestRunner\AutoTestRunner.csproj") -c Release -t:Rebuild
     if ($LASTEXITCODE -ne 0) { throw "LogSyncMod AutoTest build 失败" }
 
     Copy-Item -LiteralPath (Join-Path $projectRoot "About") -Destination (Join-Path $logSyncComponent "About") -Recurse -Force
@@ -108,7 +108,7 @@ try {
     Copy-Item -LiteralPath (Join-Path $projectRoot "LoadFolders.xml") -Destination $logSyncComponent -Force
     $logSyncAssemblies = Join-Path $logSyncComponent "1.6\Assemblies"
     New-Item -ItemType Directory -Path $logSyncAssemblies -Force | Out-Null
-    foreach ($assembly in @("LogSyncMod.dll", "LogSyncMod.AutoTest.dll")) {
+    foreach ($assembly in @("LogSyncMod.dll", "AutoTestRunner.dll")) {
         Copy-Item -LiteralPath (Join-Path $projectRoot "1.6\Assemblies\$assembly") -Destination $logSyncAssemblies -Force
     }
     if (Test-Path -LiteralPath (Join-Path $projectRoot "1.6\Defs")) {
@@ -116,7 +116,7 @@ try {
     }
 
     $logSyncVersion = Get-ModVersion $logSyncComponent "1.6\Assemblies\LogSyncMod.dll"
-    $autoTestVersion = [System.Reflection.AssemblyName]::GetAssemblyName((Join-Path $logSyncComponent "1.6\Assemblies\LogSyncMod.AutoTest.dll")).Version.ToString()
+    $autoTestVersion = [System.Reflection.AssemblyName]::GetAssemblyName((Join-Path $logSyncComponent "1.6\Assemblies\AutoTestRunner.dll")).Version.ToString()
     $logSyncVersionParsed = [System.Version]$logSyncVersion
     $autoTestVersionParsed = [System.Version]$autoTestVersion
     if ($logSyncVersionParsed.Major -ne $autoTestVersionParsed.Major -or $logSyncVersionParsed.Minor -ne $autoTestVersionParsed.Minor -or $logSyncVersionParsed.Build -ne $autoTestVersionParsed.Build) { throw "LogSyncMod 与 AutoTest 程序集版本不一致" }

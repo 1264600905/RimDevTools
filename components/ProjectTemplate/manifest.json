@@ -38,7 +38,7 @@
     ".tools/Data/tool-mods.manifest.json",
     ".tools/Data/LogSyncMod/About/About.xml",
     ".tools/Data/LogSyncMod/1.6/Assemblies/LogSyncMod.dll",
-    ".tools/Data/LogSyncMod/1.6/Assemblies/LogSyncMod.AutoTest.dll",
+    ".tools/Data/LogSyncMod/1.6/Assemblies/AutoTestRunner.dll",
     ".tools/Ilspy/ilspycmd.exe",
     ".tools/modlist/defaultMods.xml",
     ".tools/log/精选日志.log"

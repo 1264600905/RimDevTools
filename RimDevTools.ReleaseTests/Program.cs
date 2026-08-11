@@ -28,7 +28,7 @@ RequireFile(Path.Combine(".tools", "RimDevTools.exe"));
 RequireFile(Path.Combine(".tools", "Data", "tool-mods.manifest.json"));
 RequireFile(Path.Combine(".tools", "Data", "LogSyncMod", "About", "About.xml"));
 RequireFile(Path.Combine(".tools", "Data", "LogSyncMod", "1.6", "Assemblies", "LogSyncMod.dll"));
-RequireFile(Path.Combine(".tools", "Data", "LogSyncMod", "1.6", "Assemblies", "LogSyncMod.AutoTest.dll"));
+RequireFile(Path.Combine(".tools", "Data", "LogSyncMod", "1.6", "Assemblies", "AutoTestRunner.dll"));
 RequireFile(Path.Combine(".tools", "Ilspy", "ilspycmd.exe"));
 RequireFile(Path.Combine(".tools", "Data", "licenses", "ILSpy-LICENSE.txt"));
 RequireFile(Path.Combine(".tools", "Data", "licenses", "third-party-notices.txt"));
@@ -85,9 +85,9 @@ using (var manifestDocument = JsonDocument.Parse(File.ReadAllText(Path.Combine(d
 
 var logSyncAbout = XDocument.Load(Path.Combine(data, "LogSyncMod", "About", "About.xml"));
 Assert(logSyncAbout.Root?.Element("packageId")?.Value.Equals("trigger.logsyncmod", StringComparison.OrdinalIgnoreCase) == true, "packaged LogSyncMod has the expected packageId");
-Assert(logSyncAbout.Root?.Element("modVersion")?.Value == "1.1.5", "packaged LogSyncMod declares version 1.1.5");
+Assert(logSyncAbout.Root?.Element("modVersion")?.Value == "1.1.6", "packaged LogSyncMod declares version 1.1.6");
 var logSyncAssembly = AssemblyName.GetAssemblyName(Path.Combine(data, "LogSyncMod", "1.6", "Assemblies", "LogSyncMod.dll")).Version;
-var autoTestAssembly = AssemblyName.GetAssemblyName(Path.Combine(data, "LogSyncMod", "1.6", "Assemblies", "LogSyncMod.AutoTest.dll")).Version;
+var autoTestAssembly = AssemblyName.GetAssemblyName(Path.Combine(data, "LogSyncMod", "1.6", "Assemblies", "AutoTestRunner.dll")).Version;
 Assert(logSyncAssembly is not null && autoTestAssembly is not null && logSyncAssembly.Major == autoTestAssembly.Major && logSyncAssembly.Minor == autoTestAssembly.Minor && logSyncAssembly.Build == autoTestAssembly.Build, "packaged LogSync assemblies share a product version");
 
 var templateAbout = XDocument.Load(Path.Combine(release, "About", "About.xml"));
