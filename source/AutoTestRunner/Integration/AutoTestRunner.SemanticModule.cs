@@ -336,6 +336,15 @@ namespace LogSyncMod.AutoTest
                 ? pawn.apparel?.WornApparel?.Any(item => item.def == session.Spec.ItemDef) == true
                 : !session.Spec.HoldAsWeapon || pawn.equipment?.Primary?.def == session.Spec.ItemDef);
             SemanticAssert(session.Result, "threeview.apparel_or_weapon_matches", itemMatches, session.Spec?.ItemDef?.defName ?? "not applicable", string.Join(";", pawns.Select(pawn => AutoTestPawnProbe.Capture(pawn).Summary).ToArray()));
+            List<string> initialPrimaryWeapons = session.Context?.InitialPrimaryWeaponDefNames ?? new List<string>();
+            bool generatedLoadoutRetained = initialPrimaryWeapons.Count == pawns.Count && pawns
+                .Select((pawn, index) => string.IsNullOrWhiteSpace(initialPrimaryWeapons[index]) ||
+                    string.Equals(pawn.equipment?.Primary?.def?.defName, initialPrimaryWeapons[index], StringComparison.OrdinalIgnoreCase))
+                .All(value => value);
+            SemanticAssert(session.Result, "threeview.generated_loadout_retained", generatedLoadoutRetained,
+                string.Join(",", initialPrimaryWeapons.Select(value => string.IsNullOrWhiteSpace(value) ? "none" : value).ToArray()),
+                string.Join(",", pawns.Select(pawn => pawn.equipment?.Primary?.def?.defName ?? "none").ToArray()),
+                "Native PawnKind equipment present after generation must remain attached through capture.");
             bool positionsStable = session.Context != null && session.Context.Cells.Count == pawns.Count && pawns.Select((pawn, index) => pawn.Position == session.Context.Cells[index]).All(value => value);
             SemanticAssert(session.Result, "threeview.position_map_stable", positionsStable, "same map and planned positions", string.Join(",", pawns.Select(pawn => pawn.Position.ToString()).ToArray()));
             string rotations = session.Context == null ? string.Empty : string.Join(",", session.Context.Rotations.Select(rotation => rotation.ToString()).ToArray());

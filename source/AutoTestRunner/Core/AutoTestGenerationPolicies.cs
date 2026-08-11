@@ -110,4 +110,25 @@ namespace LogSyncMod.AutoTest
             }
         }
     }
+
+    public static class AutoTestApparelBodyTypeVariantPolicy
+    {
+        public static IReadOnlyList<string> Resolve(
+            IEnumerable<string> configuredBodyTypeDefNames,
+            IEnumerable<string> textureBackedBodyTypeDefNames)
+        {
+            List<string> configured = Normalize(configuredBodyTypeDefNames);
+            List<string> textureBacked = Normalize(textureBackedBodyTypeDefNames);
+            return textureBacked.Count > 0 ? textureBacked : configured;
+        }
+
+        private static List<string> Normalize(IEnumerable<string> values)
+        {
+            return (values ?? Enumerable.Empty<string>())
+                .Where(value => !string.IsNullOrWhiteSpace(value))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(value => value, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+    }
 }

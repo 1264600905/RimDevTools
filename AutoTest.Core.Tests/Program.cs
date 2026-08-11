@@ -21,6 +21,7 @@ internal sealed class CoreTestSuite
         TestResultStatusSemantics();
         TestPawnFactionPlanner();
         TestBodyTypeMatchPolicy();
+        TestApparelBodyTypeVariantPolicy();
         TestTargetIds();
         TestSelectionFingerprint();
         TestReadiness();
@@ -427,6 +428,7 @@ internal sealed class CoreTestSuite
             (AutoTestBodyTypeTargetKind.Apparel, true, false, true),
             (AutoTestBodyTypeTargetKind.Weapon, true, false, true),
             (AutoTestBodyTypeTargetKind.PawnKind, true, false, true),
+            (AutoTestBodyTypeTargetKind.PawnKind, false, false, false),
             (AutoTestBodyTypeTargetKind.Gene, false, false, false),
             (AutoTestBodyTypeTargetKind.Gene, false, true, true),
             (AutoTestBodyTypeTargetKind.Xenotype, false, false, false),
@@ -435,6 +437,24 @@ internal sealed class CoreTestSuite
         foreach (var row in rows)
             Assert(AutoTestBodyTypeMatchPolicy.RequireMatch(row.Item1, row.Item2, row.Item3) == row.Item4,
                 "body type policy: " + row.Item1 + "/explicit=" + row.Item2 + "/static=" + row.Item3);
+    }
+
+    private void TestApparelBodyTypeVariantPolicy()
+    {
+        IReadOnlyList<string> textureBacked = AutoTestApparelBodyTypeVariantPolicy.Resolve(
+            new[] { "Male", "Female", "Thin" },
+            new[] { "Female", "female" });
+        Assert(textureBacked.SequenceEqual(new[] { "Female" }, StringComparer.OrdinalIgnoreCase),
+            "apparel body type policy treats discovered textures as authoritative");
+
+        IReadOnlyList<string> configuredFallback = AutoTestApparelBodyTypeVariantPolicy.Resolve(
+            new[] { "Hulk", "Male", "male" },
+            Array.Empty<string>());
+        Assert(configuredFallback.SequenceEqual(new[] { "Hulk", "Male" }, StringComparer.OrdinalIgnoreCase),
+            "apparel body type policy falls back to configured variants when textures cannot be inspected");
+
+        IReadOnlyList<string> unspecified = AutoTestApparelBodyTypeVariantPolicy.Resolve(null, null);
+        Assert(unspecified.Count == 0, "apparel body type policy preserves an unspecified variant");
     }
 
     private void TestTargetIds()

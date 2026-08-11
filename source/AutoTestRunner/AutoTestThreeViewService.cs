@@ -9,6 +9,7 @@ using HarmonyLib;
 using RimWorld;
 using UnityEngine;
 using Verse;
+using Verse.AI;
 
 namespace LogSyncMod.AutoTest
 {
@@ -92,6 +93,9 @@ namespace LogSyncMod.AutoTest
         public readonly List<IntVec3> Cells = new List<IntVec3>();
         public readonly List<Rot4> Rotations = new List<Rot4>();
         public readonly List<IntVec3> WalkTargets = new List<IntVec3>();
+        public readonly List<string> InitialPrimaryWeaponDefNames = new List<string>();
+        public BodyTypeDef PresenterBodyType;
+        public Gender? PresenterGender;
         public bool DirectionalWalkPrimed;
         public int ActualLifeStageIndex = -1;
         public LifeStageDef ActualLifeStage;
@@ -643,7 +647,10 @@ namespace LogSyncMod.AutoTest
                     }
 
                     sourcePawn = pawn;
-                    if (sourcePawn.story?.bodyType != null)
+                    createdContext.PresenterBodyType = sourcePawn.story?.bodyType;
+                    createdContext.PresenterGender = sourcePawn.gender;
+                    if (sourcePawn.story?.bodyType != null &&
+                        (!spec.RequireBodyTypeMatch || string.IsNullOrWhiteSpace(spec.PawnBodyTypeDefName)))
                     {
                         spec.PawnBodyTypeDefName = sourcePawn.story.bodyType.defName ?? string.Empty;
                         spec.PawnBodyTypeLabel = sourcePawn.story.bodyType.label ?? sourcePawn.story.bodyType.defName ?? string.Empty;
@@ -663,11 +670,17 @@ namespace LogSyncMod.AutoTest
                 {
                     AutoTestThreeViewRenderSuppression.Register(pawn);
                     GenSpawn.Spawn(pawn, cell, map, rotation, WipeMode.Vanish, false, false);
-                    StabilizePawnForSettle(pawn, cell, rotation);
+                    StabilizePawnForSettle(
+                        pawn,
+                        cell,
+                        rotation,
+                        createdContext.PresenterBodyType,
+                        createdContext.PresenterGender);
                     createdContext.Pawns.Add(pawn);
                     createdContext.Cells.Add(cell);
                     createdContext.Rotations.Add(rotation);
                     createdContext.WalkTargets.Add(walkTarget);
+                    createdContext.InitialPrimaryWeaponDefNames.Add(pawn.equipment?.Primary?.def?.defName ?? string.Empty);
                 }
                 catch (Exception ex)
                 {
@@ -681,7 +694,7 @@ namespace LogSyncMod.AutoTest
                     }
 
                     Cleanup(createdContext);
-                    errorMessage = ex.Message;
+                    errorMessage = "spawn_triptych_target[" + i + "]: " + ex;
                     return false;
                 }
             }
@@ -746,7 +759,12 @@ namespace LogSyncMod.AutoTest
                     continue;
                 }
 
-                StabilizePawnForSettle(pawn, context.Cells[i], context.Rotations[i]);
+                StabilizePawnForSettle(
+                    pawn,
+                    context.Cells[i],
+                    context.Rotations[i],
+                    context.PresenterBodyType,
+                    context.PresenterGender);
             }
         }
 
@@ -771,7 +789,12 @@ namespace LogSyncMod.AutoTest
                     }
 
                     IntVec3 origin = context.Cells[i];
-                    StabilizePawnForSettle(pawn, origin, context.Rotations[i]);
+                    StabilizePawnForSettle(
+                        pawn,
+                        origin,
+                        context.Rotations[i],
+                        context.PresenterBodyType,
+                        context.PresenterGender);
                 }
 
                 context.DirectionalWalkPrimed = true;
@@ -805,7 +828,12 @@ namespace LogSyncMod.AutoTest
                     }
 
                     IntVec3 origin = context.Cells[i];
-                    StabilizePawnForSettle(pawn, origin, context.Rotations[i]);
+                    StabilizePawnForSettle(
+                        pawn,
+                        origin,
+                        context.Rotations[i],
+                        context.PresenterBodyType,
+                        context.PresenterGender);
 
                     pawn.Drawer?.renderer?.SetAllGraphicsDirty();
                 }
@@ -837,7 +865,12 @@ namespace LogSyncMod.AutoTest
 
                 try
                 {
-                    StabilizePawnForSettle(pawn, context.Cells[i], context.Rotations[i]);
+                    StabilizePawnForSettle(
+                        pawn,
+                        context.Cells[i],
+                        context.Rotations[i],
+                        context.PresenterBodyType,
+                        context.PresenterGender);
                     pawn.Drawer?.renderer?.SetAllGraphicsDirty();
                 }
                 catch
@@ -868,8 +901,8 @@ namespace LogSyncMod.AutoTest
                 Rot4 desiredRotation = context.Rotations[i];
                 bool rotationReady = pawn.Rotation == desiredRotation;
                 bool positionReady = pawn.Position == context.Cells[i];
-                bool jobStopped = pawn.CurJob == null;
-                if (rotationReady && positionReady && jobStopped)
+                bool jobStable = pawn.CurJob == null || pawn.CurJobDef == JobDefOf.Wait_Combat;
+                if (rotationReady && positionReady && jobStable)
                 {
                     readyCount++;
                 }
@@ -957,6 +990,7 @@ namespace LogSyncMod.AutoTest
                 return;
             }
 
+            BodyTypeDef expectedBodyType = ResolveExplicitPawnKindBodyType(pawnKindDef);
             targets.Add(new AutoTestThreeViewTargetSpec
             {
                 Kind = kind,
@@ -967,8 +1001,15 @@ namespace LogSyncMod.AutoTest
                 RaceDef = pawnKindDef.race,
                 PawnRaceDefName = pawnKindDef.race?.defName,
                 PawnRaceLabel = pawnKindDef.race?.label ?? pawnKindDef.race?.defName ?? string.Empty,
-                RequireBodyTypeMatch = true,
-                ExpectedBodyTypeSource = "PawnKindGeneratedPlan",
+                PawnBodyTypeDefName = expectedBodyType?.defName ?? string.Empty,
+                PawnBodyTypeLabel = expectedBodyType?.label ?? expectedBodyType?.defName ?? string.Empty,
+                RequireBodyTypeMatch = AutoTestBodyTypeMatchPolicy.RequireMatch(
+                    AutoTestBodyTypeTargetKind.PawnKind,
+                    expectedBodyType != null,
+                    false),
+                ExpectedBodyTypeSource = expectedBodyType != null
+                    ? "PawnKindDef.bodyType"
+                    : "PawnKindGeneratedObservation",
                 DefName = pawnKindDef.defName,
                 Label = pawnKindDef.label,
                 Profile = profile
@@ -1035,6 +1076,7 @@ namespace LogSyncMod.AutoTest
                     float ageYears = ResolveStableLifeStageAge(stages, index);
                     string stageLabel = ResolveLifeStageLabel(lifeStage);
                     string identity = (pawnKindDef.defName ?? "UnknownPawn") + "@" + lifeStage.defName;
+                    BodyTypeDef expectedBodyType = ResolveExplicitPawnKindBodyType(pawnKindDef);
                     targets.Add(new AutoTestThreeViewTargetSpec
                     {
                         Kind = AutoTestKind.AnimalThreeView,
@@ -1050,8 +1092,15 @@ namespace LogSyncMod.AutoTest
                         ScreenshotStageSuffix = lifeStage.defName + "_triptych",
                         PawnRaceDefName = pawnKindDef.race?.defName,
                         PawnRaceLabel = pawnKindDef.race?.label ?? pawnKindDef.race?.defName ?? string.Empty,
-                        RequireBodyTypeMatch = true,
-                        ExpectedBodyTypeSource = "PawnKindLifeStageGeneratedPlan",
+                        PawnBodyTypeDefName = expectedBodyType?.defName ?? string.Empty,
+                        PawnBodyTypeLabel = expectedBodyType?.label ?? expectedBodyType?.defName ?? string.Empty,
+                        RequireBodyTypeMatch = AutoTestBodyTypeMatchPolicy.RequireMatch(
+                            AutoTestBodyTypeTargetKind.PawnKind,
+                            expectedBodyType != null,
+                            false),
+                        ExpectedBodyTypeSource = expectedBodyType != null
+                            ? "PawnKindDef.bodyType"
+                            : "PawnKindLifeStageGeneratedObservation",
                         DefName = identity,
                         Label = pawnKindDef.label,
                         OverlayLine1 = pawnKindDef.label ?? pawnKindDef.defName,
@@ -1104,6 +1153,7 @@ namespace LogSyncMod.AutoTest
                     float ageYears = ResolveStableLifeStageAge(stages, index);
                     string stageLabel = ResolveLifeStageLabel(lifeStage);
                     string identity = (raceDef.defName ?? "UnknownRace") + "@" + lifeStage.defName;
+                    BodyTypeDef expectedBodyType = ResolveExplicitPawnKindBodyType(representative);
                     targets.Add(new AutoTestThreeViewTargetSpec
                     {
                         Kind = AutoTestKind.PawnLifeStageThreeView,
@@ -1120,8 +1170,15 @@ namespace LogSyncMod.AutoTest
                         ScreenshotStageSuffix = lifeStage.defName + "_triptych",
                         PawnRaceDefName = raceDef.defName,
                         PawnRaceLabel = raceDef.label ?? raceDef.defName,
-                        RequireBodyTypeMatch = true,
-                        ExpectedBodyTypeSource = "PawnKindLifeStageGeneratedPlan",
+                        PawnBodyTypeDefName = expectedBodyType?.defName ?? string.Empty,
+                        PawnBodyTypeLabel = expectedBodyType?.label ?? expectedBodyType?.defName ?? string.Empty,
+                        RequireBodyTypeMatch = AutoTestBodyTypeMatchPolicy.RequireMatch(
+                            AutoTestBodyTypeTargetKind.PawnKind,
+                            expectedBodyType != null,
+                            false),
+                        ExpectedBodyTypeSource = expectedBodyType != null
+                            ? "PawnKindDef.bodyType"
+                            : "PawnKindLifeStageGeneratedObservation",
                         DefName = identity,
                         Label = raceDef.label,
                         OverlayLine1 = raceDef.label ?? representative.label ?? raceDef.defName,
@@ -1202,7 +1259,7 @@ namespace LogSyncMod.AutoTest
                 List<BodyTypeDef> explicitBodyTypes = ResolveSupportedApparelBodyTypes(apparelDef);
                 if (explicitBodyTypes.Count == 0)
                 {
-                    explicitBodyTypes.Add(ResolveDeterministicBodyType(ResolvePreferredGenderForVariant(apparelDef, null)));
+                    explicitBodyTypes.Add(null);
                 }
 
                 foreach (BodyTypeDef bodyType in explicitBodyTypes.Distinct())
@@ -1625,33 +1682,32 @@ namespace LogSyncMod.AutoTest
 
         private static List<BodyTypeDef> ResolveSupportedApparelBodyTypes(ThingDef apparelDef)
         {
-            HashSet<BodyTypeDef> bodyTypes = new HashSet<BodyTypeDef>();
+            HashSet<BodyTypeDef> configuredBodyTypes = new HashSet<BodyTypeDef>();
             WornGraphicData wornGraphicData = apparelDef?.apparel?.wornGraphicData;
             if (wornGraphicData != null)
             {
-                TryAddSupportedBodyType(bodyTypes, "Male", wornGraphicData.male);
-                TryAddSupportedBodyType(bodyTypes, "Female", wornGraphicData.female);
-                TryAddSupportedBodyType(bodyTypes, "Thin", wornGraphicData.thin);
-                TryAddSupportedBodyType(bodyTypes, "Fat", wornGraphicData.fat);
-                TryAddSupportedBodyType(bodyTypes, "Hulk", wornGraphicData.hulk);
+                TryAddSupportedBodyType(configuredBodyTypes, "Male", wornGraphicData.male);
+                TryAddSupportedBodyType(configuredBodyTypes, "Female", wornGraphicData.female);
+                TryAddSupportedBodyType(configuredBodyTypes, "Thin", wornGraphicData.thin);
+                TryAddSupportedBodyType(configuredBodyTypes, "Fat", wornGraphicData.fat);
+                TryAddSupportedBodyType(configuredBodyTypes, "Hulk", wornGraphicData.hulk);
 
-                TryAddDirectionBodyTypes(bodyTypes, wornGraphicData.north);
-                TryAddDirectionBodyTypes(bodyTypes, wornGraphicData.south);
-                TryAddDirectionBodyTypes(bodyTypes, wornGraphicData.east);
-                TryAddDirectionBodyTypes(bodyTypes, wornGraphicData.west);
+                TryAddDirectionBodyTypes(configuredBodyTypes, wornGraphicData.north);
+                TryAddDirectionBodyTypes(configuredBodyTypes, wornGraphicData.south);
+                TryAddDirectionBodyTypes(configuredBodyTypes, wornGraphicData.east);
+                TryAddDirectionBodyTypes(configuredBodyTypes, wornGraphicData.west);
             }
 
-            foreach (BodyTypeDef inferredBodyType in ResolveTextureBackedApparelBodyTypes(apparelDef))
-            {
-                if (inferredBodyType != null)
-                {
-                    bodyTypes.Add(inferredBodyType);
-                }
-            }
-
-            return bodyTypes
+            List<BodyTypeDef> textureBackedBodyTypes = ResolveTextureBackedApparelBodyTypes(apparelDef)
                 .Where(def => def != null)
-                .OrderBy(def => def.defName)
+                .Distinct()
+                .ToList();
+            IReadOnlyList<string> selectedDefNames = AutoTestApparelBodyTypeVariantPolicy.Resolve(
+                configuredBodyTypes.Select(def => def?.defName),
+                textureBackedBodyTypes.Select(def => def?.defName));
+            return selectedDefNames
+                .Select(DefDatabase<BodyTypeDef>.GetNamedSilentFail)
+                .Where(def => def != null)
                 .ToList();
         }
 
@@ -1676,31 +1732,39 @@ namespace LogSyncMod.AutoTest
                     return Enumerable.Empty<BodyTypeDef>();
                 }
 
-                string texturesRoot = Path.Combine(modRootDirectory, "Textures");
-                string searchDirectory = string.IsNullOrWhiteSpace(graphicDirectory)
-                    ? texturesRoot
-                    : Path.Combine(texturesRoot, graphicDirectory);
-                if (!Directory.Exists(searchDirectory))
-                {
-                    return Enumerable.Empty<BodyTypeDef>();
-                }
-
                 HashSet<BodyTypeDef> inferredBodyTypes = new HashSet<BodyTypeDef>();
-                foreach (string filePath in Directory.EnumerateFiles(searchDirectory, graphicBaseName + "*.*", SearchOption.TopDirectoryOnly))
+                IEnumerable<string> textureRoots = new[]
                 {
-                    string fileName = Path.GetFileNameWithoutExtension(filePath);
-                    if (!fileName.StartsWith(graphicBaseName + "_", StringComparison.OrdinalIgnoreCase))
+                    Path.Combine(modRootDirectory, "Textures"),
+                    Path.Combine(modRootDirectory, "Content", "Textures"),
+                    Path.Combine(modRootDirectory, "1.6", "Textures")
+                }.Distinct(StringComparer.OrdinalIgnoreCase);
+                foreach (string texturesRoot in textureRoots.Where(Directory.Exists))
+                {
+                    string searchDirectory = string.IsNullOrWhiteSpace(graphicDirectory)
+                        ? texturesRoot
+                        : Path.Combine(texturesRoot, graphicDirectory);
+                    if (!Directory.Exists(searchDirectory))
                     {
                         continue;
                     }
 
-                    string suffix = fileName.Substring(graphicBaseName.Length + 1);
-                    int separatorIndex = suffix.IndexOf('_');
-                    string token = separatorIndex >= 0 ? suffix.Substring(0, separatorIndex) : suffix;
-                    BodyTypeDef bodyType = ResolveBodyTypeByGraphicToken(token);
-                    if (bodyType != null)
+                    foreach (string filePath in Directory.EnumerateFiles(searchDirectory, graphicBaseName + "*.*", SearchOption.TopDirectoryOnly))
                     {
-                        inferredBodyTypes.Add(bodyType);
+                        string fileName = Path.GetFileNameWithoutExtension(filePath);
+                        if (!fileName.StartsWith(graphicBaseName + "_", StringComparison.OrdinalIgnoreCase))
+                        {
+                            continue;
+                        }
+
+                        string suffix = fileName.Substring(graphicBaseName.Length + 1);
+                        int separatorIndex = suffix.IndexOf('_');
+                        string token = separatorIndex >= 0 ? suffix.Substring(0, separatorIndex) : suffix;
+                        BodyTypeDef bodyType = ResolveBodyTypeByGraphicToken(token);
+                        if (bodyType != null)
+                        {
+                            inferredBodyTypes.Add(bodyType);
+                        }
                     }
                 }
 
@@ -1866,8 +1930,10 @@ namespace LogSyncMod.AutoTest
             {
                 for (int attempt = 0; attempt < 4 && pawn == null; attempt++)
                 {
+                    string generationStage = "create_request";
                     try
                     {
+                        bool requiresCleanLoadout = spec.ForceStripLoadout || spec.WearAsApparel || spec.HoldAsWeapon;
                         PawnGenerationRequest request = new PawnGenerationRequest(
                             spec.PawnKindDef,
                             resolution.Faction,
@@ -1885,11 +1951,13 @@ namespace LogSyncMod.AutoTest
                                 : (float?)null,
                             fixedGender: spec.ForcedGender,
                             developmentalStages: spec.TargetLifeStage?.developmentalStage ?? DevelopmentalStage.Adult,
-                            dontGiveWeapon: spec.ForceStripLoadout,
-                            forceNoGear: spec.ForceStripLoadout);
+                            dontGiveWeapon: requiresCleanLoadout,
+                            forceNoGear: requiresCleanLoadout);
+                        generationStage = "generate_pawn";
                         Pawn candidate = PawnGenerator.GeneratePawn(request);
                         if (candidate == null) continue;
 
+                        generationStage = "strip_initial_loadout";
                         if (ShouldStripGeneratedPawnLoadout(spec, candidate))
                         {
                             try
@@ -1902,6 +1970,7 @@ namespace LogSyncMod.AutoTest
                             }
                         }
 
+                        generationStage = "prepare_for_spec";
                         if (!PreparePawnForSpec(candidate, spec, out string prepareError))
                         {
                             try
@@ -1927,7 +1996,9 @@ namespace LogSyncMod.AutoTest
                     }
                     catch (Exception ex)
                     {
-                        lastException = ex;
+                        lastException = new InvalidOperationException(
+                            "generate_pawn/" + generationStage + "/attempt=" + (attempt + 1) + ": " + ex,
+                            ex);
                     }
                 }
 
@@ -1941,9 +2012,12 @@ namespace LogSyncMod.AutoTest
                 return true;
             }
 
-            errorMessage = lastException != null
+            string finalError = lastException != null
                 ? lastException.Message
                 : "Pawn generation returned null.";
+            errorMessage = string.IsNullOrWhiteSpace(spec.GenerationFallbackNotes)
+                ? finalError
+                : spec.GenerationFallbackNotes + " | Final=" + finalError;
             return false;
         }
 
@@ -1962,18 +2036,22 @@ namespace LogSyncMod.AutoTest
                 return false;
             }
 
+            string prepareStage = "initial";
             try
             {
+                prepareStage = "apply_forced_gender";
                 if (spec?.ForcedGender.HasValue == true)
                 {
                     pawn.gender = spec.ForcedGender.Value;
                 }
 
+                prepareStage = "apply_forced_body_type";
                 if (pawn.story != null && spec?.ForcedBodyType != null)
                 {
                     pawn.story.bodyType = spec.ForcedBodyType;
                 }
 
+                prepareStage = "ensure_life_stage";
                 if (!EnsureTargetLifeStage(pawn, spec, out bool usedLifeStageLock, out string lifeStageError))
                 {
                     errorMessage = lifeStageError;
@@ -1985,6 +2063,7 @@ namespace LogSyncMod.AutoTest
                     spec.LifeStageLockFallbackUsed = true;
                 }
 
+                prepareStage = "apply_appearance_target";
                 if (IsAppearanceSpec(spec))
                 {
                     if (!ApplyAppearanceTarget(pawn, spec, out string compatibilitySource, out string appearanceError))
@@ -1996,12 +2075,14 @@ namespace LogSyncMod.AutoTest
                     spec.CompatibilitySource = AppendCompatibilitySource(spec.CompatibilitySource, compatibilitySource);
                 }
 
+                prepareStage = "strip_generated_loadout";
                 if (ShouldStripGeneratedPawnLoadout(spec, pawn))
                 {
                     pawn.apparel?.DestroyAll();
                     pawn.equipment?.DestroyAllEquipment();
                 }
 
+                prepareStage = "create_target_apparel";
                 if (spec?.WearAsApparel == true && spec.ItemDef != null)
                 {
                     Apparel apparel = ThingMaker.MakeThing(spec.ItemDef, ResolveStuff(spec.ItemDef)) as Apparel;
@@ -2011,6 +2092,7 @@ namespace LogSyncMod.AutoTest
                         return false;
                     }
 
+                    prepareStage = "validate_target_apparel";
                     if (!apparel.PawnCanWear(pawn))
                     {
                         apparel.Destroy(DestroyMode.Vanish);
@@ -2018,14 +2100,17 @@ namespace LogSyncMod.AutoTest
                         return false;
                     }
 
+                    prepareStage = "clear_conflicting_apparel";
                     if (pawn.apparel != null && !pawn.apparel.CanWearWithoutDroppingAnything(apparel.def))
                     {
                         pawn.apparel.DestroyAll();
                     }
 
+                    prepareStage = "wear_target_apparel";
                     pawn.apparel?.Wear(apparel, false, false);
                 }
 
+                prepareStage = "equip_target_weapon";
                 if (spec?.HoldAsWeapon == true && spec.ItemDef != null)
                 {
                     ThingWithComps equippedThing = ThingMaker.MakeThing(spec.ItemDef, ResolveStuff(spec.ItemDef)) as ThingWithComps;
@@ -2043,12 +2128,13 @@ namespace LogSyncMod.AutoTest
                     }
                 }
 
+                prepareStage = "refresh_graphics";
                 RefreshPawnGraphics(pawn);
                 return true;
             }
             catch (Exception ex)
             {
-                errorMessage = ex.Message;
+                errorMessage = prepareStage + ": " + ex;
                 return false;
             }
         }
@@ -2056,6 +2142,11 @@ namespace LogSyncMod.AutoTest
         private static bool CanPawnKindWearApparel(PawnKindDef pawnKindDef, ThingDef apparelDef, BodyTypeDef bodyType, Gender? forcedGender)
         {
             if (pawnKindDef == null || apparelDef == null || !apparelDef.IsApparel)
+            {
+                return false;
+            }
+
+            if (!IsBodyTypeSupportedByPawnKind(pawnKindDef, bodyType))
             {
                 return false;
             }
@@ -2204,6 +2295,35 @@ namespace LogSyncMod.AutoTest
                 pawn = null;
                 return false;
             }
+        }
+
+        private static BodyTypeDef ResolveExplicitPawnKindBodyType(PawnKindDef pawnKindDef)
+        {
+            object value = ReadMemberValue(pawnKindDef, "bodyType") ??
+                ReadMemberValue(pawnKindDef, "BodyType") ??
+                ReadMemberValue(pawnKindDef, "fixedBodyType") ??
+                ReadMemberValue(pawnKindDef, "FixedBodyType");
+            if (value is BodyTypeDef bodyTypeDef)
+            {
+                return bodyTypeDef;
+            }
+
+            string defName = value as string;
+            return string.IsNullOrWhiteSpace(defName)
+                ? null
+                : DefDatabase<BodyTypeDef>.GetNamedSilentFail(defName);
+        }
+
+        private static bool IsBodyTypeSupportedByPawnKind(PawnKindDef pawnKindDef, BodyTypeDef bodyType)
+        {
+            if (pawnKindDef?.race == null || bodyType == null ||
+                !string.Equals(pawnKindDef.race.GetType().FullName, "AlienRace.ThingDef_AlienRace", StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            List<BodyTypeDef> allowedBodyTypes = ResolveHarBodyTypes(pawnKindDef.race);
+            return allowedBodyTypes.Count == 0 || allowedBodyTypes.Contains(bodyType);
         }
 
         private static bool ShouldStripGeneratedPawnLoadout(AutoTestThreeViewTargetSpec spec, Pawn pawn)
@@ -2368,15 +2488,19 @@ namespace LogSyncMod.AutoTest
                 return false;
             }
 
+            string replicaStage = "initial";
             try
             {
                 AutoTestThreeViewAppearanceTemplate template = CaptureAppearanceTemplate(sourcePawn);
+                replicaStage = "apply_appearance_template";
                 ApplyAppearanceTemplate(pawn, template);
-                if (!PreparePawnForSpec(pawn, spec, out errorMessage))
+                replicaStage = "validate_prepared_target";
+                if (!HasPreparedTarget(pawn, spec, out errorMessage))
                 {
-                    throw new InvalidOperationException(errorMessage ?? "Failed to prepare replica pawn for three-view spec.");
+                    throw new InvalidOperationException(errorMessage ?? "Replica pawn lost the prepared three-view target.");
                 }
 
+                replicaStage = "refresh_graphics";
                 RefreshPawnGraphics(pawn);
                 return true;
             }
@@ -2391,12 +2515,42 @@ namespace LogSyncMod.AutoTest
                 }
 
                 pawn = null;
-                errorMessage = ex.Message;
+                errorMessage = "create_replica/" + replicaStage + ": " + ex;
                 return false;
             }
         }
 
-        private static void StabilizePawnForSettle(Pawn pawn, IntVec3 cell, Rot4 rotation)
+        private static bool HasPreparedTarget(Pawn pawn, AutoTestThreeViewTargetSpec spec, out string errorMessage)
+        {
+            errorMessage = null;
+            if (pawn == null || spec == null)
+            {
+                errorMessage = "Replica pawn or spec was missing.";
+                return false;
+            }
+
+            if (spec.WearAsApparel && spec.ItemDef != null &&
+                pawn.apparel?.WornApparel?.Any(apparel => apparel?.def == spec.ItemDef) != true)
+            {
+                errorMessage = "Replica pawn was not wearing target apparel: " + spec.ItemDef.defName;
+                return false;
+            }
+
+            if (spec.HoldAsWeapon && spec.ItemDef != null && pawn.equipment?.Primary?.def != spec.ItemDef)
+            {
+                errorMessage = "Replica pawn was not holding target weapon: " + spec.ItemDef.defName;
+                return false;
+            }
+
+            return true;
+        }
+
+        private static void StabilizePawnForSettle(
+            Pawn pawn,
+            IntVec3 cell,
+            Rot4 rotation,
+            BodyTypeDef presenterBodyType = null,
+            Gender? presenterGender = null)
         {
             if (pawn == null || pawn.Destroyed)
             {
@@ -2410,7 +2564,32 @@ namespace LogSyncMod.AutoTest
                     pawn.Position = cell;
                 }
 
-                pawn.jobs?.StopAll();
+                if (presenterGender.HasValue)
+                {
+                    pawn.gender = presenterGender.Value;
+                }
+
+                if (presenterBodyType != null && pawn.story != null)
+                {
+                    pawn.story.bodyType = presenterBodyType;
+                }
+
+                if (pawn.equipment?.Primary != null && pawn.jobs != null)
+                {
+                    if (pawn.CurJobDef != JobDefOf.Wait_Combat)
+                    {
+                        pawn.jobs.StopAll();
+                        Job displayJob = JobMaker.MakeJob(JobDefOf.Wait_Combat, cell);
+                        displayJob.expiryInterval = 120;
+                        displayJob.canUseRangedWeapon = false;
+                        displayJob.overrideFacing = rotation;
+                        pawn.jobs.StartJob(displayJob, JobCondition.InterruptForced);
+                    }
+                }
+                else
+                {
+                    pawn.jobs?.StopAll();
+                }
                 pawn.pather?.StopDead();
                 bool immobile = pawn.Downed || pawn.ageTracker?.CurLifeStage?.alwaysDowned == true;
                 if (!immobile)

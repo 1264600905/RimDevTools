@@ -32,6 +32,8 @@ namespace LogSyncMod.AutoTest
             public bool PauseBypassArmed;
             public float PausedCaptureStartRealtime;
             public bool PauseUiCaptureStarted;
+            public int SpawnTick = -1;
+            public bool CaptureLoadoutRecorded;
 
             public ThreeViewTestSession(AutoTestRunner owner)
             {
@@ -46,6 +48,9 @@ namespace LogSyncMod.AutoTest
                     {
                         case ThreeViewTestPhase.SpawningTargets:
                             SpawnTargets();
+                            break;
+                        case ThreeViewTestPhase.SettlingAfterSpawn:
+                            SettleAfterSpawn();
                             break;
                         case ThreeViewTestPhase.PausingForCapture:
                             PauseForCapture();
@@ -77,6 +82,7 @@ namespace LogSyncMod.AutoTest
                 }
 
                 Context = context;
+                SpawnTick = Find.TickManager?.TicksGame ?? -1;
                 Result.Stage = "spawn";
                 Result.Label = string.IsNullOrWhiteSpace(Spec.Label) ? Spec.DefName : Spec.Label;
                 Result.OverlayLine1 = string.IsNullOrWhiteSpace(Spec.OverlayLine1)
@@ -112,6 +118,7 @@ namespace LogSyncMod.AutoTest
                         ",Job:" + (statePawn.CurJob?.def?.defName ?? "None") +
                         ",Drafter:" + (statePawn.drafter == null ? "None" : statePawn.drafter.Drafted.ToString()));
                 }
+                Result.Notes = AppendNote(Result.Notes, "ThreeViewInitialPrimaryWeapons=" + FormatPrimaryWeapons(Context.Pawns));
                 if (!string.IsNullOrWhiteSpace(Spec.PawnRaceDefName))
                 {
                     Result.Notes = AppendNote(Result.Notes, "ThreeViewPawnRace=" + Spec.PawnRaceDefName);
@@ -184,6 +191,22 @@ namespace LogSyncMod.AutoTest
                         }
                     }
                 }
+                Phase = ThreeViewTestPhase.SettlingAfterSpawn;
+            }
+
+            private void SettleAfterSpawn()
+            {
+                owner.threeViewService.PrepareForSettle(Context);
+                int currentTick = Find.TickManager?.TicksGame ?? -1;
+                if (SpawnTick >= 0 && currentTick <= SpawnTick)
+                {
+                    return;
+                }
+
+                owner.threeViewService.PrepareForCapture(Context);
+                Result.Notes = AppendNote(Result.Notes, "ThreeViewSpawnTick=" + SpawnTick);
+                Result.Notes = AppendNote(Result.Notes, "ThreeViewSettledTick=" + currentTick);
+                Result.Notes = AppendNote(Result.Notes, "ThreeViewSettledPrimaryWeapons=" + FormatPrimaryWeapons(Context.Pawns));
                 if (!owner.threeViewService.TryPrimeDirectionalFacingForPausedCapture(Context, out string pausedCaptureError))
                 {
                     Fail("motion_prime_failed", pausedCaptureError ?? "ThreeView paused capture directional facing could not be primed.");
@@ -193,6 +216,13 @@ namespace LogSyncMod.AutoTest
                 Result.Notes = AppendNote(Result.Notes, "ThreeViewPausedCapture=True");
                 Log.Message("[LogSyncAutoTest] ThreeView paused capture primed: def=" + Spec.DefName + " tick=" + (Find.TickManager?.TicksGame ?? -1));
                 Phase = ThreeViewTestPhase.PausingForCapture;
+            }
+
+            private static string FormatPrimaryWeapons(IEnumerable<Pawn> pawns)
+            {
+                return string.Join(",", (pawns ?? Enumerable.Empty<Pawn>())
+                    .Select(pawn => pawn?.equipment?.Primary?.def?.defName ?? "none")
+                    .ToArray());
             }
 
             private void PauseForCapture()
@@ -251,6 +281,12 @@ namespace LogSyncMod.AutoTest
                 if (!AutoTestScreenshotService.PrepareCaptureFrame())
                 {
                     return false;
+                }
+
+                if (!CaptureLoadoutRecorded)
+                {
+                    Result.Notes = AppendNote(Result.Notes, "ThreeViewCapturePrimaryWeapons=" + FormatPrimaryWeapons(Context.Pawns));
+                    CaptureLoadoutRecorded = true;
                 }
 
                 Result.Stage = "capture";

@@ -61,6 +61,7 @@ namespace LogSyncMod.AutoTest
         Initializing,
         WaitingForMap,
         SpawningTargets,
+        SettlingAfterSpawn,
         PausingForCapture,
         CleaningUp,
         Done
