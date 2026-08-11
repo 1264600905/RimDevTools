@@ -47,6 +47,65 @@ public sealed class IncrementalLogSignalScanner
     }
 }
 
+public sealed class IncrementalTestLogScanner
+{
+    private readonly string _heartbeatPrefix;
+    private readonly string _quickSignal;
+    private readonly string _autoSignal;
+    private string _partialLine = "";
+
+    public IncrementalTestLogScanner(string runId, string quickSignal, string autoSignal)
+    {
+        if (string.IsNullOrWhiteSpace(runId)) throw new ArgumentException("runId 不能为空", nameof(runId));
+        _heartbeatPrefix = $"[LogSyncAutoTest] HEARTBEAT runId={runId} seq=";
+        _quickSignal = quickSignal ?? "";
+        _autoSignal = autoSignal ?? "";
+    }
+
+    public long LastHeartbeatSequence { get; private set; }
+    public long? QuickReadyHeartbeatSequence { get; private set; }
+    public bool AutoCompleted { get; private set; }
+    public bool QuickReadyFollowedByHeartbeat => QuickReadyHeartbeatSequence.HasValue && LastHeartbeatSequence > QuickReadyHeartbeatSequence.Value;
+
+    public void Append(string text)
+    {
+        if (string.IsNullOrEmpty(text)) return;
+
+        var combined = _partialLine.Length == 0 ? text : _partialLine + text;
+        var start = 0;
+        while (true)
+        {
+            var newline = combined.IndexOf('\n', start);
+            if (newline < 0) break;
+            ProcessLine(combined[start..newline].TrimEnd('\r'));
+            start = newline + 1;
+        }
+        _partialLine = start >= combined.Length ? "" : combined[start..];
+    }
+
+    public void ResetInput()
+    {
+        _partialLine = "";
+    }
+
+    private void ProcessLine(string line)
+    {
+        var heartbeatIndex = line.IndexOf(_heartbeatPrefix, StringComparison.Ordinal);
+        if (heartbeatIndex >= 0)
+        {
+            var sequenceText = line[(heartbeatIndex + _heartbeatPrefix.Length)..].Trim();
+            if (long.TryParse(sequenceText, out var sequence) && sequence > LastHeartbeatSequence)
+                LastHeartbeatSequence = sequence;
+        }
+
+        if (QuickReadyHeartbeatSequence is null && _quickSignal.Length > 0 && line.Contains(_quickSignal, StringComparison.Ordinal))
+            QuickReadyHeartbeatSequence = LastHeartbeatSequence;
+
+        if (_autoSignal.Length > 0 && line.Contains(_autoSignal, StringComparison.Ordinal))
+            AutoCompleted = true;
+    }
+}
+
 public sealed record IncrementalLogRead(string Text, long Offset, bool Reset);
 
 public static class IncrementalLogReader

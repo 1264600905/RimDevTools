@@ -867,7 +867,9 @@ namespace LogSyncMod
 
         private static bool IsControlSignal(string text)
         {
-            return text.StartsWith("[LogSyncAutoTest] COMPLETED", StringComparison.Ordinal);
+            return text.StartsWith("[LogSyncAutoTest] COMPLETED", StringComparison.Ordinal) ||
+                   text.StartsWith("[LogSyncAutoTest] HEARTBEAT", StringComparison.Ordinal) ||
+                   text.StartsWith("[LogSyncMod] RUNTIME_READY_TO_CLOSE", StringComparison.Ordinal);
         }
 
         private static void AppendOverflowLine(string dedupeKey, string outputLine)

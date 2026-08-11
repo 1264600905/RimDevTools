@@ -6,6 +6,8 @@ namespace RimDevTools;
 
 public static class TestCommand
 {
+    internal static TimeSpan? HeartbeatTimeoutOverride { get; set; }
+
     public static async Task<int> CleanupAsync(string[] args, CancellationToken cancellationToken = default)
     {
         const string command = "test cleanup";
@@ -160,7 +162,7 @@ public static class TestCommand
         var configDirectory = GameEnvironment.ConfigDirectory(context)!;
         var modsConfigPath = modsConfigValidation.Path!;
         var logSyncSettingsPath = GameEnvironment.LogSyncSettingsPath(context)!;
-        var playerLogPath = GameEnvironment.PlayerLogPath(context)!;
+        var syncLogPath = SettingsEditor.SyncLogPath(context);
 
         var mode = CliArgs.Value(args, "--mode")?.ToLowerInvariant() ?? "quick";
         if (mode is not ("quick" or "manual" or "auto" or "xml"))
@@ -235,7 +237,7 @@ public static class TestCommand
         var outputPath = SettingsEditor.AutoTestOutputPath(context);
         var gameProcessLogPath = SettingsEditor.GameProcessLogPath(context);
         var resultSnapshot = AutoResultValidator.Snapshot(outputPath);
-        var logOffset = File.Exists(playerLogPath) ? new FileInfo(playerLogPath).Length : 0;
+        var logOffset = 0L;
         try
         {
             transaction = await ConfigTransaction.CreateAsync(
@@ -251,7 +253,7 @@ public static class TestCommand
             var gameArguments = new List<string> { "-popupwindow" };
             if (mode is "auto" or "xml") gameArguments.Add("quicktest");
             gameSession = GameProcessLauncher.Start(gamePath, context.Config.RimWorldDir, gameArguments, isolation.Enabled, runId, gameProcessLogPath);
-            outcome = await WaitForModeAsync(mode, gameSession.Process, timeout, playerLogPath, logOffset, outputPath, targetPackageId, runId, resultSnapshot, cancellationToken);
+            outcome = await WaitForModeAsync(mode, gameSession.Process, timeout, syncLogPath, logOffset, outputPath, targetPackageId, runId, resultSnapshot, cancellationToken);
         }
         catch (OperationCanceledException)
         {
@@ -323,7 +325,7 @@ public static class TestCommand
         string mode,
         Process game,
         int timeoutSeconds,
-        string playerLogPath,
+        string syncLogPath,
         long logOffset,
         string outputPath,
         string? packageId,
@@ -331,37 +333,65 @@ public static class TestCommand
         IReadOnlyDictionary<string, AutoResultFingerprint> resultSnapshot,
         CancellationToken cancellationToken)
     {
-        var deadline = DateTime.UtcNow.AddSeconds(timeoutSeconds);
+        var startedAt = DateTime.UtcNow;
+        var deadline = startedAt.AddSeconds(timeoutSeconds);
+        var heartbeatTimeout = HeartbeatTimeoutOverride ?? TimeSpan.FromSeconds(60);
+        DateTime? lastHeartbeatAt = null;
+        long observedHeartbeatSequence = 0;
         const string quickSignal = "[LogSyncMod] RUNTIME_READY_TO_CLOSE";
         var autoSignal = $"[LogSyncAutoTest] COMPLETED runId={runId}";
-        var scanner = new IncrementalLogSignalScanner(quickSignal, autoSignal);
+        var scanner = new IncrementalTestLogScanner(runId, quickSignal, autoSignal);
         while (DateTime.UtcNow < deadline)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (mode == "manual")
-            {
-                if (game.HasExited) return TestOutcome.Success("manual game exit");
-            }
-            else
-            {
-                var read = await IncrementalLogReader.ReadAsync(playerLogPath, logOffset, cancellationToken);
-                logOffset = read.Offset;
-                if (read.Reset) scanner.Reset();
-                scanner.Append(read.Text);
-                if (mode == "quick" && scanner.HasSeen(quickSignal))
-                    return TestOutcome.Success("quick ready signal");
 
-                if (mode is "auto" or "xml")
+            var read = await IncrementalLogReader.ReadAsync(syncLogPath, logOffset, cancellationToken);
+            logOffset = read.Offset;
+            if (read.Reset) scanner.ResetInput();
+            scanner.Append(read.Text);
+
+            var now = DateTime.UtcNow;
+            if (scanner.LastHeartbeatSequence > observedHeartbeatSequence)
+            {
+                observedHeartbeatSequence = scanner.LastHeartbeatSequence;
+                lastHeartbeatAt = now;
+            }
+
+            if (mode == "quick" && scanner.QuickReadyFollowedByHeartbeat)
+                return TestOutcome.Success("quick ready signal followed by main-thread heartbeat");
+
+            if (mode is "auto" or "xml")
+            {
+                if (scanner.AutoCompleted || game.HasExited)
                 {
-                    var completed = scanner.HasSeen(autoSignal);
-                    if (completed || game.HasExited)
-                    {
-                        var validation = AutoResultValidator.Validate(outputPath, packageId, runId, resultSnapshot);
-                        if (validation.Ok) return TestOutcome.Success(completed ? $"{mode} completed signal" : $"{mode} result after game exit", validation.Details);
-                        if (completed) return TestOutcome.Failure(ExitCodes.GameFailed, validation.Code, validation.Message, validation.Details);
-                    }
+                    var validation = AutoResultValidator.Validate(outputPath, packageId, runId, resultSnapshot);
+                    if (validation.Ok) return TestOutcome.Success(scanner.AutoCompleted ? $"{mode} completed signal" : $"{mode} result after game exit", validation.Details);
+                    if (scanner.AutoCompleted) return TestOutcome.Failure(ExitCodes.GameFailed, validation.Code, validation.Message, validation.Details);
                 }
-                if (game.HasExited) return TestOutcome.Failure(ExitCodes.GameFailed, "GAME_EXITED_EARLY", "RimWorld 在收到测试完成信号前退出");
+            }
+
+            if (game.HasExited)
+            {
+                if (mode == "manual") return TestOutcome.Success("manual game exit");
+                return TestOutcome.Failure(ExitCodes.GameFailed, "GAME_EXITED_EARLY", "RimWorld 在收到测试完成信号前退出");
+            }
+
+            var silenceStartedAt = lastHeartbeatAt ?? startedAt;
+            if (now - silenceStartedAt >= heartbeatTimeout)
+            {
+                var silence = now - silenceStartedAt;
+                return TestOutcome.Failure(
+                    ExitCodes.Timeout,
+                    "GAME_HUNG",
+                    lastHeartbeatAt.HasValue ? "RimWorld 主线程心跳中断超过 60 秒，判定游戏卡死" : "RimWorld 启动后 60 秒未产生主线程心跳，判定游戏卡死",
+                    new
+                    {
+                        runId,
+                        syncLogPath,
+                        lastHeartbeatSequence = observedHeartbeatSequence,
+                        heartbeatTimeoutSeconds = heartbeatTimeout.TotalSeconds,
+                        heartbeatSilenceSeconds = silence.TotalSeconds
+                    });
             }
 
             await Task.Delay(500, cancellationToken);
@@ -654,7 +684,7 @@ public static class SettingsEditor
         var auto = mode is "auto" or "xml";
         changed |= Set(settings, "autoTestEnabled", auto ? "True" : "False");
         changed |= Set(settings, "autoTestTargetPackageId", auto ? targetPackageId?.ToLowerInvariant() ?? context.Config.CurrentPackageId(context.Root)?.ToLowerInvariant() ?? "" : "");
-        changed |= Set(settings, "autoTestRunId", auto ? runId ?? "" : "");
+        changed |= Set(settings, "autoTestRunId", runId ?? "");
         changed |= Set(settings, "autoTestOutputPath", AutoTestOutputPath(context));
         changed |= Set(settings, "autoTestMode", mode == "xml" ? "XmlDriven" : "Automatic");
         var effectiveScopes = scopes is { Count: > 0 } ? DistinctValues(scopes) : ["Standard"];

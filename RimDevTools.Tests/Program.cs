@@ -36,8 +36,12 @@ internal static class FakeRimWorld
         var settings = XDocument.Load(settingsPath);
         File.WriteAllText(Path.Combine(configDirectory, "fake-settings.xml"), settings.ToString());
         var values = settings.Descendants("ModSettings").First().Elements().ToDictionary(x => x.Name.LocalName, x => x.Value);
-        var playerLog = Path.Combine(Directory.GetParent(configDirectory)!.FullName, "Player.log");
-        Directory.CreateDirectory(Path.GetDirectoryName(playerLog)!);
+        var syncLog = values["logPath"];
+        var runId = values.TryGetValue("autoTestRunId", out var configuredRunId) ? configuredRunId : "";
+        Directory.CreateDirectory(Path.GetDirectoryName(syncLog)!);
+
+        void AppendSyncLog(string text) => File.AppendAllText(syncLog, text);
+        void AppendHeartbeat(long sequence) => AppendSyncLog($"[LogSyncAutoTest] HEARTBEAT runId={runId} seq={sequence}\n");
 
         if (mode == "manual")
         {
@@ -52,7 +56,9 @@ internal static class FakeRimWorld
         if (mode == "modify")
         {
             File.WriteAllText(settingsPath, "game-modified");
-            File.AppendAllText(playerLog, "[LogSyncMod] RUNTIME_READY_TO_CLOSE\n");
+            AppendHeartbeat(1);
+            AppendSyncLog("[LogSyncMod] RUNTIME_READY_TO_CLOSE\n");
+            AppendHeartbeat(2);
             await Task.Delay(TimeSpan.FromSeconds(30));
             return;
         }
@@ -62,35 +68,49 @@ internal static class FakeRimWorld
             var settingsBackup = Directory.EnumerateFiles(transaction, "*Mod_LogSyncMod_LogSyncMod.xml.original").Single();
             File.Delete(settingsBackup);
             File.WriteAllText(settingsPath, "game-modified");
-            File.AppendAllText(playerLog, "[LogSyncMod] RUNTIME_READY_TO_CLOSE\n");
+            AppendHeartbeat(1);
+            AppendSyncLog("[LogSyncMod] RUNTIME_READY_TO_CLOSE\n");
+            AppendHeartbeat(2);
             await Task.Delay(TimeSpan.FromSeconds(30));
             return;
         }
         if (mode == "quick-split")
         {
-            File.AppendAllText(playerLog, "[LogSyncMod] RUNTIME_READY_");
+            AppendHeartbeat(1);
+            AppendSyncLog("[LogSyncMod] RUNTIME_READY_");
             await Task.Delay(700);
-            File.AppendAllText(playerLog, "TO_CLOSE\n");
+            AppendSyncLog("TO_CLOSE\n");
+            AppendHeartbeat(2);
             await Task.Delay(TimeSpan.FromSeconds(30));
             return;
         }
         if (mode == "quick-large-log")
         {
+            AppendHeartbeat(1);
             var largeLog = "[LogSyncMod] RUNTIME_READY_TO_CLOSE\n" + string.Concat(Enumerable.Repeat(new string('x', 96) + "\n", 600));
-            File.AppendAllText(playerLog, largeLog);
+            AppendSyncLog(largeLog);
+            AppendHeartbeat(2);
+            await Task.Delay(TimeSpan.FromSeconds(30));
+            return;
+        }
+        if (mode == "quick-ready-hang")
+        {
+            AppendHeartbeat(1);
+            AppendSyncLog("[LogSyncMod] RUNTIME_READY_TO_CLOSE\n");
             await Task.Delay(TimeSpan.FromSeconds(30));
             return;
         }
         if (!values.TryGetValue("autoTestEnabled", out var enabled) || !enabled.Equals("True", StringComparison.OrdinalIgnoreCase))
         {
-            File.AppendAllText(playerLog, "[LogSyncMod] RUNTIME_READY_TO_CLOSE\n");
+            AppendHeartbeat(1);
+            AppendSyncLog("[LogSyncMod] RUNTIME_READY_TO_CLOSE\n");
+            AppendHeartbeat(2);
             await Task.Delay(TimeSpan.FromSeconds(30));
             return;
         }
 
         var outputPath = values["autoTestOutputPath"];
         var packageId = values["autoTestTargetPackageId"];
-        var runId = values["autoTestRunId"];
         Directory.CreateDirectory(outputPath);
         var status = mode == "auto-fail" ? "failed" : "passed";
         var result = new
@@ -106,7 +126,8 @@ internal static class FakeRimWorld
         };
         File.WriteAllText(Path.Combine(outputPath, $"{packageId}_{runId}_Result.json"), JsonSerializer.Serialize(result));
         var completion = $"[LogSyncAutoTest] COMPLETED runId={runId} packageId={packageId}\n";
-        File.AppendAllText(playerLog, mode == "auto-large-log"
+        AppendHeartbeat(1);
+        AppendSyncLog(mode == "auto-large-log"
             ? completion + string.Concat(Enumerable.Repeat(new string('y', 96) + "\n", 600))
             : completion);
 
@@ -153,6 +174,7 @@ internal sealed class TestSuite
         finally
         {
             Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", null);
+            TestCommand.HeartbeatTimeoutOverride = null;
             if (Directory.Exists(_temp)) Directory.Delete(_temp, true);
         }
     }
@@ -603,6 +625,18 @@ internal sealed class TestSuite
         Assert(scanner.HasSeen(signal), "incremental log scanner recognizes a split signal before more than 32 KiB of trailing output");
         scanner.Reset();
         Assert(!scanner.HasSeen(signal), "incremental log scanner resets after log truncation");
+
+        const string runId = "heartbeat-run";
+        var testScanner = new IncrementalTestLogScanner(runId, "[LogSyncMod] RUNTIME_READY_TO_CLOSE", signal);
+        testScanner.Append("[LogSyncAutoTest] HEARTBEAT runId=other seq=99\n");
+        testScanner.Append("[LogSyncAutoTest] HEARTBEAT runId=heartbeat-run seq=");
+        testScanner.Append("1\n[LogSyncMod] RUNTIME_READY_TO_CLOSE\n");
+        Assert(testScanner.LastHeartbeatSequence == 1 && !testScanner.QuickReadyFollowedByHeartbeat, "test log scanner tracks only the current run heartbeat and requires a post-ready heartbeat");
+        testScanner.Append("[LogSyncAutoTest] HEARTBEAT runId=heartbeat-run seq=2\n" + signal + "\n");
+        Assert(testScanner.QuickReadyFollowedByHeartbeat && testScanner.AutoCompleted, "test log scanner recognizes post-ready heartbeat and completion signals");
+        testScanner.ResetInput();
+        testScanner.Append("[LogSyncAutoTest] HEARTBEAT runId=heartbeat-run seq=1\n");
+        Assert(testScanner.LastHeartbeatSequence == 2, "test log scanner does not regress after a rewritten log is rescanned");
 
     }
 
@@ -1224,6 +1258,9 @@ internal sealed class TestSuite
         }
         Assert(string.Equals(isolatedDesktop, callerDesktop, StringComparison.Ordinal), "default quick process runs on the current desktop");
         Assert(quickSettings.Descendants("testMuteAudio").Single().Value == "True", "quick mode enables transactional audio muting");
+        Assert(!string.IsNullOrWhiteSpace(quickSettings.Descendants("autoTestRunId").Single().Value), "quick mode writes a runId for heartbeat correlation");
+        Assert(File.ReadAllText(SettingsEditor.SyncLogPath(ProjectDiscovery.Find(environment.Root, out _)!)).Contains("HEARTBEAT", StringComparison.Ordinal), "quick mode consumes control signals from the selected log");
+        Assert(!File.Exists(GameEnvironment.PlayerLogPath(ProjectDiscovery.Find(environment.Root, out _)!)), "test run no longer requires or creates Player.log");
         AssertConfigurationRestored(environment, "quick mode restores exact configuration");
 
         Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", "quick");
@@ -1299,6 +1336,23 @@ internal sealed class TestSuite
         var timeout = await CaptureAsync(() => TestCommand.RunAsync(["test", "run", "--mode", "manual", "--timeout-seconds", "1"]));
         Assert(timeout.ExitCode == ExitCodes.Timeout && JsonErrorCode(timeout.Output) == "TEST_TIMEOUT", "manual mode honors timeout");
         AssertConfigurationRestored(environment, "manual timeout restores configuration");
+
+        TestCommand.HeartbeatTimeoutOverride = TimeSpan.FromMilliseconds(400);
+        try
+        {
+            Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", "hang");
+            var hung = await CaptureAsync(() => TestCommand.RunAsync(["test", "run", "--mode", "manual", "--timeout-seconds", "5"]));
+            Assert(hung.ExitCode == ExitCodes.Timeout && JsonErrorCode(hung.Output) == "GAME_HUNG", "missing heartbeat returns GAME_HUNG before the overall timeout");
+            AssertConfigurationRestored(environment, "heartbeat hang restores configuration after terminating the game");
+
+            Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", "quick-ready-hang");
+            var falseReady = await CaptureAsync(() => TestCommand.RunAsync(["test", "run", "--mode", "quick", "--timeout-seconds", "5"]));
+            Assert(falseReady.ExitCode == ExitCodes.Timeout && JsonErrorCode(falseReady.Output) == "GAME_HUNG", "quick ready from a background source cannot succeed without a later main-thread heartbeat");
+        }
+        finally
+        {
+            TestCommand.HeartbeatTimeoutOverride = null;
+        }
 
         using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
         var cancelled = await CaptureAsync(() => TestCommand.RunAsync(["test", "run", "--mode", "quick", "--timeout-seconds", "10"], cancellation.Token));

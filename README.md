@@ -75,7 +75,7 @@ quick、auto 和 XML 测试遵循 `mod_config.jsonc.isolated_desktop`；模板�
 
 auto/xml 可重复传入 `--scope` 组合多个测试分类；正式值为 `ui`、`combat`、`view`、`misc`，未传时默认为 Standard。Standard 横跨四类常规测试，但保持现有口径，不隐式启用耗时的 CombatPawns 与 SkillPocketMaps；旧细分 scope 仍作为窄范围兼容值接受。auto 还可重复传入 `--defname` 精确筛选目标，任何未命中的名称都会使本轮失败。`--batch-size` 设置 Targeted 测试计划上限，默认 40；Standard 全量和显式 DefName 测试忽略该上限。RimWorld 标准输出写入 `.tools/log/RimWorldProcess.log`，终端 stdout 保持为单一最终 JSON。外部 ModsConfig XML 使用 `--active-mods-file` 指定。
 
-`test run` 和 `doctor` 还会检查启用模组的必要上级依赖。缺失依赖只显示 warning，不阻挡测试；`doctor` 的检查项为 `mods.min_active_dependencies`。
+`test run` 和 `doctor` 还会检查启用模组的必要上级依赖。缺失依赖只显示 warning，不阻挡测试；`doctor` 的检查项为 `mods.min_active_dependencies`。测试完成信号和每 5 秒一次的主线程心跳通过 `.tools/log/精选日志.log` 传递，不再扫描 Unity `Player.log`；连续 60 秒没有当前 runId 的心跳会返回 `GAME_HUNG` 并终止游戏。
 
 例如：`RimDevTools.exe test run --mode auto --scope view --scope combat --defname MyMod_ArmorCoat`。
 
