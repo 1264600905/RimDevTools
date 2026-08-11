@@ -382,11 +382,27 @@ namespace LogSyncMod.AutoTest
         private static string EscapeJson(string text)
         {
             if (string.IsNullOrEmpty(text)) return string.Empty;
-            return text
-                .Replace("\\", "\\\\")
-                .Replace("\"", "\\\"")
-                .Replace("\r", "\\r")
-                .Replace("\n", "\\n");
+            StringBuilder builder = new StringBuilder(text.Length);
+            foreach (char c in text)
+            {
+                switch (c)
+                {
+                    case '\\': builder.Append("\\\\"); break;
+                    case '"': builder.Append("\\\""); break;
+                    case '\r': builder.Append("\\r"); break;
+                    case '\n': builder.Append("\\n"); break;
+                    case '\t': builder.Append("\\t"); break;
+                    case '\b': builder.Append("\\b"); break;
+                    case '\f': builder.Append("\\f"); break;
+                    default:
+                        if (c < 0x20 || c == 0x7F)
+                            builder.Append("\\u").Append(((int)c).ToString("x4"));
+                        else
+                            builder.Append(c);
+                        break;
+                }
+            }
+            return builder.ToString();
         }
 
         private static string EscapePipe(string text)
