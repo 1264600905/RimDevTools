@@ -24,6 +24,11 @@ namespace LogSyncMod
         public string expectedBodyTypeSource;
         public string buildingFactionDefName;
         public bool buildingFactionless = false;
+        public string presenterPawnKind;
+        public List<string> prerequisiteHediffs = new List<string>();
+        public string requiredRace;
+        public string requiredFactionMode;
+        public string recipeExecutionAdapter;
 
         public override void ResolveReferences()
         {
@@ -35,6 +40,7 @@ namespace LogSyncMod
             projectileScreenshotTicks = NormalizeTicks(projectileScreenshotTicks);
             allowedErrorPatterns = NormalizeStrings(allowedErrorPatterns);
             allowedWarningPatterns = NormalizeStrings(allowedWarningPatterns);
+            prerequisiteHediffs = NormalizeStrings(prerequisiteHediffs);
         }
 
         private static List<string> NormalizeStrings(List<string> values)

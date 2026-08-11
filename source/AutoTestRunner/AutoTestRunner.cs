@@ -122,7 +122,6 @@ namespace LogSyncMod.AutoTest
         private int pocketMapCooldownUntilTick = -1;
         private int threeViewCooldownUntilTick = -1;
         private ModContentPack targetMod;
-        private Pawn sharedHediffPawn;
         private string targetPackageId;
         private string outputDirectory;
         private int nextThingX = 10;
@@ -717,7 +716,6 @@ namespace LogSyncMod.AutoTest
             if (completed) return;
             completed = true;
             CleanupSelectionAndWindows();
-            CleanupSharedHediffPawn();
 
             foreach (AutoTestResult result in results) NormalizeResultStatus(result);
             runSummary = BuildRunSummary();
@@ -773,28 +771,6 @@ namespace LogSyncMod.AutoTest
             foreach (StaticViewTestSession session in activeStaticViewSessions) { session.Result.Status = "cancelled"; session.Result.ErrorMessage = "Auto-test run cancelled."; session.Phase = StaticViewTestPhase.CleaningUp; }
             foreach (ThreeViewTestSession session in activeThreeViewSessions) { session.Result.Status = "cancelled"; session.Result.ErrorMessage = "Auto-test run cancelled."; session.Phase = ThreeViewTestPhase.CleaningUp; }
             foreach (CombatPawnTestSession session in activeCombatPawnSessions) { session.Result.Status = "cancelled"; session.Result.ErrorMessage = "Auto-test run cancelled."; session.Phase = CombatPawnTestPhase.CleaningUp; }
-        }
-
-        private void CleanupSharedHediffPawn()
-        {
-            if (sharedHediffPawn == null)
-            {
-                return;
-            }
-
-            try
-            {
-                CleanupTargetModHediffs(sharedHediffPawn);
-                if (!sharedHediffPawn.Destroyed)
-                {
-                    sharedHediffPawn.Destroy(DestroyMode.Vanish);
-                }
-            }
-            catch
-            {
-            }
-
-            sharedHediffPawn = null;
         }
 
         private static string ResolveOutputDirectory(LogSyncSettings settings)

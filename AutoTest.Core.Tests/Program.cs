@@ -30,7 +30,66 @@ internal sealed class CoreTestSuite
         TestRuntimeHistory();
         TestCaseEvidenceRetention();
         TestDomainAssertions();
+        TestRecipeExecutionPolicies();
         Console.WriteLine($"AutoTest.Core.Tests passed: {passed}");
+    }
+
+    private void TestRecipeExecutionPolicies()
+    {
+        var standard = AutoTestRecipeExecutionClassifier.Classify(new AutoTestRecipeClassificationInput());
+        Assert(standard.Kind == AutoTestRecipeExecutionKind.Standard && standard.Adapter == "StandardRecipeExecutionAdapter", "ordinary recipes use the standard adapter");
+
+        var gestation = AutoTestRecipeExecutionClassifier.Classify(new AutoTestRecipeClassificationInput { GestationCycles = 2, ProductIsPawn = true, WorktableIsMechGestator = true });
+        Assert(gestation.Kind == AutoTestRecipeExecutionKind.MechGestation && gestation.Reason.Contains("gestationCycles"), "gestation recipes are classified before product creation");
+
+        var resurrection = AutoTestRecipeExecutionClassifier.Classify(new AutoTestRecipeClassificationInput { MechResurrection = true, HasCorpseIngredient = true });
+        Assert(resurrection.Kind == AutoTestRecipeExecutionKind.MechResurrection, "mech resurrection recipes use the resurrection adapter");
+
+        var pawnProduct = AutoTestRecipeExecutionClassifier.Classify(new AutoTestRecipeClassificationInput { ProductIsPawn = true });
+        Assert(pawnProduct.Kind == AutoTestRecipeExecutionKind.PawnProduct && pawnProduct.Adapter == "UnsupportedSpecialRecipeExecutionAdapter", "unsafe pawn products never fall through to MakeRecipeProducts");
+
+        Assert(AutoTestRetryPolicy.CanRetry(AutoTestFailureKind.TransientPawnGeneration, 1) &&
+            AutoTestRetryPolicy.CanRetry(AutoTestFailureKind.TransientUiTiming, 1) &&
+            !AutoTestRetryPolicy.CanRetry(AutoTestFailureKind.DeterministicFailure, 1) &&
+            !AutoTestRetryPolicy.CanRetry(AutoTestFailureKind.TransientPawnGeneration, 2), "retry policy allows one retry only for explicit transient failures");
+
+        var part = AutoTestHediffPartPolicy.Select(new[]
+        {
+            new AutoTestHediffPartCandidate<string> { Value = "other", Source = AutoTestHediffPartSourceKind.OtherInstallRecipe, StableName = "A" },
+            new AutoTestHediffPartCandidate<string> { Value = "target-z", Source = AutoTestHediffPartSourceKind.TargetModInstallRecipe, StableName = "Z" },
+            new AutoTestHediffPartCandidate<string> { Value = "default", Source = AutoTestHediffPartSourceKind.DefaultInstallPart, StableName = "Default" }
+        });
+        Assert(part.Value == "default", "hediff part policy prioritizes defaultInstallPart over recipe candidates");
+
+        var pawns = AutoTestHediffPawnPolicy.Order(new[]
+        {
+            new AutoTestHediffPawnCandidate<string> { Value = "colonist", Source = AutoTestHediffPawnCandidateSource.VanillaColonist, StableName = "Colonist" },
+            new AutoTestHediffPawnCandidate<string> { Value = "native-b", Source = AutoTestHediffPawnCandidateSource.DirectStartingHediff, StableName = "B" },
+            new AutoTestHediffPawnCandidate<string> { Value = "native-a", Source = AutoTestHediffPawnCandidateSource.DirectStartingHediff, StableName = "A" }
+        });
+        Assert(pawns.Select(candidate => candidate.Value).SequenceEqual(new[] { "native-a", "native-b", "colonist" }), "hediff pawn candidates use source priority and stable DefName ordering");
+
+        var placement = AutoTestProductPlacementVerifier.Verify(
+            new Dictionary<string, int> { ["Mass"] = 200 },
+            new Dictionary<string, int> { ["Mass"] = 200 },
+            new[]
+            {
+                new AutoTestProductStackSnapshot { DefName = "Mass", StackCount = 75, StackLimit = 75 },
+                new AutoTestProductStackSnapshot { DefName = "Mass", StackCount = 75, StackLimit = 75 },
+                new AutoTestProductStackSnapshot { DefName = "Mass", StackCount = 50, StackLimit = 75 }
+            });
+        Assert(placement.Success, "standard product placement accepts split stacks with preserved total");
+
+        var oversized = AutoTestProductPlacementVerifier.Verify(
+            new Dictionary<string, int> { ["Mass"] = 80 },
+            new Dictionary<string, int> { ["Mass"] = 80 },
+            new[] { new AutoTestProductStackSnapshot { DefName = "Mass", StackCount = 80, StackLimit = 75 } });
+        Assert(!oversized.Success && oversized.ErrorMessage.Contains("stackLimit"), "standard product placement rejects oversized stacks");
+
+        Assert(AutoTestRecipeResultPolicy.FailureStatus(AutoTestFailureKind.UnsupportedPath) == AutoTestResultStatus.Unsupported &&
+            AutoTestRecipeResultPolicy.FailureStatus(AutoTestFailureKind.DeterministicFailure) == "failed_recipe_produce" &&
+            AutoTestRecipeResultPolicy.FailureStatus(AutoTestFailureKind.UnexpectedSevereLog) == "failed_recipe_produce",
+            "recipe result policy distinguishes unsupported paths from execution failures");
     }
 
     private void TestOperationRunner()

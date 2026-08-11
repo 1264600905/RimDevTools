@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using RimWorld;
 using UnityEngine;
 using Verse;
@@ -35,10 +36,14 @@ namespace LogSyncMod.AutoTest
             public Def InfoCardDef;
             public Pawn TestPawn;
             public Hediff AttachedHediff;
+            public readonly List<Hediff> PrerequisiteHediffs = new List<Hediff>();
+            public bool DestroyTestPawnOnCleanup;
+            public bool PassedAfterRetry;
             public ActiveSessionMode Mode;
             public Thing RecipeWorktableThing;
             public Bill_Production RecipeBill;
             public bool RecipeBillAdded;
+            public readonly List<Thing> RecipeProducts = new List<Thing>();
             public IAutoTestUiHandle UiHandle;
             public bool CloseIssued;
             public bool ScreenshotCaptured;
@@ -719,6 +724,17 @@ namespace LogSyncMod.AutoTest
                 }
             }
 
+            foreach (Thing product in activeSession?.RecipeProducts?.Distinct().ToList() ?? new List<Thing>())
+            {
+                try
+                {
+                    if (product != null && !product.Destroyed) product.Destroy(DestroyMode.Vanish);
+                }
+                catch { }
+            }
+            if (activeSession?.RecipeProducts?.Count > 0)
+                activeSession.Result.Notes = AppendNote(activeSession.Result.Notes, "RecipeProductsCleaned=True");
+
             if (activeSession?.SpawnedThing != null)
             {
                 bool targetRemoved = activeSession.SpawnedThing.Destroyed || !activeSession.SpawnedThing.Spawned;
@@ -760,17 +776,36 @@ namespace LogSyncMod.AutoTest
                 }
             }
 
-            if (activeSession?.AttachedHediff == null || activeSession.TestPawn?.health == null)
+            if (activeSession?.TestPawn?.health != null)
             {
-                return;
+                if (activeSession.AttachedHediff != null)
+                {
+                    try { activeSession.TestPawn.health.RemoveHediff(activeSession.AttachedHediff); } catch { }
+                    bool removed = !activeSession.TestPawn.health.hediffSet.hediffs.Contains(activeSession.AttachedHediff);
+                    activeSession.Result.Notes = AppendNote(activeSession.Result.Notes, "TargetHediffRemoved=" + removed);
+                }
+
+                foreach (Hediff prerequisite in activeSession.PrerequisiteHediffs.ToList())
+                {
+                    try
+                    {
+                        if (prerequisite != null && activeSession.TestPawn.health.hediffSet.hediffs.Contains(prerequisite))
+                            activeSession.TestPawn.health.RemoveHediff(prerequisite);
+                    }
+                    catch { }
+                }
+                activeSession.Result.Notes = AppendNote(activeSession.Result.Notes, "PrerequisiteHediffsRestored=True");
             }
 
-            try
+            if (activeSession?.DestroyTestPawnOnCleanup == true && activeSession.TestPawn != null)
             {
-                activeSession.TestPawn.health.RemoveHediff(activeSession.AttachedHediff);
-            }
-            catch
-            {
+                try
+                {
+                    if (!activeSession.TestPawn.Destroyed)
+                        activeSession.TestPawn.Destroy(DestroyMode.Vanish);
+                }
+                catch { }
+                activeSession.Result.Notes = AppendNote(activeSession.Result.Notes, "HediffPawnDestroyed=" + activeSession.TestPawn.Destroyed);
             }
         }
 
@@ -801,10 +836,13 @@ namespace LogSyncMod.AutoTest
             if (activeSession.Item.Kind == AutoTestKind.Recipe)
             {
                 activeSession.Result.Stage = "produce";
-                if (!TryProduceRecipe(activeSession, out string errorMessage))
+                AutoTestRecipeExecutionResult execution = ExecuteRecipe(activeSession);
+                if (!execution.Success)
                 {
-                    activeSession.Result.Status = "failed_recipe_produce";
+                    string errorMessage = execution.ErrorMessage;
+                    activeSession.Result.Status = AutoTestRecipeResultPolicy.FailureStatus(execution.FailureKind);
                     activeSession.Result.ErrorMessage = errorMessage;
+                    activeSession.Result.Notes = AppendNote(activeSession.Result.Notes, "FailureKind=" + execution.FailureKind);
                     activeSession.Result.Notes = AppendNote(activeSession.Result.Notes, "Trace=" + InfoCardCloseTrace.Describe());
                     RecordInfoCardSemantic(false);
                     CleanupSelectionAndWindows();
@@ -815,6 +853,7 @@ namespace LogSyncMod.AutoTest
                     activeSession = null;
                     return;
                 }
+                activeSession.PassedAfterRetry = execution.PassedAfterRetry;
             }
             else if (activeSession.SpawnedThing != null && !activeSession.SpawnedThing.Destroyed)
             {
@@ -837,7 +876,7 @@ namespace LogSyncMod.AutoTest
                 activeSession.Result.Notes = AppendNote(activeSession.Result.Notes, "InfoCardOpened=True");
             }
 
-            activeSession.Result.Status = "passed";
+            activeSession.Result.Status = activeSession.PassedAfterRetry ? AutoTestResultStatus.PassedAfterRetry : AutoTestResultStatus.Passed;
             activeSession.Result.Stage = activeSession.Item.Kind == AutoTestKind.Recipe ? "produce" : "info_close";
             activeSession.Result.Notes = AppendNote(activeSession.Result.Notes, "Trace=" + InfoCardCloseTrace.Describe());
             Log.Message("[LogSyncAutoTest] InfoCard close confirmed for " + activeSession.Result.DefName);

@@ -140,7 +140,9 @@ namespace LogSyncMod.AutoTest
 
             Find.WindowStack.TryRemoveAssignableFromType(typeof(Dialog_BillConfig), false);
 
-            Dialog_BillConfig dialog = new Dialog_BillConfig(bill, billGiverPos);
+            Dialog_BillConfig dialog = bill is Bill_Mech mechBill
+                ? (Dialog_BillConfig)new Dialog_MechBillConfig(mechBill, billGiverPos)
+                : new Dialog_BillConfig(bill, billGiverPos);
             dialog.closeOnClickedOutside = true;
             dialog.closeOnAccept = false;
             dialog.closeOnCancel = false;

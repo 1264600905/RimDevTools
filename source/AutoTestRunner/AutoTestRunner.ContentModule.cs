@@ -334,28 +334,48 @@ namespace LogSyncMod.AutoTest
         {
             AutoTestResult result = CreateResult(item.ManifestEntry, "HediffDef", item.HediffDef.defName, item.HediffDef.label);
             results.Add(result);
+            Pawn pawn = null;
 
             try
             {
-                Pawn pawn = EnsureSharedHediffPawn();
+                AutoTestHediffPawnResolver pawnResolver = new AutoTestHediffPawnResolver(map, targetMod, delegate
+                {
+                    if (!TryAllocateThingRoot(1, 1, out IntVec3 rootCell)) return IntVec3.Invalid;
+                    ClearArea(rootCell, 1, 1);
+                    return rootCell;
+                });
+                AutoTestHediffPawnResolution context = pawnResolver.Resolve(item.HediffDef, item.SpecDef);
+                pawn = context.Pawn;
                 if (pawn == null)
                 {
-                    result.Status = "skipped";
+                    result.Status = "failed_hediff_pawn";
                     result.Stage = "pawn";
-                    result.ErrorMessage = "No test pawn could be generated for Hediff validation.";
+                    result.ErrorMessage = context.ErrorMessage ?? "No legal test pawn could be generated for Hediff validation.";
+                    result.Notes = AppendNote(result.Notes, "FailureKind=" + AutoTestFailureKind.TransientPawnGeneration);
                     CompleteSemanticCase(result);
                     return;
                 }
 
-                CleanupTargetModHediffs(pawn);
+                AutoTestHediffPartResolution partResolution = context.PartResolution;
+                if (partResolution == null || !partResolution.Supported)
+                {
+                    result.Status = AutoTestResultStatus.Unsupported;
+                    result.Stage = "hediff_part";
+                    result.ErrorMessage = partResolution?.ErrorMessage ?? "Hediff part resolution failed.";
+                    result.Notes = AppendNote(result.Notes, "FailureKind=" + AutoTestFailureKind.UnsupportedPath);
+                    pawn.Destroy(DestroyMode.Vanish);
+                    CompleteSemanticCase(result);
+                    return;
+                }
 
-                BodyPartRecord targetPart = ResolveHediffPart(item.HediffDef, pawn);
+                BodyPartRecord targetPart = partResolution.Part;
                 Hediff hediff = HediffMaker.MakeHediff(item.HediffDef, pawn, targetPart);
                 if (hediff == null)
                 {
-                    result.Status = "skipped";
+                    result.Status = "failed_hediff_apply";
                     result.Stage = "hediff";
                     result.ErrorMessage = "HediffMaker.MakeHediff returned null.";
+                    pawn.Destroy(DestroyMode.Vanish);
                     CompleteSemanticCase(result);
                     return;
                 }
@@ -371,7 +391,22 @@ namespace LogSyncMod.AutoTest
 
                 result.Label = hediff.LabelCap;
                 result.Notes = AppendNote(result.Notes, "Pawn=" + pawn.LabelShortCap);
-                result.Notes = AppendNote(result.Notes, "Part=" + (targetPart?.def?.defName ?? "WholeBody"));
+                result.Notes = AppendNote(result.Notes, "HediffPawnKind=" + context.PawnKind?.defName);
+                result.Notes = AppendNote(result.Notes, "HediffPawnSource=" + context.Source);
+                result.Notes = AppendNote(result.Notes, "HediffPart=" + (targetPart?.def?.defName ?? "WholeBody"));
+                result.Notes = AppendNote(result.Notes, "HediffPartSource=" + partResolution.Source);
+                result.Notes = AppendNote(result.Notes, "HediffInstallRecipe=" + (partResolution.InstallRecipe?.defName ?? partResolution.InstallContext ?? "None"));
+                IEnumerable<string> prerequisites = pawn.health.hediffSet.hediffs
+                    .Where(existing => existing != null && existing != hediff && existing.def?.modContentPack == targetMod)
+                    .Select(existing => existing.def.defName)
+                    .Distinct()
+                    .OrderBy(defName => defName, StringComparer.Ordinal);
+                result.Notes = AppendNote(result.Notes, "PrerequisiteHediffs=" + (prerequisites.Any() ? string.Join(",", prerequisites.ToArray()) : "None"));
+                if (context.PassedAfterRetry)
+                {
+                    result.Notes = AppendNote(result.Notes, "RetryKind=" + AutoTestFailureKind.TransientPawnGeneration);
+                    result.Notes = AppendNote(result.Notes, "FirstFailure=" + TrimForNote(context.FirstFailure));
+                }
 
                 activeSession = new ActiveSession
                 {
@@ -380,10 +415,13 @@ namespace LogSyncMod.AutoTest
                     InfoCardDef = item.HediffDef,
                     TestPawn = pawn,
                     AttachedHediff = hediff,
+                    DestroyTestPawnOnCleanup = true,
+                    PassedAfterRetry = context.PassedAfterRetry,
                     AllowScreenshots = ShouldCaptureScreenshots(item.SpecDef),
                     RemainingUiFrames = PreOpenSettleRepaintFrames,
                     Phase = SessionPhase.WaitingForPreOpenSettle
                 };
+                activeSession.PrerequisiteHediffs.AddRange(context.AddedPrerequisites);
                 result.Stage = "info_open";
             }
             catch (Exception ex)
@@ -392,6 +430,11 @@ namespace LogSyncMod.AutoTest
                 result.Stage = "hediff";
                 result.ErrorMessage = ex.ToString();
                 CleanupSelectionAndWindows();
+                try
+                {
+                    if (pawn != null && !pawn.Destroyed) pawn.Destroy(DestroyMode.Vanish);
+                }
+                catch { }
                 CompleteSemanticCase(result);
             }
         }
@@ -455,7 +498,8 @@ namespace LogSyncMod.AutoTest
                 .OrderBy(recipe => recipe.defName))
             {
                 ThingDef productDef = ResolvePrimaryRecipeProduct(recipe);
-                if (productDef == null)
+                AutoTestRecipeClassification classification = ClassifyRecipe(recipe, ResolveRecipeWorktable(recipe), ResolveBestMatchingSpec(AutoTestKind.Recipe, recipe));
+                if (productDef == null && classification.Kind != AutoTestRecipeExecutionKind.MechResurrection)
                 {
                     AddImmediateResult(
                         CreateResult(
@@ -477,7 +521,7 @@ namespace LogSyncMod.AutoTest
                         "RecipeDef",
                         recipe.defName,
                         recipe.label);
-                    result.Label = productDef.label ?? recipe.label ?? string.Empty;
+                    result.Label = productDef?.label ?? recipe.label ?? string.Empty;
                     result.Notes = AppendNote(result.Notes, "Product=" + SafeDefName(productDef));
                     AddImmediateResult(
                         result,
@@ -557,95 +601,21 @@ namespace LogSyncMod.AutoTest
                    MatchesSpecFilters(AutoTestKind.Hediff, def);
         }
 
-        private Pawn EnsureSharedHediffPawn()
-        {
-            if (sharedHediffPawn != null &&
-                !sharedHediffPawn.Destroyed &&
-                !sharedHediffPawn.Dead &&
-                sharedHediffPawn.Map == map)
-            {
-                return sharedHediffPawn;
-            }
-
-            Faction faction = Faction.OfPlayer ?? Find.FactionManager?.OfPlayer;
-            Pawn pawn = PawnGenerator.GeneratePawn(PawnKindDefOf.Colonist, faction, null);
-            if (pawn == null)
-            {
-                return null;
-            }
-
-            if (!TryAllocateThingRoot(1, 1, out IntVec3 rootCell))
-            {
-                return null;
-            }
-
-            ClearArea(rootCell, 1, 1);
-            GenSpawn.Spawn(pawn, rootCell, map, WipeMode.Vanish);
-            sharedHediffPawn = pawn;
-            return sharedHediffPawn;
-        }
-
-        private void CleanupTargetModHediffs(Pawn pawn)
-        {
-            if (pawn?.health?.hediffSet?.hediffs == null)
-            {
-                return;
-            }
-
-            foreach (Hediff hediff in pawn.health.hediffSet.hediffs
-                .Where(hediff => hediff?.def?.modContentPack == targetMod)
-                .ToList())
-            {
-                try
-                {
-                    pawn.health.RemoveHediff(hediff);
-                }
-                catch
-                {
-                }
-            }
-        }
-
-        private BodyPartRecord ResolveHediffPart(HediffDef def, Pawn pawn)
-        {
-            if (def == null || pawn?.health?.hediffSet == null)
-            {
-                return null;
-            }
-
-            IEnumerable<BodyPartRecord> parts = pawn.health.hediffSet.GetNotMissingParts(default(BodyPartHeight), default(BodyPartDepth), null, null) ?? Enumerable.Empty<BodyPartRecord>();
-            if (def.defaultInstallPart != null)
-            {
-                BodyPartRecord preferredPart = parts.FirstOrDefault(part => part.def == def.defaultInstallPart);
-                if (preferredPart != null)
-                {
-                    return preferredPart;
-                }
-            }
-
-            if (def.addedPartProps != null || def.injuryProps != null || def.defaultInstallPart != null)
-            {
-                return parts.FirstOrDefault();
-            }
-
-            return null;
-        }
-
         private bool IsTargetRecipeDef(RecipeDef recipe)
         {
             if (recipe == null) return false;
-            if (recipe.products == null || recipe.products.Count == 0) return false;
 
             bool recipeOwnedByTargetMod = recipe.modContentPack == targetMod;
-            bool producesTargetModThing = recipe.products.Any(product =>
+            bool producesTargetModThing = recipe.products != null && recipe.products.Any(product =>
                 product != null &&
                 product.thingDef != null &&
                 product.thingDef.modContentPack == targetMod &&
                 IsSupportedRecipeProductDef(product.thingDef));
 
             if (!recipeOwnedByTargetMod && !producesTargetModThing) return false;
-            return ResolvePrimaryRecipeProduct(recipe) != null &&
-                   MatchesSpecFilters(AutoTestKind.Recipe, recipe);
+            bool hasDiscoverableProduct = ResolvePrimaryRecipeProduct(recipe) != null;
+            bool discoverableResurrection = recipeOwnedByTargetMod && recipe.mechResurrection;
+            return (hasDiscoverableProduct || discoverableResurrection) && MatchesSpecFilters(AutoTestKind.Recipe, recipe);
         }
 
         private ThingDef ResolvePrimaryRecipeProduct(RecipeDef recipe)
@@ -761,156 +731,14 @@ namespace LogSyncMod.AutoTest
             return worktableThing;
         }
 
-        private bool TryProduceRecipe(ActiveSession session, out string errorMessage)
-        {
-            errorMessage = null;
-
-            RecipeDef recipe = session.Item.RecipeDef;
-            Thing worktableThing = session.RecipeWorktableThing ?? GetPlacedRecipeWorktable(session.Item.WorktableDef);
-            if (recipe == null)
-            {
-                errorMessage = "RecipeDef was missing from the active session.";
-                return false;
-            }
-
-            if (!(worktableThing is IBillGiver billGiver))
-            {
-                errorMessage = "Placed worktable is unavailable or no longer implements IBillGiver.";
-                return false;
-            }
-
-            Pawn worker = map.mapPawns?.FreeColonistsSpawned?.FirstOrDefault(pawn => pawn != null && !pawn.Dead);
-            if (worker == null)
-            {
-                errorMessage = "No spawned colonist was available to evaluate the recipe.";
-                return false;
-            }
-
-            Bill_Production productionBill = session.RecipeBill ?? (BillUtility.MakeNewBill(recipe, null) as Bill_Production ?? new Bill_Production(recipe, null));
-            if (productionBill == null)
-            {
-                errorMessage = "Failed to create Bill_Production for recipe.";
-                return false;
-            }
-
-            BillStack billStack = billGiver.BillStack;
-            if (billStack == null)
-            {
-                errorMessage = "Worktable BillStack was null.";
-                return false;
-            }
-
-            bool billAdded = false;
-            List<Thing> ingredients = new List<Thing>();
-            List<Thing> spawnedProducts = new List<Thing>();
-
-            try
-            {
-                if (session.RecipeBillAdded)
-                {
-                    billAdded = true;
-                }
-                else
-                {
-                    billStack.AddBill(productionBill);
-                    billAdded = true;
-                    session.RecipeBillAdded = true;
-                }
-
-                session.RecipeBill = productionBill;
-
-                if (!TryCreateRecipeIngredients(recipe, productionBill, worktableThing, out ingredients, out string ingredientSummary, out errorMessage))
-                {
-                    return false;
-                }
-
-                Thing dominantIngredient = ingredients.FirstOrDefault(thing => thing != null && !thing.Destroyed);
-                IEnumerable<Thing> producedThings = GenRecipe.MakeRecipeProducts(
-                    recipe,
-                    worker,
-                    ingredients,
-                    dominantIngredient,
-                    billGiver,
-                    null,
-                    null,
-                    null);
-
-                if (producedThings != null)
-                {
-                    foreach (Thing producedThing in producedThings)
-                    {
-                        if (producedThing == null) continue;
-
-                        if (!TryAllocateThingRoot(1, 1, out IntVec3 spawnCell))
-                        {
-                            spawnCell = ResolveDropCellNear(worktableThing);
-                        }
-
-                        if (producedThing is Building)
-                            PrepareBuildingFactionBeforeSpawn(producedThing, AutoTestBuildingContext.InteractiveBuilding, session.Result);
-                        GenSpawn.Spawn(producedThing, spawnCell, map, WipeMode.Vanish);
-                        spawnedProducts.Add(producedThing);
-                    }
-                }
-
-                if (spawnedProducts.Count == 0)
-                {
-                    errorMessage = "Recipe execution returned no products.";
-                    return false;
-                }
-
-                productionBill.Notify_IterationCompleted(worker, ingredients);
-                session.Result.Notes = AppendNote(session.Result.Notes, "BillConfigOpened=True");
-                session.Result.Notes = AppendNote(session.Result.Notes, "Ingredients=" + ingredientSummary);
-                session.Result.Notes = AppendNote(session.Result.Notes, "Products=" + BuildThingSummary(spawnedProducts));
-                session.Result.Notes = AppendNote(session.Result.Notes, "Worker=" + worker.LabelShortCap);
-                return true;
-            }
-            catch (Exception ex)
-            {
-                errorMessage = ex.ToString();
-                return false;
-            }
-            finally
-            {
-                foreach (Thing ingredient in ingredients)
-                {
-                    try
-                    {
-                        if (ingredient != null && !ingredient.Destroyed)
-                        {
-                            ingredient.Destroy(DestroyMode.Vanish);
-                        }
-                    }
-                    catch
-                    {
-                    }
-                }
-
-                if (billAdded)
-                {
-                    try
-                    {
-                        billStack.Delete(productionBill);
-                        session.RecipeBillAdded = false;
-                        // Keep the object reference so the post-close semantic assertion
-                        // can prove that this exact Bill was removed from the BillStack.
-                        session.RecipeBill = productionBill;
-                    }
-                    catch
-                    {
-                    }
-                }
-            }
-        }
-
         private bool TryCreateRecipeIngredients(
             RecipeDef recipe,
             Bill productionBill,
             Thing worktableThing,
             out List<Thing> ingredients,
             out string ingredientSummary,
-            out string errorMessage)
+            out string errorMessage,
+            bool skipCorpseIngredients = false)
         {
             ingredients = new List<Thing>();
             List<string> summaryParts = new List<string>();
@@ -924,7 +752,10 @@ namespace LogSyncMod.AutoTest
 
             foreach (IngredientCount ingredientCount in recipe.ingredients)
             {
-                if (!TryResolveIngredientDef(ingredientCount, out ThingDef ingredientDef))
+                if (skipCorpseIngredients && ingredientCount?.filter?.AllowedThingDefs.Any(def => def?.thingClass != null && typeof(Corpse).IsAssignableFrom(def.thingClass)) == true)
+                    continue;
+
+                if (!TryResolveIngredientDef(ingredientCount, recipe, productionBill, out ThingDef ingredientDef))
                 {
                     ingredientSummary = string.Join(",", summaryParts.ToArray());
                     errorMessage = "No valid ingredient ThingDef could be resolved for recipe ingredient.";
@@ -949,7 +780,6 @@ namespace LogSyncMod.AutoTest
                     int stackCount = Math.Max(1, Math.Min(remainingCount, stackLimit));
                     ingredientThing.stackCount = stackCount;
 
-                    GenSpawn.Spawn(ingredientThing, ResolveDropCellNear(worktableThing), map, WipeMode.Vanish);
                     ingredients.Add(ingredientThing);
 
                     placedCount += stackCount;
@@ -963,7 +793,7 @@ namespace LogSyncMod.AutoTest
             return true;
         }
 
-        private bool TryResolveIngredientDef(IngredientCount ingredientCount, out ThingDef ingredientDef)
+        private bool TryResolveIngredientDef(IngredientCount ingredientCount, RecipeDef recipe, Bill productionBill, out ThingDef ingredientDef)
         {
             ingredientDef = null;
             if (ingredientCount == null) return false;
@@ -971,7 +801,9 @@ namespace LogSyncMod.AutoTest
             if (ingredientCount.filter == null) return false;
 
             ingredientDef = ingredientCount.filter.AllowedThingDefs
-                .Where(IsUsableIngredientDef)
+                .Where(def => IsUsableIngredientDef(def) &&
+                    (ingredientCount.IsFixedIngredient || recipe.fixedIngredientFilter == null || recipe.fixedIngredientFilter.Allows(def)) &&
+                    (ingredientCount.IsFixedIngredient || !(productionBill is Bill_Production bill) || bill.ingredientFilter == null || bill.ingredientFilter.Allows(def)))
                 .OrderByDescending(def => def.modContentPack == targetMod ? 1 : 0)
                 .ThenBy(def => def.defName)
                 .FirstOrDefault();
