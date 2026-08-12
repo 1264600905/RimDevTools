@@ -36,7 +36,6 @@ namespace LogSyncMod.AutoTest
             public AutoTestResult Result;
             public int TimeoutTicks;
             public int DelayTicks;
-            public int FightingStartTick;
             public int WaitTicks;
             public MapParent Parent;
             public string CleanupReason = "initialized";

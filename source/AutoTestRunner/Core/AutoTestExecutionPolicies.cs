@@ -29,9 +29,9 @@ namespace LogSyncMod.AutoTest
         public bool ProductIsPawn;
         public bool HasCorpseIngredient;
         public bool WorktableIsMechGestator;
-        public bool RecipeLooksLikeBaseMechanoidRecipe;
-        public bool RecipeLooksCustom;
-        public string ExplicitAdapter;
+        public bool RecipeLooksLikeBaseMechanoidRecipe = false;
+        public bool RecipeLooksCustom = false;
+        public string ExplicitAdapter = null;
     }
 
     internal sealed class AutoTestRecipeClassification

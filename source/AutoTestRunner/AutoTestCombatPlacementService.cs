@@ -23,7 +23,7 @@ namespace LogSyncMod.AutoTest
         public float MinimumSeparationMargin = 0.5f;
         public float MaximumRangeMargin = 0.5f;
         public float MinimumDistanceFloor = 2f;
-        public Func<IntVec3, bool> AdditionalValidator;
+        public Func<IntVec3, bool> AdditionalValidator = null;
     }
 
     internal sealed class AutoTestCombatPlacementResult

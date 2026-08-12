@@ -1,13 +1,31 @@
 param(
-    [string]$OutputPath = "artifacts\RimDevTools-Package"
+    [string]$OutputPath = "artifacts\RimDevTools-Package",
+    [string]$VersionSuffix = "",
+    [switch]$CreateZip
 )
 
 $ErrorActionPreference = "Stop"
 $projectRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
 $output = [System.IO.Path]::GetFullPath((Join-Path $projectRoot $OutputPath))
 $artifactsRoot = [System.IO.Path]::GetFullPath((Join-Path $projectRoot "artifacts"))
+
+if (-not [string]::IsNullOrWhiteSpace($VersionSuffix)) {
+    $VersionSuffix = $VersionSuffix.Trim()
+    if ($VersionSuffix -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]*$') {
+        throw "版本后缀只能包含字母、数字、点、下划线和连字符: $VersionSuffix"
+    }
+    $outputParent = Split-Path -Parent $output
+    $outputLeaf = Split-Path -Leaf $output
+    $output = Join-Path $outputParent ($outputLeaf + "-" + $VersionSuffix)
+}
+
 if (-not ($output.StartsWith($artifactsRoot + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase))) {
     throw "发布输出必须位于 $artifactsRoot 内: $output"
+}
+
+$archive = $output + ".zip"
+if (-not ($archive.StartsWith($artifactsRoot + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase))) {
+    throw "发布压缩包必须位于 $artifactsRoot 内: $archive"
 }
 
 $temporary = Join-Path $artifactsRoot ".rimdevtools-package-build"
@@ -169,3 +187,14 @@ finally {
 }
 
 Write-Host "发布完成: $output"
+
+if ($CreateZip) {
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    if (Test-Path -LiteralPath $archive) { Remove-Item -LiteralPath $archive -Force }
+    [System.IO.Compression.ZipFile]::CreateFromDirectory(
+        $output,
+        $archive,
+        [System.IO.Compression.CompressionLevel]::Optimal,
+        $false)
+    Write-Host "压缩包已生成: $archive"
+}

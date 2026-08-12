@@ -17,9 +17,12 @@ RimDevTools 是 Windows x64 的 .NET 10 CLI，负责 RimWorld 1.6 模组项目�
 dotnet build RimDevTools\RimDevTools.csproj -c Release
 dotnet publish RimDevTools\RimDevTools.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true
 powershell -ExecutionPolicy Bypass -File .tools\publish-rimdevtools.ps1
+powershell -ExecutionPolicy Bypass -File .tools\publish-rimdevtools.ps1 -VersionSuffix v1.0.3 -CreateZip
 ```
 
-发布目录：
+第二条发布命令会生成 `artifacts/RimDevTools-Package-v1.0.3/` 和同名 ZIP。未传入版本后缀时仍使用兼容目录 `artifacts/RimDevTools-Package/`。
+
+发布目录内容：
 
 ```text
 artifacts/RimDevTools-Package/
@@ -92,7 +95,7 @@ dotnet build RimDevTools.Tests\RimDevTools.Tests.csproj
 dotnet RimDevTools.Tests\bin\Debug\net10.0\RimDevTools.Tests.dll
 
 dotnet build RimDevTools.ReleaseTests\RimDevTools.ReleaseTests.csproj
-dotnet RimDevTools.ReleaseTests\bin\Debug\net10.0\RimDevTools.ReleaseTests.dll artifacts\RimDevTools-Package
+dotnet RimDevTools.ReleaseTests\bin\Debug\net10.0\RimDevTools.ReleaseTests.dll artifacts\RimDevTools-Package-v1.0.3
 ```
 
 单元测试使用临时游戏目录。发布测试验证模板逐文件一致、三种 MCP 配置、两套 RimSage skill、单工具 Mod 清单、ILSpy 和干净日志/参考目录。

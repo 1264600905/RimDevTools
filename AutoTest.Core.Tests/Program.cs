@@ -637,7 +637,9 @@ internal sealed class CoreTestSuite
 
     private sealed class GraphFixture
     {
+#pragma warning disable CS0414 // 由语义图反射测试读取私有字段
         private string PrivateValue = "private";
+#pragma warning restore CS0414
         public string Name { get; set; }
         public GraphFixture Self { get; set; }
         public List<int> Values { get; set; }

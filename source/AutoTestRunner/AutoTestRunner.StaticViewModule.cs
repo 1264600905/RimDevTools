@@ -363,6 +363,7 @@ namespace LogSyncMod.AutoTest
                 DefName = targetDef?.defName,
                 Label = targetDef?.label,
                 StageSuffix = stageSuffix,
+                RelativeScreenshotSubdirectory = targetDef?.defName,
                 Profile = profile
             };
         }

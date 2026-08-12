@@ -90,7 +90,6 @@ namespace LogSyncMod.AutoTest
         public ThingDef ThingDef;
         public TerrainDef TerrainDef;
         public RecipeDef RecipeDef;
-        public AbilityDef AbilityDef;
         public ThingDef WorktableDef;
         public HediffDef HediffDef;
         public PawnKindDef PawnKindDef;
