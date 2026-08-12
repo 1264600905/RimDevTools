@@ -156,3 +156,7 @@ components/ProjectTemplate/  发布模板源文件
 本仓库以 [MIT License](LICENSE) 开源。
 
 发布包中包含的 ILSpy 等第三方组件保留各自许可证，具体见 `RimDevTools/Packaging/licenses` 和发布包中的 `.tools/Data/licenses`。RimWorld 是 Ludeon Studios 的商标和产品；本项目与 Ludeon Studios 无隶属或官方合作关系。
+
+## 致谢
+
+感谢骸鸾、可爱猫猫喵和 biobattery 协助测试本项目。
