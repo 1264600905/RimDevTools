@@ -15,6 +15,7 @@
 RimDevTools/packages.lock.json
 
 # 日志和临时文件
+/.pi/
 精选日志.log
 修改方案.txt
 *.log
