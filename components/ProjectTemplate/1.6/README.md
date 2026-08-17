@@ -19,11 +19,12 @@
 
 ## RimSage
 
-模板为三种客户端配置同一个只读服务：
+模板为四种客户端配置同一个只读服务：
 
 - Codex CLI：`.codex/config.toml`
 - Claude Code：`.mcp.json`
 - opencode：`opencode.jsonc`
+- pi：`.pi/mcp.json`
 
 默认端点是 `https://mcp.rimsage.com/mcp`。Codex 默认批准该只读服务的工具调用。
 

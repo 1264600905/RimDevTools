@@ -18,6 +18,7 @@ RequireFile("mod_config.jsonc");
 RequireFile("LICENSE");
 RequireFile(Path.Combine(".codex", "config.toml"));
 RequireFile(".mcp.json");
+RequireFile(Path.Combine(".pi", "mcp.json"));
 RequireFile("opencode.jsonc");
 RequireFile(Path.Combine(".agents", "skills", "rimsage", "SKILL.md"));
 RequireFile(Path.Combine(".agents", "skills", "rimsage", "agents", "openai.yaml"));
@@ -69,6 +70,11 @@ using (var opencodeConfig = JsonDocument.Parse(File.ReadAllText(Path.Combine(rel
     var server = opencodeConfig.RootElement.GetProperty("mcp").GetProperty("rimsage");
     Assert(server.GetProperty("type").GetString() == "remote" && server.GetProperty("url").GetString() == endpoint && server.GetProperty("enabled").GetBoolean(), "opencode config declares the enabled RimSage remote service");
 }
+using (var piConfig = JsonDocument.Parse(File.ReadAllText(Path.Combine(release, ".pi", "mcp.json"))))
+{
+    var server = piConfig.RootElement.GetProperty("mcpServers").GetProperty("rimsage");
+    Assert(server.GetProperty("directTools").GetBoolean() && server.GetProperty("lifecycle").GetString() == "eager", "pi config declares the eager direct-tools RimSage service");
+}
 Assert(File.ReadAllBytes(Path.Combine(release, ".agents", "skills", "rimsage", "SKILL.md")).SequenceEqual(File.ReadAllBytes(Path.Combine(release, ".claude", "skills", "rimsage", "SKILL.md"))), "RimSage skill instructions stay synchronized across clients");
 Assert(File.ReadAllBytes(Path.Combine(release, ".agents", "skills", "rimsage", "references", "tool-reference.md")).SequenceEqual(File.ReadAllBytes(Path.Combine(release, ".claude", "skills", "rimsage", "references", "tool-reference.md"))), "RimSage tool references stay synchronized across clients");
 
@@ -85,7 +91,7 @@ using (var manifestDocument = JsonDocument.Parse(File.ReadAllText(Path.Combine(d
 
 var logSyncAbout = XDocument.Load(Path.Combine(data, "LogSyncMod", "About", "About.xml"));
 Assert(logSyncAbout.Root?.Element("packageId")?.Value.Equals("trigger.logsyncmod", StringComparison.OrdinalIgnoreCase) == true, "packaged LogSyncMod has the expected packageId");
-Assert(logSyncAbout.Root?.Element("modVersion")?.Value == "1.1.7", "packaged LogSyncMod declares version 1.1.7");
+Assert(logSyncAbout.Root?.Element("modVersion")?.Value == "1.1.8", "packaged LogSyncMod declares version 1.1.8");
 var logSyncAssembly = AssemblyName.GetAssemblyName(Path.Combine(data, "LogSyncMod", "1.6", "Assemblies", "LogSyncMod.dll")).Version;
 var autoTestAssembly = AssemblyName.GetAssemblyName(Path.Combine(data, "LogSyncMod", "1.6", "Assemblies", "AutoTestRunner.dll")).Version;
 Assert(logSyncAssembly is not null && autoTestAssembly is not null && logSyncAssembly.Major == autoTestAssembly.Major && logSyncAssembly.Minor == autoTestAssembly.Minor && logSyncAssembly.Build == autoTestAssembly.Build, "packaged LogSync assemblies share a product version");

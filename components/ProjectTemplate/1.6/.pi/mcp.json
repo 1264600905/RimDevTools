@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "rimsage": {
+      "directTools": true,
+      "lifecycle": "eager"
+    }
+  }
+}
