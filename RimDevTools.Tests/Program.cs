@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using System.Runtime.Versioning;
 using RimDevTools;
@@ -659,6 +660,8 @@ internal sealed class TestSuite
         Assert(!AutoTestSelectionParser.TryParse(["test", "run", "--mode", "auto", "--scope", "unknown"], "auto", out _, out _), "unknown scope is rejected");
         Assert(CliArgs.Validate("test run", ["test", "run", "--active-mods-file", "ModsConfig.xml"]) is null, "active mods file option is accepted");
         Assert(CliArgs.Validate("test run", ["test", "run", "--batch-size", "7"]) is null, "batch size option is accepted");
+        Assert(CliArgs.Validate("deploy", ["deploy", "--xml-hot"]) is null, "deploy accepts the XML hot-update option");
+        Assert(CliArgs.Validate("test run", ["test", "run", "--deploy", "--xml-hot"]) is null, "test run accepts XML hot-update with deploy");
     }
 
     private async Task TestSettingsAsync()
@@ -1040,6 +1043,29 @@ internal sealed class TestSuite
         var staleStaging = Path.Combine(environment.Game, "Mods", ".rimdev-staging-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
         Directory.CreateDirectory(staleStaging);
         File.WriteAllText(environment.ConfigPath, Config(environment, modName: "Demo", extra: "\"csproj_paths\":[],\"sync_items\":[\"About\"],\"protected_files_regex\":\"^(PublishedFileId\\\\.txt)$\""));
+        File.WriteAllText(Path.Combine(environment.Root, "About", "Hot.xml"), "updated");
+        File.WriteAllText(Path.Combine(environment.Root, "About", "Hot.DLL"), "new-dll");
+        File.WriteAllText(Path.Combine(target, "About", "Hot.DLL"), "old-dll");
+        File.WriteAllText(Path.Combine(target, "stale.txt"), "keep-stale");
+        File.WriteAllText(environment.ConfigPath, Config(environment, modName: "Demo", extra: "\"csproj_paths\":[\"missing.csproj\"],\"sync_items\":[\"About\"],\"shader_bundle\":{\"enabled\":true,\"unity_exe_path\":\"missing-unity.exe\",\"unity_project_path\":\"missing-project\",\"build_method\":\"Build.Run\"}"));
+        ProcessUtil.RimWorldRunningOverride = () => true;
+        try
+        {
+            var hotDryRun = await DeployCommand.ExecuteAsync(["deploy", "--xml-hot", "--dry-run"]);
+            var hotPlan = (DeployResult)hotDryRun.Result!;
+            var hot = await DeployCommand.ExecuteAsync(["deploy", "--xml-hot"]);
+            Assert(hotDryRun.Ok && hotPlan.Plan.XmlHot && hotPlan.Plan.Projects.Count == 0 && !hotPlan.Plan.Shader.Enabled, "XML hot dry-run reports hot mode without build or shader work");
+            Assert(hot.Ok
+                && File.ReadAllText(Path.Combine(target, "About", "Hot.xml")) == "updated"
+                && File.ReadAllText(Path.Combine(target, "About", "Hot.DLL")) == "old-dll"
+                && File.ReadAllText(Path.Combine(target, "stale.txt")) == "keep-stale"
+                && File.Exists(Path.Combine(target, "PublishedFileId.txt")), "XML hot deploy updates non-DLL files while preserving DLLs and stale files");
+        }
+        finally
+        {
+            ProcessUtil.RimWorldRunningOverride = null;
+        }
+        File.WriteAllText(environment.ConfigPath, Config(environment, modName: "Demo", extra: "\"csproj_paths\":[],\"sync_items\":[\"About\"],\"protected_files_regex\":\"^(PublishedFileId\\\\.txt)$\""));
         var artifactDryRun = await DeployCommand.ExecuteAsync(["deploy", "--dry-run"]);
         Assert(artifactDryRun.Ok && ((DeployResult)artifactDryRun.Result!).Plan.ArtifactActions.Any(x => x.Action == "remove") && Directory.Exists(staleBackup), "deploy dry-run reports stale artifacts without removing them");
         var artifactDeploy = await DeployCommand.ExecuteAsync(["deploy"]);
@@ -1268,7 +1294,8 @@ internal sealed class TestSuite
         Assert(string.Equals(isolatedDesktop, callerDesktop, StringComparison.Ordinal), "default quick process runs on the current desktop");
         Assert(quickSettings.Descendants("testMuteAudio").Single().Value == "True", "quick mode enables transactional audio muting");
         Assert(!string.IsNullOrWhiteSpace(quickSettings.Descendants("autoTestRunId").Single().Value), "quick mode writes a runId for heartbeat correlation");
-        Assert(File.ReadAllText(SettingsEditor.SyncLogPath(ProjectDiscovery.Find(environment.Root, out _)!)).Contains("HEARTBEAT", StringComparison.Ordinal), "quick mode consumes control signals from the selected log");
+        Assert(File.ReadAllText(quickSettings.Descendants("logPath").Single().Value).Contains("HEARTBEAT", StringComparison.Ordinal), "quick mode consumes control signals from the selected log");
+        Assert(Regex.IsMatch(Path.GetFileName(Path.GetDirectoryName(quickSettings.Descendants("logPath").Single().Value)!), @"^\[\d{4}-\d{2}, \d{2}-\d{2}\](?:_\d{2})?$"), "quick mode writes the selected log under a timestamped directory");
         Assert(!File.Exists(GameEnvironment.PlayerLogPath(ProjectDiscovery.Find(environment.Root, out _)!)), "test run no longer requires or creates Player.log");
         AssertConfigurationRestored(environment, "quick mode restores exact configuration");
 
@@ -1288,18 +1315,24 @@ internal sealed class TestSuite
         Assert(largeQuick.ExitCode == 0, "quick mode recognizes a signal before more than 32 KiB of trailing log output");
 
         Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", "auto");
-        var autoOutput = Path.Combine(environment.Root, ".tools", "log", "AutoTestOutput");
-        Directory.CreateDirectory(autoOutput);
-        WriteResult(autoOutput, "demo.current", "old-one", "passed", "old-one_Result.json");
-        WriteResult(autoOutput, "demo.current", "old-two", "passed", "old-two_Result.json");
-        WriteResult(autoOutput, "demo.current", "old-three", "passed", "old-three_Result.json");
+        var autoLogRoot = Path.Combine(environment.Root, ".tools", "log");
+        var oldAutoOutput = Path.Combine(autoLogRoot, "[2026-01, 10-00]", "AutoTestOutput");
+        Directory.CreateDirectory(oldAutoOutput);
+        WriteResult(oldAutoOutput, "demo.current", "old-one", "passed", "old-one_Result.json");
+        var oldAutoOutputTwo = Path.Combine(autoLogRoot, "[2026-01, 10-01]", "AutoTestOutput");
+        Directory.CreateDirectory(oldAutoOutputTwo);
+        WriteResult(oldAutoOutputTwo, "demo.current", "old-two", "passed", "old-two_Result.json");
+        var oldAutoOutputThree = Path.Combine(autoLogRoot, "[2026-01, 10-02]", "AutoTestOutput");
+        Directory.CreateDirectory(oldAutoOutputThree);
+        WriteResult(oldAutoOutputThree, "demo.current", "old-three", "passed", "old-three_Result.json");
         var auto = await CaptureAsync(() => TestCommand.RunAsync(["test", "run", "--mode", "auto", "--timeout-seconds", "5"]));
         var observedSettings = File.ReadAllText(Path.Combine(environment.ConfigDirectory, "fake-settings.xml"));
+        var currentAutoOutput = XDocument.Parse(observedSettings).Descendants("autoTestOutputPath").Single().Value;
         Assert(auto.ExitCode == 0 && File.ReadAllText(Path.Combine(environment.ConfigDirectory, "fake-args.txt")).Contains("quicktest"), "auto mode launches with quicktest and validates result");
-        Assert(observedSettings.Contains("demo.current") && observedSettings.Contains("AutoTestOutput"), "auto mode passes target package and output path to LogSync");
+        Assert(observedSettings.Contains("demo.current") && currentAutoOutput.Contains("AutoTestOutput"), "auto mode passes target package and timestamped output path to LogSync");
         Assert(XDocument.Parse(observedSettings).Descendants("autoTestBatchSize").Single().Value == "40", "auto mode writes the default batch size of 40");
         Assert(XDocument.Parse(observedSettings).Descendants("testMuteAudio").Single().Value == "True", "auto mode enables transactional audio muting");
-        Assert(Directory.EnumerateFiles(autoOutput, "*_Result.json").Count() == 2, "configured auto-test retention is enforced after a run");
+        Assert(Directory.EnumerateFiles(currentAutoOutput, "*_Result.json").Count() == 1 && Directory.EnumerateDirectories(autoLogRoot).Count() <= 2, "timestamped auto-test retention keeps the configured number of run directories");
         AssertConfigurationRestored(environment, "auto mode restores settings changed by the game");
 
         Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", "auto");

@@ -27,6 +27,7 @@ public static class DeployCommand
         }
 
         var config = context.Config;
+        var xmlHot = CliArgs.Has(args, "--xml-hot");
         var templateError = ProjectTemplatePreflight.Validate(context);
         if (templateError is not null) return Failure(ExitCodes.InvalidArguments, templateError, context.Root);
         var modsConfigValidation = GameEnvironment.ValidateModsConfig(context);
@@ -92,20 +93,23 @@ public static class DeployCommand
         }
 
         var projectFiles = new List<string>();
-        foreach (var project in config.CsprojPaths)
+        if (!xmlHot)
         {
-            var path = Path.GetFullPath(project, context.Root);
-            if (!PathSafety.IsWithin(path, context.Root))
-                return Failure(ExitCodes.InvalidArguments, new CliError("CSPROJ_OUTSIDE_PROJECT", $"工程路径越出项目目录: {project}"), context.Root);
-            if (!File.Exists(path))
-                return Failure(ExitCodes.MissingDependency, new CliError("CSPROJ_NOT_FOUND", $"工程文件不存在: {project}"), context.Root);
-            projectFiles.Add(path);
+            foreach (var project in config.CsprojPaths)
+            {
+                var path = Path.GetFullPath(project, context.Root);
+                if (!PathSafety.IsWithin(path, context.Root))
+                    return Failure(ExitCodes.InvalidArguments, new CliError("CSPROJ_OUTSIDE_PROJECT", $"工程路径越出项目目录: {project}"), context.Root);
+                if (!File.Exists(path))
+                    return Failure(ExitCodes.MissingDependency, new CliError("CSPROJ_NOT_FOUND", $"工程文件不存在: {project}"), context.Root);
+                projectFiles.Add(path);
+            }
         }
 
         var targetActions = Directory.Exists(target)
             ? Directory.EnumerateFileSystemEntries(target).Select(path => new DeployTargetAction(
                 path,
-                protectedRegex?.IsMatch(Path.GetFileName(path)) == true ? "protect" : "replace")).ToArray()
+                protectedRegex?.IsMatch(Path.GetFileName(path)) == true ? "protect" : xmlHot ? "preserve" : "replace")).ToArray()
             : [];
         var packageId = config.CurrentPackageId(context.Root);
         var artifactPlan = DeploymentArtifactRecovery.Plan(targetRoot, target, packageId);
@@ -114,18 +118,19 @@ public static class DeployCommand
         var preview = new DeployPlan(
             context.Root,
             target,
-            new ShaderPlan(config.ShaderBundle.Enabled, config.ShaderBundle.UnityExePath, config.ShaderBundle.UnityProjectPath, config.ShaderBundle.BuildMethod),
+            new ShaderPlan(!xmlHot && config.ShaderBundle.Enabled, config.ShaderBundle.UnityExePath, config.ShaderBundle.UnityProjectPath, config.ShaderBundle.BuildMethod),
             referencePlan,
             projectFiles,
             plan,
             targetActions,
             artifactPlan,
-            config.ProtectedFilesRegex);
+            config.ProtectedFilesRegex,
+            xmlHot);
 
         if (CliArgs.Has(args, "--dry-run"))
             return new DeployExecution(true, ExitCodes.Success, new DeployResult(context.Root, true, null, target, [], preview, false, artifactPlan), null, warnings);
 
-        if (projectFiles.Count > 0)
+        if (!xmlHot && projectFiles.Count > 0)
         {
             var missingReferences = environment.References.RequiredGameAssemblies
                 .Where(path => !File.Exists(path))
@@ -146,7 +151,7 @@ public static class DeployCommand
         if (!environmentPrepared && gate is null)
             return Failure(ExitCodes.Busy, new CliError("ENVIRONMENT_BUSY", "RimWorld 环境正被另一个 RimDevTools 进程占用", new { busyInfo }), context.Root);
         var recovery = new TransactionRecoveryResult(true, false);
-        if (!environmentPrepared)
+        if (!xmlHot && !environmentPrepared)
         {
             if (!await ProcessUtil.WaitForRimWorldExitAsync(config.Timeouts.ExistingGameExit, config.Timeouts.PostExitDelay, cancellationToken))
                 return Failure(ExitCodes.Timeout, new CliError("GAME_EXIT_TIMEOUT", "等待 RimWorld 退出超时"), context.Root);
@@ -157,11 +162,11 @@ public static class DeployCommand
         }
 
         var currentArtifactPlan = DeploymentArtifactRecovery.Plan(targetRoot, target, packageId);
-        var artifactResults = DeploymentArtifactRecovery.Execute(targetRoot, target, currentArtifactPlan);
+        var artifactResults = xmlHot ? [] : DeploymentArtifactRecovery.Execute(targetRoot, target, currentArtifactPlan);
         foreach (var artifact in artifactResults.Where(x => x.Action is "failed" or "retain"))
             warnings.Add($"部署残留未清理: {artifact.Path}: {artifact.Reason}");
 
-        if (config.ShaderBundle.Enabled)
+        if (!xmlHot && config.ShaderBundle.Enabled)
         {
             var shaderResult = await BuildShaderAsync(context, config, cancellationToken);
             if (!shaderResult.Ok)
@@ -179,6 +184,21 @@ public static class DeployCommand
                 $"-p:HarmonyDllPath={environment.References.HarmonyDllPath}"
             ], context.Root, cancellationToken))
                 return Failure(ExitCodes.TaskFailed, new CliError("BUILD_FAILED", $"dotnet build 失败: {project}"), context.Root);
+        }
+
+        if (xmlHot)
+        {
+            try
+            {
+                Directory.CreateDirectory(target);
+                foreach (var item in plan.Where(x => x.Exists)) CopyHotSyncItem(context.Root, target, item.Item);
+                return new DeployExecution(true, ExitCodes.Success, new DeployResult(context.Root, false, runId, target, [], preview, false, []), null, warnings);
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex)
+            {
+                return Failure(ExitCodes.TaskFailed, new CliError("DEPLOY_FAILED", ex.Message, new { runId, hot = true }), context.Root);
+            }
         }
 
         var staging = Path.Combine(targetRoot, $".rimdev-staging-{runId}");
@@ -232,6 +252,39 @@ public static class DeployCommand
         }
         CopyDirectory(source, destination, item.Equals("About", StringComparison.OrdinalIgnoreCase));
     }
+
+    private static void CopyHotSyncItem(string root, string target, string item)
+    {
+        var source = Path.GetFullPath(item, root);
+        var destination = Path.GetFullPath(Path.Combine(target, item));
+        if (!PathSafety.IsWithin(source, root) || !PathSafety.IsWithin(destination, target)) throw new IOException($"同步路径越界: {item}");
+        if (File.Exists(source))
+        {
+            if (IsDll(source)) return;
+            if (File.GetAttributes(source).HasFlag(FileAttributes.ReparsePoint)) throw new IOException($"拒绝跟随 Reparse Point: {source}");
+            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+            File.Copy(source, destination, true);
+            return;
+        }
+        CopyHotDirectory(source, destination, item.Equals("About", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static void CopyHotDirectory(string source, string destination, bool filterAbout = false)
+    {
+        var sourceInfo = new DirectoryInfo(source);
+        if (sourceInfo.Attributes.HasFlag(FileAttributes.ReparsePoint)) throw new IOException($"拒绝跟随 Reparse Point: {source}");
+        Directory.CreateDirectory(destination);
+        foreach (var file in sourceInfo.EnumerateFiles())
+        {
+            if (file.Attributes.HasFlag(FileAttributes.ReparsePoint)) throw new IOException($"拒绝跟随 Reparse Point: {file.FullName}");
+            if (IsDll(file.FullName) || filterAbout && (file.Extension.Equals(".svg", StringComparison.OrdinalIgnoreCase) || file.Extension.Equals(".html", StringComparison.OrdinalIgnoreCase))) continue;
+            file.CopyTo(Path.Combine(destination, file.Name), true);
+        }
+        foreach (var directory in sourceInfo.EnumerateDirectories())
+            CopyHotDirectory(directory.FullName, Path.Combine(destination, directory.Name), filterAbout);
+    }
+
+    private static bool IsDll(string path) => Path.GetExtension(path).Equals(".dll", StringComparison.OrdinalIgnoreCase);
 
     private static void CopyDirectory(string source, string destination, bool filterAbout = false)
     {
@@ -294,7 +347,7 @@ public sealed record DeploySyncPlan(string Item, string Source, string Destinati
 public sealed record DeployTargetAction(string Path, string Action);
 public sealed record ShaderPlan(bool Enabled, string? UnityPath, string? ProjectPath, string? BuildMethod);
 public sealed record BuildReferencePlan(string? RimWorldDirectory, string? ManagedDirectory, string? HarmonyDllPath);
-public sealed record DeployPlan(string ProjectRoot, string Target, ShaderPlan Shader, BuildReferencePlan References, IReadOnlyList<string> Projects, IReadOnlyList<DeploySyncPlan> SyncItems, IReadOnlyList<DeployTargetAction> TargetActions, IReadOnlyList<DeploymentArtifactAction> ArtifactActions, string? ProtectedPattern);
+public sealed record DeployPlan(string ProjectRoot, string Target, ShaderPlan Shader, BuildReferencePlan References, IReadOnlyList<string> Projects, IReadOnlyList<DeploySyncPlan> SyncItems, IReadOnlyList<DeployTargetAction> TargetActions, IReadOnlyList<DeploymentArtifactAction> ArtifactActions, string? ProtectedPattern, bool XmlHot);
 public sealed record DeployResult(string ProjectRoot, bool DryRun, string? RunId, string Target, IReadOnlyList<string> BuiltProjects, DeployPlan Plan, bool RecoveredTransaction, IReadOnlyList<DeploymentArtifactAction> ArtifactActions);
 public sealed record ProcessTerminationResult(bool Exited, string? Error = null);
 

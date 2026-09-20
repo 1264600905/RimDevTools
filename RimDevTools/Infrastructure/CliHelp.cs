@@ -106,10 +106,11 @@ public static class CliHelp
         Build and atomically deploy the current mod into RimWorld/Mods.
 
         Usage:
-          RimDevTools.exe deploy [--sync-source] [--dry-run]
+          RimDevTools.exe deploy [--sync-source] [--xml-hot] [--dry-run]
 
         Options:
           --sync-source       Include source/ in this deployment.
+          --xml-hot           Update configured non-DLL files in place without stopping the game or building assemblies.
           --dry-run           Print the immutable deployment plan without mutation.
           -h, --help          Show this help.
 
@@ -253,6 +254,7 @@ public static class CliHelp
         Options:
           --deploy                    Deploy before testing.
           --sync-source               Include source/; requires --deploy.
+          --xml-hot                   Hot-update configured non-DLL files; requires --deploy.
           --mode <value>              quick (default), manual, auto, or xml.
           --active-mods-file <path>   External ModsConfig XML activeMods list.
           --timeout-seconds <n>       Positive wait limit; defaults to timeouts.max_wait.

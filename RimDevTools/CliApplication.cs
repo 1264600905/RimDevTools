@@ -107,12 +107,12 @@ public static class CliArgs
         = new Dictionary<string, (int, int, Option[])>(StringComparer.OrdinalIgnoreCase)
         {
             ["doctor"] = (1, 0, [new("--verbose", false)]),
-            ["deploy"] = (1, 0, [new("--sync-source", false), new("--dry-run", false)]),
+            ["deploy"] = (1, 0, [new("--sync-source", false), new("--xml-hot", false), new("--dry-run", false)]),
             ["mod search"] = (2, 1, [new("--fuzzy", false)]),
             ["mod copy"] = (2, 1, [new("--version", true), new("--deps", false), new("--include-ignored", false), new("--fuzzy", false), new("--overwrite-existing", false), new("--dry-run", false)]),
             ["mod dependencies"] = (2, 1, [new("--version", true), new("--fuzzy", false)]),
             ["mod dependents"] = (2, 1, [new("--version", true), new("--fuzzy", false)]),
-            ["test run"] = (2, 0, [new("--deploy", false), new("--sync-source", false), new("--mode", true), new("--active-mods-file", true), new("--timeout-seconds", true), new("--target-package-id", true), new("--scope", true, true), new("--defname", true, true), new("--batch-size", true), new("--capture-screenshots", false), new("--isolated-desktop", false), new("--no-isolated-desktop", false)]),
+            ["test run"] = (2, 0, [new("--deploy", false), new("--sync-source", false), new("--xml-hot", false), new("--mode", true), new("--active-mods-file", true), new("--timeout-seconds", true), new("--target-package-id", true), new("--scope", true, true), new("--defname", true, true), new("--batch-size", true), new("--capture-screenshots", false), new("--isolated-desktop", false), new("--no-isolated-desktop", false)]),
             ["test settings"] = (2, 0, []),
             ["test cleanup"] = (2, 0, [new("--dry-run", false), new("--status", false)]),
             ["mods install-tools"] = (2, 0, [new("--mods-path", true), new("--dry-run", false)])

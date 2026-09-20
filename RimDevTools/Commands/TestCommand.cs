@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using LogSyncMod.AutoTest;
 
@@ -131,9 +132,10 @@ public static class TestCommand
         if (!recovery.Ok)
             return CliResult.WriteFailure(command, ExitCodes.TaskFailed, recovery.Error!.Code, recovery.Error.Message, context.Root, recovery.Error.Details);
 
+        var artifacts = TestArtifactPaths.Create(context);
         try
         {
-            var changed = await SettingsEditor.UpdateAsync(context, "quick", muteAudio: false);
+            var changed = await SettingsEditor.UpdateAsync(context, "quick", muteAudio: false, artifacts: artifacts);
             return CliResult.WriteSuccess(command, context.Root, new
             {
                 runId,
@@ -163,7 +165,6 @@ public static class TestCommand
         var configDirectory = GameEnvironment.ConfigDirectory(context)!;
         var modsConfigPath = modsConfigValidation.Path!;
         var logSyncSettingsPath = GameEnvironment.LogSyncSettingsPath(context)!;
-        var syncLogPath = SettingsEditor.SyncLogPath(context);
 
         var mode = CliArgs.Value(args, "--mode")?.ToLowerInvariant() ?? "quick";
         if (mode is not ("quick" or "manual" or "auto" or "xml"))
@@ -176,6 +177,8 @@ public static class TestCommand
             return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "INVALID_ARGUMENT", "--batch-size 仅适用于 --mode auto 或 --mode xml", context.Root);
         if (CliArgs.Has(args, "--sync-source") && !CliArgs.Has(args, "--deploy"))
             return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "SYNC_SOURCE_REQUIRES_DEPLOY", "--sync-source 必须与 --deploy 一起使用", context.Root);
+        if (CliArgs.Has(args, "--xml-hot") && !CliArgs.Has(args, "--deploy"))
+            return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "XML_HOT_REQUIRES_DEPLOY", "--xml-hot 必须与 --deploy 一起使用", context.Root);
         if (!CliArgs.TryPositiveInt(args, "--timeout-seconds", context.Config.Timeouts.MaxWait, out var timeout, out var timeoutError))
             return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "TIMEOUT_INVALID", timeoutError!, context.Root);
         int? batchSize = null;
@@ -226,16 +229,19 @@ public static class TestCommand
         {
             var deployArgs = new List<string> { "deploy" };
             if (CliArgs.Has(args, "--sync-source")) deployArgs.Add("--sync-source");
+            if (CliArgs.Has(args, "--xml-hot")) deployArgs.Add("--xml-hot");
             var deploy = await DeployCommand.ExecuteAsync(deployArgs.ToArray(), cancellationToken, environmentPrepared: true);
             if (!deploy.Ok)
                 return CliResult.WriteFailure(command, deploy.ExitCode, "DEPLOY_FAILED", "测试前部署失败", context.Root, new { deploy.Error, dependencyWarnings }, dependencyWarnings);
         }
 
+        var artifacts = TestArtifactPaths.Create(context);
+        var syncLogPath = artifacts.SyncLogPath;
+        var outputPath = artifacts.AutoTestOutputPath;
         ConfigTransaction? transaction = null;
         GameProcessSession? gameSession = null;
         TestOutcome outcome;
         var gameExited = true;
-        var outputPath = SettingsEditor.AutoTestOutputPath(context);
         var resultSnapshot = AutoResultValidator.Snapshot(outputPath);
         var logOffset = 0L;
         try
@@ -245,9 +251,7 @@ public static class TestCommand
                 runId,
                 [modsConfigPath, logSyncSettingsPath]);
             await transaction.WriteAllTextAsync(modsConfigPath, ModListParser.Render(modsConfigPath, modList.Mods));
-            await SettingsEditor.UpdateAsync(context, mode, transaction, runId, targetPackageId, captureScreenshots, muteAudio: mode != "manual", selection.Scopes, selection.HasExplicitScopes, selection.DefNames, batchSize);
-
-            LogArchive.Rotate(SettingsEditor.SyncLogPath(context), context.Config.Retention.MaxLogFiles);
+            await SettingsEditor.UpdateAsync(context, mode, transaction, runId, targetPackageId, captureScreenshots, muteAudio: mode != "manual", selection.Scopes, selection.HasExplicitScopes, selection.DefNames, batchSize, artifacts: artifacts);
 
             var gameArguments = new List<string> { "-popupwindow" };
             if (mode is "auto" or "xml") gameArguments.Add("quicktest");
@@ -295,6 +299,18 @@ public static class TestCommand
         {
             try { LogArchive.PruneAutoTestRuns(outputPath, context.Config.Retention.MaxAutoTestRuns); }
             catch (Exception ex) { outcome = TestOutcome.Failure(ExitCodes.TaskFailed, "AUTO_RESULT_RETENTION_FAILED", ex.Message); }
+        }
+
+        try
+        {
+            var keepCount = mode is "auto" or "xml"
+                ? Math.Min(context.Config.Retention.MaxLogFiles, context.Config.Retention.MaxAutoTestRuns)
+                : context.Config.Retention.MaxLogFiles;
+            LogArchive.PruneTestRunDirectories(TestArtifactPaths.LogRoot(context), keepCount);
+        }
+        catch (Exception ex)
+        {
+            outcome = TestOutcome.Failure(ExitCodes.TaskFailed, "TEST_LOG_RETENTION_FAILED", ex.Message);
         }
 
         if (!outcome.Ok)
@@ -659,12 +675,35 @@ public static class ModListParser
     }
 }
 
+public sealed record TestArtifactPaths(string DirectoryPath, string SyncLogPath, string AutoTestOutputPath)
+{
+    public static string LogRoot(ProjectContext context) => Path.Combine(context.Root, ".tools", "log");
+
+    public static TestArtifactPaths Create(ProjectContext context)
+    {
+        var root = LogRoot(context);
+        Directory.CreateDirectory(root);
+        var prefix = DateTime.Now.ToString("[yyyy-MM, HH-mm]");
+        for (var index = 0; index < 1000; index++)
+        {
+            var name = index == 0 ? prefix : $"{prefix}_{index:00}";
+            var directory = Path.Combine(root, name);
+            if (Directory.Exists(directory)) continue;
+            Directory.CreateDirectory(directory);
+            var syncLogPath = Path.Combine(directory, "精选日志.log");
+            File.WriteAllText(syncLogPath, string.Empty);
+            return new TestArtifactPaths(directory, syncLogPath, Path.Combine(directory, "AutoTestOutput"));
+        }
+        throw new IOException($"无法为测试创建唯一日志目录: {prefix}");
+    }
+}
+
 public static class SettingsEditor
 {
-    public static string SyncLogPath(ProjectContext context) => Path.Combine(context.Root, ".tools", "log", "精选日志.log");
-    public static string AutoTestOutputPath(ProjectContext context) => Path.Combine(context.Root, ".tools", "log", "AutoTestOutput");
+    public static string SyncLogPath(ProjectContext context) => Path.Combine(TestArtifactPaths.LogRoot(context), "精选日志.log");
+    public static string AutoTestOutputPath(ProjectContext context) => Path.Combine(TestArtifactPaths.LogRoot(context), "AutoTestOutput");
 
-    public static async Task<bool> UpdateAsync(ProjectContext context, string mode, ConfigTransaction? transaction = null, string? runId = null, string? targetPackageId = null, bool captureScreenshots = false, bool? muteAudio = null, IReadOnlyList<string>? scopes = null, bool hasExplicitScopes = false, IReadOnlyList<string>? defNames = null, int? batchSize = null)
+    public static async Task<bool> UpdateAsync(ProjectContext context, string mode, ConfigTransaction? transaction = null, string? runId = null, string? targetPackageId = null, bool captureScreenshots = false, bool? muteAudio = null, IReadOnlyList<string>? scopes = null, bool hasExplicitScopes = false, IReadOnlyList<string>? defNames = null, int? batchSize = null, TestArtifactPaths? artifacts = null)
     {
         var path = GameEnvironment.LogSyncSettingsPath(context) ?? throw new InvalidOperationException("mods_config_path 未配置或无效");
         var document = File.Exists(path)
@@ -675,14 +714,15 @@ public static class SettingsEditor
         var settings = document.Root?.DescendantsAndSelf().FirstOrDefault(x => x.Name.LocalName.Equals("ModSettings", StringComparison.OrdinalIgnoreCase))
             ?? throw new InvalidDataException("LogSync 设置缺少 ModSettings 节点");
         var changed = false;
-        changed |= Set(settings, "logPath", SyncLogPath(context));
+        var effectiveArtifacts = artifacts;
+        changed |= Set(settings, "logPath", effectiveArtifacts?.SyncLogPath ?? SyncLogPath(context));
         changed |= SetList(settings, "keywords", context.Config.LogKeywords);
 
         var auto = mode is "auto" or "xml";
         changed |= Set(settings, "autoTestEnabled", auto ? "True" : "False");
         changed |= Set(settings, "autoTestTargetPackageId", auto ? targetPackageId?.ToLowerInvariant() ?? context.Config.CurrentPackageId(context.Root)?.ToLowerInvariant() ?? "" : "");
         changed |= Set(settings, "autoTestRunId", runId ?? "");
-        changed |= Set(settings, "autoTestOutputPath", AutoTestOutputPath(context));
+        changed |= Set(settings, "autoTestOutputPath", effectiveArtifacts?.AutoTestOutputPath ?? AutoTestOutputPath(context));
         changed |= Set(settings, "autoTestMode", mode == "xml" ? "XmlDriven" : "Automatic");
         var effectiveScopes = scopes is { Count: > 0 } ? DistinctValues(scopes) : ["Standard"];
         var effectiveDefNames = defNames is { Count: > 0 } ? DistinctValues(defNames) : [];
@@ -867,6 +907,17 @@ public static class AutoResultValidator
 
 public static class LogArchive
 {
+    public static void PruneTestRunDirectories(string logRoot, int keepCount)
+    {
+        if (!Directory.Exists(logRoot)) return;
+        var directories = Directory.EnumerateDirectories(logRoot)
+            .Where(path => Regex.IsMatch(Path.GetFileName(path), @"^\[\d{4}-\d{2}, \d{2}-\d{2}\](?:_\d{2})?$", RegexOptions.CultureInvariant))
+            .OrderByDescending(Directory.GetLastWriteTimeUtc)
+            .ToArray();
+        foreach (var obsolete in directories.Skip(Math.Max(1, keepCount)))
+            Directory.Delete(obsolete, true);
+    }
+
     public static void Rotate(string logPath, int keepCount)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(logPath)!);
