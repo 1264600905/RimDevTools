@@ -7,7 +7,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>RimDevTools</AssemblyName>
     <RootNamespace>RimDevTools</RootNamespace>
-    <Version>1.0.4</Version>
+    <Version>1.0.5</Version>
     <PublishSingleFile>true</PublishSingleFile>
     <IncludeAllContentForSelfExtract>true</IncludeAllContentForSelfExtract>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>

@@ -120,15 +120,15 @@ powershell -ExecutionPolicy Bypass -File .tools\publish-rimdevtools.ps1
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .tools\publish-rimdevtools.ps1 `
-  -VersionSuffix v1.0.4 `
+  -VersionSuffix v1.0.5 `
   -CreateZip
 ```
 
 输出为：
 
 ```text
-artifacts/RimDevTools-Package-v1.0.4/
-artifacts/RimDevTools-Package-v1.0.4.zip
+artifacts/RimDevTools-Package-v1.0.5/
+artifacts/RimDevTools-Package-v1.0.5.zip
 ```
 
 验证发布布局：
@@ -136,7 +136,7 @@ artifacts/RimDevTools-Package-v1.0.4.zip
 ```powershell
 dotnet build RimDevTools.ReleaseTests\RimDevTools.ReleaseTests.csproj
 dotnet RimDevTools.ReleaseTests\bin\Debug\net10.0\RimDevTools.ReleaseTests.dll `
-  artifacts\RimDevTools-Package-v1.0.4
+  artifacts\RimDevTools-Package-v1.0.5
 ```
 
 ## 目录结构
