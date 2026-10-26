@@ -15,6 +15,7 @@ public static class DoctorCommand
     };
     private static readonly HashSet<string> AlwaysVisibleChecks = new(StringComparer.OrdinalIgnoreCase)
     {
+        "config.game_version",
         "build.netfx_targeting_pack",
         "build.game_assembly.Assembly-CSharp",
         "build.harmony_assembly"
@@ -37,6 +38,15 @@ public static class DoctorCommand
             new("project.discovery", "available", true, context.ConfigPath),
             new("project.config_version", config.ConfigVersion == 2 ? "available" : "invalid", true, context.ConfigPath, config.ConfigVersion == 2 ? null : $"需要 config_version=2，当前为 {config.ConfigVersion}")
         };
+        var supportedGameVersion = RimWorldGameLayout.TryGet(config.GameVersion, out _);
+        var modernGameVersion = supportedGameVersion && RimWorldGameLayout.TryGet(config.GameVersion, out var configuredLayout) && configuredLayout.UsesModernRuntime;
+        checks.Add(new DoctorCheck(
+            "config.game_version",
+            supportedGameVersion ? "available" : "unsupported",
+            true,
+            context.ConfigPath,
+            supportedGameVersion ? null : $"game_version 必须明确为 {RimWorldGameLayout.SupportedVersionDescription}，当前为 {config.GameVersion ?? "未配置"}",
+            new { configured = config.GameVersion, supportedLayouts = RimWorldGameLayout.SupportedLayouts }));
         var templateIssues = ProjectTemplatePreflight.Inspect(context);
         checks.Add(new DoctorCheck(
             "project.template_configuration",
@@ -48,18 +58,26 @@ public static class DoctorCommand
         AddAboutChecks(checks, context.Root);
 
         var build = DotNetBuildEnvironmentInspector.InspectCurrent();
+        var hasCsproj = config.CsprojPaths.Count > 0;
+        var requiresNetFrameworkPack = hasCsproj && config.GameVersion == "1.6";
+        var hasVersionSdk = modernGameVersion
+            ? build.InstalledSdks.Any(sdk => sdk.StartsWith("10.", StringComparison.OrdinalIgnoreCase))
+            : build.HasSdk;
         var targetingPackMessage = build.TargetFrameworkVersion == "v4.7.2"
             ? @"已找到 .NET Framework 4.7.2 Developer/Targeting Pack，可满足编译条件；仍建议安装 .NET Framework 4.8。AI 可能需要将当前 C# 工程的 TargetFrameworkVersion 修改为 v4.7.2。"
             : build.HasSupportedNetFrameworkTargetingPack ? null : "未找到 .NET Framework 4.8 或 4.7.2 Developer/Targeting Pack";
-        checks.Add(new DoctorCheck(
-            "build.netfx_targeting_pack",
-            build.HasSupportedNetFrameworkTargetingPack ? "available" : "missing",
-            config.CsprojPaths.Count > 0,
-            build.TargetingPackPath,
-            targetingPackMessage,
-            new { frameworkVersion = build.TargetFrameworkVersion, preferredFrameworkVersion = "v4.8", supportedFrameworkVersions = DotNetBuildEnvironmentInspector.SupportedTargetFrameworkVersions }));
-        checks.Add(new DoctorCheck("build.dotnet", build.HasDotNet ? "available" : "missing", config.CsprojPaths.Count > 0, build.DotNetPath, build.HasDotNet ? null : "PATH 中未找到 dotnet.exe"));
-        checks.Add(new DoctorCheck("build.dotnet_sdk", build.HasSdk ? "available" : "missing", config.CsprojPaths.Count > 0, build.DotNetPath, build.HasSdk ? null : "dotnet 可用，但没有已安装的 SDK", new { sdks = build.InstalledSdks }));
+        if (!modernGameVersion || verbose)
+        {
+            checks.Add(new DoctorCheck(
+                "build.netfx_targeting_pack",
+                !requiresNetFrameworkPack ? "not_applicable" : build.HasSupportedNetFrameworkTargetingPack ? "available" : "missing",
+                requiresNetFrameworkPack,
+                build.TargetingPackPath,
+                requiresNetFrameworkPack ? targetingPackMessage : modernGameVersion && hasCsproj ? ".NET Framework targeting pack 不用于 RimWorld 1.7+ 布局" : null,
+                new { frameworkVersion = build.TargetFrameworkVersion, preferredFrameworkVersion = "v4.8", supportedFrameworkVersions = DotNetBuildEnvironmentInspector.SupportedTargetFrameworkVersions }));
+        }
+        checks.Add(new DoctorCheck("build.dotnet", !hasCsproj ? "not_applicable" : build.HasDotNet ? "available" : "missing", hasCsproj, build.DotNetPath, hasCsproj && !build.HasDotNet ? "PATH 中未找到 dotnet.exe" : null));
+        checks.Add(new DoctorCheck("build.dotnet_sdk", !hasCsproj ? "not_applicable" : hasVersionSdk ? "available" : "missing", hasCsproj, build.DotNetPath, !hasCsproj || hasVersionSdk ? null : modernGameVersion ? "RimWorld 1.7+ 布局工程需要 .NET 10 SDK" : "dotnet 可用，但没有已安装的 SDK", new { sdks = build.InstalledSdks, requiredMajor = modernGameVersion ? 10 : (int?)null }));
         AddProjectChecks(checks, context);
 
         var environment = RimWorldEnvironmentResolver.Resolve(context);
@@ -74,10 +92,17 @@ public static class DoctorCommand
             prohibitedLocations.Count == 0 ? null : new { locations = prohibitedLocations }));
         checks.Add(new DoctorCheck("steam.installation", steam.SteamRoot is null ? "missing" : "available", true, steam.SteamRoot, steam.SteamRoot is null ? "未发现 Steam 安装" : null));
         checks.Add(new DoctorCheck("steam.libraries", steam.LibraryRoots.Count == 0 ? "missing" : "available", true, steam.SteamRoot, steam.LibraryRoots.Count == 0 ? "未发现 Steam Library" : null, new { libraries = steam.LibraryRoots, diagnostics = steam.Diagnostics }));
-        checks.Add(new DoctorCheck("steam.rimworld_app", steam.AppManifestPath is null ? "missing" : "available", true, steam.AppManifestPath, steam.AppManifestPath is null ? "未发现结构完整的 Steam RimWorld app 294100 安装" : null));
-        AddPathCheck(checks, "game.directory", steam.RimWorldDirectory, true, PathKind.Directory, new { source = steam.RimWorldSource, configured = config.RimWorldDir });
-        AddPathCheck(checks, "game.executable", steam.RimWorldDirectory is null ? null : Path.Combine(steam.RimWorldDirectory, "RimWorldWin64.exe"), true, PathKind.File);
-        AddPathCheck(checks, "game.managed_directory", environment.References.ManagedDirectory, config.CsprojPaths.Count > 0, PathKind.Directory);
+        checks.Add(new DoctorCheck("steam.rimworld_app", steam.AppManifestPath is null ? "missing" : "available", true, steam.AppManifestPath, steam.AppManifestPath is null ? $"未发现与 RimWorld {config.GameVersion ?? "未配置"} 匹配的完整 Steam app 294100 安装" : null, new { expectedGameVersion = config.GameVersion, diagnostics = steam.Diagnostics }));
+        var configuredGameDirectory = ResolveConfiguredPath(config.RimWorldDir, context.Root);
+        var gameDirectoryStatus = steam.RimWorldDirectory is not null
+            ? "available"
+            : configuredGameDirectory is not null && Directory.Exists(configuredGameDirectory) ? "invalid" : "missing";
+        var gameDirectoryMessage = steam.RimWorldDirectory is not null
+            ? null
+            : RimWorldGameLayout.ValidateGameDirectory(configuredGameDirectory, config.GameVersion) ?? "未解析到与配置版本匹配的 RimWorld 安装目录";
+        checks.Add(new DoctorCheck("game.directory", gameDirectoryStatus, true, steam.RimWorldDirectory ?? configuredGameDirectory, gameDirectoryMessage, new { source = steam.RimWorldSource, configured = config.RimWorldDir, expectedGameVersion = config.GameVersion, detectedGameVersion = configuredGameDirectory is null ? null : RimWorldGameLayout.DetectVersion(configuredGameDirectory) }));
+        AddPathCheck(checks, "game.executable", environment.References.ExecutablePath, true, PathKind.File);
+        AddPathCheck(checks, "game.assembly_directory", environment.References.AssemblyDirectory, hasCsproj, PathKind.Directory, new { gameVersion = config.GameVersion });
         checks.Add(new DoctorCheck("steam.workshop", steam.WorkshopPaths.Count > 0 ? "available" : "missing", false, steam.WorkshopPaths.FirstOrDefault(), steam.WorkshopPaths.Count == 0 ? "未发现有效的 RimWorld Workshop content/294100 目录" : null, new { paths = steam.WorkshopPaths }));
         foreach (var assembly in environment.References.RequiredGameAssemblies)
             AddPathCheck(checks, $"build.game_assembly.{Path.GetFileNameWithoutExtension(assembly)}", assembly, config.CsprojPaths.Count > 0, PathKind.File);
@@ -95,7 +120,7 @@ public static class DoctorCommand
         checks.Add(new DoctorCheck("mods.metadata", environment.Mods.Diagnostics.Count == 0 ? "available" : "invalid", false, null, environment.Mods.Diagnostics.Count == 0 ? null : "部分模组 About.xml 无法解析", new { diagnostics = environment.Mods.Diagnostics }));
 
         AddConfigPathChecks(checks, context, environment);
-        AddUnityChecks(checks, context);
+        AddUnityChecks(checks, context, config.GameVersion);
         AddGitChecks(checks, context);
         AddRequiredModsCheck(checks, config, environment.Mods);
         var configDirectory = GameEnvironment.ConfigDirectory(context);
@@ -107,14 +132,13 @@ public static class DoctorCommand
         checks.Add(new DoctorCheck("deploy.protected_files_regex", regexStatus, true, null, regexMessage));
         AddPathCheck(checks, "mod.ilspy", ResolveIlspyPath(context), false, PathKind.File);
 
-        var logSync = environment.Mods.Find("trigger.logsyncmod");
-        checks.Add(new DoctorCheck("test.logsync_mod", logSync is null ? "missing" : "available", true, logSync?.Directory, logSync is null ? "未找到 trigger.logsyncmod" : null));
+        var testHost = TestHostResolver.Resolve(environment, config.GameVersion);
+        checks.Add(new DoctorCheck("test.logsync_mod", testHost.LogSyncMod is null ? "missing" : testHost.LogSyncAssemblyPath is null ? "unsupported" : "available", false, testHost.LogSyncAssemblyPath ?? testHost.LogSyncMod?.Directory, testHost.LogSyncMessage, new { gameVersion = config.GameVersion }));
         var logSyncSettings = GameEnvironment.LogSyncSettingsPath(context);
         checks.Add(new DoctorCheck("test.logsync_settings", File.Exists(logSyncSettings) ? "available" : "not_applicable", false, logSyncSettings, File.Exists(logSyncSettings) ? null : "设置文件尚不存在；test run 会在事务内临时创建"));
-        var autoTestAssembly = logSync is null ? null : SafeFind(logSync.Directory, "*AutoTest*.dll");
-        checks.Add(new DoctorCheck("test.autotest_extension", autoTestAssembly is null ? "missing" : "available", true, autoTestAssembly, autoTestAssembly is null ? "LogSync 模组中未发现 AutoTest 程序集" : null));
+        checks.Add(new DoctorCheck("test.autotest_extension", testHost.AutoTestAssemblyPath is null ? "missing" : "available", false, testHost.AutoTestAssemblyPath, testHost.AutoTestMessage ?? "AutoTestRunner 仅在显式运行 auto/XML 测试时需要；项目不要求 AutoTest XML", new { gameVersion = config.GameVersion }));
 
-        AddToolModChecks(checks, environment.Mods);
+        AddToolModChecks(checks, environment.Mods, config.GameVersion);
         var lockPath = configDirectory is null ? null : Path.Combine(configDirectory, "RimDevTools.lock.json");
         var lockBusy = configDirectory is not null && EnvironmentLock.IsBusy(configDirectory);
         checks.Add(new DoctorCheck("environment.lock", lockBusy ? "busy" : File.Exists(lockPath) ? "stale" : "available", false, lockPath, lockBusy ? "RimWorld 环境互斥锁正被占用" : File.Exists(lockPath) ? "互斥锁未占用，但存在遗留诊断文件" : null));
@@ -185,21 +209,23 @@ public static class DoctorCommand
     private static void AddProjectChecks(List<DoctorCheck> checks, ProjectContext context)
     {
         foreach (var projectFile in context.Config.CsprojPaths)
-            checks.Add(EvaluateProjectCheck(context.Root, projectFile));
+            checks.Add(EvaluateProjectCheck(context.Root, projectFile, context.Config.GameVersion));
     }
 
     private static void AddConfigPathChecks(List<DoctorCheck> checks, ProjectContext context, RimWorldEnvironmentResolution environment)
     {
         var configuredGame = context.Config.RimWorldDir;
         var gamePath = ResolveConfiguredPath(configuredGame, context.Root);
-        var gameValid = gamePath is not null && File.Exists(Path.Combine(gamePath, "RimWorldWin64.exe"));
+        var gameValidation = RimWorldGameLayout.ValidateGameDirectory(gamePath, context.Config.GameVersion);
+        var gameValid = gameValidation is null;
+        var gameStatus = gameValid ? "available" : gamePath is null || !Directory.Exists(gamePath) ? "missing" : "invalid";
         checks.Add(new DoctorCheck(
             "config.rimworld_dir",
-            gameValid ? "available" : string.IsNullOrWhiteSpace(configuredGame) || gamePath is not null ? "missing" : "invalid",
+            gameStatus,
             true,
             gamePath,
-            gameValid ? null : RecommendPath("rimworld_dir 未指向有效的 RimWorld 安装目录", environment.References.RimWorldDirectory),
-            SuggestedPathDetails(environment.References.RimWorldDirectory)));
+            gameValid ? null : RecommendPath($"rimworld_dir 与 game_version={context.Config.GameVersion ?? "未配置"} 不匹配: {gameValidation}", environment.References.RimWorldDirectory),
+            new { expectedGameVersion = context.Config.GameVersion, detectedGameVersion = gamePath is null ? null : RimWorldGameLayout.DetectVersion(gamePath), suggestedPath = environment.References.RimWorldDirectory }));
 
         foreach (var pair in context.Config.WorkshopPaths.Select((path, index) => new { path, index }))
         {
@@ -254,7 +280,7 @@ public static class DoctorCommand
             checks.Add(new DoctorCheck(
                 "mods.min_active_enabled",
                 "invalid",
-                true,
+                false,
                 null,
                 error?.Message ?? "无法解析测试启用模组列表",
                 error?.Details));
@@ -264,7 +290,7 @@ public static class DoctorCommand
         checks.Add(new DoctorCheck(
             "mods.min_active_enabled",
             "available",
-            true,
+            false,
             null,
             "测试会用此列表替换 ModsConfig.xml 的 activeMods",
             new { activeMods = resolution.Mods, additions = resolution.Additions }));
@@ -288,7 +314,7 @@ public static class DoctorCommand
             ? $"{message}；建议改为: {suggestedPath}"
             : message;
 
-    internal static DoctorCheck EvaluateProjectCheck(string projectRoot, string projectFile)
+    internal static DoctorCheck EvaluateProjectCheck(string projectRoot, string projectFile, string? gameVersion = "1.6")
     {
         var path = Path.GetFullPath(projectFile, projectRoot);
         if (!PathSafety.IsWithin(path, projectRoot))
@@ -298,15 +324,27 @@ public static class DoctorCommand
 
         try
         {
-            var target = XDocument.Load(path).Descendants().FirstOrDefault(element => element.Name.LocalName == "TargetFrameworkVersion")?.Value.Trim();
-            var supported = DotNetBuildEnvironmentInspector.SupportedTargetFrameworkVersions.Contains(target, StringComparer.OrdinalIgnoreCase);
-            var message = target == "v4.7.2" ? "工程目标为 .NET Framework 4.7.2，满足编译条件；仍建议优先使用 .NET Framework 4.8" : null;
+            var targets = XDocument.Load(path).Descendants()
+                .Where(element => element.Name.LocalName is "TargetFrameworkVersion" or "TargetFramework" or "TargetFrameworks")
+                .SelectMany(element => element.Value.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            var isSupportedVersion = RimWorldGameLayout.TryGet(gameVersion, out var layout);
+            var supported = isSupportedVersion && (layout.UsesNetFramework
+                ? targets.Any(IsSupportedNetFrameworkTarget)
+                : targets.Any(IsSupportedNet10Target));
+            var hasNet472 = targets.Any(target => target.Equals("v4.7.2", StringComparison.OrdinalIgnoreCase) || target.Equals("net472", StringComparison.OrdinalIgnoreCase));
+            var targetDescription = targets.Length == 0 ? "未声明" : string.Join(", ", targets);
+            var message = gameVersion == "1.6" && hasNet472 ? "工程目标为 .NET Framework 4.7.2，满足编译条件；仍建议优先使用 .NET Framework 4.8" : null;
+            var expected = isSupportedVersion && layout.UsesNetFramework
+                ? ".NET Framework 4.8、4.7.2、net48 或 net472"
+                : isSupportedVersion ? ".NET 10 (net10.0；适用于 1.7+ 布局)" : "明确支持的 game_version 与对应目标框架";
             return new DoctorCheck(
                 $"build.csproj.{projectFile}",
                 supported ? "available" : "unsupported",
                 true,
                 path,
-                supported ? message : $"工程必须目标为 .NET Framework 4.8 或 4.7.2，当前为 {target ?? "未声明"}");
+                supported ? message : $"RimWorld {gameVersion ?? "未知版本"} 工程需要 {expected}，当前为 {targetDescription}");
         }
         catch (Exception ex)
         {
@@ -314,8 +352,23 @@ public static class DoctorCommand
         }
     }
 
-    private static void AddUnityChecks(List<DoctorCheck> checks, ProjectContext context)
+    private static bool IsSupportedNetFrameworkTarget(string target)
+        => DotNetBuildEnvironmentInspector.SupportedTargetFrameworkVersions.Contains(target, StringComparer.OrdinalIgnoreCase)
+            || target.Equals("net48", StringComparison.OrdinalIgnoreCase)
+            || target.Equals("net472", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsSupportedNet10Target(string target)
+        => target.Equals("net10.0", StringComparison.OrdinalIgnoreCase)
+            || target.StartsWith("net10.0-", StringComparison.OrdinalIgnoreCase);
+
+    private static void AddUnityChecks(List<DoctorCheck> checks, ProjectContext context, string? gameVersion)
     {
+        if (context.Config.ShaderBundle.Enabled && gameVersion != "1.6")
+        {
+            checks.Add(new DoctorCheck("deploy.shader_bundle_version", "unsupported", true, null, "RimDevTools 的 Unity Shader Bundle 构建仅适用于 RimWorld 1.6；1.7 应使用原生 GLSL/ShaderDef 流程。", new { gameVersion }));
+            return;
+        }
+
         var configured = context.Config.ShaderBundle.UnityExePath;
         var candidates = new[] { configured, Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Unity", "Hub", "Editor") }.Where(path => !string.IsNullOrWhiteSpace(path)).ToArray();
         var unity = candidates.FirstOrDefault(File.Exists);
@@ -363,45 +416,62 @@ public static class DoctorCommand
         checks.Add(new DoctorCheck(
             "mods.min_active_required",
             missingBootstrap.Length == 0 ? "available" : "missing",
-            true,
+            false,
             null,
             missingBootstrap.Length == 0 ? null : "min_active_mods 未包含测试启动必须模组",
             new { requiredPackageIds = ModListParser.RequiredStartupMods, missingPackageIds = missingBootstrap }));
 
         var missing = config.MinActiveMods.Where(packageId => mods.Find(packageId) is null).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-        checks.Add(new DoctorCheck("mods.required", missing.Length == 0 ? "available" : "missing", true, null, missing.Length == 0 ? null : "部分 min_active_mods 无法解析", new { missingPackageIds = missing }));
+        checks.Add(new DoctorCheck("mods.required", missing.Length == 0 ? "available" : "missing", false, null, missing.Length == 0 ? null : "部分测试用 min_active_mods 无法解析；这不会阻止普通构建或部署", new { missingPackageIds = missing }));
     }
 
-    private static void AddToolModChecks(List<DoctorCheck> checks, ModInstallationIndex mods)
+    private static void AddToolModChecks(List<DoctorCheck> checks, ModInstallationIndex mods, string? gameVersion)
     {
         var dataRoot = ToolComponentLocator.ToolDataPath();
         var manifestPath = Path.Combine(dataRoot, "tool-mods.manifest.json");
         if (!File.Exists(manifestPath))
         {
-            checks.Add(new DoctorCheck("tools.mod_components", "missing", true, manifestPath, "未发现随包工具 Mod 清单"));
+            checks.Add(new DoctorCheck("tools.mod_components", "missing", false, manifestPath, "未发现可选测试工具 Mod 清单"));
             return;
         }
         try
         {
             var manifest = ToolModManifestReader.Load(manifestPath);
-            checks.Add(new DoctorCheck("tools.mod_components", "available", true, manifestPath, Details: new { count = manifest.Components.Count }));
+            checks.Add(new DoctorCheck("tools.mod_components", "available", false, manifestPath, Details: new { count = manifest.Components.Count }));
             foreach (var component in manifest.Components)
             {
                 var source = Path.Combine(dataRoot, component.Folder);
                 var sourceHash = Directory.Exists(source) ? DirectoryHasher.Compute(source) : null;
                 var sourceAvailable = sourceHash?.Equals(component.ContentHash, StringComparison.OrdinalIgnoreCase) == true;
+                var sourceAssembly = Directory.Exists(source) && RimWorldGameLayout.TryGet(gameVersion, out _)
+                    ? ModAssemblyResolver.Resolve(source, gameVersion, Path.GetFileName(component.PrimaryAssembly)).AssemblyPath
+                    : null;
+                var sourceStatus = !RimWorldGameLayout.TryGet(gameVersion, out _) ? "not_applicable"
+                    : !Directory.Exists(source) ? "missing"
+                    : sourceAssembly is null ? "unsupported"
+                    : sourceAvailable ? "available" : "invalid";
                 checks.Add(new DoctorCheck(
                     $"tools.component.{component.PackageId.ToLowerInvariant()}",
-                    sourceAvailable ? "available" : Directory.Exists(source) ? "invalid" : "missing",
-                    true,
+                    sourceStatus,
+                    false,
                     source,
-                    sourceAvailable ? null : "随包工具 Mod 缺失或内容哈希不匹配",
-                    new { component.Version, expectedHash = component.ContentHash, actualHash = sourceHash }));
+                    sourceStatus switch
+                    {
+                        "missing" => "随包测试工具 Mod 文件缺失",
+                        "unsupported" => $"随包工具 Mod 没有 RimWorld {gameVersion} 对应程序集",
+                        "invalid" => "随包工具 Mod 内容哈希不匹配",
+                        _ => null
+                    },
+                    new { component.Version, gameVersion, expectedHash = component.ContentHash, actualHash = sourceHash }));
 
                 var installed = mods.Find(component.PackageId);
-                var installedVersion = installed is null ? null : ToolModVersion.Read(installed.Directory, component.PrimaryAssembly);
+                var installedAssembly = installed is null || !RimWorldGameLayout.TryGet(gameVersion, out _)
+                    ? null
+                    : ModAssemblyResolver.Resolve(installed.Directory, gameVersion, Path.GetFileName(component.PrimaryAssembly)).AssemblyPath;
+                var installedVersion = installedAssembly is null ? null : ToolModVersion.Read(installed!.Directory, component.PrimaryAssembly);
                 var installedStatus = installed is null
                     ? "missing"
+                    : installedAssembly is null ? "unsupported"
                     : installedVersion is null
                         ? "invalid"
                         : ToolModVersion.Compare(installedVersion, component.Version) < 0 ? "stale" : "available";
@@ -409,14 +479,14 @@ public static class DoctorCommand
                     $"mods.tool.{component.PackageId.ToLowerInvariant()}",
                     installedStatus,
                     false,
-                    installed?.Directory,
-                    installed is null ? "工具 Mod 尚未安装；可运行 mods install-tools" : installedStatus == "stale" ? "已安装版本低于随包版本" : null,
-                    new { packagedVersion = component.Version, installedVersion }));
+                    installedAssembly ?? installed?.Directory,
+                    installed is null ? "可选测试工具 Mod 尚未安装" : installedAssembly is null ? $"已安装工具 Mod 不含 RimWorld {gameVersion} 对应程序集" : installedStatus == "stale" ? "已安装版本低于随包版本" : null,
+                    new { gameVersion, packagedVersion = component.Version, installedVersion }));
             }
         }
         catch (Exception ex)
         {
-            checks.Add(new DoctorCheck("tools.mod_components", "invalid", true, manifestPath, ex.Message));
+            checks.Add(new DoctorCheck("tools.mod_components", "invalid", false, manifestPath, ex.Message));
         }
     }
 

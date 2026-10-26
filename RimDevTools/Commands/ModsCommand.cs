@@ -34,9 +34,18 @@ public static class ModsCommand
             return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "MODS_PATH_UNSAFE", ex.Message, context?.Root);
         }
 
+        var targetGameDirectory = Directory.GetParent(Path.TrimEndingDirectorySeparator(modsPath))?.FullName;
+        var detectedGameLayout = targetGameDirectory is null ? null : RimWorldGameLayout.DetectVersion(targetGameDirectory);
+        var expectedGameVersion = context?.Config.GameVersion ?? (detectedGameLayout == "1.6" ? "1.6" : null);
+        if (!RimWorldGameLayout.TryGet(expectedGameVersion, out _))
+            return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "GAME_VERSION_UNRESOLVED", "无法从项目配置或目标游戏目录确定准确 RimWorld 版本；现代游戏目录需要由项目 game_version 指定 1.7、1.8 等具体版本", context?.Root, new { modsPath, targetGameDirectory, detectedGameLayout, configuredGameVersion = context?.Config.GameVersion });
+        var targetVersionError = RimWorldGameLayout.ValidateGameDirectory(targetGameDirectory, expectedGameVersion);
+        if (targetVersionError is not null)
+            return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "GAME_VERSION_MISMATCH", $"工具 Mod 目标游戏目录与项目版本不匹配: {targetVersionError}", context?.Root, new { modsPath, targetGameDirectory, detectedGameLayout, expectedGameVersion });
+
         var dataRoot = ToolComponentLocator.ToolDataPath();
         ToolModDeploymentPlan plan;
-        try { plan = AddWorkshopWarnings(ToolModInstaller.Plan(dataRoot, modsPath), context); }
+        try { plan = AddWorkshopWarnings(ToolModInstaller.Plan(dataRoot, modsPath, expectedGameVersion), context); }
         catch (ToolModDeploymentException ex)
         {
             return CliResult.WriteFailure(command, ExitCodes.TaskFailed, ex.Code, ex.Message, context?.Root);
@@ -61,7 +70,7 @@ public static class ModsCommand
         {
             if (!await ProcessUtil.WaitForRimWorldExitAsync(config.Timeouts.ExistingGameExit, config.Timeouts.PostExitDelay, cancellationToken))
                 return CliResult.WriteFailure(command, ExitCodes.Timeout, "GAME_EXIT_TIMEOUT", "等待已有 RimWorld 退出超时", context?.Root);
-            plan = AddWorkshopWarnings(ToolModInstaller.Plan(dataRoot, modsPath), context);
+            plan = AddWorkshopWarnings(ToolModInstaller.Plan(dataRoot, modsPath, expectedGameVersion), context);
             if (HasBlockingConflict(plan))
                 return CliResult.WriteFailure(command, ExitCodes.TaskFailed, "INSTALL_PLAN_CONFLICT", "取得环境锁后检测到工具 Mod 安装冲突", context?.Root, new { runId, plan = FormatPlan(plan, verbose) });
             var results = ToolModInstaller.Install(plan, runId);

@@ -52,7 +52,7 @@ mod dependents <query> [--version <value>] [--fuzzy] [--verbose]
 test settings [--verbose]
 test run [--deploy] [--sync-source] [--mode quick|manual|auto|xml]
          [--active-mods-file <path>] [--timeout-seconds <n>]
-         [--target-package-id <id>] [--capture-screenshots]
+         [--target-package-id <id>]
          [--scope <value>]... [--defname <value>]... [--batch-size <n>]
          [--isolated-desktop|--no-isolated-desktop] [--verbose]
 test cleanup [--dry-run] [--status] [--verbose]
@@ -60,7 +60,7 @@ test cleanup [--dry-run] [--status] [--verbose]
 
 `test settings` 是持久化 LogSync 设置命令，不会启动测试。它会等待已有 RimWorld 退出、取得共享环境锁，然后把日志路径设置为当前项目的 `.tools/log/精选日志.log`，把 `mod_config.jsonc.log_keywords` 写入 LogSync，并更新自动测试输出路径、开关和筛选设置。写入不会像 `test run` 一样在结束后自动恢复，适合准备一次由用户手动启动的 RimWorld 会话；正常自动测试应使用 `test run`，由事务临时应用并恢复设置。
 
-quick 是启动冒烟测试。manual 是用户手动的。auto 和 XML 验证结构化的 AutoTest 结果。`--capture-screenshots` 仅适用于 auto/XML。隔离优先级为显式标志、项目设置，然后是模式默认值。`test run` 不接受 `--xml-hot`；`test run --deploy` 会先关闭已有 RimWorld，再在启动测试进程前执行普通构建和逐文件事务部署。
+quick 是启动冒烟测试。manual 是用户手动的。auto 和 XML 验证结构化的 AutoTest 结果。auto 模式默认截图；XML 驱动测试按每条测试定义的 `captureScreenshots` 设置截图，不需要截图命令行开关。隔离优先级为显式标志、项目设置，然后是模式默认值。`test run` 不接受 `--xml-hot`；`test run --deploy` 会先关闭已有 RimWorld，再在启动测试进程前执行普通构建和逐文件事务部署。
 
 `test run` 默认输出运行结果、测试信号、模组数量和依赖 warning；`--verbose` 附加完整启用模组列表、设置时新增的模组以及部署子进程诊断。
 

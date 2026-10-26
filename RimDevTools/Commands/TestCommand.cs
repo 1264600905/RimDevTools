@@ -168,6 +168,10 @@ public static class TestCommand
         var templateError = ProjectTemplatePreflight.Validate(context);
         if (templateError is not null)
             return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, templateError.Code, templateError.Message, context.Root, templateError.Details);
+        var settingsEnvironment = RimWorldEnvironmentResolver.Resolve(context);
+        var settingsHostError = TestHostResolver.Resolve(settingsEnvironment, context.Config.GameVersion).Validate("quick");
+        if (settingsHostError is not null)
+            return CliResult.WriteFailure(command, ExitCodes.MissingDependency, settingsHostError.Code, settingsHostError.Message, context.Root);
         var modsConfigValidation = GameEnvironment.ValidateModsConfig(context);
         if (!modsConfigValidation.Ok)
             return CliResult.WriteFailure(command, ExitCodes.MissingDependency, modsConfigValidation.Code!, modsConfigValidation.Message!, context.Root, modsConfigValidation.Details);
@@ -231,8 +235,6 @@ public static class TestCommand
             return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "MODE_INVALID", $"不支持的测试模式: {mode}", context.Root);
         if (!AutoTestSelectionParser.TryParse(args, mode, out var selection, out var selectionError))
             return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "INVALID_ARGUMENT", selectionError!, context.Root);
-        if (CliArgs.Has(args, "--capture-screenshots") && mode is not ("auto" or "xml"))
-            return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "INVALID_ARGUMENT", "--capture-screenshots 仅适用于 --mode auto 或 --mode xml。示例：RimDevTools.exe test run --mode auto --capture-screenshots", context.Root);
         if (CliArgs.Has(args, "--batch-size") && mode is not ("auto" or "xml"))
             return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "INVALID_ARGUMENT", "--batch-size 仅适用于 --mode auto 或 --mode xml", context.Root);
         if (CliArgs.Has(args, "--sync-source") && !CliArgs.Has(args, "--deploy"))
@@ -254,11 +256,16 @@ public static class TestCommand
         if (string.IsNullOrWhiteSpace(targetPackageId)) targetPackageId = context.Config.CurrentPackageId(context.Root);
         if (string.IsNullOrWhiteSpace(targetPackageId))
             return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "TARGET_PACKAGE_ID_MISSING", "无法确定自动测试目标；请提供 --target-package-id", context.Root);
-        var captureScreenshots = CliArgs.Has(args, "--capture-screenshots");
-
-        var gamePath = Path.Combine(context.Config.RimWorldDir ?? "", "RimWorldWin64.exe");
-        if (!File.Exists(gamePath))
-            return CliResult.WriteFailure(command, ExitCodes.MissingDependency, "GAME_NOT_FOUND", $"找不到游戏可执行文件: {gamePath}", context.Root);
+        if (!RimWorldGameLayout.TryGet(context.Config.GameVersion, out _))
+            return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "GAME_VERSION_UNSUPPORTED", $"不支持 game_version={context.Config.GameVersion ?? "未配置"}", context.Root);
+        var environment = RimWorldEnvironmentResolver.Resolve(context);
+        var gamePath = environment.References.ExecutablePath;
+        if (gamePath is null || !File.Exists(gamePath))
+            return CliResult.WriteFailure(command, ExitCodes.MissingDependency, "GAME_VERSION_MISMATCH", RimWorldGameLayout.ValidateGameDirectory(context.Config.RimWorldDir, context.Config.GameVersion) ?? "未能解析与所选版本匹配的 RimWorld 可执行文件", context.Root, new { expectedGameVersion = context.Config.GameVersion, configured = context.Config.RimWorldDir, diagnostics = environment.Steam.Diagnostics });
+        var testHost = TestHostResolver.Resolve(environment, context.Config.GameVersion);
+        var testHostError = testHost.Validate(mode);
+        if (testHostError is not null)
+            return CliResult.WriteFailure(command, ExitCodes.MissingDependency, testHostError.Code, testHostError.Message, context.Root, new { gameVersion = context.Config.GameVersion, logSyncPath = testHost.LogSyncAssemblyPath, autoTestPath = testHost.AutoTestAssemblyPath });
         var steam = SteamSessionGuard.CheckForLaunch();
         if (!steam.IsRunning)
             return CliResult.WriteFailure(command, ExitCodes.GameFailed, steam.Code, steam.Message, context.Root, new { steam.IsRunning, steam.SteamRoot, steam.LoginUsersPath });
@@ -308,11 +315,11 @@ public static class TestCommand
                 runId,
                 [modsConfigPath, logSyncSettingsPath]);
             await transaction.WriteAllTextAsync(modsConfigPath, ModListParser.Render(modsConfigPath, modList.Mods));
-            await SettingsEditor.UpdateAsync(context, mode, transaction, runId, targetPackageId, captureScreenshots, muteAudio: mode != "manual", selection.Scopes, selection.HasExplicitScopes, selection.DefNames, batchSize, artifacts: artifacts);
+            await SettingsEditor.UpdateAsync(context, mode, transaction, runId, targetPackageId, muteAudio: mode != "manual", scopes: selection.Scopes, hasExplicitScopes: selection.HasExplicitScopes, defNames: selection.DefNames, batchSize: batchSize, artifacts: artifacts);
 
             var gameArguments = new List<string> { "-popupwindow" };
             if (mode is "auto" or "xml") gameArguments.Add("quicktest");
-            gameSession = GameProcessLauncher.Start(gamePath, context.Config.RimWorldDir, gameArguments, isolation.Enabled, runId);
+            gameSession = GameProcessLauncher.Start(gamePath, environment.References.RimWorldDirectory, gameArguments, isolation.Enabled, runId);
             outcome = await WaitForModeAsync(mode, gameSession.Process, timeout, syncLogPath, logOffset, outputPath, targetPackageId, runId, resultSnapshot, cancellationToken, verbose);
         }
         catch (OperationCanceledException)
@@ -407,7 +414,7 @@ public static class TestCommand
             scopes = selection.Scopes,
             defNames = verbose ? selection.DefNames : null,
             batchSize,
-            captureScreenshots,
+            captureScreenshots = mode is "auto" or "xml",
             isolatedDesktop = isolation.Enabled,
             isolatedDesktopSource = isolation.Source,
             activeModCount = modList.Mods.Count,
@@ -800,7 +807,7 @@ public static class SettingsEditor
     public static string SyncLogPath(ProjectContext context) => Path.Combine(TestArtifactPaths.LogRoot(context), "精选日志.log");
     public static string AutoTestOutputPath(ProjectContext context) => Path.Combine(TestArtifactPaths.LogRoot(context), "AutoTestOutput");
 
-    public static async Task<bool> UpdateAsync(ProjectContext context, string mode, ConfigTransaction? transaction = null, string? runId = null, string? targetPackageId = null, bool captureScreenshots = false, bool? muteAudio = null, IReadOnlyList<string>? scopes = null, bool hasExplicitScopes = false, IReadOnlyList<string>? defNames = null, int? batchSize = null, TestArtifactPaths? artifacts = null)
+    public static async Task<bool> UpdateAsync(ProjectContext context, string mode, ConfigTransaction? transaction = null, string? runId = null, string? targetPackageId = null, bool? muteAudio = null, IReadOnlyList<string>? scopes = null, bool hasExplicitScopes = false, IReadOnlyList<string>? defNames = null, int? batchSize = null, TestArtifactPaths? artifacts = null)
     {
         var path = GameEnvironment.LogSyncSettingsPath(context) ?? throw new InvalidOperationException("mods_config_path 未配置或无效");
         var document = File.Exists(path)
@@ -831,7 +838,7 @@ public static class SettingsEditor
             ? SetList(settings, "autoTestTargetDefNames", effectiveDefNames)
             : Remove(settings, "autoTestTargetDefNames");
         if (auto && batchSize.HasValue) changed |= Set(settings, "autoTestBatchSize", Math.Max(1, batchSize.Value).ToString());
-        changed |= Set(settings, "autoTestCaptureScreenshots", auto && captureScreenshots ? "True" : "False");
+        changed |= Set(settings, "autoTestCaptureScreenshots", "True");
         changed |= Set(settings, "autoTestPreventPause", "True");
         changed |= Set(settings, "autoTestUseFastSpeed", "True");
         changed |= Set(settings, "testMuteAudio", muteAudio == true ? "True" : "False");

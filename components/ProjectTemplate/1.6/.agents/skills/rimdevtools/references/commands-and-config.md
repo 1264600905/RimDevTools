@@ -10,7 +10,7 @@
 
 ### `doctor [--verbose]`
 
-检查 About.xml/Preview.png、构建前提条件、Steam/RimWorld/创意工坊发现、项目目录安全性、游戏与 Harmony 程序集、Unity、Git/工作树状态、必需模组、ILSpy、LogSync、AutoTest、打包的工具模组、锁和事务。缺少 About 文件或 Preview.png 不小于 1 MiB 时只给出 warning。项目不能位于 RimWorld `Mods` 或 Steam Workshop 内容目录。它是只读的，不探测 RimSage。默认输出包含可操作检查项和关键程序集路径，默认会自动隐藏满足条件的选项；`--verbose` 显示所有检查结果，包括已经满足选项。
+检查所选游戏版本对应的路径和构建目标框架、About.xml/Preview.png、Steam/RimWorld/创意工坊发现、项目目录安全性、游戏与 Harmony 程序集、Unity Shader Bundle 版本、Git/工作树状态、ILSpy、可选的 LogSync/AutoTest 测试宿主、锁和事务。测试宿主与 `min_active_mods` 是可选测试前提，不是普通模组工程的必需组件；AutoTest XML 仅在显式 XML 测试时使用。缺少 About 文件或 Preview.png 不小于 1 MiB 时只给出 warning。项目不能位于 RimWorld `Mods` 或 Steam Workshop 内容目录。它是只读的，不探测 RimSage。默认输出包含可操作检查项和关键程序集路径，默认会自动隐藏满足条件的选项；`--verbose` 显示所有检查结果，包括已经满足选项。
 
 ### `deploy [--sync-source] [--dry-run]`
 
@@ -47,14 +47,14 @@ mod dependents <query> [--version <value>] [--fuzzy]
 test settings
 test run [--deploy] [--sync-source] [--mode quick|manual|auto|xml]
          [--active-mods-file <path>] [--timeout-seconds <n>]
-         [--target-package-id <id>] [--capture-screenshots]
+         [--target-package-id <id>]
          [--scope <value>]... [--defname <value>]... [--batch-size <n>]
          [--isolated-desktop|--no-isolated-desktop]
 ```
 
 `test settings` 是持久化 LogSync 设置命令，不会启动测试。它会等待已有 RimWorld 退出、取得共享环境锁，然后把日志路径设置为当前项目的 `.tools/log/精选日志.log`，把 `mod_config.jsonc.log_keywords` 写入 LogSync，并更新自动测试输出路径、开关和筛选设置。写入不会像 `test run` 一样在结束后自动恢复，适合准备一次由用户手动启动的 RimWorld 会话；正常自动测试应使用 `test run`，由事务临时应用并恢复设置。
 
-quick 是启动冒烟测试。manual 是用户手动的。auto 和 XML 验证结构化的 AutoTest 结果。`--capture-screenshots` 仅适用于 auto/XML。隔离优先级为显式标志、项目设置，然后是模式默认值。
+quick 是启动冒烟测试。manual 是用户手动的。auto 和 XML 验证结构化的 AutoTest 结果。auto 模式默认截图；XML 驱动测试按每条测试定义的 `captureScreenshots` 设置截图，不需要截图命令行开关。隔离优先级为显式标志、项目设置，然后是模式默认值。
 
 `--scope` 可在 auto/XML 中重复，多个 scope 取并集。正式值为 `standard`、`ui`、`combat`、`view`、`misc`；旧细分值继续以原窄范围语义兼容。未传时默认为 `Standard`；Standard 横跨四类常规测试，但不隐式启用 CombatPawns 或 SkillPocketMaps。
 

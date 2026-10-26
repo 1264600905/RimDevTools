@@ -58,7 +58,11 @@ public static class SteamInstallationResolver
 {
     private const string RimWorldAppId = "294100";
 
-    public static SteamInstallationResult Resolve(string? configuredRimWorldDirectory, IEnumerable<string> configuredWorkshopPaths, SteamResolverInput? input = null)
+    public static SteamInstallationResult Resolve(
+        string? configuredRimWorldDirectory,
+        IEnumerable<string> configuredWorkshopPaths,
+        SteamResolverInput? input = null,
+        string? expectedGameVersion = null)
     {
         input ??= DefaultInput();
         var diagnostics = new List<SteamDiagnostic>();
@@ -110,7 +114,8 @@ public static class SteamInstallationResolver
                 var installDir = appState.Scalar("installdir");
                 if (string.IsNullOrWhiteSpace(installDir)) throw new InvalidDataException("appmanifest 缺少 installdir");
                 var candidate = Path.Combine(library, "steamapps", "common", installDir);
-                if (!HasGameStructure(candidate)) throw new InvalidDataException($"RimWorld 安装结构不完整: {candidate}");
+                var layoutError = RimWorldGameLayout.ValidateGameDirectory(candidate, expectedGameVersion);
+                if (layoutError is not null) throw new InvalidDataException($"{layoutError}: {candidate}");
                 discoveredGame = Path.GetFullPath(candidate);
                 manifestPath = candidateManifest;
                 break;
@@ -122,9 +127,13 @@ public static class SteamInstallationResolver
         }
 
         var configuredGame = NormalizePath(configuredRimWorldDirectory);
-        var configuredGameValid = configuredGame is not null && HasGameStructure(configuredGame);
-        if (configuredGame is not null && !configuredGameValid) diagnostics.Add(new SteamDiagnostic(configuredGame, "配置的 rimworld_dir 不存在或安装结构不完整"));
-        var game = configuredGameValid ? configuredGame : discoveredGame;
+        var configuredGameError = configuredGame is null
+            ? null
+            : RimWorldGameLayout.ValidateGameDirectory(configuredGame, expectedGameVersion);
+        var configuredGameValid = configuredGame is not null && configuredGameError is null;
+        if (configuredGame is not null && !configuredGameValid)
+            diagnostics.Add(new SteamDiagnostic(configuredGame, configuredGameError ?? "配置的 rimworld_dir 不存在或安装结构不完整"));
+        var game = configuredGameValid ? configuredGame : configuredGame is null ? discoveredGame : null;
         var source = configuredGameValid ? "configured" : discoveredGame is not null ? "steam" : null;
 
         var workshopPaths = configuredWorkshopPaths
@@ -139,9 +148,10 @@ public static class SteamInstallationResolver
     }
 
     public static bool HasGameStructure(string path)
-        => Directory.Exists(path)
-            && File.Exists(Path.Combine(path, "RimWorldWin64.exe"))
-            && Directory.Exists(Path.Combine(path, "RimWorldWin64_Data", "Managed"));
+        => RimWorldGameLayout.DetectVersion(path) is not null;
+
+    public static bool HasGameStructure(string path, string? expectedGameVersion)
+        => RimWorldGameLayout.ValidateGameDirectory(path, expectedGameVersion) is null;
 
     private static SteamResolverInput DefaultInput()
     {

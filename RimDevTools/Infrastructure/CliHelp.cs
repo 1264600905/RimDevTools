@@ -96,10 +96,10 @@ public static class CliHelp
           -h, --help          Show this help.
 
         Checks:
-          .NET Framework 4.8 (preferred) or 4.7.2 build prerequisites, Steam libraries and RimWorld app 294100,
-          About.xml/Preview.png, real game/Harmony assemblies, Harmony DLL version, Unity,
-          Git/worktree, required mods, ILSpy, LogSync, AutoTest, packaged tool mods, lock,
-          and recoverable transactions.
+          Configured game version and its matching 1.6 or 1.7+ layout/target framework, Steam libraries
+          and RimWorld app 294100, About.xml/Preview.png, game/Harmony assemblies, Harmony DLL version,
+          Unity shader-bundle compatibility, Git/worktree, ILSpy, optional test-host readiness,
+          lock, and recoverable transactions. Test mods and AutoTest XML are not project prerequisites.
 
         Output:
           JSON ready/issueCount/warningCount summary. By default checks contains items that
@@ -293,7 +293,6 @@ public static class CliHelp
           --scope <value>             Repeatable auto/xml scope; defaults to Standard.
           --defname <value>           Repeatable auto-mode DefName allowlist.
           --batch-size <n>            Positive auto/xml random-case limit; defaults to 40.
-          --capture-screenshots       Enable AutoTest screenshots for auto/xml only.
           --isolated-desktop          Force a private Windows desktop for this run.
           --no-isolated-desktop       Force the current visible desktop for this run.
           --verbose                  Include the active mod list, additions, and deploy diagnostics.
@@ -320,6 +319,9 @@ public static class CliHelp
           Auto/XML runs, including Standard, plan at most --batch-size cases.
           If more candidates are available, targets are sampled uniformly at random without replacement.
           Explicit --defname runs ignore the batch limit.
+
+        Screenshot behavior:
+          Automatic tests enable screenshots by default. XML-driven tests follow each spec's captureScreenshots setting.
 
         Output:
           Default JSON includes runId, mode, target, mod/addition counts, isolation source,

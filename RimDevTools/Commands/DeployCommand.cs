@@ -40,10 +40,14 @@ public static class DeployCommand
             return Failure(ExitCodes.InvalidArguments, new CliError("CONFIG_VERSION_UNSUPPORTED", $"需要 config_version=2，当前为 {config.ConfigVersion}"), context.Root);
         if (string.IsNullOrWhiteSpace(config.ModName))
             return Failure(ExitCodes.InvalidArguments, new CliError("CONFIG_MISSING", "deploy 需要 mod_name"), context.Root);
+        if (!RimWorldGameLayout.TryGet(config.GameVersion, out var gameLayout))
+            return Failure(ExitCodes.InvalidArguments, new CliError("GAME_VERSION_UNSUPPORTED", $"deploy 需要明确配置 game_version：{RimWorldGameLayout.SupportedVersionDescription}"), context.Root);
+        if (config.ShaderBundle.Enabled && gameLayout.Version != "1.6")
+            return Failure(ExitCodes.InvalidArguments, new CliError("SHADER_BUNDLE_UNSUPPORTED_FOR_VERSION", "RimDevTools 的 Unity Shader Bundle 构建只适用于 RimWorld 1.6；1.7 项目应使用原生 GLSL/ShaderDef 管线。"), context.Root);
         var environment = RimWorldEnvironmentResolver.Resolve(context);
         var rimWorldDirectory = environment.References.RimWorldDirectory;
         if (rimWorldDirectory is null)
-            return Failure(ExitCodes.MissingDependency, new CliError("RIMWORLD_DIR_NOT_FOUND", "未能从配置或 Steam 安装中解析结构完整的 RimWorld 目录", new { configured = config.RimWorldDir, diagnostics = environment.Steam.Diagnostics }), context.Root);
+            return Failure(ExitCodes.MissingDependency, new CliError("RIMWORLD_DIR_NOT_FOUND", RimWorldGameLayout.ValidateGameDirectory(config.RimWorldDir, config.GameVersion) ?? "未能解析与所选版本匹配的 RimWorld 目录", new { configured = config.RimWorldDir, expectedGameVersion = config.GameVersion, diagnostics = environment.Steam.Diagnostics }), context.Root);
         var locationError = ProjectLocationGuard.CreateDeploymentError(context.Root, rimWorldDirectory, environment.Steam.WorkshopPaths);
         if (locationError is not null)
             return Failure(ExitCodes.InvalidArguments, locationError, context.Root);
@@ -56,6 +60,12 @@ public static class DeployCommand
         catch (Exception ex) { return Failure(ExitCodes.InvalidArguments, new CliError("DEPLOY_TARGET_UNSAFE", ex.Message), context.Root); }
 
         var xmlHot = xmlHotRequested && ProcessUtil.IsRimWorldRunning();
+        if (xmlHot)
+        {
+            var testHost = TestHostResolver.Resolve(environment, config.GameVersion);
+            if (testHost.LogSyncAssemblyPath is null)
+                return Failure(ExitCodes.MissingDependency, new CliError("XML_HOT_LOGSYNC_UNAVAILABLE", testHost.LogSyncMessage ?? $"RimWorld {config.GameVersion} 未安装对应版本的 LogSync 热重载宿主"), context.Root);
+        }
 
         Regex? protectedRegex;
         try
@@ -120,7 +130,7 @@ public static class DeployCommand
         var packageId = config.CurrentPackageId(context.Root);
         var artifactPlan = DeploymentArtifactRecovery.Plan(targetRoot, target, packageId);
         foreach (var artifact in artifactPlan.Where(x => x.Action == "retain")) warnings.Add($"部署残留需要人工确认: {artifact.Path}: {artifact.Reason}");
-        var referencePlan = new BuildReferencePlan(environment.References.RimWorldDirectory, environment.References.ManagedDirectory, environment.References.HarmonyDllPath);
+        var referencePlan = new BuildReferencePlan(config.GameVersion!, environment.References.RimWorldDirectory, environment.References.ExecutablePath, environment.References.AssemblyDirectory, environment.References.HarmonyDllPath);
         var preview = new DeployPlan(
             context.Root,
             target,
@@ -146,7 +156,7 @@ public static class DeployCommand
                 .Where(path => !File.Exists(path))
                 .Concat(environment.References.HarmonyDllPath is null ? ["0Harmony.dll"] : File.Exists(environment.References.HarmonyDllPath) ? [] : [environment.References.HarmonyDllPath])
                 .ToArray();
-            if (environment.References.ManagedDirectory is null || missingReferences.Length > 0)
+            if (environment.References.AssemblyDirectory is null || missingReferences.Length > 0)
                 return Failure(ExitCodes.MissingDependency, new CliError("BUILD_REFERENCES_NOT_FOUND", "构建所需的真实 RimWorld/Harmony 引用不完整", new { referencePlan, missingReferences }), context.Root);
         }
 
@@ -190,13 +200,17 @@ public static class DeployCommand
         {
             var project = projectFiles[index];
             Console.Error.WriteLine(verbose ? $"构建 {project}" : $"构建项目 {index + 1}/{projectFiles.Count}");
-            if (!await ProcessUtil.RunAsync("dotnet",
-            [
+            var buildArguments = new List<string>
+            {
                 "build", project, "--configuration", "Release",
                 $"-p:RimWorldDir={environment.References.RimWorldDirectory}",
-                $"-p:RimWorldManagedDir={environment.References.ManagedDirectory}",
+                $"-p:RimWorldVersion={config.GameVersion}",
                 $"-p:HarmonyDllPath={environment.References.HarmonyDllPath}"
-            ], context.Root, cancellationToken, verbose))
+            };
+            buildArguments.Add(gameLayout.Version == "1.6"
+                ? $"-p:RimWorldManagedDir={environment.References.AssemblyDirectory}"
+                : $"-p:RimWorldAssemblyDir={environment.References.AssemblyDirectory}");
+            if (!await ProcessUtil.RunAsync("dotnet", buildArguments, context.Root, cancellationToken, verbose))
                 return Failure(ExitCodes.TaskFailed, new CliError("BUILD_FAILED", $"dotnet build 失败: {project}"), context.Root);
         }
 
@@ -425,7 +439,10 @@ public sealed record DeployContextDetails(string ProjectRoot);
 public sealed record DeploySyncPlan(string Item, string Source, string Destination, bool Exists, string Severity);
 public sealed record DeployTargetAction(string Path, string Action);
 public sealed record ShaderPlan(bool Enabled, string? UnityPath, string? ProjectPath, string? BuildMethod);
-public sealed record BuildReferencePlan(string? RimWorldDirectory, string? ManagedDirectory, string? HarmonyDllPath);
+public sealed record BuildReferencePlan(string GameVersion, string? RimWorldDirectory, string? ExecutablePath, string? AssemblyDirectory, string? HarmonyDllPath)
+{
+    public string? ManagedDirectory => GameVersion == "1.6" ? AssemblyDirectory : null;
+}
 public sealed record DeployPlan(string ProjectRoot, string Target, ShaderPlan Shader, BuildReferencePlan References, IReadOnlyList<string> Projects, IReadOnlyList<DeploySyncPlan> SyncItems, IReadOnlyList<DeployTargetAction> TargetActions, IReadOnlyList<DeploymentArtifactAction> ArtifactActions, string? ProtectedPattern, bool XmlHot);
 public sealed record DeployResult(string ProjectRoot, bool DryRun, string? RunId, string Target, IReadOnlyList<string> BuiltProjects, DeployPlan Plan, bool RecoveredTransaction, IReadOnlyList<DeploymentArtifactAction> ArtifactActions, XmlHotReloadRequestResult? XmlHotReload = null, DeploymentFileCommitResult? FileCommit = null);
 public sealed record ProcessTerminationResult(bool Exited, string? Error = null);
