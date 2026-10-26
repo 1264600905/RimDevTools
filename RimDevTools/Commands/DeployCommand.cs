@@ -76,7 +76,7 @@ public static class DeployCommand
 
         var warnings = new List<string>();
         if (xmlHotRequested && !xmlHot)
-            warnings.Add("未检测到运行中的 RimWorld，--xml-hot 将按普通构建和原子部署执行。");
+            warnings.Add("未检测到运行中的 RimWorld，--xml-hot 将按普通构建和逐文件事务部署执行。");
         var plan = new List<DeploySyncPlan>();
         try
         {
@@ -136,6 +136,10 @@ public static class DeployCommand
         if (CliArgs.Has(args, "--dry-run"))
             return new DeployExecution(true, ExitCodes.Success, new DeployResult(context.Root, true, null, target, [], preview, false, artifactPlan), null, warnings);
 
+        var pendingFileTransactions = artifactPlan.Where(x => x.Kind == "transaction" && (x.Action is "recover" or "retain")).ToArray();
+        if (xmlHot && pendingFileTransactions.Length > 0)
+            return Failure(ExitCodes.Busy, new CliError("DEPLOY_RECOVERY_REQUIRED", "存在未完成的普通部署事务；请先停止 RimWorld 并恢复事务，再执行 XML 热同步", pendingFileTransactions), context.Root);
+
         if (!xmlHot && projectFiles.Count > 0)
         {
             var missingReferences = environment.References.RequiredGameAssemblies
@@ -171,6 +175,9 @@ public static class DeployCommand
         var artifactResults = xmlHot ? [] : DeploymentArtifactRecovery.Execute(targetRoot, target, currentArtifactPlan);
         foreach (var artifact in artifactResults.Where(x => x.Action is "failed" or "retain"))
             warnings.Add($"部署残留未清理: {artifact.Path}: {artifact.Reason}");
+        var failedTransactions = artifactResults.Where(x => x.Kind == "transaction" && (x.Action is "failed" or "retain")).ToArray();
+        if (failedTransactions.Length > 0)
+            return Failure(ExitCodes.TaskFailed, new CliError("DEPLOY_RECOVERY_FAILED", "无法恢复此前中断的文件级部署事务；已保留备份，请先运行 test cleanup --dry-run 检查", failedTransactions), context.Root);
 
         if (!xmlHot && config.ShaderBundle.Enabled)
         {
@@ -195,23 +202,44 @@ public static class DeployCommand
 
         if (xmlHot)
         {
+            var hotStaging = Path.Combine(targetRoot, $".rimdev-staging-{runId}");
             try
             {
-                Directory.CreateDirectory(target);
+                Directory.CreateDirectory(hotStaging);
                 var reloadableXmlCopied = false;
                 foreach (var item in plan.Where(x => x.Exists))
-                    reloadableXmlCopied |= CopyHotSyncItem(context.Root, target, item.Item);
+                    reloadableXmlCopied |= CopyHotSyncItem(context.Root, hotStaging, item.Item);
+
+                var backup = Path.Combine(targetRoot, $".rimdev-backup-{runId}");
+                var fileCommit = DeploymentFileTransaction.Commit(target, hotStaging, backup, packageId, null, removeStaleFiles: false);
+                if (fileCommit.CleanupWarning is not null) warnings.Add(fileCommit.CleanupWarning);
 
                 var xmlHotReload = await RequestXmlHotReloadAsync(reloadableXmlCopied, configDirectory, cancellationToken);
                 if (xmlHotReload.Status is not ("queued" or "not_needed"))
                     warnings.Add($"XML 文件已部署，但游戏内热重载状态为 {xmlHotReload.Status}: {xmlHotReload.Message ?? xmlHotReload.ErrorCode ?? "未知原因"}");
 
-                return new DeployExecution(true, ExitCodes.Success, new DeployResult(context.Root, false, runId, target, [], preview, false, [], xmlHotReload), null, warnings);
+                return new DeployExecution(true, ExitCodes.Success, new DeployResult(context.Root, false, runId, target, [], preview, false, [], xmlHotReload, fileCommit), null, warnings);
             }
             catch (OperationCanceledException) { throw; }
+            catch (DeploymentTargetBusyException ex)
+            {
+                return Failure(ExitCodes.Busy, new CliError("DEPLOY_TARGET_BUSY", "部署目标中的文件正被其他程序使用；关闭占用程序后重试", ex.Details), context.Root);
+            }
+            catch (DeploymentRollbackFailedException ex)
+            {
+                return Failure(ExitCodes.TaskFailed, new CliError("DEPLOY_ROLLBACK_FAILED", ex.Message, new { ex.BackupPath, cause = ex.InnerException?.Message }), context.Root);
+            }
             catch (Exception ex)
             {
                 return Failure(ExitCodes.TaskFailed, new CliError("DEPLOY_FAILED", ex.Message, new { runId, hot = true }), context.Root);
+            }
+            finally
+            {
+                if (Directory.Exists(hotStaging))
+                {
+                    try { DeploymentFileTransaction.Remove(hotStaging); }
+                    catch (Exception ex) { warnings.Add($"部署结束后无法清理暂存目录: {hotStaging}: {ex.Message}"); }
+                }
             }
         }
 
@@ -220,19 +248,32 @@ public static class DeployCommand
         {
             Directory.CreateDirectory(staging);
             foreach (var item in plan.Where(x => x.Exists)) CopySyncItem(context.Root, staging, item.Item);
-            PreserveProtectedFiles(target, staging, protectedRegex);
-            ValidateStaging(staging, plan);
-            ReplaceDirectory(target, staging, targetRoot, runId);
-            return new DeployExecution(true, ExitCodes.Success, new DeployResult(context.Root, false, runId, target, projectFiles, preview, recovery.Found, artifactResults), null, warnings);
+            ValidateStaging(staging, plan, target, protectedRegex);
+            var backup = Path.Combine(targetRoot, $".rimdev-backup-{runId}");
+            var fileCommit = DeploymentFileTransaction.Commit(target, staging, backup, packageId, protectedRegex);
+            if (fileCommit.CleanupWarning is not null) warnings.Add(fileCommit.CleanupWarning);
+            return new DeployExecution(true, ExitCodes.Success, new DeployResult(context.Root, false, runId, target, projectFiles, preview, recovery.Found, artifactResults, FileCommit: fileCommit), null, warnings);
         }
         catch (OperationCanceledException) { throw; }
+        catch (DeploymentTargetBusyException ex)
+        {
+            return Failure(ExitCodes.Busy, new CliError("DEPLOY_TARGET_BUSY", "部署目标中的文件正被其他程序使用；关闭占用程序后重试", ex.Details), context.Root);
+        }
+        catch (DeploymentRollbackFailedException ex)
+        {
+            return Failure(ExitCodes.TaskFailed, new CliError("DEPLOY_ROLLBACK_FAILED", ex.Message, new { ex.BackupPath, cause = ex.InnerException?.Message }), context.Root);
+        }
         catch (Exception ex)
         {
             return Failure(ExitCodes.TaskFailed, new CliError("DEPLOY_FAILED", ex.Message, new { runId, staging }), context.Root);
         }
         finally
         {
-            if (Directory.Exists(staging)) Directory.Delete(staging, true);
+            if (Directory.Exists(staging))
+            {
+                try { DeploymentFileTransaction.Remove(staging); }
+                catch (Exception ex) { warnings.Add($"部署结束后无法清理暂存目录: {staging}: {ex.Message}"); }
+            }
         }
     }
 
@@ -259,6 +300,7 @@ public static class DeployCommand
                 .Select(group => new { action = group.Key, count = group.Count() })
                 .ToArray(),
             deploy.RecoveredTransaction,
+            fileCommit = deploy.FileCommit,
             xmlHotReload = deploy.XmlHotReload,
             shaderBuildEnabled = deploy.Plan.Shader.Enabled
         };
@@ -367,44 +409,15 @@ public static class DeployCommand
             CopyDirectory(directory.FullName, Path.Combine(destination, directory.Name), filterAbout);
     }
 
-    private static void PreserveProtectedFiles(string target, string staging, Regex? regex)
+    private static void ValidateStaging(string staging, IReadOnlyList<DeploySyncPlan> plan, string target, Regex? protectedRegex)
     {
-        if (regex is null || !Directory.Exists(target)) return;
-        foreach (var item in Directory.EnumerateFileSystemEntries(target))
-        {
-            if (!regex.IsMatch(Path.GetFileName(item))) continue;
-            if (File.GetAttributes(item).HasFlag(FileAttributes.ReparsePoint)) throw new IOException($"拒绝保护 Reparse Point: {item}");
-            var destination = Path.Combine(staging, Path.GetFileName(item));
-            if (File.Exists(item)) File.Copy(item, destination, true);
-            else CopyDirectory(item, destination);
-        }
-    }
-
-    private static void ValidateStaging(string staging, IReadOnlyList<DeploySyncPlan> plan)
-    {
-        if (!Directory.EnumerateFileSystemEntries(staging).Any()) throw new InvalidDataException("部署暂存目录为空");
+        var hasStagedItems = Directory.EnumerateFileSystemEntries(staging).Any();
+        var hasProtectedTargetItems = protectedRegex is not null && Directory.Exists(target)
+            && Directory.EnumerateFileSystemEntries(target).Any(path => protectedRegex.IsMatch(Path.GetFileName(path)));
+        if (!hasStagedItems && !hasProtectedTargetItems) throw new InvalidDataException("部署暂存目录为空");
         if (plan.Any(x => x.Item.Equals("About", StringComparison.OrdinalIgnoreCase) && x.Exists)
             && !File.Exists(Path.Combine(staging, "About", "About.xml")))
             throw new InvalidDataException("部署暂存结果缺少 About/About.xml");
-    }
-
-    private static void ReplaceDirectory(string target, string staging, string parent, string runId)
-    {
-        var backup = Path.Combine(parent, $".rimdev-backup-{runId}");
-        if (Directory.Exists(backup)) Directory.Delete(backup, true);
-        if (Directory.Exists(target)) Directory.Move(target, backup);
-        try
-        {
-            Directory.Move(staging, target);
-        }
-        catch
-        {
-            if (!Directory.Exists(target) && Directory.Exists(backup)) Directory.Move(backup, target);
-            throw;
-        }
-
-        try { if (Directory.Exists(backup)) Directory.Delete(backup, true); }
-        catch (Exception ex) { Console.Error.WriteLine($"清理部署备份失败: {backup}: {ex.Message}"); }
     }
 }
 
@@ -414,7 +427,7 @@ public sealed record DeployTargetAction(string Path, string Action);
 public sealed record ShaderPlan(bool Enabled, string? UnityPath, string? ProjectPath, string? BuildMethod);
 public sealed record BuildReferencePlan(string? RimWorldDirectory, string? ManagedDirectory, string? HarmonyDllPath);
 public sealed record DeployPlan(string ProjectRoot, string Target, ShaderPlan Shader, BuildReferencePlan References, IReadOnlyList<string> Projects, IReadOnlyList<DeploySyncPlan> SyncItems, IReadOnlyList<DeployTargetAction> TargetActions, IReadOnlyList<DeploymentArtifactAction> ArtifactActions, string? ProtectedPattern, bool XmlHot);
-public sealed record DeployResult(string ProjectRoot, bool DryRun, string? RunId, string Target, IReadOnlyList<string> BuiltProjects, DeployPlan Plan, bool RecoveredTransaction, IReadOnlyList<DeploymentArtifactAction> ArtifactActions, XmlHotReloadRequestResult? XmlHotReload = null);
+public sealed record DeployResult(string ProjectRoot, bool DryRun, string? RunId, string Target, IReadOnlyList<string> BuiltProjects, DeployPlan Plan, bool RecoveredTransaction, IReadOnlyList<DeploymentArtifactAction> ArtifactActions, XmlHotReloadRequestResult? XmlHotReload = null, DeploymentFileCommitResult? FileCommit = null);
 public sealed record ProcessTerminationResult(bool Exited, string? Error = null);
 
 internal static class ProcessUtil

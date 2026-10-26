@@ -51,7 +51,7 @@ description: 在此模板中端到端实现、诊断并验证 RimWorld 1.6 模�
 - 解析变更的 XML 并校验引用/键。
 - 构建每个变更的 C# 项目。
 - 实际部署前运行 `RimDevTools.exe deploy --dry-run`。
-- 用户明确要求游戏运行时同步 XML/资源时，可检查 `deploy --dry-run --xml-hot` 后使用独立的 `deploy --xml-hot`。若 RimWorld 正在运行，它会就地同步非 DLL 文件；复制 `Defs/` 或 `Patches/` XML 后至少等待 3 秒，再向 LogSyncMod 本机 HTTP endpoint 请求内置 Def 热重载。游戏需处于 Playing 且启用开发者模式。若游戏未运行，该选项回退到普通构建和原子部署。`test run` 不接受 `--xml-hot`，其 `--deploy` 始终使用普通部署。
+- 用户明确要求游戏运行时同步 XML/资源时，可检查 `deploy --dry-run --xml-hot` 后使用独立的 `deploy --xml-hot`。若 RimWorld 正在运行，它会就地同步非 DLL 文件；复制 `Defs/` 或 `Patches/` XML 后至少等待 3 秒，再向 LogSyncMod 本机 HTTP endpoint 请求内置 Def 热重载。游戏需处于 Playing 且启用开发者模式。若游戏未运行，该选项回退到普通构建和逐文件事务部署。`test run` 不接受 `--xml-hot`，其 `--deploy` 始终使用普通部署。
 - 对启动/运行冒烟测试使用 `RimDevTools.exe test run --deploy --mode quick`。
 - 不要先运行 auto 测试：它比 quick 模式慢。修复并重跑 quick 测试直至无当前模组错误通过，然后为相关功能用例运行一次 `RimDevTools.exe test run --deploy --mode auto`。
 - 仅在该后续 auto 测试通过后，功能变更才算完全验证。不要仅凭 quick 测试通过就宣称验证循环完成。

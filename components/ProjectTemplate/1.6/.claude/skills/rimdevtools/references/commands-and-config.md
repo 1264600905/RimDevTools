@@ -14,14 +14,16 @@
 
 ### `deploy [--sync-source] [--xml-hot] [--dry-run] [--verbose]`
 
-构建已配置的 C# 项目，并将 `sync_items` 原子部署到 `rimworld_dir/Mods/mod_name`。
+构建已配置的 C# 项目，并将 `sync_items` 以文件级事务部署到 `rimworld_dir/Mods/mod_name`。目标目录保持原位，提交前检查变更文件占用；失败时使用事务备份回滚。空目录可能保留。
 
 - `--dry-run`：不构建或部署，仅返回不可变计划。
 - `--verbose`：展开完整部署计划，并显示构建和 Unity 输出。默认结果保留目标、同步项和动作计数。
 - `--sync-source`：在部署中包含 `source/`；`sync_source: true` 时默认包含。
-- `--xml-hot`：先检查 RimWorld 是否正在运行。运行中时将配置同步项中的非 DLL 文件就地复制，不构建程序集，并保留已有 DLL 和源目录中不存在的目标文件；若复制了 `Defs/` 或 `Patches/` XML，全部复制完成后至少等待 3 秒，再通过本机 HTTP 请求 LogSyncMod 调用内置 Def 热重载。游戏必须处于 Playing 且启用开发者模式；HTTP endpoint 不可用或游戏拒绝请求时，文件仍已部署，命令会报告 warning。游戏未运行时，此选项自动回退到普通构建和原子部署。此功能不热更新 DLL。
+- `--xml-hot`：先检查 RimWorld 是否正在运行。运行中时将配置同步项中的非 DLL 文件暂存后逐文件事务更新，不构建程序集，并保留已有 DLL 和源目录中不存在的目标文件；若更新了 `Defs/` 或 `Patches/` XML，全部更新完成后至少等待 3 秒，再通过本机 HTTP 请求 LogSyncMod 调用内置 Def 热重载。游戏必须处于 Playing 且启用开发者模式；HTTP endpoint 不可用或游戏拒绝请求时，文件仍已部署，命令会报告 warning。游戏未运行时，此选项自动回退到普通构建和逐文件事务部署。此功能不热更新 DLL。
 
-常见错误：`PROJECT_DEPLOYMENT_LOCATION_INVALID`、`ENVIRONMENT_BUSY`、`GAME_EXIT_TIMEOUT`、`BUILD_FAILED`、`SHADER_BUILD_FAILED`、`SYNC_ITEM_NOT_FOUND`、`DEPLOY_FAILED`。
+提交前如果文件被占用，`DEPLOY_TARGET_BUSY` 会报告占用路径以及 Restart Manager 能识别的进程；关闭占用程序后重试。提交阶段若发生共享冲突，工具会先回滚，再报告相同错误。回滚或上次中断事务恢复失败时，使用 `test cleanup --dry-run` 检查保留的事务备份。
+
+常见错误：`PROJECT_DEPLOYMENT_LOCATION_INVALID`、`ENVIRONMENT_BUSY`、`GAME_EXIT_TIMEOUT`、`BUILD_FAILED`、`SHADER_BUILD_FAILED`、`SYNC_ITEM_NOT_FOUND`、`DEPLOY_TARGET_BUSY`、`DEPLOY_RECOVERY_REQUIRED`、`DEPLOY_RECOVERY_FAILED`、`DEPLOY_ROLLBACK_FAILED`、`DEPLOY_FAILED`。
 
 ### 参考模组命令
 
@@ -58,7 +60,7 @@ test cleanup [--dry-run] [--status] [--verbose]
 
 `test settings` 是持久化 LogSync 设置命令，不会启动测试。它会等待已有 RimWorld 退出、取得共享环境锁，然后把日志路径设置为当前项目的 `.tools/log/精选日志.log`，把 `mod_config.jsonc.log_keywords` 写入 LogSync，并更新自动测试输出路径、开关和筛选设置。写入不会像 `test run` 一样在结束后自动恢复，适合准备一次由用户手动启动的 RimWorld 会话；正常自动测试应使用 `test run`，由事务临时应用并恢复设置。
 
-quick 是启动冒烟测试。manual 是用户手动的。auto 和 XML 验证结构化的 AutoTest 结果。`--capture-screenshots` 仅适用于 auto/XML。隔离优先级为显式标志、项目设置，然后是模式默认值。`test run` 不接受 `--xml-hot`；`test run --deploy` 会先关闭已有 RimWorld，再在启动测试进程前执行普通构建和原子部署。
+quick 是启动冒烟测试。manual 是用户手动的。auto 和 XML 验证结构化的 AutoTest 结果。`--capture-screenshots` 仅适用于 auto/XML。隔离优先级为显式标志、项目设置，然后是模式默认值。`test run` 不接受 `--xml-hot`；`test run --deploy` 会先关闭已有 RimWorld，再在启动测试进程前执行普通构建和逐文件事务部署。
 
 `test run` 默认输出运行结果、测试信号、模组数量和依赖 warning；`--verbose` 附加完整启用模组列表、设置时新增的模组以及部署子进程诊断。
 

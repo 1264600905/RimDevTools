@@ -44,7 +44,7 @@ public static class CliHelp
 
         Commands:
           doctor              Inspect project, game, tools, and transaction status.
-          deploy              Build and atomically deploy the current mod.
+          deploy              Build and transactionally update the current mod.
           mod search          Find local or Workshop reference mods.
           mod copy            Copy and decompile a reference mod.
           mod dependencies    List one mod's hard dependencies.
@@ -56,8 +56,8 @@ public static class CliHelp
 
         Hot file sync:
           RimDevTools.exe deploy --xml-hot checks whether RimWorld is running. If so,
-          it copies configured non-DLL files in place and requests a Def reload after
-          a 3-second settle delay. If not, it performs a normal build and atomic deploy.
+          it transactionally updates configured non-DLL files in place and requests a Def reload after
+          a 3-second settle delay. If not, it performs a normal build and file-by-file deploy.
 
         Global options:
           -h, --help          Show top-level or command-specific help.
@@ -111,23 +111,25 @@ public static class CliHelp
         """;
 
     private const string Deploy = """
-        Build and atomically deploy the current mod into RimWorld/Mods.
+        Build and transactionally update the current mod in RimWorld/Mods.
 
         Usage:
           RimDevTools.exe deploy [--sync-source] [--xml-hot] [--dry-run] [--verbose]
 
         Options:
           --sync-source       Include source/ in this deployment.
-          --xml-hot           If RimWorld is running, copy configured non-DLL files in place,
+          --xml-hot           If RimWorld is running, transactionally update configured non-DLL files in place,
                               wait at least 3 seconds, then request a Def reload. If it is not
-                              running, perform the normal build and atomic deployment.
+                              running, perform the normal build and file-by-file deployment.
           --dry-run           Print the immutable deployment plan without mutation.
           --verbose           Include the complete plan and build/Unity output.
           -h, --help          Show this help.
 
         Output:
           By default, reports the target, build count, sync items, action counts, and XML
-          reload status. --verbose includes all paths and plan details.
+          reload status, and file-commit counts. --verbose includes all paths and plan details. Normal deployment
+          keeps the target directory in place, checks changed files for active users, and
+          records rollback data before committing.
 
         Configuration:
           mod_name, rimworld_dir, csproj_paths, sync_items, sync_source, protected_files_regex,
@@ -139,7 +141,7 @@ public static class CliHelp
 
         Common errors:
           PROJECT_DEPLOYMENT_LOCATION_INVALID, ENVIRONMENT_BUSY, GAME_EXIT_TIMEOUT, BUILD_FAILED, SHADER_BUILD_FAILED,
-          SYNC_ITEM_NOT_FOUND, DEPLOY_FAILED.
+          SYNC_ITEM_NOT_FOUND, DEPLOY_TARGET_BUSY, DEPLOY_RECOVERY_REQUIRED, DEPLOY_RECOVERY_FAILED, DEPLOY_ROLLBACK_FAILED, DEPLOY_FAILED.
         """;
 
     private const string Mod = """
@@ -282,7 +284,7 @@ public static class CliHelp
           RimDevTools.exe test run [options]
 
         Options:
-          --deploy                    Build and atomically deploy before testing.
+          --deploy                    Build and transactionally update before testing.
           --sync-source               Include source/; requires --deploy.
           --mode <value>              quick (default), manual, auto, or xml.
           --active-mods-file <path>   External ModsConfig XML activeMods list.
@@ -299,7 +301,7 @@ public static class CliHelp
 
         Deployment behavior:
           test run exits an existing game before deploying and starting tests. --deploy uses
-          the normal build and atomic deployment; --xml-hot is standalone deploy only.
+          the normal build and file-by-file deployment; --xml-hot is standalone deploy only.
 
         Isolation precedence:
           Explicit CLI flag > isolated_desktop project config > built-in false for

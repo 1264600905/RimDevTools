@@ -1,6 +1,6 @@
 ---
 name: rimdevtools
-description: 操作项目本地的 RimDevTools CLI，处理 RimWorld 1.6 模组配置、健康检查、构建、原子部署和非 DLL 文件热同步、参考模组发现与 ILSpy 反编译、由 LogSync 支持的 quick/manual/auto/XML 测试，以及打包的 LogSyncMod 安装。处理 mod_config.jsonc、.tools/RimDevTools.exe、部署、测试、参考模组或工具模组安装时使用。
+description: 操作项目本地的 RimDevTools CLI，处理 RimWorld 1.6 模组配置、健康检查、构建、事务化逐文件部署和非 DLL 文件热同步、参考模组发现与 ILSpy 反编译、由 LogSync 支持的 quick/manual/auto/XML 测试，以及打包的 LogSyncMod 安装。处理 mod_config.jsonc、.tools/RimDevTools.exe、部署、测试、参考模组或工具模组安装时使用。
 ---
 
 # RimDevTools 工具
@@ -46,9 +46,9 @@ RimDevTools 默认只返回摘要和关键字段；所有命令仍将最终结�
 4. 仅在计划正确后运行 `deploy`。
 5. 仅当有意分发源代码时启用 `sync_source: true`，或对单次部署添加 `--sync-source`。
 
-`deploy --xml-hot` 会先检查 RimWorld 是否正在运行：运行中时就地同步配置项中的非 DLL 文件，若复制了 `Defs/` 或 `Patches/` XML，则至少等待 3 秒，再向 LogSyncMod 的本机 HTTP endpoint 请求 Def 热重载；游戏还需处于 Playing 且启用开发者模式。游戏未运行时，`--xml-hot` 自动回退到普通构建和原子部署。热重载请求失败时文件仍已部署，命令会给出 warning；该功能不热更新 C# DLL。`test run` 不接受 `--xml-hot`；`test run --deploy` 使用普通部署。
+`deploy --xml-hot` 会先检查 RimWorld 是否正在运行：运行中时将配置项中的非 DLL 文件暂存后逐文件事务更新，若更新了 `Defs/` 或 `Patches/` XML，则至少等待 3 秒，再向 LogSyncMod 的本机 HTTP endpoint 请求 Def 热重载；游戏还需处于 Playing 且启用开发者模式。游戏未运行时，`--xml-hot` 自动回退到普通构建和逐文件事务部署。热重载请求失败时文件仍已部署，命令会给出 warning；该功能不热更新 C# DLL。`test run` 不接受 `--xml-hot`；`test run --deploy` 使用普通部署。
 
-部署会在替换目标前构建已配置项目，并使用原子暂存。不要为绕过失败部署而手动将部分输出复制进活动模组目录。若启用着色器构建，着色器失败即为部署阻塞项。
+普通部署会先构建并校验暂存目录，然后让目标目录保持原位，逐文件提交变更。提交前会检查将被替换或删除的文件是否占用；失败时输出被占用路径及可识别的进程。事务记录会在提交失败或意外中断时恢复原文件。不要为绕过失败部署而手动将部分输出复制进活动模组目录；若错误为 `DEPLOY_TARGET_BUSY`，关闭报告的占用程序后重试。若出现 `DEPLOY_RECOVERY_REQUIRED`，先停止 RimWorld，再运行 `test cleanup --dry-run` 检查事务；若出现 `DEPLOY_ROLLBACK_FAILED` 或 `DEPLOY_RECOVERY_FAILED`，保留备份并先运行 `test cleanup --dry-run` 查看恢复状态。`protected_files_regex` 匹配的顶层项目保持不变，更新后可能留下空目录。若启用着色器构建，着色器失败即为部署阻塞项。
 
 ## 测试
 

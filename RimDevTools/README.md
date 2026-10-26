@@ -68,7 +68,7 @@ RimDevTools.exe mods install-tools [--mods-path <path>] [--dry-run] [--verbose]
 
 ### 部署
 
-先运行 `doctor`，再运行 `deploy --dry-run` 检查部署摘要；需要查看完整计划时添加 `--verbose`。项目必须位于独立工作目录，不能位于 RimWorld `Mods` 或 Steam Workshop 内容目录；部署会自动同步到 `RimWorld/Mods`。普通部署会构建配置中的项目，以暂存目录和备份目录原子替换目标，并保留 `protected_files_regex` 匹配的文件。`--xml-hot` 会先检查 RimWorld 是否正在运行：运行中时就地同步非 DLL 文件，若复制 Def/Patches XML 则至少等待 3 秒并向 LogSyncMod 本机 HTTP endpoint 请求重载；未运行时回退到普通构建和原子部署。`--xml-hot` 只适用于独立 `deploy`，`test run --deploy` 始终使用普通部署。纯 XML 模组可以将 `csproj_paths` 配置为空数组，此时 deploy 跳过 C# 构建但仍同步 `sync_items`。配置 `sync_source: true` 可让每次部署默认包含 `source/`，`--sync-source` 仍可单次启用。
+先运行 `doctor`，再运行 `deploy --dry-run` 检查部署摘要；需要查看完整计划时添加 `--verbose`。项目必须位于独立工作目录，不能位于 RimWorld `Mods` 或 Steam Workshop 内容目录；部署会自动同步到 `RimWorld/Mods`。普通部署会构建配置中的项目并准备暂存目录，然后在目标目录保持原位的情况下逐文件替换和清理；提交前会检查将要修改的文件是否被占用，失败时报告路径及可识别的占用进程，并通过事务备份回滚。空目录可能留在目标中，不影响模组文件。`protected_files_regex` 匹配的顶层文件或目录会保留。`--xml-hot` 会先检查 RimWorld 是否正在运行：运行中时将非 DLL 文件暂存后逐文件事务更新，若更新 Def/Patches XML 则至少等待 3 秒并向 LogSyncMod 本机 HTTP endpoint 请求重载；未运行时回退到普通构建和逐文件事务部署。`--xml-hot` 只适用于独立 `deploy`，`test run --deploy` 始终使用普通部署。纯 XML 模组可以将 `csproj_paths` 配置为空数组，此时 deploy 跳过 C# 构建但仍同步 `sync_items`。配置 `sync_source: true` 可让每次部署默认包含 `source/`，`--sync-source` 仍可单次启用。
 
 ### 第三方参考
 

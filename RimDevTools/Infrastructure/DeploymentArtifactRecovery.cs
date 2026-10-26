@@ -16,7 +16,7 @@ public static partial class DeploymentArtifactRecovery
         var fullTarget = Path.GetFullPath(target);
         if (!Directory.Exists(fullRoot)) return [];
 
-        var candidates = new List<(string Path, string Kind, string? PackageId, string? Error)>();
+        var candidates = new List<(string Path, string Kind, string? PackageId, string? Error, DeploymentTransactionManifest? Transaction)>();
         foreach (var directory in Directory.EnumerateDirectories(fullRoot))
         {
             var match = ArtifactNameRegex().Match(Path.GetFileName(directory));
@@ -26,11 +26,16 @@ public static partial class DeploymentArtifactRecovery
             try
             {
                 PathSafety.EnsureNoReparsePoints(fullRoot, full);
-                candidates.Add((full, match.Groups["kind"].Value.ToLowerInvariant(), ReadPackageId(full), null));
+                var transactionPath = Path.Combine(full, DeploymentFileTransaction.ManifestFileName);
+                var transaction = DeploymentFileTransaction.TryReadManifest(full, out var transactionError);
+                if (File.Exists(transactionPath) && transaction is null)
+                    candidates.Add((full, match.Groups["kind"].Value.ToLowerInvariant(), null, transactionError ?? "部署事务记录无效", null));
+                else
+                    candidates.Add((full, match.Groups["kind"].Value.ToLowerInvariant(), transaction?.PackageId ?? ReadPackageId(full), null, transaction));
             }
             catch (Exception ex)
             {
-                candidates.Add((full, match.Groups["kind"].Value.ToLowerInvariant(), null, ex.Message));
+                candidates.Add((full, match.Groups["kind"].Value.ToLowerInvariant(), null, ex.Message, null));
             }
         }
 
@@ -49,9 +54,22 @@ public static partial class DeploymentArtifactRecovery
         {
             if (backup.Error is not null)
             {
-                actions.Add(new(backup.Path, backup.Kind, "retain", backup.Error));
+                var kind = File.Exists(Path.Combine(backup.Path, DeploymentFileTransaction.ManifestFileName)) ? "transaction" : backup.Kind;
+                actions.Add(new(backup.Path, kind, "retain", backup.Error));
                 continue;
             }
+
+            if (backup.Transaction is { } transaction)
+            {
+                if (!Path.GetFullPath(transaction.Target).Equals(fullTarget, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+                    actions.Add(new(backup.Path, backup.Kind, "retain", "事务记录指向其他部署目标", backup.PackageId));
+                else if (transaction.State == "committing")
+                    actions.Add(new(backup.Path, "transaction", "recover", "检测到未完成的文件级部署事务，需要回滚", backup.PackageId));
+                else
+                    actions.Add(new(backup.Path, "transaction", "remove", "准备阶段或已提交事务的残留备份", backup.PackageId));
+                continue;
+            }
+
             if (!string.Equals(backup.PackageId, packageId, StringComparison.OrdinalIgnoreCase))
             {
                 actions.Add(new(backup.Path, backup.Kind, "ignore", "无法确认属于当前模组", backup.PackageId));
@@ -86,8 +104,13 @@ public static partial class DeploymentArtifactRecovery
                 PathSafety.EnsureNoReparsePoints(fullRoot, item.Path);
                 if (item.Action == "remove")
                 {
-                    if (Directory.Exists(item.Path)) Directory.Delete(item.Path, true);
+                    if (Directory.Exists(item.Path)) DeploymentFileTransaction.Remove(item.Path);
                     results.Add(item with { Action = "removed" });
+                }
+                else if (item.Action == "recover")
+                {
+                    DeploymentFileTransaction.Recover(item.Path, fullTarget);
+                    results.Add(item with { Action = "recovered" });
                 }
                 else if (item.Action == "restore")
                 {

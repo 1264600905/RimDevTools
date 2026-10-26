@@ -16,7 +16,7 @@ RimDevTools 是一套面向 RimWorld 1.6 模组开发的 Windows 工具链。本
 ## 主要能力
 
 - 检查 RimWorld、Steam、.NET SDK、.NET Framework Targeting Pack 和 Harmony 环境。
-- 将项目程序集、Defs、About、语言文件等内容原子部署到 RimWorld Mods 目录。
+- 将项目程序集、Defs、About、语言文件等内容以事务化逐文件方式部署到 RimWorld Mods 目录，并检查目标文件占用。
 - 搜索本地及 Workshop 模组，并安全复制 XML、程序集和 ILSpy 反编译源码作为开发参考。
 - 事务化修改并恢复 `ModsConfig.xml` 和测试配置，避免测试中断后污染用户环境。
 - 运行 quick、manual、auto 和 XML 测试，支持分类、精确 DefName、批量上限和截图。
