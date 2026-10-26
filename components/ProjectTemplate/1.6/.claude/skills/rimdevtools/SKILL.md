@@ -36,7 +36,7 @@ RimDevTools 默认只返回摘要和关键字段；所有命令仍将最终结�
 .\.tools\RimDevTools.exe --version
 ```
 
-读取 stdout 上唯一的 JSON 对象。默认的 `checks` 数组包含可操作问题及已解析的 `Assembly-CSharp.dll` 和 `0Harmony.dll` 绝对路径；用 `ready`、`issueCount` 和 `warningCount` 总结，其他成功/已禁用/不适用检查则使用 `--verbose` 查看。修复范围最小的失败前提条件后重新运行 `doctor`。它不会构建，也不会检查启动工具所需的 .NET 10 Runtime。
+读取 stdout 上唯一的 JSON 对象。默认的 `checks` 数组包含可操作问题及已解析的 `Assembly-CSharp.dll` 和 `0Harmony.dll` 绝对路径；用 `ready`、`issueCount` 和 `warningCount` 总结，其他成功/已禁用/不适用检查则使用 `--verbose` 查看。对于 1.7+，.NET Framework targeting pack 检查默认隐藏，verbose 才会显示 `not_applicable`；不要建议为 1.7+ 安装 4.8 或 4.7.2 targeting pack。修复范围最小的失败前提条件后重新运行 `doctor`。它不会构建，也不会检查启动工具所需的 .NET 10 Runtime。
 
 ## 部署
 

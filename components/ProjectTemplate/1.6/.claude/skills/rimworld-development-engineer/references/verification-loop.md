@@ -24,7 +24,7 @@
 .\.tools\RimDevTools.exe test run --deploy --mode quick
 ```
 
-仅在打算部署源码时使用 `--sync-source`。存在用例时使用 auto 或 XML 模式；仅为这些模式请求截图。manual 模式用于自动化无法表示的交互。
+仅在打算部署源码时使用 `--sync-source`。存在用例时使用 auto 或 XML 模式；auto 模式默认生成截图，不需要额外截图参数。XML 模式遵循每条测试定义的 `captureScreenshots` 设置。manual 模式用于自动化无法表示的交互。
 
 当用户明确要求游戏运行时同步 Def/patch XML 时，先运行 `deploy --dry-run --xml-hot` 检查计划，再运行独立的 `deploy --xml-hot`。游戏运行时它就地同步文件，复制完成后至少等待 3 秒，再通过本机 HTTP 请求 LogSyncMod 重载 Def；游戏需处于 Playing 且启用开发者模式。游戏未运行时它回退到普通构建和逐文件事务部署。`test run` 不接受 `--xml-hot`；其 `--deploy` 始终是启动前的普通部署。
 

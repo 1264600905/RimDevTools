@@ -42,9 +42,9 @@
 
 [h2][b]RimDevTools 工作流[/b][/h2]
 [list]
-[*] doctor 为只读诊断，检查项目配置、About.xml、Preview.png 与图片大小、部署位置安全性、RimWorld 和 Steam 发现、游戏程序集、Harmony、.NET Framework 目标包、Git 状态、ILSpy、LogSync、AutoTest、环境锁和未完成事务。使用 --verbose 可查看已满足的检查项。
+[*] doctor 为只读诊断，检查项目配置、About.xml、Preview.png 与图片大小、部署位置安全性、RimWorld 和 Steam 发现、游戏程序集、Harmony、1.6 所需的 .NET Framework targeting pack、Git 状态、ILSpy、LogSync、AutoTest、环境锁和未完成事务。1.7+ 默认隐藏不适用的 .NET Framework 检查，使用 --verbose 可查看。
 [*] deploy 会等待 RimWorld 退出，构建 csproj_paths 并准备 sync_items 暂存目录，然后在目标目录保持原位的情况下逐文件事务更新。提交前会检查变更文件占用，失败时回滚；protected_files_regex 可保留 PublishedFileId.txt 等发布文件。sync_source 或 --sync-source 只在需要同步源码时启用。
-[*] test run 在事务中写入并恢复 ModsConfig 与 LogSync 设置。quick 等待运行就绪信号；manual 供人工观察；auto 和 xml 验证结构化 AutoTest 结果；可设置 --timeout-seconds、--active-mods-file、--target-package-id、--scope、--defname、截图和隔离桌面。
+[*] test run 在事务中写入并恢复 ModsConfig 与 LogSync 设置。quick 等待运行就绪信号；manual 供人工观察；auto 和 xml 验证结构化 AutoTest 结果。auto 模式默认截图；XML 测试按每条定义的 captureScreenshots 设置截图。可设置 --timeout-seconds、--active-mods-file、--target-package-id、--scope、--defname 和隔离桌面。
 [*] test settings 用于给手动启动的 RimWorld 会话持久化 LogSync 日志路径和关键词，不会像 test run 一样自动恢复原设置。
 [*] test cleanup --status 可只读查看环境锁、RimWorld 运行状态、遗留事务和部署暂存/备份现场；--dry-run 用于预览恢复动作，普通 test cleanup 才会执行恢复。
 [*] 测试和部署共享环境锁。不要在运行期间手工修改 RimWorld 配置、LogSync 设置、事务目录或自动测试结果；失败后应读取 JSON 结果、精选日志和保留报告定位问题。

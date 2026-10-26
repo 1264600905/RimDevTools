@@ -1,27 +1,41 @@
 namespace RimDevTools;
 
-public sealed record RimWorldReferencePaths(string? RimWorldDirectory, string? ManagedDirectory, string? HarmonyDllPath, IReadOnlyList<string> RequiredGameAssemblies);
+public sealed record RimWorldReferencePaths(
+    string? RimWorldDirectory,
+    string? ExecutablePath,
+    string? AssemblyDirectory,
+    string? HarmonyDllPath,
+    IReadOnlyList<string> RequiredGameAssemblies,
+    string? GameVersion);
 public sealed record RimWorldEnvironmentResolution(SteamInstallationResult Steam, ModInstallationIndex Mods, RimWorldReferencePaths References, ModAssemblyResolution? HarmonyResolution);
 
 public static class RimWorldEnvironmentResolver
 {
-    public static readonly string[] RequiredManagedAssemblies =
-    [
-        "Assembly-CSharp.dll",
-        "UnityEngine.CoreModule.dll",
-        "UnityEngine.ImageConversionModule.dll",
-        "UnityEngine.IMGUIModule.dll",
-        "UnityEngine.TextRenderingModule.dll"
-    ];
+    public static readonly IReadOnlyList<string> RequiredManagedAssemblies = RimWorldGameLayout.LegacyRequiredAssemblies;
 
     public static RimWorldEnvironmentResolution Resolve(ProjectContext context, SteamResolverInput? steamInput = null)
     {
-        var steam = SteamInstallationResolver.Resolve(context.Config.RimWorldDir, context.Config.WorkshopPaths, steamInput);
+        var hasConfiguredVersion = RimWorldGameLayout.TryGet(context.Config.GameVersion, out var layout);
+        var expectedVersion = hasConfiguredVersion ? context.Config.GameVersion : "unsupported";
+        var steam = SteamInstallationResolver.Resolve(context.Config.RimWorldDir, context.Config.WorkshopPaths, steamInput, expectedVersion);
         var mods = ModInstallationIndex.Build(steam.RimWorldDirectory, steam.WorkshopPaths, context.Root);
         var harmony = mods.Find("brrainz.harmony");
-        var harmonyResolution = harmony is null ? null : ModAssemblyResolver.Resolve(harmony.Directory, context.Config.GameVersion, "0Harmony.dll");
-        var managed = steam.RimWorldDirectory is null ? null : Path.Combine(steam.RimWorldDirectory, "RimWorldWin64_Data", "Managed");
-        var assemblies = managed is null ? [] : RequiredManagedAssemblies.Select(file => Path.Combine(managed, file)).ToArray();
-        return new RimWorldEnvironmentResolution(steam, mods, new RimWorldReferencePaths(steam.RimWorldDirectory, managed, harmonyResolution?.AssemblyPath, assemblies), harmonyResolution);
+        var harmonyResolution = harmony is null || !hasConfiguredVersion
+            ? null
+            : ModAssemblyResolver.Resolve(harmony.Directory, context.Config.GameVersion, "0Harmony.dll");
+        var assemblyDirectory = steam.RimWorldDirectory is null || !hasConfiguredVersion
+            ? null
+            : layout.AssemblyDirectory(steam.RimWorldDirectory);
+        var executablePath = steam.RimWorldDirectory is null || !hasConfiguredVersion
+            ? null
+            : layout.ExecutablePath(steam.RimWorldDirectory);
+        var assemblies = assemblyDirectory is null
+            ? []
+            : layout.RequiredAssemblies.Select(file => Path.Combine(assemblyDirectory, file)).ToArray();
+        return new RimWorldEnvironmentResolution(
+            steam,
+            mods,
+            new RimWorldReferencePaths(steam.RimWorldDirectory, executablePath, assemblyDirectory, harmonyResolution?.AssemblyPath, assemblies, hasConfiguredVersion ? context.Config.GameVersion : null),
+            harmonyResolution);
     }
 }

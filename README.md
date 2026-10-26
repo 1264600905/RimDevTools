@@ -94,9 +94,10 @@ RimDevTools 默认返回关键摘要，并隐藏大段构建、Unity 和 ILSpy �
 
 - `--defname <name>`：精确选择测试目标，可重复传入。
 - `--batch-size <count>`：限制枚举型测试数量，默认 40。
-- `--capture-screenshots`：启用测试截图。
 - `--active-mods-file <path>`：使用外部 ModsConfig XML。
 - `--isolated-desktop`：在隔离桌面运行游戏。
+
+`auto` 模式默认启用截图，不需要额外参数。XML 驱动测试的截图仍由每条测试定义的 `captureScreenshots` 控制。
 
 测试结果写入 `.tools/log/AutoTestOutput`。自动测试会生成 `*_Result.json` 和独立的 `*_Evidence.json`；连续 60 秒没有当前 runId 的主线程心跳时，工具会以 `GAME_HUNG` 结束并尝试恢复环境。
 
@@ -120,15 +121,15 @@ powershell -ExecutionPolicy Bypass -File .tools\publish-rimdevtools.ps1
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .tools\publish-rimdevtools.ps1 `
-  -VersionSuffix v1.0.5 `
+  -VersionSuffix v1.0.6 `
   -CreateZip
 ```
 
 输出为：
 
 ```text
-artifacts/RimDevTools-Package-v1.0.5/
-artifacts/RimDevTools-Package-v1.0.5.zip
+artifacts/RimDevTools-Package-v1.0.6/
+artifacts/RimDevTools-Package-v1.0.6.zip
 ```
 
 验证发布布局：
@@ -136,7 +137,7 @@ artifacts/RimDevTools-Package-v1.0.5.zip
 ```powershell
 dotnet build RimDevTools.ReleaseTests\RimDevTools.ReleaseTests.csproj
 dotnet RimDevTools.ReleaseTests\bin\Debug\net10.0\RimDevTools.ReleaseTests.dll `
-  artifacts\RimDevTools-Package-v1.0.5
+  artifacts\RimDevTools-Package-v1.0.6
 ```
 
 ## 目录结构

@@ -24,7 +24,7 @@
 .\.tools\RimDevTools.exe test run --deploy --mode quick
 ```
 
-仅在打算部署源码时使用 `--sync-source`。存在用例时使用 auto 或 XML 模式；仅为这些模式请求截图。manual 模式用于自动化无法表示的交互。
+仅在打算部署源码时使用 `--sync-source`。存在用例时使用 auto 或 XML 模式；auto 模式默认生成截图，不需要额外截图参数。XML 模式遵循每条测试定义的 `captureScreenshots` 设置。manual 模式用于自动化无法表示的交互。
 
 ## 结果审查
 

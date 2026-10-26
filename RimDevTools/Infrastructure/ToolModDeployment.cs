@@ -181,7 +181,7 @@ public static class ToolModInstaller
 {
     private static readonly string[] ExcludedTargetFiles = ["PublishedFileId.txt"];
 
-    public static ToolModDeploymentPlan Plan(string dataRoot, string modsPath)
+    public static ToolModDeploymentPlan Plan(string dataRoot, string modsPath, string? expectedGameVersion = null)
     {
         var manifestPath = Path.Combine(dataRoot, "tool-mods.manifest.json");
         var manifest = ToolModManifestReader.Load(manifestPath);
@@ -202,6 +202,14 @@ public static class ToolModInstaller
             var aboutPackage = ReadPackageId(sourceDirectory);
             if (!string.Equals(aboutPackage, source.PackageId, StringComparison.OrdinalIgnoreCase))
                 throw new ToolModDeploymentException("SOURCE_PACKAGE_ID_MISMATCH", $"工具 Mod packageId 不匹配: {source.Folder}");
+            if (!string.IsNullOrWhiteSpace(expectedGameVersion))
+            {
+                if (!RimWorldGameLayout.TryGet(expectedGameVersion, out _))
+                    throw new ToolModDeploymentException("GAME_VERSION_UNSUPPORTED", $"不支持 RimWorld {expectedGameVersion} 的工具 Mod 安装目标");
+                var versionAssembly = ModAssemblyResolver.Resolve(sourceDirectory, expectedGameVersion, Path.GetFileName(source.PrimaryAssembly)).AssemblyPath;
+                if (versionAssembly is null)
+                    throw new ToolModDeploymentException("TOOL_MOD_VERSION_UNSUPPORTED", $"随包 {source.PackageId} 没有 RimWorld {expectedGameVersion} 对应程序集；拒绝安装其他版本的工具 Mod");
+            }
             var sourceAboutVersion = ToolModVersion.ReadAbout(sourceDirectory);
             var sourceAssemblyVersion = ToolModVersion.ReadAssembly(sourceDirectory, source.PrimaryAssembly);
             if (sourceAboutVersion is null || sourceAssemblyVersion is null

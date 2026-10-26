@@ -112,7 +112,7 @@ public static class CliArgs
             ["mod copy"] = (2, 1, [new("--version", true), new("--deps", false), new("--include-ignored", false), new("--fuzzy", false), new("--overwrite-existing", false), new("--dry-run", false), new("--verbose", false)]),
             ["mod dependencies"] = (2, 1, [new("--version", true), new("--fuzzy", false), new("--verbose", false)]),
             ["mod dependents"] = (2, 1, [new("--version", true), new("--fuzzy", false), new("--verbose", false)]),
-            ["test run"] = (2, 0, [new("--deploy", false), new("--sync-source", false), new("--mode", true), new("--active-mods-file", true), new("--timeout-seconds", true), new("--target-package-id", true), new("--scope", true, true), new("--defname", true, true), new("--batch-size", true), new("--capture-screenshots", false), new("--isolated-desktop", false), new("--no-isolated-desktop", false), new("--verbose", false)]),
+            ["test run"] = (2, 0, [new("--deploy", false), new("--sync-source", false), new("--mode", true), new("--active-mods-file", true), new("--timeout-seconds", true), new("--target-package-id", true), new("--scope", true, true), new("--defname", true, true), new("--batch-size", true), new("--isolated-desktop", false), new("--no-isolated-desktop", false), new("--verbose", false)]),
             ["test settings"] = (2, 0, [new("--verbose", false)]),
             ["test cleanup"] = (2, 0, [new("--dry-run", false), new("--status", false), new("--verbose", false)]),
             ["mods install-tools"] = (2, 0, [new("--mods-path", true), new("--dry-run", false), new("--verbose", false)])
