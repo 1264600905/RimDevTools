@@ -55,9 +55,9 @@ public static class CliHelp
           mods install-tools  Install the packaged LogSync tool mod.
 
         Hot file sync:
-          RimDevTools.exe deploy --xml-hot copies configured non-DLL files in place
-          without stopping the game or building assemblies. It does not reload XML
-          already loaded by the running game; see 'RimDevTools.exe deploy --help'.
+          RimDevTools.exe deploy --xml-hot checks whether RimWorld is running. If so,
+          it copies configured non-DLL files in place and requests a Def reload after
+          a 3-second settle delay. If not, it performs a normal build and atomic deploy.
 
         Global options:
           -h, --help          Show top-level or command-specific help.
@@ -115,8 +115,9 @@ public static class CliHelp
 
         Options:
           --sync-source       Include source/ in this deployment.
-          --xml-hot           Copy configured non-DLL files in place without stopping the game or building assemblies.
-                              Does not reload XML already loaded by the game.
+          --xml-hot           If RimWorld is running, copy configured non-DLL files in place,
+                              wait at least 3 seconds, then request a Def reload. If it is not
+                              running, perform the normal build and atomic deployment.
           --dry-run           Print the immutable deployment plan without mutation.
           -h, --help          Show this help.
 
@@ -258,9 +259,8 @@ public static class CliHelp
           RimDevTools.exe test run [options]
 
         Options:
-          --deploy                    Deploy before testing.
+          --deploy                    Build and atomically deploy before testing.
           --sync-source               Include source/; requires --deploy.
-          --xml-hot                   Copy configured non-DLL files in place; requires --deploy.
           --mode <value>              quick (default), manual, auto, or xml.
           --active-mods-file <path>   External ModsConfig XML activeMods list.
           --timeout-seconds <n>       Positive wait limit; defaults to timeouts.max_wait.
@@ -273,9 +273,9 @@ public static class CliHelp
           --no-isolated-desktop       Force the current visible desktop for this run.
           -h, --help                  Show this help.
 
-        Hot file sync:
-          --xml-hot copies files only; it does not reload XML already loaded by RimWorld.
-          test run still exits an existing game before starting the test process.
+        Deployment behavior:
+          test run exits an existing game before deploying and starting tests. --deploy uses
+          the normal build and atomic deployment; --xml-hot is standalone deploy only.
 
         Isolation precedence:
           Explicit CLI flag > isolated_desktop project config > built-in false for

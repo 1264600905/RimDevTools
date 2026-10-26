@@ -53,7 +53,7 @@ artifacts/RimDevTools-Package/
 ```powershell
 RimDevTools.exe --version
 RimDevTools.exe doctor [--verbose]
-RimDevTools.exe deploy [--sync-source] [--dry-run]
+RimDevTools.exe deploy [--sync-source] [--xml-hot] [--dry-run]
 RimDevTools.exe mod search <keyword> [--fuzzy]
 RimDevTools.exe mod copy <query> [--version <value>] [--deps] [--include-ignored] [--fuzzy] [--overwrite-existing] [--dry-run]
 RimDevTools.exe mod dependencies <query> [--version <value>] [--fuzzy]
@@ -68,7 +68,7 @@ RimDevTools.exe mods install-tools [--mods-path <path>] [--dry-run]
 
 ### 部署
 
-先运行 `doctor --verbose`，再运行 `deploy --dry-run` 检查不可变计划。项目必须位于独立工作目录，不能位于 RimWorld `Mods` 或 Steam Workshop 内容目录；部署会自动同步到 `RimWorld/Mods`。实际部署会构建配置中的项目，以暂存目录和备份目录原子替换目标，并保留 `protected_files_regex` 匹配的文件。纯 XML 模组可以将 `csproj_paths` 配置为空数组，此时 deploy 跳过 C# 构建但仍同步 `sync_items`。配置 `sync_source: true` 可让每次部署默认包含 `source/`，`--sync-source` 仍可单次启用。
+先运行 `doctor --verbose`，再运行 `deploy --dry-run` 检查不可变计划。项目必须位于独立工作目录，不能位于 RimWorld `Mods` 或 Steam Workshop 内容目录；部署会自动同步到 `RimWorld/Mods`。普通部署会构建配置中的项目，以暂存目录和备份目录原子替换目标，并保留 `protected_files_regex` 匹配的文件。`--xml-hot` 会先检查 RimWorld 是否正在运行：运行中时就地同步非 DLL 文件，若复制 Def/Patches XML 则至少等待 3 秒并向 LogSyncMod 本机 HTTP endpoint 请求重载；未运行时回退到普通构建和原子部署。`--xml-hot` 只适用于独立 `deploy`，`test run --deploy` 始终使用普通部署。纯 XML 模组可以将 `csproj_paths` 配置为空数组，此时 deploy 跳过 C# 构建但仍同步 `sync_items`。配置 `sync_source: true` 可让每次部署默认包含 `source/`，`--sync-source` 仍可单次启用。
 
 ### 第三方参考
 

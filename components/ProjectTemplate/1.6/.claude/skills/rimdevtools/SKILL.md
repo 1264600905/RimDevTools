@@ -42,7 +42,7 @@ description: 操作项目本地的 RimDevTools CLI，处理 RimWorld 1.6 模组�
 4. 仅在计划正确后运行 `deploy`。
 5. 仅当有意分发源代码时启用 `sync_source: true`，或对单次部署添加 `--sync-source`。
 
-当用户明确要求在游戏进程运行时同步 XML/资源等非 DLL 文件时，可在检查 `deploy --dry-run --xml-hot` 计划后运行 `deploy --xml-hot`。它只会把配置的 `sync_items` 中非 DLL 文件复制到目标目录，不等待游戏退出、不构建程序集，并保留目标中已有 DLL 和未出现在源目录的旧文件。它不会让 RimWorld 在当前会话中重新解析已加载的 XML；需要运行时生效时仍须按游戏支持的方式重载模组或重启。`test run --deploy --xml-hot` 仍会先关闭已有游戏进程再启动测试。
+`deploy --xml-hot` 会先检查 RimWorld 是否正在运行：运行中时就地同步配置项中的非 DLL 文件，若复制了 `Defs/` 或 `Patches/` XML，则至少等待 3 秒，再向 LogSyncMod 的本机 HTTP endpoint 请求 Def 热重载；游戏还需处于 Playing 且启用开发者模式。游戏未运行时，`--xml-hot` 自动回退到普通构建和原子部署。热重载请求失败时文件仍已部署，命令会给出 warning；该功能不热更新 C# DLL。`test run` 不接受 `--xml-hot`；`test run --deploy` 使用普通部署。
 
 部署会在替换目标前构建已配置项目，并使用原子暂存。不要为绕过失败部署而手动将部分输出复制进活动模组目录。若启用着色器构建，着色器失败即为部署阻塞项。
 

@@ -27,7 +27,7 @@ public static class DeployCommand
         }
 
         var config = context.Config;
-        var xmlHot = CliArgs.Has(args, "--xml-hot");
+        var xmlHotRequested = CliArgs.Has(args, "--xml-hot");
         var templateError = ProjectTemplatePreflight.Validate(context);
         if (templateError is not null) return Failure(ExitCodes.InvalidArguments, templateError, context.Root);
         var modsConfigValidation = GameEnvironment.ValidateModsConfig(context);
@@ -53,6 +53,8 @@ public static class DeployCommand
         try { PathSafety.EnsureNoReparsePoints(rimWorldDirectory, target); }
         catch (Exception ex) { return Failure(ExitCodes.InvalidArguments, new CliError("DEPLOY_TARGET_UNSAFE", ex.Message), context.Root); }
 
+        var xmlHot = xmlHotRequested && ProcessUtil.IsRimWorldRunning();
+
         Regex? protectedRegex;
         try
         {
@@ -71,6 +73,8 @@ public static class DeployCommand
             return Failure(ExitCodes.InvalidArguments, new CliError("SYNC_ITEMS_EMPTY", "deploy 至少需要一个 sync_items"), context.Root);
 
         var warnings = new List<string>();
+        if (xmlHotRequested && !xmlHot)
+            warnings.Add("未检测到运行中的 RimWorld，--xml-hot 将按普通构建和原子部署执行。");
         var plan = new List<DeploySyncPlan>();
         try
         {
@@ -191,8 +195,15 @@ public static class DeployCommand
             try
             {
                 Directory.CreateDirectory(target);
-                foreach (var item in plan.Where(x => x.Exists)) CopyHotSyncItem(context.Root, target, item.Item);
-                return new DeployExecution(true, ExitCodes.Success, new DeployResult(context.Root, false, runId, target, [], preview, false, []), null, warnings);
+                var reloadableXmlCopied = false;
+                foreach (var item in plan.Where(x => x.Exists))
+                    reloadableXmlCopied |= CopyHotSyncItem(context.Root, target, item.Item);
+
+                var xmlHotReload = await RequestXmlHotReloadAsync(reloadableXmlCopied, configDirectory, cancellationToken);
+                if (xmlHotReload.Status is not ("queued" or "not_needed"))
+                    warnings.Add($"XML 文件已部署，但游戏内热重载状态为 {xmlHotReload.Status}: {xmlHotReload.Message ?? xmlHotReload.ErrorCode ?? "未知原因"}");
+
+                return new DeployExecution(true, ExitCodes.Success, new DeployResult(context.Root, false, runId, target, [], preview, false, [], xmlHotReload), null, warnings);
             }
             catch (OperationCanceledException) { throw; }
             catch (Exception ex)
@@ -225,6 +236,30 @@ public static class DeployCommand
     private static DeployExecution Failure(int exitCode, CliError error, string? projectRoot = null)
         => new(false, exitCode, projectRoot is null ? null : new DeployContextDetails(projectRoot), error);
 
+    private static async Task<XmlHotReloadRequestResult> RequestXmlHotReloadAsync(bool reloadableXmlCopied, string configDirectory, CancellationToken cancellationToken)
+    {
+        if (!reloadableXmlCopied)
+            return new XmlHotReloadRequestResult("not_needed", Message: "本次没有同步 Def 或 Patches XML");
+
+        var endpoints = XmlHotReloadHttpClient.FindLiveEndpoints(configDirectory);
+        if (endpoints.Count == 0)
+            return new XmlHotReloadRequestResult("unavailable", ErrorCode: "XML_RELOAD_ENDPOINT_NOT_FOUND", Message: "未找到运行中的 LogSyncMod HTTP endpoint");
+        if (endpoints.Count > 1)
+            return new XmlHotReloadRequestResult("ambiguous", ErrorCode: "RIMWORLD_INSTANCE_AMBIGUOUS", Message: "检测到多个运行中的 LogSyncMod 实例，无法确定目标");
+
+        // Let the complete in-place copy settle before asking the game to read the Defs again.
+        await Task.Delay(TimeSpan.FromSeconds(3), cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        return await XmlHotReloadHttpClient.RequestReloadAsync(endpoints[0], cancellationToken: cancellationToken);
+    }
+
+    private static bool IsReloadableXml(string path)
+    {
+        if (!Path.GetExtension(path).Equals(".xml", StringComparison.OrdinalIgnoreCase)) return false;
+        return path.Split([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar], StringSplitOptions.RemoveEmptyEntries)
+            .Any(segment => segment.Equals("Defs", StringComparison.OrdinalIgnoreCase) || segment.Equals("Patches", StringComparison.OrdinalIgnoreCase));
+    }
+
     private static bool IsOptionalBuildOutput(string item)
         => item.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar).Equals("AssetBundles", StringComparison.OrdinalIgnoreCase);
 
@@ -253,35 +288,38 @@ public static class DeployCommand
         CopyDirectory(source, destination, item.Equals("About", StringComparison.OrdinalIgnoreCase));
     }
 
-    private static void CopyHotSyncItem(string root, string target, string item)
+    private static bool CopyHotSyncItem(string root, string target, string item)
     {
         var source = Path.GetFullPath(item, root);
         var destination = Path.GetFullPath(Path.Combine(target, item));
         if (!PathSafety.IsWithin(source, root) || !PathSafety.IsWithin(destination, target)) throw new IOException($"同步路径越界: {item}");
         if (File.Exists(source))
         {
-            if (IsDll(source)) return;
+            if (IsDll(source)) return false;
             if (File.GetAttributes(source).HasFlag(FileAttributes.ReparsePoint)) throw new IOException($"拒绝跟随 Reparse Point: {source}");
             Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
             File.Copy(source, destination, true);
-            return;
+            return IsReloadableXml(source);
         }
-        CopyHotDirectory(source, destination, item.Equals("About", StringComparison.OrdinalIgnoreCase));
+        return CopyHotDirectory(source, destination, item.Equals("About", StringComparison.OrdinalIgnoreCase));
     }
 
-    private static void CopyHotDirectory(string source, string destination, bool filterAbout = false)
+    private static bool CopyHotDirectory(string source, string destination, bool filterAbout = false)
     {
         var sourceInfo = new DirectoryInfo(source);
         if (sourceInfo.Attributes.HasFlag(FileAttributes.ReparsePoint)) throw new IOException($"拒绝跟随 Reparse Point: {source}");
         Directory.CreateDirectory(destination);
+        var reloadableXmlCopied = false;
         foreach (var file in sourceInfo.EnumerateFiles())
         {
             if (file.Attributes.HasFlag(FileAttributes.ReparsePoint)) throw new IOException($"拒绝跟随 Reparse Point: {file.FullName}");
             if (IsDll(file.FullName) || filterAbout && (file.Extension.Equals(".svg", StringComparison.OrdinalIgnoreCase) || file.Extension.Equals(".html", StringComparison.OrdinalIgnoreCase))) continue;
             file.CopyTo(Path.Combine(destination, file.Name), true);
+            reloadableXmlCopied |= IsReloadableXml(file.FullName);
         }
         foreach (var directory in sourceInfo.EnumerateDirectories())
-            CopyHotDirectory(directory.FullName, Path.Combine(destination, directory.Name), filterAbout);
+            reloadableXmlCopied |= CopyHotDirectory(directory.FullName, Path.Combine(destination, directory.Name), filterAbout);
+        return reloadableXmlCopied;
     }
 
     private static bool IsDll(string path) => Path.GetExtension(path).Equals(".dll", StringComparison.OrdinalIgnoreCase);
@@ -348,7 +386,7 @@ public sealed record DeployTargetAction(string Path, string Action);
 public sealed record ShaderPlan(bool Enabled, string? UnityPath, string? ProjectPath, string? BuildMethod);
 public sealed record BuildReferencePlan(string? RimWorldDirectory, string? ManagedDirectory, string? HarmonyDllPath);
 public sealed record DeployPlan(string ProjectRoot, string Target, ShaderPlan Shader, BuildReferencePlan References, IReadOnlyList<string> Projects, IReadOnlyList<DeploySyncPlan> SyncItems, IReadOnlyList<DeployTargetAction> TargetActions, IReadOnlyList<DeploymentArtifactAction> ArtifactActions, string? ProtectedPattern, bool XmlHot);
-public sealed record DeployResult(string ProjectRoot, bool DryRun, string? RunId, string Target, IReadOnlyList<string> BuiltProjects, DeployPlan Plan, bool RecoveredTransaction, IReadOnlyList<DeploymentArtifactAction> ArtifactActions);
+public sealed record DeployResult(string ProjectRoot, bool DryRun, string? RunId, string Target, IReadOnlyList<string> BuiltProjects, DeployPlan Plan, bool RecoveredTransaction, IReadOnlyList<DeploymentArtifactAction> ArtifactActions, XmlHotReloadRequestResult? XmlHotReload = null);
 public sealed record ProcessTerminationResult(bool Exited, string? Error = null);
 
 internal static class ProcessUtil

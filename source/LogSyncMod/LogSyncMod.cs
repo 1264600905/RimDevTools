@@ -55,6 +55,7 @@ namespace LogSyncMod
             Log.Message("[LogSyncMod] STARTING INITIALIZATION...");
             var harmony = new Harmony("trigger.logsyncmod");
             harmony.PatchAll();
+            XmlHotReloadHttpServer.Start();
             LogPatches.InitializeFile();
             // 内置冒烟测试默认停用，保留代码仅用于后续手动调试。
             // LogSyncSmokeTest.Schedule();

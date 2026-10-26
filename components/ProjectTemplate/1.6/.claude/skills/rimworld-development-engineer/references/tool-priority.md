@@ -37,7 +37,7 @@ RimSage 是有条件的研究前提，而不是本地编辑、构建、部署、
 - 健康：`RimDevTools.exe doctor`
 - 部署计划：`RimDevTools.exe deploy --dry-run`
 - 部署：`RimDevTools.exe deploy`
-- 运行中非 DLL 文件同步（不重载内存中的 XML）：`RimDevTools.exe deploy --xml-hot`
+- XML/Def 热同步：`RimDevTools.exe deploy --xml-hot`（游戏运行时热同步；游戏未运行时回退到普通部署。复制 Def/Patches XML 后等待至少 3 秒再请求重载）
 - 测试：`RimDevTools.exe test run`
 - 参考研究：`RimDevTools.exe mod search|copy|dependencies|dependents`
 

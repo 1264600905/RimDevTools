@@ -177,8 +177,6 @@ public static class TestCommand
             return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "INVALID_ARGUMENT", "--batch-size 仅适用于 --mode auto 或 --mode xml", context.Root);
         if (CliArgs.Has(args, "--sync-source") && !CliArgs.Has(args, "--deploy"))
             return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "SYNC_SOURCE_REQUIRES_DEPLOY", "--sync-source 必须与 --deploy 一起使用", context.Root);
-        if (CliArgs.Has(args, "--xml-hot") && !CliArgs.Has(args, "--deploy"))
-            return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "XML_HOT_REQUIRES_DEPLOY", "--xml-hot 必须与 --deploy 一起使用", context.Root);
         if (!CliArgs.TryPositiveInt(args, "--timeout-seconds", context.Config.Timeouts.MaxWait, out var timeout, out var timeoutError))
             return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "TIMEOUT_INVALID", timeoutError!, context.Root);
         int? batchSize = null;
@@ -229,7 +227,6 @@ public static class TestCommand
         {
             var deployArgs = new List<string> { "deploy" };
             if (CliArgs.Has(args, "--sync-source")) deployArgs.Add("--sync-source");
-            if (CliArgs.Has(args, "--xml-hot")) deployArgs.Add("--xml-hot");
             var deploy = await DeployCommand.ExecuteAsync(deployArgs.ToArray(), cancellationToken, environmentPrepared: true);
             if (!deploy.Ok)
                 return CliResult.WriteFailure(command, deploy.ExitCode, "DEPLOY_FAILED", "测试前部署失败", context.Root, new { deploy.Error, dependencyWarnings }, dependencyWarnings);

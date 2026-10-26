@@ -13,6 +13,18 @@ if (args.Length == 2 && args[0] == "--abandon-lock")
     Environment.Exit(99);
 }
 
+if (args.Length == 2 && args[0] == "--xml-hotload-http-server")
+{
+    Environment.ExitCode = await XmlHotReloadHttpSmoke.RunServerAsync(args[1]);
+    return;
+}
+
+if (args.Length == 1 && args[0] == "--xml-hotload-http-smoke")
+{
+    Environment.ExitCode = await XmlHotReloadHttpSmoke.RunClientAsync();
+    return;
+}
+
 if (Path.GetFileNameWithoutExtension(Environment.ProcessPath ?? "").Equals("RimWorldWin64", StringComparison.OrdinalIgnoreCase))
 {
     await FakeRimWorld.RunAsync(args);
@@ -26,9 +38,15 @@ internal static class FakeRimWorld
 {
     public static async Task RunAsync(string[] args)
     {
+        var mode = Environment.GetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE") ?? "quick";
+        if (mode == "xml-hot-http-server")
+        {
+            await XmlHotReloadHttpSmoke.RunServerAsync(Environment.GetEnvironmentVariable("RIMDEVTOOLS_CONFIG_DIR")!);
+            return;
+        }
+
         Console.WriteLine("FAKE_GAME_STDOUT");
         var configDirectory = Environment.GetEnvironmentVariable("RIMDEVTOOLS_CONFIG_DIR")!;
-        var mode = Environment.GetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE") ?? "quick";
         Directory.CreateDirectory(configDirectory);
         File.WriteAllText(Path.Combine(configDirectory, "fake-args.txt"), string.Join(" ", args));
         File.WriteAllText(Path.Combine(configDirectory, "fake-desktop.txt"), GameProcessLauncher.CurrentDesktopName() ?? "<unknown>");
@@ -268,6 +286,7 @@ internal sealed class TestSuite
         foreach (var oldArgs in new[]
         {
             new[] { "mod", "copy", "anything", "--all" },
+            ["test", "run", "--xml-hot"],
             ["test", "run", "--mods-file", "ModsConfig.xml"],
             ["test", "run", "--auto-test-scope", "standard"],
             ["test", "run", "--auto-test-defname", "Demo_Coat"]
@@ -661,7 +680,7 @@ internal sealed class TestSuite
         Assert(CliArgs.Validate("test run", ["test", "run", "--active-mods-file", "ModsConfig.xml"]) is null, "active mods file option is accepted");
         Assert(CliArgs.Validate("test run", ["test", "run", "--batch-size", "7"]) is null, "batch size option is accepted");
         Assert(CliArgs.Validate("deploy", ["deploy", "--xml-hot"]) is null, "deploy accepts the XML hot-update option");
-        Assert(CliArgs.Validate("test run", ["test", "run", "--deploy", "--xml-hot"]) is null, "test run accepts XML hot-update with deploy");
+        Assert(CliArgs.Validate("test run", ["test", "run", "--deploy", "--xml-hot"]) is not null, "test run rejects XML hot-update because it deploys before launching a new game");
     }
 
     private async Task TestSettingsAsync()
@@ -1008,6 +1027,30 @@ internal sealed class TestSuite
         File.WriteAllText(environment.ConfigPath, Config(environment, modName: "Demo", extra: "\"sync_items\":[\"About\"],\"protected_files_regex\":\"^(PublishedFileId\\\\.txt)$\""));
         using var scope = UseEnvironment(environment);
 
+        var fallbackEnvironment = CreateProjectEnvironment("deploy-xml-hot-fallback", createGameExecutable: true);
+        var fallbackTarget = NewDirectory(Path.Combine("deploy-xml-hot-fallback", "game", "Mods", "Demo"));
+        File.WriteAllText(Path.Combine(fallbackTarget, "stale.txt"), "stale");
+        File.WriteAllText(fallbackEnvironment.ConfigPath, Config(fallbackEnvironment, modName: "Demo", extra: "\"csproj_paths\":[],\"sync_items\":[\"About\"],\"protected_files_regex\":\"^(PublishedFileId\\\\.txt)$\""));
+        using (UseEnvironment(fallbackEnvironment))
+        {
+            ProcessUtil.RimWorldRunningOverride = () => false;
+            try
+            {
+                var fallback = await DeployCommand.ExecuteAsync(["deploy", "--xml-hot"]);
+                var fallbackResult = (DeployResult)fallback.Result!;
+                Assert(fallback.Ok
+                    && !fallbackResult.Plan.XmlHot
+                    && fallbackResult.XmlHotReload is null
+                    && !File.Exists(Path.Combine(fallbackTarget, "stale.txt"))
+                    && fallback.Warnings!.Any(warning => warning.Contains("普通构建和原子部署", StringComparison.Ordinal)),
+                    "XML hot deploy falls back to normal atomic deployment when RimWorld is not running");
+            }
+            finally
+            {
+                ProcessUtil.RimWorldRunningOverride = null;
+            }
+        }
+
         var absentModsConfig = Path.Combine(environment.ConfigDirectory, "missing-ModsConfig.xml");
         File.WriteAllText(environment.ConfigPath, Config(environment, modName: "Demo", modsConfigPath: absentModsConfig, extra: "\"sync_items\":[\"About\"]"));
         var blockedByModsConfig = await DeployCommand.ExecuteAsync(["deploy", "--dry-run"]);
@@ -1059,12 +1102,45 @@ internal sealed class TestSuite
                 && File.ReadAllText(Path.Combine(target, "About", "Hot.xml")) == "updated"
                 && File.ReadAllText(Path.Combine(target, "About", "Hot.DLL")) == "old-dll"
                 && File.ReadAllText(Path.Combine(target, "stale.txt")) == "keep-stale"
-                && File.Exists(Path.Combine(target, "PublishedFileId.txt")), "XML hot deploy updates non-DLL files while preserving DLLs and stale files");
+                && File.Exists(Path.Combine(target, "PublishedFileId.txt"))
+                && ((DeployResult)hot.Result!).XmlHotReload?.Status == "not_needed", "XML hot deploy updates non-DLL files while preserving DLLs and skips reload when no Def/Patches XML was copied");
         }
         finally
         {
             ProcessUtil.RimWorldRunningOverride = null;
         }
+
+        var httpEnvironment = CreateProjectEnvironment("deploy-xml-hot-http", createGameExecutable: true);
+        using (UseEnvironment(httpEnvironment))
+        {
+            var defsPath = Path.Combine(httpEnvironment.Root, "1.6", "Defs");
+            Directory.CreateDirectory(defsPath);
+            File.WriteAllText(Path.Combine(defsPath, "HotReloadTest.xml"), "<Defs />");
+            File.WriteAllText(httpEnvironment.ConfigPath, Config(httpEnvironment, modName: "Demo", extra: "\"csproj_paths\":[],\"sync_items\":[\"1.6\\\\Defs\"]"));
+
+            var previousFakeMode = Environment.GetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE");
+            Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", "xml-hot-http-server");
+            using var game = GameProcessLauncher.Start(Path.Combine(httpEnvironment.Game, "RimWorldWin64.exe"), httpEnvironment.Game, [], false, "xml-hot-http");
+            var stopwatch = Stopwatch.StartNew();
+            try
+            {
+                var httpDeployed = await DeployCommand.ExecuteAsync(["deploy", "--xml-hot"]);
+                stopwatch.Stop();
+                await game.Process.WaitForExitAsync();
+                var httpDeployResult = (DeployResult)httpDeployed.Result!;
+                Assert(httpDeployed.Ok
+                    && httpDeployResult.XmlHotReload?.Status == "queued"
+                    && stopwatch.Elapsed >= TimeSpan.FromSeconds(3)
+                    && File.ReadAllText(Path.Combine(httpEnvironment.Game, "Mods", "Demo", "1.6", "Defs", "HotReloadTest.xml")) == "<Defs />",
+                    "XML hot deploy waits at least three seconds after copying Def XML, then requests reload through the game HTTP endpoint");
+            }
+            finally
+            {
+                if (!game.Process.HasExited) await ProcessUtil.TerminateAsync(game.Process);
+                Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", previousFakeMode);
+            }
+        }
+
         File.WriteAllText(environment.ConfigPath, Config(environment, modName: "Demo", extra: "\"csproj_paths\":[],\"sync_items\":[\"About\"],\"protected_files_regex\":\"^(PublishedFileId\\\\.txt)$\""));
         var artifactDryRun = await DeployCommand.ExecuteAsync(["deploy", "--dry-run"]);
         Assert(artifactDryRun.Ok && ((DeployResult)artifactDryRun.Result!).Plan.ArtifactActions.Any(x => x.Action == "remove") && Directory.Exists(staleBackup), "deploy dry-run reports stale artifacts without removing them");

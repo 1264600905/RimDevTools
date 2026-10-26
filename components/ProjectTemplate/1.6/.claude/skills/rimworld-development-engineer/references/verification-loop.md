@@ -26,7 +26,7 @@
 
 仅在打算部署源码时使用 `--sync-source`。存在用例时使用 auto 或 XML 模式；仅为这些模式请求截图。manual 模式用于自动化无法表示的交互。
 
-当用户明确要求在运行中的游戏旁就地同步非 DLL 内容时，先运行 `deploy --dry-run --xml-hot` 检查计划，再运行 `deploy --xml-hot`。该命令不会停止游戏或重建程序集，但也不会触发游戏重新解析已加载的 XML；需要验证新 Def/行为时，仍使用正常重载或启动测试流程。`test run --deploy --xml-hot` 会关闭已有游戏后再启动测试。
+当用户明确要求游戏运行时同步 Def/patch XML 时，先运行 `deploy --dry-run --xml-hot` 检查计划，再运行独立的 `deploy --xml-hot`。游戏运行时它就地同步文件，复制完成后至少等待 3 秒，再通过本机 HTTP 请求 LogSyncMod 重载 Def；游戏需处于 Playing 且启用开发者模式。游戏未运行时它回退到普通构建和原子部署。`test run` 不接受 `--xml-hot`；其 `--deploy` 始终是启动前的普通部署。
 
 ## 结果审查
 
