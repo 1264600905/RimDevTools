@@ -34,6 +34,8 @@ RimSage 是有条件的研究前提，而不是本地编辑、构建、部署、
 
 ## 项目操作
 
+RimDevTools 默认输出摘要并隐藏成功的子进程日志。保持默认精简模式；仅在摘要不足以判断或需要诊断细节时传入 `--verbose`。warning 和错误始终保留。
+
 - 健康：`RimDevTools.exe doctor`
 - 部署计划：`RimDevTools.exe deploy --dry-run`
 - 部署：`RimDevTools.exe deploy`

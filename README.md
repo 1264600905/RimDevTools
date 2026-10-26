@@ -57,10 +57,15 @@ RimWorld、Harmony 和其他第三方模组程序集不随本仓库分发。
 
 ## 常用命令
 
+RimDevTools 默认返回关键摘要，并隐藏大段构建、Unity 和 ILSpy 输出。大多数子命令支持 `--verbose` 查看完整计划、列表和诊断；AI 与日常工作流只在排查问题或需要核对完整清单时添加它。警告和错误始终会显示。
+
 ```powershell
 # 查看版本与环境诊断
 .\.tools\RimDevTools.exe --version
 .\.tools\RimDevTools.exe doctor
+
+# 需要查看完整检查项时
+.\.tools\RimDevTools.exe doctor --verbose
 
 # 部署当前项目
 .\.tools\RimDevTools.exe deploy --dry-run

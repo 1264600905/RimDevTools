@@ -22,6 +22,10 @@ description: 操作项目本地的 RimDevTools CLI，处理 RimWorld 1.6 模组�
 5. 用 `mods install-tools --dry-run` 检查打包的 LogSyncMod 安装计划；仅在任务范围包含安装时才去掉 `--dry-run`。
 6. 仅在需要持久化 LogSync 设置时使用 `test settings`。正常测试会以事务方式应用并还原设置。
 
+## 输出与详细模式
+
+RimDevTools 默认只返回摘要和关键字段；所有命令仍将最终结果写为一个 JSON 对象。多数子命令支持 `--verbose`，用于查看完整计划、候选列表、模组清单和子进程诊断。日常调用不要默认附加 `--verbose`；只有摘要不足以判断结果或正在排查问题时再使用。警告和错误始终可见。构建/Unity/ILSpy 成功时的常规输出默认隐藏；失败时会显示有限的末尾诊断。游戏进程自身 stdout/stderr 始终丢弃。
+
 ## 诊断
 
 运行：
@@ -32,13 +36,13 @@ description: 操作项目本地的 RimDevTools CLI，处理 RimWorld 1.6 模组�
 .\.tools\RimDevTools.exe --version
 ```
 
-读取 stdout 的最后一个 JSON 对象。默认的 `checks` 数组包含可操作问题及已解析的 `Assembly-CSharp.dll` 和 `0Harmony.dll` 绝对路径；用 `ready`、`issueCount` 和 `warningCount` 总结，其他成功/已禁用/不适用检查则使用 `--verbose` 查看。修复范围最小的失败前提条件后重新运行 `doctor`。它不会构建，也不会检查启动工具所需的 .NET 10 Runtime。
+读取 stdout 上唯一的 JSON 对象。默认的 `checks` 数组包含可操作问题及已解析的 `Assembly-CSharp.dll` 和 `0Harmony.dll` 绝对路径；用 `ready`、`issueCount` 和 `warningCount` 总结，其他成功/已禁用/不适用检查则使用 `--verbose` 查看。修复范围最小的失败前提条件后重新运行 `doctor`。它不会构建，也不会检查启动工具所需的 .NET 10 Runtime。
 
 ## 部署
 
 1. 根据doctor的路径探测，尝试修复 `mod_config.jsonc` 中的 游戏路径，工坊路径，完成后重新执行 `doctor` 验证,检查状态是否更新。
 2. 填写正确的项目 `mod_name`、`rimworld_dir`、`csproj_paths` 和 `sync_items`。
-3. 运行 `deploy --dry-run` 并检查部署项目是否符合预期,确认包含所有预期程序集和内容根目录。
+3. 运行 `deploy --dry-run` 检查部署摘要；需要核对所有目标路径和替换动作时添加 `--verbose`。
 4. 仅在计划正确后运行 `deploy`。
 5. 仅当有意分发源代码时启用 `sync_source: true`，或对单次部署添加 `--sync-source`。
 
@@ -84,7 +88,7 @@ auto 测试参数遵循以下规则：
 
 ## 参考资料与工具安装
 
-使用 `mod copy --dry-run` 先检查本地/创意工坊模组的解析结果、依赖闭包、跳过的共享依赖、目标冲突和待反编译程序集。确认计划后使用 `mod copy` 复制到 `mod_config.jsonc` 的 `project_paths.reference_docs`，并通过打包的 ILSpy 反编译程序集。用精确 package ID、名称、目录或绝对路径消除歧义；以 `--deps` 获取除官方内容与 Harmony 外的硬依赖闭包，仅在审查替换目标后使用 `--overwrite-existing`。
+使用 `mod copy --dry-run` 先检查目标摘要和冲突；默认最多列出 10 个目标。需要查看完整依赖闭包、跳过项、程序集计划时添加 `--verbose`。确认计划后使用 `mod copy` 复制到 `mod_config.jsonc` 的 `project_paths.reference_docs`，并通过打包的 ILSpy 反编译程序集。用精确 package ID、名称、目录或绝对路径消除歧义；以 `--deps` 获取除官方内容与 Harmony 外的硬依赖闭包，仅在审查替换目标后使用 `--overwrite-existing`。
 
 使用 `mods install-tools` 安装单个打包的 LogSyncMod 组件。安装器会验证清单、package ID、版本和内容哈希，保留 `PublishedFileId.txt`，阻止降级，并通过暂存/备份回滚。
 

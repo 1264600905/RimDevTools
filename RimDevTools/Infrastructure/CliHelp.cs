@@ -62,6 +62,7 @@ public static class CliHelp
         Global options:
           -h, --help          Show top-level or command-specific help.
           --version           Print the RimDevTools version as JSON; must be the only argument.
+          --verbose           After a supported command, include detailed results and subprocess diagnostics.
 
         Project discovery:
           Project commands look for mod_config.jsonc in the current directory, then its
@@ -69,8 +70,10 @@ public static class CliHelp
           --help, --version, and mods install-tools with --mods-path need no project discovery.
 
         Output contract:
-          Final command results are one JSON object on stdout. Progress and diagnostics
-          are written to stderr. Help is stable plain text on stdout.
+          Final command results are one JSON object on stdout. Default output contains
+          a concise summary; --verbose adds details and subprocess output. Warnings and
+          errors remain visible. Progress and diagnostics are written to stderr.
+          Help is stable plain text on stdout.
 
         Examples:
           RimDevTools.exe doctor [--verbose]
@@ -111,7 +114,7 @@ public static class CliHelp
         Build and atomically deploy the current mod into RimWorld/Mods.
 
         Usage:
-          RimDevTools.exe deploy [--sync-source] [--xml-hot] [--dry-run]
+          RimDevTools.exe deploy [--sync-source] [--xml-hot] [--dry-run] [--verbose]
 
         Options:
           --sync-source       Include source/ in this deployment.
@@ -119,7 +122,12 @@ public static class CliHelp
                               wait at least 3 seconds, then request a Def reload. If it is not
                               running, perform the normal build and atomic deployment.
           --dry-run           Print the immutable deployment plan without mutation.
+          --verbose           Include the complete plan and build/Unity output.
           -h, --help          Show this help.
+
+        Output:
+          By default, reports the target, build count, sync items, action counts, and XML
+          reload status. --verbose includes all paths and plan details.
 
         Configuration:
           mod_name, rimworld_dir, csproj_paths, sync_items, sync_source, protected_files_regex,
@@ -153,20 +161,22 @@ public static class CliHelp
         Search RimWorld Mods and configured Workshop directories.
 
         Usage:
-          RimDevTools.exe mod search <keyword> [--fuzzy]
+          RimDevTools.exe mod search <keyword> [--fuzzy] [--verbose]
 
         Arguments:
           keyword             Name, packageId, author, or source folder text.
 
         Options:
           --fuzzy             Also allow subsequence matching.
+          --verbose           Include all candidates with source paths and dependency metadata.
           -h, --help          Show this help.
 
         Example:
           RimDevTools.exe mod search "联合重工" --fuzzy
 
         Output:
-          JSON candidate list containing name, packageId, source directory, and deps.
+          Default JSON lists up to 10 candidates with a total count; --verbose includes
+          all candidates, source paths, and dependency metadata.
 
         Common errors:
           PROJECT_NOT_FOUND, INVALID_ARGUMENT.
@@ -188,11 +198,16 @@ public static class CliHelp
           --fuzzy             Allow fuzzy query resolution.
           --overwrite-existing Replace all preflighted existing targets.
           --dry-run           Print the copy/decompile plan without mutation.
+          --verbose           Include the full dependency plan and ILSpy output.
           -h, --help          Show this help.
 
         Target naming:
           Final and staging folders use the sanitized About.xml <name>, not packageId.
           Ambiguous queries and sanitized-name collisions fail before any copy.
+
+        Output:
+          Default dry-run lists up to 10 targets and reports the total; --verbose includes
+          the full dependency closure, ignored folders, and assembly plan.
 
         Example:
           RimDevTools.exe mod copy KindSeal.LOL --deps --dry-run
@@ -206,15 +221,19 @@ public static class CliHelp
         List version-aware hard dependencies for one local mod.
 
         Usage:
-          RimDevTools.exe mod dependencies <query> [--version <value>] [--fuzzy]
+          RimDevTools.exe mod dependencies <query> [--version <value>] [--fuzzy] [--verbose]
 
         Options:
           --version <value>   Dependency metadata version; defaults to game_version.
           --fuzzy             Allow fuzzy query resolution.
+          --verbose           Include the resolved mod's full metadata.
           -h, --help          Show this help.
 
         Example:
           RimDevTools.exe mod dependencies KindSeal.LOL --version 1.6
+
+        Output:
+          Default JSON lists up to 20 dependencies with a total count; --verbose includes all.
 
         Common errors:
           MOD_NOT_FOUND, MOD_AMBIGUOUS, INVALID_ARGUMENT.
@@ -224,15 +243,19 @@ public static class CliHelp
         List local mods whose hard dependencies include the target.
 
         Usage:
-          RimDevTools.exe mod dependents <query> [--version <value>] [--fuzzy]
+          RimDevTools.exe mod dependents <query> [--version <value>] [--fuzzy] [--verbose]
 
         Options:
           --version <value>   Dependency metadata version; defaults to game_version.
           --fuzzy             Allow fuzzy query resolution.
+          --verbose           Include full metadata for the target and dependents.
           -h, --help          Show this help.
 
         Example:
           RimDevTools.exe mod dependents aoba.deadmanswitch.core
+
+        Output:
+          Default JSON lists up to 20 dependents with a total count; --verbose includes all.
 
         Common errors:
           MOD_NOT_FOUND, MOD_AMBIGUOUS, INVALID_ARGUMENT.
@@ -271,6 +294,7 @@ public static class CliHelp
           --capture-screenshots       Enable AutoTest screenshots for auto/xml only.
           --isolated-desktop          Force a private Windows desktop for this run.
           --no-isolated-desktop       Force the current visible desktop for this run.
+          --verbose                  Include the active mod list, additions, and deploy diagnostics.
           -h, --help                  Show this help.
 
         Deployment behavior:
@@ -296,8 +320,8 @@ public static class CliHelp
           Explicit --defname runs ignore the batch limit.
 
         Output:
-          JSON runId, mode, target, mods/additions, isolation source, signal, result, and
-          non-blocking dependency warnings for enabled Mods whose hard parents are disabled.
+          Default JSON includes runId, mode, target, mod/addition counts, isolation source,
+          signal, result, and dependency warnings. --verbose includes full mods/additions.
 
         Common errors:
           MODE_INVALID, MOD_NOT_RESOLVED, ENVIRONMENT_BUSY, GAME_EXIT_TIMEOUT,
@@ -308,9 +332,10 @@ public static class CliHelp
         Persist the LogSync output path and configured keywords without launching RimWorld.
 
         Usage:
-          RimDevTools.exe test settings
+          RimDevTools.exe test settings [--verbose]
 
         Options:
+          --verbose           Include the effective log paths and keyword count.
           -h, --help          Show this help.
 
         Behavior:
@@ -327,11 +352,12 @@ public static class CliHelp
         Inspect or safely recover interrupted RimDevTools configuration transactions.
 
         Usage:
-          RimDevTools.exe test cleanup [--dry-run] [--status]
+          RimDevTools.exe test cleanup [--dry-run] [--status] [--verbose]
 
         Options:
           --dry-run           Report recoverable transactions without changing files.
           --status            Report lock, transaction, game, and deployment-artifact status only.
+          --verbose           Include full lock details and transaction/artifact paths; default output still names an active lock owner.
           -h, --help          Show this help.
 
         Behavior:
@@ -356,11 +382,12 @@ public static class CliHelp
         Install the packaged LogSyncMod into RimWorld/Mods.
 
         Usage:
-          RimDevTools.exe mods install-tools [--mods-path <path>] [--dry-run]
+          RimDevTools.exe mods install-tools [--mods-path <path>] [--dry-run] [--verbose]
 
         Options:
           --mods-path <path>  Explicit RimWorld Mods directory. Without it, resolve rimworld_dir.
           --dry-run           Validate components and print the immutable install plan only.
+          --verbose           Include source paths, hashes, and complete component records.
           -h, --help          Show this help.
 
         Behavior:

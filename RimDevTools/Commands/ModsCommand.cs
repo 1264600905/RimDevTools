@@ -5,6 +5,7 @@ public static class ModsCommand
     public static async Task<int> InstallToolsAsync(string[] args, CancellationToken cancellationToken = default)
     {
         const string command = "mods install-tools";
+        var verbose = CliArgs.Has(args, "--verbose");
         var explicitModsPath = CliArgs.Value(args, "--mods-path");
         ProjectContext? context;
         if (explicitModsPath is null)
@@ -45,13 +46,7 @@ public static class ModsCommand
             return CliResult.WriteFailure(command, ExitCodes.TaskFailed, "TOOL_MOD_PLAN_FAILED", ex.Message, context?.Root);
         }
 
-        var planResult = new
-        {
-            modsPath = plan.ModsPath,
-            manifestPath = plan.ManifestPath,
-            warnings = plan.Warnings,
-            components = plan.Components
-        };
+        object planResult = FormatPlan(plan, verbose);
         if (CliArgs.Has(args, "--dry-run"))
             return CliResult.WriteSuccess(command, context?.Root, planResult);
         if (HasBlockingConflict(plan))
@@ -68,15 +63,26 @@ public static class ModsCommand
                 return CliResult.WriteFailure(command, ExitCodes.Timeout, "GAME_EXIT_TIMEOUT", "等待已有 RimWorld 退出超时", context?.Root);
             plan = AddWorkshopWarnings(ToolModInstaller.Plan(dataRoot, modsPath), context);
             if (HasBlockingConflict(plan))
-                return CliResult.WriteFailure(command, ExitCodes.TaskFailed, "INSTALL_PLAN_CONFLICT", "取得环境锁后检测到工具 Mod 安装冲突", context?.Root, new { runId, plan });
+                return CliResult.WriteFailure(command, ExitCodes.TaskFailed, "INSTALL_PLAN_CONFLICT", "取得环境锁后检测到工具 Mod 安装冲突", context?.Root, new { runId, plan = FormatPlan(plan, verbose) });
             var results = ToolModInstaller.Install(plan, runId);
+            object componentResults = verbose
+                ? results
+                : results.Select(result => new
+                {
+                    result.PackageId,
+                    result.SourceVersion,
+                    result.TargetVersion,
+                    result.Action,
+                    result.Reason
+                }).ToArray();
             return CliResult.WriteSuccess(command, context?.Root, new
             {
                 runId,
                 modsPath = plan.ModsPath,
                 manifestPath = plan.ManifestPath,
                 warnings = plan.Warnings,
-                components = results
+                componentCount = results.Count,
+                components = componentResults
             });
         }
         catch (OperationCanceledException) { throw; }
@@ -104,6 +110,30 @@ public static class ModsCommand
 
     private static bool HasBlockingConflict(ToolModDeploymentPlan plan)
         => plan.Components.Any(component => component.Action is "same_version_conflict" or "unknown_target_version");
+
+    private static object FormatPlan(ToolModDeploymentPlan plan, bool verbose)
+        => verbose
+            ? new
+            {
+                modsPath = plan.ModsPath,
+                manifestPath = plan.ManifestPath,
+                warnings = plan.Warnings,
+                components = plan.Components
+            }
+            : new
+            {
+                modsPath = plan.ModsPath,
+                componentCount = plan.Components.Count,
+                warnings = plan.Warnings,
+                components = plan.Components.Select(component => new
+                {
+                    packageId = component.Source.PackageId,
+                    version = component.Source.Version,
+                    component.TargetVersion,
+                    component.Action,
+                    component.Reason
+                }).ToArray()
+            };
 
     private static ToolModDeploymentPlan AddWorkshopWarnings(ToolModDeploymentPlan plan, ProjectContext? context)
     {

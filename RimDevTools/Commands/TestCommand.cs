@@ -22,6 +22,7 @@ public static class TestCommand
 
         var dryRun = CliArgs.Has(args, "--dry-run");
         var statusOnly = CliArgs.Has(args, "--status");
+        var verbose = CliArgs.Has(args, "--verbose");
         var configDirectory = GameEnvironment.ConfigDirectory(context)!;
         if (statusOnly)
         {
@@ -40,24 +41,44 @@ public static class TestCommand
             var gameRunning = ProcessUtil.IsRimWorldRunning();
             var environmentBusy = EnvironmentLock.IsBusy(configDirectory);
             var lockPath = Path.Combine(configDirectory, "RimDevTools.lock.json");
+            var lockInfo = verbose
+                ? EnvironmentLock.ReadInfo(lockPath)
+                : environmentBusy ? SummarizeLockInfo(lockPath) : null;
             var found = transactionStatus.Found || deploymentArtifacts.Count > 0;
+            object transactions = verbose
+                ? transactionStatus.Items
+                : transactionStatus.Items.Take(10).Select(item => new
+                {
+                    runId = Path.GetFileName(item.Directory),
+                    item.Status,
+                    item.Message
+                }).ToArray();
+            object artifactSummary = verbose
+                ? deploymentArtifacts
+                : deploymentArtifacts
+                    .GroupBy(item => new { item.Kind, item.Action })
+                    .Select(group => new { group.Key.Kind, group.Key.Action, count = group.Count() })
+                    .ToArray();
+            var attention = deploymentArtifacts
+                .Where(item => item.Action is "retain" or "failed")
+                .Select(item => new { item.Path, item.Kind, item.Action, item.Reason })
+                .ToArray();
             return CliResult.WriteSuccess(command, context.Root, new
             {
                 status = true,
                 gameRunning,
                 environmentBusy,
-                lockPath,
-                lockInfo = EnvironmentLock.ReadInfo(lockPath),
+                lockPath = verbose ? lockPath : null,
+                lockInfo,
                 found,
                 recoverable = transactionStatus.Ok && deploymentArtifacts.All(item => item.Action != "retain"),
-                transactions = transactionStatus.Items.Select(item => new
-                {
-                    runId = Path.GetFileName(item.Directory),
-                    directory = item.Directory,
-                    item.Status,
-                    item.Message
-                }).ToArray(),
-                deploymentArtifacts,
+                transactionCount = transactionStatus.Items.Count,
+                transactionsTruncated = !verbose && transactionStatus.Items.Count > 10,
+                deploymentArtifactCount = deploymentArtifacts.Count,
+                transactions,
+                deploymentArtifacts = artifactSummary,
+                attentionCount = attention.Length,
+                attention = verbose ? attention : attention.Take(10).ToArray(),
                 nextCommand = found
                     ? environmentBusy ? "请等待当前 RimDevTools 操作释放环境锁后重试"
                     : gameRunning ? "请等待 RimWorld 完全退出后执行 RimDevTools.exe test cleanup --dry-run"
@@ -96,7 +117,38 @@ public static class TestCommand
             }
 
             var allOk = summary.Ok && artifactResults.All(x => x.Action != "failed");
-            var result = new { dryRun, runId, found = summary.Found || artifactResults.Count > 0, ok = allOk, transactions = summary.Items, deploymentArtifacts = artifactResults };
+            object transactions = verbose
+                ? summary.Items
+                : summary.Items.Take(10).Select(item => new
+                {
+                    runId = Path.GetFileName(item.Directory),
+                    item.Status,
+                    item.Message
+                }).ToArray();
+            object artifactSummary = verbose
+                ? artifactResults
+                : artifactResults
+                    .GroupBy(item => new { item.Kind, item.Action })
+                    .Select(group => new { group.Key.Kind, group.Key.Action, count = group.Count() })
+                    .ToArray();
+            var attention = artifactResults
+                .Where(item => item.Action is "retain" or "failed")
+                .Select(item => new { item.Path, item.Kind, item.Action, item.Reason })
+                .ToArray();
+            var result = new
+            {
+                dryRun,
+                runId,
+                found = summary.Found || artifactResults.Count > 0,
+                ok = allOk,
+                transactionCount = summary.Items.Count,
+                transactionsTruncated = !verbose && summary.Items.Count > 10,
+                deploymentArtifactCount = artifactResults.Count,
+                transactions,
+                deploymentArtifacts = artifactSummary,
+                attentionCount = attention.Length,
+                attention = verbose ? attention : attention.Take(10).ToArray()
+            };
             return allOk
                 ? CliResult.WriteSuccess(command, context.Root, result)
                 : CliResult.WriteFailure(command, ExitCodes.TaskFailed, "TRANSACTION_CLEANUP_INCOMPLETE", "部分事务无法安全清理，已保留现场", context.Root, result);
@@ -110,6 +162,7 @@ public static class TestCommand
     public static async Task<int> SettingsAsync(string[] args, CancellationToken cancellationToken = default)
     {
         const string command = "test settings";
+        var verbose = CliArgs.Has(args, "--verbose");
         var context = CliApplication.RequireProject(command, out var code);
         if (context is null) return code;
         var templateError = ProjectTemplatePreflight.Validate(context);
@@ -141,7 +194,13 @@ public static class TestCommand
                 runId,
                 settingsPath = GameEnvironment.LogSyncSettingsPath(context),
                 changed,
-                recoveredTransaction = recovery.Found
+                recoveredTransaction = recovery.Found,
+                details = verbose ? new
+                {
+                    syncLogPath = SettingsEditor.SyncLogPath(context),
+                    autoTestOutputPath = SettingsEditor.AutoTestOutputPath(context),
+                    keywordCount = context.Config.LogKeywords.Count
+                } : null
             });
         }
         catch (OperationCanceledException) { throw; }
@@ -154,6 +213,7 @@ public static class TestCommand
     public static async Task<int> RunAsync(string[] args, CancellationToken cancellationToken = default)
     {
         const string command = "test run";
+        var verbose = CliArgs.Has(args, "--verbose");
         var context = CliApplication.RequireProject(command, out var code);
         if (context is null) return code;
         var templateError = ProjectTemplatePreflight.Validate(context);
@@ -227,7 +287,7 @@ public static class TestCommand
         {
             var deployArgs = new List<string> { "deploy" };
             if (CliArgs.Has(args, "--sync-source")) deployArgs.Add("--sync-source");
-            var deploy = await DeployCommand.ExecuteAsync(deployArgs.ToArray(), cancellationToken, environmentPrepared: true);
+            var deploy = await DeployCommand.ExecuteAsync(deployArgs.ToArray(), cancellationToken, environmentPrepared: true, verbose: verbose);
             if (!deploy.Ok)
                 return CliResult.WriteFailure(command, deploy.ExitCode, "DEPLOY_FAILED", "测试前部署失败", context.Root, new { deploy.Error, dependencyWarnings }, dependencyWarnings);
         }
@@ -253,7 +313,7 @@ public static class TestCommand
             var gameArguments = new List<string> { "-popupwindow" };
             if (mode is "auto" or "xml") gameArguments.Add("quicktest");
             gameSession = GameProcessLauncher.Start(gamePath, context.Config.RimWorldDir, gameArguments, isolation.Enabled, runId);
-            outcome = await WaitForModeAsync(mode, gameSession.Process, timeout, syncLogPath, logOffset, outputPath, targetPackageId, runId, resultSnapshot, cancellationToken);
+            outcome = await WaitForModeAsync(mode, gameSession.Process, timeout, syncLogPath, logOffset, outputPath, targetPackageId, runId, resultSnapshot, cancellationToken, verbose);
         }
         catch (OperationCanceledException)
         {
@@ -284,7 +344,19 @@ public static class TestCommand
         }
 
         if (!gameExited)
-            return CliResult.WriteFailure(command, outcome.ExitCode, outcome.Code, outcome.Message, context.Root, new { runId, mode, batchSize, dependencyWarnings, isolatedDesktop = isolation.Enabled, isolatedDesktopSource = isolation.Source, transactionRetained = transaction is not null }, dependencyWarnings);
+            return CliResult.WriteFailure(command, outcome.ExitCode, outcome.Code, outcome.Message, context.Root, new
+            {
+                runId,
+                mode,
+                batchSize,
+                activeModCount = modList.Mods.Count,
+                additions = verbose ? modList.Additions : null,
+                mods = verbose ? modList.Mods : null,
+                dependencyWarnings,
+                isolatedDesktop = isolation.Enabled,
+                isolatedDesktopSource = isolation.Source,
+                transactionRetained = transaction is not null
+            }, dependencyWarnings);
 
         if (transaction is not null)
         {
@@ -311,7 +383,21 @@ public static class TestCommand
         }
 
         if (!outcome.Ok)
-            return CliResult.WriteFailure(command, outcome.ExitCode, outcome.Code, outcome.Message, context.Root, new { runId, mode, scopes = selection.Scopes, defNames = selection.DefNames, batchSize, dependencyWarnings, isolatedDesktop = isolation.Enabled, isolatedDesktopSource = isolation.Source, mods = modList.Mods, additions = modList.Additions, outcome.Details }, dependencyWarnings);
+            return CliResult.WriteFailure(command, outcome.ExitCode, outcome.Code, outcome.Message, context.Root, new
+            {
+                runId,
+                mode,
+                scopes = selection.Scopes,
+                defNames = verbose ? selection.DefNames : null,
+                batchSize,
+                dependencyWarnings,
+                isolatedDesktop = isolation.Enabled,
+                isolatedDesktopSource = isolation.Source,
+                activeModCount = modList.Mods.Count,
+                mods = verbose ? modList.Mods : null,
+                additions = verbose ? modList.Additions : null,
+                outcome.Details
+            }, dependencyWarnings);
 
         return CliResult.WriteSuccess(command, context.Root, new
         {
@@ -319,13 +405,15 @@ public static class TestCommand
             mode,
             targetPackageId,
             scopes = selection.Scopes,
-            defNames = selection.DefNames,
+            defNames = verbose ? selection.DefNames : null,
             batchSize,
             captureScreenshots,
             isolatedDesktop = isolation.Enabled,
             isolatedDesktopSource = isolation.Source,
-            mods = modList.Mods,
-            additions = modList.Additions,
+            activeModCount = modList.Mods.Count,
+            additionCount = modList.Additions.Count,
+            mods = verbose ? modList.Mods : null,
+            additions = verbose ? modList.Additions : null,
             signal = outcome.Message,
             result = outcome.Details,
             recoveredTransaction = recovery.Found
@@ -342,7 +430,8 @@ public static class TestCommand
         string? packageId,
         string runId,
         IReadOnlyDictionary<string, AutoResultFingerprint> resultSnapshot,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool verbose)
     {
         var startedAt = DateTime.UtcNow;
         var deadline = startedAt.AddSeconds(timeoutSeconds);
@@ -375,7 +464,7 @@ public static class TestCommand
             {
                 if (scanner.AutoCompleted || game.HasExited)
                 {
-                    var validation = AutoResultValidator.Validate(outputPath, packageId, runId, resultSnapshot);
+                    var validation = AutoResultValidator.Validate(outputPath, packageId, runId, resultSnapshot, verbose);
                     if (validation.Ok) return TestOutcome.Success(scanner.AutoCompleted ? $"{mode} completed signal" : $"{mode} result after game exit", validation.Details);
                     if (scanner.AutoCompleted) return TestOutcome.Failure(ExitCodes.GameFailed, validation.Code, validation.Message, validation.Details);
                 }
@@ -408,6 +497,17 @@ public static class TestCommand
             await Task.Delay(500, cancellationToken);
         }
         return TestOutcome.Failure(ExitCodes.Timeout, "TEST_TIMEOUT", $"{mode} 模式等待超时");
+    }
+
+    private static object? SummarizeLockInfo(string lockPath)
+    {
+        if (EnvironmentLock.ReadInfo(lockPath) is not JsonElement info || info.ValueKind != JsonValueKind.Object) return null;
+        return new
+        {
+            pid = info.TryGetProperty("pid", out var pid) && pid.TryGetInt32(out var processId) ? processId : (int?)null,
+            command = info.TryGetProperty("command", out var command) ? command.GetString() : null,
+            projectPath = info.TryGetProperty("projectPath", out var projectPath) ? projectPath.GetString() : null
+        };
     }
 
     private sealed record TestOutcome(bool Ok, int ExitCode, string Code, string Message, object? Details = null)
@@ -801,7 +901,7 @@ public static class AutoResultValidator
             : Directory.EnumerateFiles(outputPath, "*_Result.json", SearchOption.TopDirectoryOnly)
                 .ToDictionary(Path.GetFullPath, Fingerprint, StringComparer.OrdinalIgnoreCase);
 
-    public static AutoResultValidation Validate(string outputPath, string? expectedPackageId, string expectedRunId, IReadOnlyDictionary<string, AutoResultFingerprint> snapshot)
+    public static AutoResultValidation Validate(string outputPath, string? expectedPackageId, string expectedRunId, IReadOnlyDictionary<string, AutoResultFingerprint> snapshot, bool verbose = false)
     {
         if (!Directory.Exists(outputPath)) return Failure("AUTO_RESULT_MISSING", "未找到自动测试输出目录");
         var candidates = Directory.EnumerateFiles(outputPath, "*_Result.json", SearchOption.TopDirectoryOnly)
@@ -872,7 +972,17 @@ public static class AutoResultValidator
                         !AutoTestResultStatus.IsSuccess(status.GetString() ?? string.Empty))
                     .Select(item => item.TryGetProperty("caseId", out var caseId) ? caseId.GetString() : null)
                     .ToArray();
-                if (failed.Length > 0) return Failure("AUTO_RESULT_FAILED", "自动测试结果包含失败用例", new { path, failed });
+                if (failed.Length > 0)
+                {
+                    const int failurePreviewLimit = 20;
+                    return Failure("AUTO_RESULT_FAILED", "自动测试结果包含失败用例", new
+                    {
+                        path,
+                        failedCount = failed.Length,
+                        truncated = !verbose && failed.Length > failurePreviewLimit,
+                        failed = verbose ? failed : failed.Take(failurePreviewLimit).ToArray()
+                    });
+                }
                 return new AutoResultValidation(true, "", "", new { path, packageId, runId, executed, planned });
             }
             catch (JsonException ex)

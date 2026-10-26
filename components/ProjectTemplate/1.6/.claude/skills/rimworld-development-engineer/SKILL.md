@@ -42,6 +42,8 @@ description: 在此模板中端到端实现、诊断并验证 RimWorld 1.6 模�
 
 工具细节请调用 `rimdevtools` 或 `rimsage`，不要在此重复其手册。
 
+使用 RimDevTools 时保留默认精简输出；只有需要完整计划、列表或子进程诊断时才添加 `--verbose`。错误和 warning 会在默认模式下保留。
+
 ## 验证
 
 让验证与变更相匹配：

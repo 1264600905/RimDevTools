@@ -9,16 +9,18 @@ public static class DeployCommand
 {
     public static async Task<int> RunAsync(string[] args, CancellationToken cancellationToken = default)
     {
-        var execution = await ExecuteAsync(args, cancellationToken);
+        var verbose = CliArgs.Has(args, "--verbose");
+        var execution = await ExecuteAsync(args, cancellationToken, verbose: verbose);
         if (!execution.Ok)
             return CliResult.WriteFailure("deploy", execution.ExitCode, execution.Error!.Code, execution.Error.Message, execution.Result is DeployContextDetails details ? details.ProjectRoot : null, execution.Error.Details);
 
         var projectRoot = execution.Result is DeployResult result ? result.ProjectRoot : null;
-        return CliResult.WriteSuccess("deploy", projectRoot, execution.Result, execution.Warnings);
+        return CliResult.WriteSuccess("deploy", projectRoot, verbose ? execution.Result : SummarizeResult(execution.Result), execution.Warnings);
     }
 
-    public static async Task<DeployExecution> ExecuteAsync(string[] args, CancellationToken cancellationToken = default, bool environmentPrepared = false)
+    public static async Task<DeployExecution> ExecuteAsync(string[] args, CancellationToken cancellationToken = default, bool environmentPrepared = false, bool verbose = false)
     {
+        verbose |= CliArgs.Has(args, "--verbose");
         var context = ProjectDiscovery.Find(Environment.CurrentDirectory, out var discoveryError);
         if (context is null)
         {
@@ -172,21 +174,22 @@ public static class DeployCommand
 
         if (!xmlHot && config.ShaderBundle.Enabled)
         {
-            var shaderResult = await BuildShaderAsync(context, config, cancellationToken);
+            var shaderResult = await BuildShaderAsync(context, config, cancellationToken, verbose);
             if (!shaderResult.Ok)
                 return Failure(ExitCodes.TaskFailed, new CliError("SHADER_BUILD_FAILED", shaderResult.Message), context.Root);
         }
 
-        foreach (var project in projectFiles)
+        for (var index = 0; index < projectFiles.Count; index++)
         {
-            Console.Error.WriteLine($"构建 {project}");
+            var project = projectFiles[index];
+            Console.Error.WriteLine(verbose ? $"构建 {project}" : $"构建项目 {index + 1}/{projectFiles.Count}");
             if (!await ProcessUtil.RunAsync("dotnet",
             [
                 "build", project, "--configuration", "Release",
                 $"-p:RimWorldDir={environment.References.RimWorldDirectory}",
                 $"-p:RimWorldManagedDir={environment.References.ManagedDirectory}",
                 $"-p:HarmonyDllPath={environment.References.HarmonyDllPath}"
-            ], context.Root, cancellationToken))
+            ], context.Root, cancellationToken, verbose))
                 return Failure(ExitCodes.TaskFailed, new CliError("BUILD_FAILED", $"dotnet build 失败: {project}"), context.Root);
         }
 
@@ -236,6 +239,31 @@ public static class DeployCommand
     private static DeployExecution Failure(int exitCode, CliError error, string? projectRoot = null)
         => new(false, exitCode, projectRoot is null ? null : new DeployContextDetails(projectRoot), error);
 
+    private static object? SummarizeResult(object? result)
+    {
+        if (result is not DeployResult deploy) return result;
+
+        return new
+        {
+            deploy.DryRun,
+            deploy.RunId,
+            deploy.Target,
+            builtProjectCount = deploy.BuiltProjects.Count,
+            syncItems = deploy.Plan.SyncItems.Select(item => new { item.Item, item.Exists, item.Severity }).ToArray(),
+            targetActionCounts = deploy.Plan.TargetActions
+                .GroupBy(action => action.Action, StringComparer.OrdinalIgnoreCase)
+                .Select(group => new { action = group.Key, count = group.Count() })
+                .ToArray(),
+            artifactActionCounts = deploy.ArtifactActions
+                .GroupBy(action => action.Action, StringComparer.OrdinalIgnoreCase)
+                .Select(group => new { action = group.Key, count = group.Count() })
+                .ToArray(),
+            deploy.RecoveredTransaction,
+            xmlHotReload = deploy.XmlHotReload,
+            shaderBuildEnabled = deploy.Plan.Shader.Enabled
+        };
+    }
+
     private static async Task<XmlHotReloadRequestResult> RequestXmlHotReloadAsync(bool reloadableXmlCopied, string configDirectory, CancellationToken cancellationToken)
     {
         if (!reloadableXmlCopied)
@@ -263,13 +291,13 @@ public static class DeployCommand
     private static bool IsOptionalBuildOutput(string item)
         => item.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar).Equals("AssetBundles", StringComparison.OrdinalIgnoreCase);
 
-    private static async Task<(bool Ok, string Message)> BuildShaderAsync(ProjectContext context, ProjectConfig config, CancellationToken cancellationToken)
+    private static async Task<(bool Ok, string Message)> BuildShaderAsync(ProjectContext context, ProjectConfig config, CancellationToken cancellationToken, bool verbose)
     {
         if (string.IsNullOrWhiteSpace(config.ShaderBundle.UnityExePath) || !File.Exists(config.ShaderBundle.UnityExePath)) return (false, "Unity 路径不存在");
         var projectPath = Path.GetFullPath(config.ShaderBundle.UnityProjectPath ?? "", context.Root);
         if (!PathSafety.IsWithin(projectPath, context.Root) || !Directory.Exists(projectPath)) return (false, "Unity 项目路径不存在或越出项目目录");
         if (string.IsNullOrWhiteSpace(config.ShaderBundle.BuildMethod)) return (false, "Unity build_method 未配置");
-        var ok = await ProcessUtil.RunAsync(config.ShaderBundle.UnityExePath, ["-batchmode", "-quit", "-projectPath", projectPath, "-executeMethod", config.ShaderBundle.BuildMethod], context.Root, cancellationToken);
+        var ok = await ProcessUtil.RunAsync(config.ShaderBundle.UnityExePath, ["-batchmode", "-quit", "-projectPath", projectPath, "-executeMethod", config.ShaderBundle.BuildMethod], context.Root, cancellationToken, verbose);
         return (ok, ok ? "" : "Unity 构建失败");
     }
 
@@ -391,6 +419,10 @@ public sealed record ProcessTerminationResult(bool Exited, string? Error = null)
 
 internal static class ProcessUtil
 {
+    private const int FailureOutputLineLimit = 12;
+    private const int FailureOutputLineLengthLimit = 500;
+    private const int ImportantOutputLineLimit = 12;
+
     internal static Func<bool>? RimWorldRunningOverride { get; set; }
 
     public static async Task<bool> WaitForRimWorldExitAsync(int timeoutSeconds, int stableSeconds, CancellationToken cancellationToken = default)
@@ -433,7 +465,7 @@ internal static class ProcessUtil
         }
     }
 
-    public static Task<bool> RunAsync(string fileName, string arguments, string workingDirectory, CancellationToken cancellationToken = default)
+    public static Task<bool> RunAsync(string fileName, string arguments, string workingDirectory, CancellationToken cancellationToken = default, bool verbose = false)
     {
         var startInfo = new ProcessStartInfo(fileName, arguments)
         {
@@ -443,10 +475,10 @@ internal static class ProcessUtil
             RedirectStandardError = true,
             CreateNoWindow = true
         };
-        return RunAsync(startInfo, cancellationToken);
+        return RunAsync(startInfo, cancellationToken, verbose);
     }
 
-    public static Task<bool> RunAsync(string fileName, IEnumerable<string> arguments, string workingDirectory, CancellationToken cancellationToken = default)
+    public static Task<bool> RunAsync(string fileName, IEnumerable<string> arguments, string workingDirectory, CancellationToken cancellationToken = default, bool verbose = false)
     {
         var startInfo = new ProcessStartInfo(fileName)
         {
@@ -457,14 +489,33 @@ internal static class ProcessUtil
             CreateNoWindow = true
         };
         foreach (var argument in arguments) startInfo.ArgumentList.Add(argument);
-        return RunAsync(startInfo, cancellationToken);
+        return RunAsync(startInfo, cancellationToken, verbose);
     }
 
-    private static async Task<bool> RunAsync(ProcessStartInfo startInfo, CancellationToken cancellationToken)
+    private static async Task<bool> RunAsync(ProcessStartInfo startInfo, CancellationToken cancellationToken, bool verbose)
     {
         using var process = Process.Start(startInfo) ?? throw new InvalidOperationException($"无法启动进程: {startInfo.FileName}");
-        process.OutputDataReceived += (_, eventArgs) => { if (eventArgs.Data is not null) Console.Error.WriteLine(eventArgs.Data); };
-        process.ErrorDataReceived += (_, eventArgs) => { if (eventArgs.Data is not null) Console.Error.WriteLine(eventArgs.Data); };
+        var outputTail = new Queue<string>();
+        var importantOutput = new Queue<string>();
+        var outputGate = new object();
+        void CaptureOutput(string? line)
+        {
+            if (line is null) return;
+            if (verbose) Console.Error.WriteLine(line);
+            lock (outputGate)
+            {
+                outputTail.Enqueue(line.Length > FailureOutputLineLengthLimit ? line[..FailureOutputLineLengthLimit] + "…" : line);
+                while (outputTail.Count > FailureOutputLineLimit) outputTail.Dequeue();
+                if (!verbose && (line.Contains("warning", StringComparison.OrdinalIgnoreCase) || line.Contains("error", StringComparison.OrdinalIgnoreCase)))
+                {
+                    importantOutput.Enqueue(line.Length > FailureOutputLineLengthLimit ? line[..FailureOutputLineLengthLimit] + "…" : line);
+                    while (importantOutput.Count > ImportantOutputLineLimit) importantOutput.Dequeue();
+                }
+            }
+        }
+
+        process.OutputDataReceived += (_, eventArgs) => CaptureOutput(eventArgs.Data);
+        process.ErrorDataReceived += (_, eventArgs) => CaptureOutput(eventArgs.Data);
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
         try
@@ -476,6 +527,29 @@ internal static class ProcessUtil
             try { if (!process.HasExited) process.Kill(true); } catch { }
             await process.WaitForExitAsync(CancellationToken.None);
             throw;
+        }
+        process.WaitForExit();
+        if (!verbose)
+        {
+            string[] important;
+            string[] tail;
+            lock (outputGate)
+            {
+                important = importantOutput.ToArray();
+                tail = outputTail.ToArray();
+            }
+
+            if (process.ExitCode == 0 && important.Length > 0)
+            {
+                Console.Error.WriteLine($"子进程 warning/error 摘要: {startInfo.FileName}");
+                foreach (var line in important) Console.Error.WriteLine(line);
+            }
+            else if (process.ExitCode != 0)
+            {
+                Console.Error.WriteLine($"子进程失败，退出码 {process.ExitCode}: {startInfo.FileName}");
+                foreach (var line in important.Concat(tail).Distinct(StringComparer.Ordinal).Take(FailureOutputLineLimit))
+                    Console.Error.WriteLine(line);
+            }
         }
         return process.ExitCode == 0;
     }

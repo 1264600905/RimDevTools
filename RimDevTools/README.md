@@ -53,22 +53,22 @@ artifacts/RimDevTools-Package/
 ```powershell
 RimDevTools.exe --version
 RimDevTools.exe doctor [--verbose]
-RimDevTools.exe deploy [--sync-source] [--xml-hot] [--dry-run]
-RimDevTools.exe mod search <keyword> [--fuzzy]
-RimDevTools.exe mod copy <query> [--version <value>] [--deps] [--include-ignored] [--fuzzy] [--overwrite-existing] [--dry-run]
-RimDevTools.exe mod dependencies <query> [--version <value>] [--fuzzy]
-RimDevTools.exe mod dependents <query> [--version <value>] [--fuzzy]
-RimDevTools.exe test settings
-RimDevTools.exe test run [--deploy] [--mode quick|manual|auto|xml] [--active-mods-file <path>] [--scope <value>]... [--defname <value>]... [--batch-size <n>]
-RimDevTools.exe test cleanup [--dry-run] [--status]
-RimDevTools.exe mods install-tools [--mods-path <path>] [--dry-run]
+RimDevTools.exe deploy [--sync-source] [--xml-hot] [--dry-run] [--verbose]
+RimDevTools.exe mod search <keyword> [--fuzzy] [--verbose]
+RimDevTools.exe mod copy <query> [--version <value>] [--deps] [--include-ignored] [--fuzzy] [--overwrite-existing] [--dry-run] [--verbose]
+RimDevTools.exe mod dependencies <query> [--version <value>] [--fuzzy] [--verbose]
+RimDevTools.exe mod dependents <query> [--version <value>] [--fuzzy] [--verbose]
+RimDevTools.exe test settings [--verbose]
+RimDevTools.exe test run [--deploy] [--mode quick|manual|auto|xml] [--active-mods-file <path>] [--scope <value>]... [--defname <value>]... [--batch-size <n>] [--verbose]
+RimDevTools.exe test cleanup [--dry-run] [--status] [--verbose]
+RimDevTools.exe mods install-tools [--mods-path <path>] [--dry-run] [--verbose]
 ```
 
-项目命令从当前目录或直接父目录发现 `mod_config.jsonc`。最终结果是 stdout 上的单个 JSON 对象，进度与诊断写入 stderr。`--version` 必须作为唯一参数使用，并只返回 RimDevTools 自身版本。
+项目命令从当前目录或直接父目录发现 `mod_config.jsonc`。最终结果是 stdout 上的单个 JSON 对象，进度与诊断写入 stderr。默认结果只包含摘要和关键字段；`--verbose` 展开检查项、计划、候选元数据和可用的详细结果，并显示构建、Unity、ILSpy 子进程输出。警告和错误始终保留；普通模式会显示子进程识别出的 warning/error 行，失败时最多附带 12 行、每行最多 500 个字符的末尾诊断。游戏自身 stdout/stderr 仍保持丢弃。`--version` 必须作为唯一参数使用，并只返回 RimDevTools 自身版本。
 
 ### 部署
 
-先运行 `doctor --verbose`，再运行 `deploy --dry-run` 检查不可变计划。项目必须位于独立工作目录，不能位于 RimWorld `Mods` 或 Steam Workshop 内容目录；部署会自动同步到 `RimWorld/Mods`。普通部署会构建配置中的项目，以暂存目录和备份目录原子替换目标，并保留 `protected_files_regex` 匹配的文件。`--xml-hot` 会先检查 RimWorld 是否正在运行：运行中时就地同步非 DLL 文件，若复制 Def/Patches XML 则至少等待 3 秒并向 LogSyncMod 本机 HTTP endpoint 请求重载；未运行时回退到普通构建和原子部署。`--xml-hot` 只适用于独立 `deploy`，`test run --deploy` 始终使用普通部署。纯 XML 模组可以将 `csproj_paths` 配置为空数组，此时 deploy 跳过 C# 构建但仍同步 `sync_items`。配置 `sync_source: true` 可让每次部署默认包含 `source/`，`--sync-source` 仍可单次启用。
+先运行 `doctor`，再运行 `deploy --dry-run` 检查部署摘要；需要查看完整计划时添加 `--verbose`。项目必须位于独立工作目录，不能位于 RimWorld `Mods` 或 Steam Workshop 内容目录；部署会自动同步到 `RimWorld/Mods`。普通部署会构建配置中的项目，以暂存目录和备份目录原子替换目标，并保留 `protected_files_regex` 匹配的文件。`--xml-hot` 会先检查 RimWorld 是否正在运行：运行中时就地同步非 DLL 文件，若复制 Def/Patches XML 则至少等待 3 秒并向 LogSyncMod 本机 HTTP endpoint 请求重载；未运行时回退到普通构建和原子部署。`--xml-hot` 只适用于独立 `deploy`，`test run --deploy` 始终使用普通部署。纯 XML 模组可以将 `csproj_paths` 配置为空数组，此时 deploy 跳过 C# 构建但仍同步 `sync_items`。配置 `sync_source: true` 可让每次部署默认包含 `source/`，`--sync-source` 仍可单次启用。
 
 ### 第三方参考
 

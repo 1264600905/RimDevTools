@@ -11,6 +11,8 @@ public sealed record ModCandidate(
     string? Author,
     List<string> Dependencies);
 
+public sealed record ModCopyResult(string Name, string PackageId, string SourceDirectory, string TargetDirectory, int DecompiledAssemblies, bool Ok);
+
 public static class ModCommand
 {
     public static Task<int> SearchAsync(string[] args)
@@ -21,8 +23,27 @@ public static class ModCommand
 
         var keyword = QueryArgument(args, "search");
         var fuzzy = CliArgs.Has(args, "--fuzzy");
+        var verbose = CliArgs.Has(args, "--verbose");
         var candidates = FindCandidates(context, keyword, fuzzy, context.Config.GameVersion);
-        return Task.FromResult(CliResult.WriteSuccess(command, context.Root, new { keyword, fuzzy, candidates }));
+        const int previewLimit = 10;
+        object candidateOutput = verbose
+            ? candidates
+            : candidates.Take(previewLimit).Select(candidate => new
+            {
+                candidate.Name,
+                candidate.PackageId,
+                candidate.FolderName,
+                candidate.IsOfficial,
+                candidate.Author
+            }).ToArray();
+        return Task.FromResult(CliResult.WriteSuccess(command, context.Root, new
+        {
+            keyword,
+            fuzzy,
+            totalCount = candidates.Count,
+            truncated = !verbose && candidates.Count > previewLimit,
+            candidates = candidateOutput
+        }));
     }
 
     public static Task<int> DependenciesAsync(string[] args)
@@ -33,11 +54,22 @@ public static class ModCommand
 
         var query = QueryArgument(args, "dependencies");
         var version = CliArgs.Value(args, "--version") ?? context.Config.GameVersion;
-        var resolved = ResolveUnique(context, query, CliArgs.Has(args, "--fuzzy"), version, out var error);
+        var verbose = CliArgs.Has(args, "--verbose");
+        var resolved = ResolveUnique(context, query, CliArgs.Has(args, "--fuzzy"), version, verbose, out var error);
         if (resolved is null)
             return Task.FromResult(CliResult.WriteFailure(command, ExitCodes.InvalidArguments, error!.Code, error.Message, context.Root, error.Details));
 
-        return Task.FromResult(CliResult.WriteSuccess(command, context.Root, new { target = resolved, version, dependencies = resolved.Dependencies }));
+        const int dependencyPreviewLimit = 20;
+        object target = verbose ? resolved : new { resolved.Name, resolved.PackageId };
+        object dependencies = verbose ? resolved.Dependencies : resolved.Dependencies.Take(dependencyPreviewLimit).ToArray();
+        return Task.FromResult(CliResult.WriteSuccess(command, context.Root, new
+        {
+            target,
+            version,
+            dependencyCount = resolved.Dependencies.Count,
+            truncated = !verbose && resolved.Dependencies.Count > dependencyPreviewLimit,
+            dependencies
+        }));
     }
 
     public static Task<int> DependentsAsync(string[] args)
@@ -48,14 +80,27 @@ public static class ModCommand
 
         var query = QueryArgument(args, "dependents");
         var version = CliArgs.Value(args, "--version") ?? context.Config.GameVersion;
-        var resolved = ResolveUnique(context, query, CliArgs.Has(args, "--fuzzy"), version, out var error);
+        var verbose = CliArgs.Has(args, "--verbose");
+        var resolved = ResolveUnique(context, query, CliArgs.Has(args, "--fuzzy"), version, verbose, out var error);
         if (resolved is null)
             return Task.FromResult(CliResult.WriteFailure(command, ExitCodes.InvalidArguments, error!.Code, error.Message, context.Root, error.Details));
 
         var related = FindCandidates(context, "", false, version)
             .Where(x => x.Dependencies.Contains(resolved.PackageId, StringComparer.OrdinalIgnoreCase))
             .ToArray();
-        return Task.FromResult(CliResult.WriteSuccess(command, context.Root, new { target = resolved, version, dependents = related }));
+        const int previewLimit = 20;
+        object target = verbose ? resolved : new { resolved.Name, resolved.PackageId };
+        object dependents = verbose
+            ? related
+            : related.Take(previewLimit).Select(candidate => new { candidate.Name, candidate.PackageId }).ToArray();
+        return Task.FromResult(CliResult.WriteSuccess(command, context.Root, new
+        {
+            target,
+            version,
+            totalCount = related.Length,
+            truncated = !verbose && related.Length > previewLimit,
+            dependents
+        }));
     }
 
     public static async Task<int> CopyAsync(string[] args, CancellationToken cancellationToken = default)
@@ -66,14 +111,15 @@ public static class ModCommand
 
         var query = QueryArgument(args, "copy");
         var version = CliArgs.Value(args, "--version") ?? context.Config.GameVersion;
+        var verbose = CliArgs.Has(args, "--verbose");
         if (string.IsNullOrWhiteSpace(version))
             return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "VERSION_MISSING", "mod copy 需要 --version 或 game_version", context.Root);
 
-        var selected = ResolveUnique(context, query, CliArgs.Has(args, "--fuzzy"), version, out var error);
+        var selected = ResolveUnique(context, query, CliArgs.Has(args, "--fuzzy"), version, verbose, out var error);
         if (selected is null)
             return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, error!.Code, error.Message, context.Root, error.Details);
 
-        var closure = ResolveDependencyClosure(context, selected, CliArgs.Has(args, "--deps"), version, out var skippedDependencies, out error);
+        var closure = ResolveDependencyClosure(context, selected, CliArgs.Has(args, "--deps"), version, verbose, out var skippedDependencies, out error);
         if (closure is null)
             return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, error!.Code, error.Message, context.Root, error.Details);
 
@@ -124,17 +170,42 @@ public static class ModCommand
             assemblies = PlannedAssemblies(entry.Mod.SourceDirectory, version)
         }).ToArray();
         if (CliArgs.Has(args, "--dry-run"))
-            return CliResult.WriteSuccess(command, context.Root, new
-            {
-                dryRun = true,
-                version,
-                selected,
-                dependencyClosure = closure.Select(mod => new { mod.Name, mod.PackageId, mod.SourceDirectory }).ToArray(),
-                skippedDependencies,
-                ignoredFolders,
-                conflicts,
-                targets = plan
-            });
+        {
+            object dryRunResult = verbose
+                ? new
+                {
+                    dryRun = true,
+                    version,
+                    selected,
+                    dependencyClosure = closure.Select(mod => new { mod.Name, mod.PackageId, mod.SourceDirectory }).ToArray(),
+                    skippedDependencies,
+                    ignoredFolders,
+                    conflicts,
+                    targets = plan
+                }
+                : new
+                {
+                    dryRun = true,
+                    version,
+                    selected = new { selected.Name, selected.PackageId },
+                    dependencyCount = closure.Count,
+                    skippedDependencyCount = skippedDependencies.Count,
+                    ignoredFolderCount = ignoredFolders.Length,
+                    conflictCount = conflicts.Length,
+                    conflicts = conflicts.Take(10).ToArray(),
+                    conflictsTruncated = conflicts.Length > 10,
+                    targets = plan.Take(10).Select(target => new
+                    {
+                        target.name,
+                        target.packageId,
+                        target.targetDirectory,
+                        target.conflict,
+                        assemblyCount = target.assemblies.Length
+                    }).ToArray(),
+                    truncated = plan.Length > 10
+                };
+            return CliResult.WriteSuccess(command, context.Root, dryRunResult);
+        }
 
         try
         {
@@ -151,34 +222,53 @@ public static class ModCommand
             return CliResult.WriteFailure(command, ExitCodes.Busy, "TARGET_BUSY", lockError!, context.Root);
 
         if (conflicts.Length > 0 && !CliArgs.Has(args, "--overwrite-existing"))
-            return CliResult.WriteFailure(command, ExitCodes.TaskFailed, "TARGET_CONFLICT", "目标目录已存在，请使用 --overwrite-existing", context.Root, new { conflicts });
+            return CliResult.WriteFailure(command, ExitCodes.TaskFailed, "TARGET_CONFLICT", "目标目录已存在，请使用 --overwrite-existing", context.Root, new
+            {
+                conflictCount = conflicts.Length,
+                conflicts = verbose ? conflicts : conflicts.Take(10).ToArray(),
+                conflictsTruncated = !verbose && conflicts.Length > 10
+            });
 
-        var results = new List<object>();
+        var results = new List<ModCopyResult>();
         try
         {
             foreach (var entry in targets)
             {
                 Directory.CreateDirectory(entry.Staging);
                 CopyReference(entry.Mod.SourceDirectory, entry.Staging, ignoredFolders, cancellationToken);
-                var decompiled = await DecompileAssembliesAsync(context, entry.Staging, version, cancellationToken);
-                results.Add(new
-                {
-                    name = entry.Mod.Name,
-                    packageId = entry.Mod.PackageId,
-                    sourceDirectory = entry.Mod.SourceDirectory,
-                    targetDirectory = entry.Target,
-                    decompiledAssemblies = decompiled,
-                    ok = true
-                });
+                var decompiled = await DecompileAssembliesAsync(context, entry.Staging, version, cancellationToken, verbose);
+                results.Add(new ModCopyResult(entry.Mod.Name, entry.Mod.PackageId, entry.Mod.SourceDirectory, entry.Target, decompiled, true));
             }
 
             InstallBatch(targets);
-            return CliResult.WriteSuccess(command, context.Root, new { runId, version, skippedDependencies, results });
+            object resultRows = verbose
+                ? results
+                : results.Select(result => new
+                {
+                    result.Name,
+                    result.PackageId,
+                    result.TargetDirectory,
+                    result.DecompiledAssemblies
+                }).Take(10).ToArray();
+            object result = verbose
+                ? new { runId, version, copiedModCount = results.Count, skippedDependencies, truncated = false, results = resultRows }
+                : new { runId, version, copiedModCount = results.Count, skippedDependencyCount = skippedDependencies.Count, truncated = results.Count > 10, results = resultRows };
+            return CliResult.WriteSuccess(command, context.Root, result);
         }
         catch (OperationCanceledException) { throw; }
         catch (Exception ex)
         {
-            return CliResult.WriteFailure(command, ExitCodes.TaskFailed, "COPY_FAILED", ex.Message, context.Root, new { runId, version, results });
+            object failureDetails = verbose
+                ? new { runId, version, results }
+                : new
+                {
+                    runId,
+                    version,
+                    completedCount = results.Count,
+                    truncated = results.Count > 10,
+                    completed = results.TakeLast(10).Select(result => new { result.Name, result.PackageId, result.TargetDirectory }).ToArray()
+                };
+            return CliResult.WriteFailure(command, ExitCodes.TaskFailed, "COPY_FAILED", ex.Message, context.Root, failureDetails);
         }
         finally
         {
@@ -234,6 +324,7 @@ public static class ModCommand
         ModCandidate selected,
         bool includeDependencies,
         string version,
+        bool verbose,
         out IReadOnlyList<SkippedDependency> skippedDependencies,
         out CliError? error)
     {
@@ -271,7 +362,7 @@ public static class ModCommand
                         existing.RequiredBy.Add(current.PackageId);
                     continue;
                 }
-                var resolved = ResolveUnique(context, dependency, false, version, out var dependencyError);
+                var resolved = ResolveUnique(context, dependency, false, version, verbose, out var dependencyError);
                 if (resolved is null)
                 {
                     resolutionError = new CliError(dependencyError!.Code, $"依赖 {dependency}: {dependencyError.Message}", dependencyError.Details);
@@ -300,7 +391,7 @@ public static class ModCommand
         return null;
     }
 
-    private static async Task<int> DecompileAssembliesAsync(ProjectContext context, string staging, string version, CancellationToken cancellationToken)
+    private static async Task<int> DecompileAssembliesAsync(ProjectContext context, string staging, string version, CancellationToken cancellationToken, bool verbose)
     {
         var versioned = Path.Combine(staging, version, "Assemblies");
         var fallback = Path.Combine(staging, "Assemblies");
@@ -318,7 +409,7 @@ public static class ModCommand
         {
             var output = Path.Combine(Path.GetDirectoryName(assembly)!, "Decompiled", Path.GetFileNameWithoutExtension(assembly));
             Directory.CreateDirectory(output);
-            if (!await ProcessUtil.RunAsync(ilspy, ["-p", "-o", output, assembly], context.Root, cancellationToken))
+            if (!await ProcessUtil.RunAsync(ilspy, ["-p", "-o", output, assembly], context.Root, cancellationToken, verbose))
                 throw new InvalidOperationException($"反编译失败: {assembly}");
             decompiled++;
         }
@@ -432,7 +523,7 @@ public static class ModCommand
         return query.Length > 0;
     }
 
-    private static ModCandidate? ResolveUnique(ProjectContext context, string query, bool fuzzy, string? version, out CliError? error)
+    private static ModCandidate? ResolveUnique(ProjectContext context, string query, bool fuzzy, string? version, bool verbose, out CliError? error)
     {
         error = null;
         if (Path.IsPathRooted(query) && Directory.Exists(query))
@@ -463,9 +554,17 @@ public static class ModCommand
         if (matches.Length == 0 && fuzzy) matches = all.Where(x => Matches(x, query, true)).ToArray();
         if (matches.Length == 1) return matches[0];
 
+        object candidateDetails = verbose
+            ? matches
+            : matches.Take(20).Select(candidate => new { candidate.Name, candidate.PackageId, candidate.FolderName }).ToArray();
         error = matches.Length == 0
             ? new CliError("MOD_NOT_FOUND", $"未找到参考模组: {query}")
-            : new CliError("MOD_AMBIGUOUS", $"查询存在多个候选: {query}", matches);
+            : new CliError("MOD_AMBIGUOUS", $"查询存在多个候选: {query}", new
+            {
+                totalCount = matches.Length,
+                truncated = !verbose && matches.Length > 20,
+                candidates = candidateDetails
+            });
         return null;
     }
 
