@@ -62,7 +62,7 @@
 
 [h2][b]AI 研究与项目规则[/b][/h2]
 [list]
-[*] Codex CLI、Claude Code 和 opencode 均预置 RimSage 的只读服务配置。研究官方 Def、XML 继承、官方 C# API、实现行为或 Harmony 目标时，先使用 RimSage 获取证据。
+[*] Claude Code、opencode 和 pi 预置 RimSage 的只读服务配置。研究官方 Def、XML 继承、官方 C# API、实现行为或 Harmony 目标时，先使用 RimSage 获取证据。
 [*] RimSage 不读取当前项目或第三方模组。当前项目直接读取工作树；第三方模组先检查参考资料区，缺少时再使用 mod search 和 mod copy。
 [*] 项目内的 rimdevtools、rimsage、rimworld-development-engineer、rimworld-plan-engineer 和 about-write-description skill 分别约束工具调用、官方研究、实现验证、计划和 Workshop 文案更新。
 [*] 推荐验证链路为 doctor -> deploy --dry-run -> test run --deploy --mode quick -> test run --deploy --mode auto。不要把游戏进程退出或无可见报错当作成功依据。
