@@ -31,7 +31,6 @@ artifacts/RimDevTools-Package/
 ├── 1.6/
 ├── About/
 ├── source/
-├── .codex/config.toml
 ├── .mcp.json
 ├── opencode.jsonc
 └── .tools/
