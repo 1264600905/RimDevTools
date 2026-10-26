@@ -34,6 +34,7 @@ components/ProjectTemplate/1.6/.claude/*
 !components/ProjectTemplate/1.6/.claude/skills/
 !components/ProjectTemplate/1.6/.claude/skills/**
 .tools/ilspy/
+ImageGen/
 # 配置文件
 *.config
 appSettings.json

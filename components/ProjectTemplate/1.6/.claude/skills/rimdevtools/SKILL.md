@@ -1,6 +1,6 @@
 ---
 name: rimdevtools
-description: 操作项目本地的 RimDevTools CLI，处理 RimWorld 1.6 模组配置、健康检查、构建、原子部署、参考模组发现与 ILSpy 反编译、由 LogSync 支持的 quick/manual/auto/XML 测试，以及打包的 LogSyncMod 安装。处理 mod_config.jsonc、.tools/RimDevTools.exe、部署、测试、参考模组或工具模组安装时使用。
+description: 操作项目本地的 RimDevTools CLI，处理 RimWorld 1.6 模组配置、健康检查、构建、原子部署和非 DLL 文件热同步、参考模组发现与 ILSpy 反编译、由 LogSync 支持的 quick/manual/auto/XML 测试，以及打包的 LogSyncMod 安装。处理 mod_config.jsonc、.tools/RimDevTools.exe、部署、测试、参考模组或工具模组安装时使用。
 ---
 
 # RimDevTools 工具
@@ -41,6 +41,8 @@ description: 操作项目本地的 RimDevTools CLI，处理 RimWorld 1.6 模组�
 3. 运行 `deploy --dry-run` 并检查部署项目是否符合预期,确认包含所有预期程序集和内容根目录。
 4. 仅在计划正确后运行 `deploy`。
 5. 仅当有意分发源代码时启用 `sync_source: true`，或对单次部署添加 `--sync-source`。
+
+当用户明确要求在游戏进程运行时同步 XML/资源等非 DLL 文件时，可在检查 `deploy --dry-run --xml-hot` 计划后运行 `deploy --xml-hot`。它只会把配置的 `sync_items` 中非 DLL 文件复制到目标目录，不等待游戏退出、不构建程序集，并保留目标中已有 DLL 和未出现在源目录的旧文件。它不会让 RimWorld 在当前会话中重新解析已加载的 XML；需要运行时生效时仍须按游戏支持的方式重载模组或重启。`test run --deploy --xml-hot` 仍会先关闭已有游戏进程再启动测试。
 
 部署会在替换目标前构建已配置项目，并使用原子暂存。不要为绕过失败部署而手动将部分输出复制进活动模组目录。若启用着色器构建，着色器失败即为部署阻塞项。
 

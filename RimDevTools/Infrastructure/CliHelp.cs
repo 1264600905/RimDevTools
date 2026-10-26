@@ -54,6 +54,11 @@ public static class CliHelp
           test cleanup        Inspect or recover interrupted transactions.
           mods install-tools  Install the packaged LogSync tool mod.
 
+        Hot file sync:
+          RimDevTools.exe deploy --xml-hot copies configured non-DLL files in place
+          without stopping the game or building assemblies. It does not reload XML
+          already loaded by the running game; see 'RimDevTools.exe deploy --help'.
+
         Global options:
           -h, --help          Show top-level or command-specific help.
           --version           Print the RimDevTools version as JSON; must be the only argument.
@@ -110,7 +115,8 @@ public static class CliHelp
 
         Options:
           --sync-source       Include source/ in this deployment.
-          --xml-hot           Update configured non-DLL files in place without stopping the game or building assemblies.
+          --xml-hot           Copy configured non-DLL files in place without stopping the game or building assemblies.
+                              Does not reload XML already loaded by the game.
           --dry-run           Print the immutable deployment plan without mutation.
           -h, --help          Show this help.
 
@@ -254,7 +260,7 @@ public static class CliHelp
         Options:
           --deploy                    Deploy before testing.
           --sync-source               Include source/; requires --deploy.
-          --xml-hot                   Hot-update configured non-DLL files; requires --deploy.
+          --xml-hot                   Copy configured non-DLL files in place; requires --deploy.
           --mode <value>              quick (default), manual, auto, or xml.
           --active-mods-file <path>   External ModsConfig XML activeMods list.
           --timeout-seconds <n>       Positive wait limit; defaults to timeouts.max_wait.
@@ -266,6 +272,10 @@ public static class CliHelp
           --isolated-desktop          Force a private Windows desktop for this run.
           --no-isolated-desktop       Force the current visible desktop for this run.
           -h, --help                  Show this help.
+
+        Hot file sync:
+          --xml-hot copies files only; it does not reload XML already loaded by RimWorld.
+          test run still exits an existing game before starting the test process.
 
         Isolation precedence:
           Explicit CLI flag > isolated_desktop project config > built-in false for

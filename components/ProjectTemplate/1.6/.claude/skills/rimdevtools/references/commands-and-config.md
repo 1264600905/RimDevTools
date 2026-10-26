@@ -12,12 +12,13 @@
 
 检查 About.xml/Preview.png、构建前提条件、Steam/RimWorld/创意工坊发现、项目目录安全性、游戏与 Harmony 程序集、Unity、Git/工作树状态、必需模组、ILSpy、LogSync、AutoTest、打包的工具模组、锁和事务。缺少 About 文件或 Preview.png 不小于 1 MiB 时只给出 warning。项目不能位于 RimWorld `Mods` 或 Steam Workshop 内容目录。它是只读的，不探测 RimSage。默认输出包含可操作检查项和关键程序集路径，默认会自动隐藏满足条件的选项；`--verbose` 显示所有检查结果，包括已经满足选项。
 
-### `deploy [--sync-source] [--dry-run]`
+### `deploy [--sync-source] [--xml-hot] [--dry-run]`
 
 构建已配置的 C# 项目，并将 `sync_items` 原子部署到 `rimworld_dir/Mods/mod_name`。
 
 - `--dry-run`：不构建或部署，仅返回不可变计划。
 - `--sync-source`：在部署中包含 `source/`；`sync_source: true` 时默认包含。
+- `--xml-hot`：将配置的同步项中的非 DLL 文件直接复制到目标目录，不等待游戏退出、不构建程序集；保留已有 DLL 和源目录中不存在的目标文件。该操作不会触发 RimWorld 重新解析当前会话已加载的 XML。可用于用户要求的运行中文件同步，不等同于游戏内 XML 热重载。
 
 常见错误：`PROJECT_DEPLOYMENT_LOCATION_INVALID`、`ENVIRONMENT_BUSY`、`GAME_EXIT_TIMEOUT`、`BUILD_FAILED`、`SHADER_BUILD_FAILED`、`SYNC_ITEM_NOT_FOUND`、`DEPLOY_FAILED`。
 
@@ -45,7 +46,7 @@ mod dependents <query> [--version <value>] [--fuzzy]
 
 ```text
 test settings
-test run [--deploy] [--sync-source] [--mode quick|manual|auto|xml]
+test run [--deploy] [--sync-source] [--xml-hot] [--mode quick|manual|auto|xml]
          [--active-mods-file <path>] [--timeout-seconds <n>]
          [--target-package-id <id>] [--capture-screenshots]
          [--scope <value>]... [--defname <value>]... [--batch-size <n>]
@@ -54,7 +55,7 @@ test run [--deploy] [--sync-source] [--mode quick|manual|auto|xml]
 
 `test settings` 是持久化 LogSync 设置命令，不会启动测试。它会等待已有 RimWorld 退出、取得共享环境锁，然后把日志路径设置为当前项目的 `.tools/log/精选日志.log`，把 `mod_config.jsonc.log_keywords` 写入 LogSync，并更新自动测试输出路径、开关和筛选设置。写入不会像 `test run` 一样在结束后自动恢复，适合准备一次由用户手动启动的 RimWorld 会话；正常自动测试应使用 `test run`，由事务临时应用并恢复设置。
 
-quick 是启动冒烟测试。manual 是用户手动的。auto 和 XML 验证结构化的 AutoTest 结果。`--capture-screenshots` 仅适用于 auto/XML。隔离优先级为显式标志、项目设置，然后是模式默认值。
+quick 是启动冒烟测试。manual 是用户手动的。auto 和 XML 验证结构化的 AutoTest 结果。`--capture-screenshots` 仅适用于 auto/XML。隔离优先级为显式标志、项目设置，然后是模式默认值。`--xml-hot` 要求同时传入 `--deploy`；它在测试前执行上述非 DLL 文件就地同步，但 `test run` 仍会先关闭已有 RimWorld 再启动测试进程。
 
 `--scope` 可在 auto/XML 中重复，多个 scope 取并集。正式值为 `standard`、`ui`、`combat`、`view`、`misc`；旧细分值继续以原窄范围语义兼容。未传时默认为 `Standard`；Standard 横跨四类常规测试，但不隐式启用 CombatPawns 或 SkillPocketMaps。
 
