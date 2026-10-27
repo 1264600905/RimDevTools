@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <LanguageData>
   <LogSyncMod.DebugSuppliesTitle>測試物資</LogSyncMod.DebugSuppliesTitle>
-  <LogSyncMod.DebugSuppliesSubtitle>挑選物品與數量，設定完成後在地圖上點擊落點。預設：原材料堆疊上限 ≥75，各1000，加指定補給。</LogSyncMod.DebugSuppliesSubtitle>
+  <LogSyncMod.DebugSuppliesSubtitle>選擇或建立命名方案，儲存後在地圖上選擇落點。保留已指定的物資數量；其他物品預設3組，即堆疊上限×3。</LogSyncMod.DebugSuppliesSubtitle>
   <LogSyncMod.DebugNeedsToggle>心情與飽食開關（框選）</LogSyncMod.DebugNeedsToggle>
   <LogSyncMod.DebugWorkerToggle>技能20＋工作10倍開關（框選）</LogSyncMod.DebugWorkerToggle>
   <LogSyncMod.DebugPawnResult>{0}：已加入 {1} 人，已移除 {2} 人，略過 {3} 人，失敗 {4} 人。再次框選可切換。</LogSyncMod.DebugPawnResult>
@@ -24,9 +24,22 @@
   <LogSyncMod.DebugResetDefaults>恢復預設</LogSyncMod.DebugResetDefaults>
   <LogSyncMod.DebugSupplySummary>已選 {0} 種 · 本次新增 {1} 個 · 約 {2} 堆</LogSyncMod.DebugSupplySummary>
   <LogSyncMod.DebugCancel>取消</LogSyncMod.DebugCancel>
-  <LogSyncMod.DebugSavePreset>儲存設定</LogSyncMod.DebugSavePreset>
+  <LogSyncMod.DebugSavePreset>儲存方案</LogSyncMod.DebugSavePreset>
   <LogSyncMod.DebugChooseLocation>選擇地圖落點</LogSyncMod.DebugChooseLocation>
-  <LogSyncMod.DebugPresetSaved>測試物資設定已儲存。</LogSyncMod.DebugPresetSaved>
+  <LogSyncMod.DebugPresetSaved>已儲存 {0} 套物資方案。</LogSyncMod.DebugPresetSaved>
+  <LogSyncMod.DebugDefaultProfile>預設方案</LogSyncMod.DebugDefaultProfile>
+  <LogSyncMod.DebugProfileSummary>{0} 種物品 / {1} 個 · {2} 個來源模組</LogSyncMod.DebugProfileSummary>
+  <LogSyncMod.DebugProfileModSummary>{0}：{1} 種 / {2} 個</LogSyncMod.DebugProfileModSummary>
+  <LogSyncMod.DebugMissingItems>其中 {0} 種物品尚未載入，暫不生成，設定會保留。</LogSyncMod.DebugMissingItems>
+  <LogSyncMod.DebugUnnamedProfile>未命名方案</LogSyncMod.DebugUnnamedProfile>
+  <LogSyncMod.DebugProfileNameHint>方案名稱。點擊「儲存方案」永久儲存；切換方案會保留本視窗內尚未儲存的編輯。</LogSyncMod.DebugProfileNameHint>
+  <LogSyncMod.DebugNewProfile>新增</LogSyncMod.DebugNewProfile>
+  <LogSyncMod.DebugCopyProfile>複製</LogSyncMod.DebugCopyProfile>
+  <LogSyncMod.DebugDeleteProfile>刪除</LogSyncMod.DebugDeleteProfile>
+  <LogSyncMod.DebugProfileCopySuffix>副本</LogSyncMod.DebugProfileCopySuffix>
+  <LogSyncMod.DebugNewProfileName>新方案</LogSyncMod.DebugNewProfileName>
+  <LogSyncMod.DebugInvalidProfileName>方案名稱不能為空或重複，請修改後儲存。</LogSyncMod.DebugInvalidProfileName>
+  <LogSyncMod.DebugSaveProfilesHint>儲存本視窗中所有方案的編輯，包含新增和刪除。關閉視窗會放棄未儲存的變更。</LogSyncMod.DebugSaveProfilesHint>
   <LogSyncMod.DebugPlacementTool>左鍵放置測試物資；右鍵取消</LogSyncMod.DebugPlacementTool>
   <LogSyncMod.DebugWrongMap>放置已取消：請在開啟物資視窗時所在的地圖內選擇落點。</LogSyncMod.DebugWrongMap>
   <LogSyncMod.DebugGenerating>正在放置測試物資…</LogSyncMod.DebugGenerating>

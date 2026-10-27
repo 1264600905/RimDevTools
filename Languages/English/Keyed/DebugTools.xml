@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <LanguageData>
   <LogSyncMod.DebugSuppliesTitle>Test supplies</LogSyncMod.DebugSuppliesTitle>
-  <LogSyncMod.DebugSuppliesSubtitle>Choose items and quantities, then click a location on the map. Defaults: raw resources with stack limits ≥75, plus supplies.</LogSyncMod.DebugSuppliesSubtitle>
+  <LogSyncMod.DebugSuppliesSubtitle>Choose or create a named preset, save, then select a map location. Specified quantities are retained; other items default to 3 full stacks.</LogSyncMod.DebugSuppliesSubtitle>
   <LogSyncMod.DebugNeedsToggle>Toggle full mood and food (rectangle)</LogSyncMod.DebugNeedsToggle>
   <LogSyncMod.DebugWorkerToggle>Toggle skills 20 + work speed x10 (rectangle)</LogSyncMod.DebugWorkerToggle>
   <LogSyncMod.DebugPawnResult>{0}: added {1}, removed {2}, skipped {3}, failed {4}. Select again to toggle.</LogSyncMod.DebugPawnResult>
@@ -26,7 +26,20 @@
   <LogSyncMod.DebugCancel>Cancel</LogSyncMod.DebugCancel>
   <LogSyncMod.DebugSavePreset>Save preset</LogSyncMod.DebugSavePreset>
   <LogSyncMod.DebugChooseLocation>Choose map location</LogSyncMod.DebugChooseLocation>
-  <LogSyncMod.DebugPresetSaved>Test supplies preset saved.</LogSyncMod.DebugPresetSaved>
+  <LogSyncMod.DebugPresetSaved>Saved {0} supply presets.</LogSyncMod.DebugPresetSaved>
+  <LogSyncMod.DebugDefaultProfile>Default preset</LogSyncMod.DebugDefaultProfile>
+  <LogSyncMod.DebugProfileSummary>{0} item types / {1} items · {2} source mods</LogSyncMod.DebugProfileSummary>
+  <LogSyncMod.DebugProfileModSummary>{0}: {1} types / {2} items</LogSyncMod.DebugProfileModSummary>
+  <LogSyncMod.DebugMissingItems>{0} item types are not loaded. They will not spawn; their configuration is retained.</LogSyncMod.DebugMissingItems>
+  <LogSyncMod.DebugUnnamedProfile>Unnamed preset</LogSyncMod.DebugUnnamedProfile>
+  <LogSyncMod.DebugProfileNameHint>Preset name. Save presets to persist changes. Switching retains unsaved edits within this window.</LogSyncMod.DebugProfileNameHint>
+  <LogSyncMod.DebugNewProfile>New</LogSyncMod.DebugNewProfile>
+  <LogSyncMod.DebugCopyProfile>Copy</LogSyncMod.DebugCopyProfile>
+  <LogSyncMod.DebugDeleteProfile>Delete</LogSyncMod.DebugDeleteProfile>
+  <LogSyncMod.DebugProfileCopySuffix>copy</LogSyncMod.DebugProfileCopySuffix>
+  <LogSyncMod.DebugNewProfileName>New preset</LogSyncMod.DebugNewProfileName>
+  <LogSyncMod.DebugInvalidProfileName>Preset names must be non-empty and unique.</LogSyncMod.DebugInvalidProfileName>
+  <LogSyncMod.DebugSaveProfilesHint>Save all preset edits in this window, including additions and deletions. Closing discards unsaved changes.</LogSyncMod.DebugSaveProfilesHint>
   <LogSyncMod.DebugPlacementTool>Left-click to place supplies; right-click to cancel</LogSyncMod.DebugPlacementTool>
   <LogSyncMod.DebugWrongMap>Placement cancelled: choose a location on the map where you opened the supplies window.</LogSyncMod.DebugWrongMap>
   <LogSyncMod.DebugGenerating>Placing test supplies…</LogSyncMod.DebugGenerating>

@@ -22,17 +22,27 @@ namespace LogSyncMod
 
     internal static class LogSyncDebugActions
     {
-        [DebugAction("LogSyncMod", "Test tools...", allowedGameStates = AllowedGameStates.PlayingOnMap)]
-        private static List<DebugActionNode> TestTools()
+        [DebugActionYielder]
+        private static IEnumerable<DebugActionNode> TestActions()
         {
-            return new List<DebugActionNode>
+            return new[]
             {
-                new DebugActionNode("LogSyncMod.DebugSuppliesTitle".Translate(), DebugActionType.Action,
+                CreateAction("LogSyncMod.DebugSuppliesTitle",
                     () => Find.WindowStack.Add(new Dialog_DebugSupplies(Find.CurrentMap))),
-                new DebugActionNode("LogSyncMod.DebugNeedsToggle".Translate(), DebugActionType.Action,
+                CreateAction("LogSyncMod.DebugNeedsToggle",
                     () => StartPawnTool(false)),
-                new DebugActionNode("LogSyncMod.DebugWorkerToggle".Translate(), DebugActionType.Action,
+                CreateAction("LogSyncMod.DebugWorkerToggle",
                     () => StartPawnTool(true))
+            };
+        }
+
+        private static DebugActionNode CreateAction(string key, Action action)
+        {
+            return new DebugActionNode(key.Translate(), DebugActionType.Action, action)
+            {
+                category = "LogSyncMod",
+                labelGetter = () => key.Translate(),
+                sourceAttribute = new DebugActionAttribute("LogSyncMod") { allowedGameStates = AllowedGameStates.PlayingOnMap }
             };
         }
 
