@@ -3,5 +3,5 @@
   <LogSync_DebugNeedsLock.label>测试：满心情与饱食</LogSync_DebugNeedsLock.label>
   <LogSync_DebugNeedsLock.description>持续保持满心情、满饱食。用心情与饱食框选工具再次选中可移除。其他需求和已有健康状态保留。</LogSync_DebugNeedsLock.description>
   <LogSync_DebugSkilledWorker10x.label>测试：技能20与工作10倍</LogSync_DebugSkilledWorker10x.label>
-  <LogSync_DebugSkilledWorker10x.description>临时将所有技能读数锁为20，全局工作速度乘以10倍，并暂停学习和遗忘。用技能与工作速度框选工具再次选中可同时移除两个效果。工作禁用条件保留。</LogSync_DebugSkilledWorker10x.description>
+  <LogSync_DebugSkilledWorker10x.description>临时将所有技能读数锁为20，全局工作速度乘以10倍，同时解除工作禁用与无暴力限制，并暂停学习和遗忘。用技能与工作速度框选工具再次选中可一起移除这些效果，恢复原有限制。背景、特性、基因保留；工作优先级和身体健康条件仍适用。</LogSync_DebugSkilledWorker10x.description>
 </LanguageData>

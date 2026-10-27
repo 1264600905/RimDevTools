@@ -12,7 +12,7 @@
   <HediffDef>
     <defName>LogSync_DebugSkilledWorker10x</defName>
     <label>test: skills 20, work speed x10</label>
-    <description>Temporarily reads all skills as 20 and multiplies global work speed by 10. Learning and forgetting are suspended. Select this pawn again with the skilled worker rectangle tool to remove both effects. Disabled work types remain disabled.</description>
+    <description>Temporarily reads all skills as 20, multiplies global work speed by 10, and bypasses work and violence incapabilities. Learning and forgetting are suspended. Select this pawn again with the skilled worker rectangle tool to remove all of these effects and restore the original restrictions. Backstories, traits and genes are preserved. Work priorities and physical health requirements still apply.</description>
     <hediffClass>HediffWithComps</hediffClass>
     <isBad>false</isBad>
     <defaultLabelColor>(0.45, 0.7, 1.0)</defaultLabelColor>

@@ -2,7 +2,7 @@
 
 - 日期：2026-10-27（北京时间）。
 - 代码基线：`b9adc56`；实施分支：`codex/logsync-debug-tools-1.7`。
-- 状态：已实现并部署 LogSyncMod 1.2.1 的平铺入口与多方案配置；按用户要求不运行测试，由用户进行游戏内验收。
+- 状态：已实现并部署 LogSyncMod 1.2.2 的工作与暴力解禁；按用户要求不运行测试，由用户进行游戏内验收。
 - 官方接口证据：按用户要求，统一使用 RimSage 1.7。
 
 ## 1. 本次交付范围
@@ -13,7 +13,7 @@
 | --- | --- |
 | 测试物资弹窗 | 新建、复制、命名、删除和保存多个物资方案，显示各方案的物品数量与模组分布；选好后点击地图生成 |
 | 心情与饱食框选开关 | 同一个框选功能同时锁定满心情、满饱食；再次框选对应小人则移除这组状态 |
-| 技能与工作速度框选开关 | 同一个框选功能同时锁定全部技能 20，并赋予固定 10 倍工作速度；再次框选对应小人则移除整组状态 |
+| 技能与工作速度框选开关 | 同时锁定全部技能20、赋予固定10倍工作速度、临时解除工作与暴力禁用；再次框选移除整组状态并恢复原有限制 |
 | Message 提示 | 每次框选完成后，用游戏内 Message 明确提示添加、移除和跳过的结果 |
 
 以下内容已被物资生成方案替代，不进入本期：零材料蓝图、免费建造、跳过制作原料、修改 RecipeDef/ThingDef 的材料成本。
@@ -122,6 +122,7 @@
 - 候选列表来自当前已经加载的全部可生成 `Item` Def，不限于原材料。包括原版、DLC、当前启用的模组；不枚举仅安装但未启用的模组。
 - 候选资格参考 `DebugThingPlaceHelper.IsDebugSpawnable(def)`，先检查 `thingClass` 有效，再处理特殊上下文物品；不自行复制一整套原版生成器。
 - 使用原版分类树数据构建左侧分类导航。自定义右侧列表负责额外列，避免修改或 Harmony 替换原版 `ThingFilterUI`。
+- 分类数据包含已启用模组注册的 ThingCategoryDef 及其子分类；只列出含可生成候选物品的分类。没有父节点的模组自定义分类也作为导航项显示。没有自定义分类的模组物品仍可按来源模组筛选。
 - 搜索匹配本地化名称、DefName、来源模组名称和 PackageId；与分类、模组过滤共同生效。
 - “默认物资”显示命中当前默认规则或显式追加清单的物品；“已选物品”显示全部当前勾选项。
 - 模组下拉支持全部、Core、每个 DLC 和每个第三方内容包；另提供仅第三方模组的快捷过滤。
@@ -227,7 +228,9 @@
 - 对带标记技能暂停原版 `Learn()` 写入，包括学习和遗忘，避免解除后真实技能已经被测试过程改变。
 - 不周期性把 `levelInt` 写成 20，不永久改写原有等级、经验、热情、背景或基因。
 - 移除后恢复原版读取和学习/遗忘；普通情况下回到添加前的底层等级、经验。第三方直接改写记录不在本工具的恢复承诺内。
-- 不解除禁用工作标签；即使技能计算锁为 20，背景/特性导致的工作禁用仍保留，UI 也可能继续展示禁用状态。
+- 按用户后续要求，带本组 Hediff 时临时覆盖 `Pawn.CombinedDisabledWorkTags` 为 None、`Pawn.GetDisabledWorkTypes()` 为独立空列表，同时使 `SkillRecord.TotallyDisabled`、`PermanentlyDisabled` 返回 false。角色卡不再因为工作禁用而把医术、社交等显示为“—”，原版无暴力判定也随之解除。
+- 整组添加/移除后调用 `Notify_DisabledWorkTypesChanged()`，并刷新工作分配的 WorkGiver 缓存，保证技能禁用缓存与界面状态及时更新。
+- 不删除背景、特性或基因，不清空原始缓存列表，不强制修改玩家设置的工作优先级；原有身体健康要求仍适用。移除本组 Hediff 后恢复原始工作与暴力禁用判定。
 
 #### 5.3.2 工作速度部分
 
@@ -359,10 +362,11 @@ LogSyncMod
 3. 带负向技能资质的小人可验证最终技能读取为 20；正常学习与遗忘不改变其底层记录，移除后恢复正常读取。
 4. 技能20与10倍速度同时生效；再次框选同时移除二者，无残留；无标记小人不受补丁影响。
 5. 比较相同健康、技能、环境下的工作 Stat 和实际工作进度；区分技能变化与倍率变化，确认派生速度没有被重复相乘。
-6. 两组框选互不影响；只移除对应组的本工具 Hediff，其他健康状态和禁用工作条件保留。菜单没有独立技能、独立速度或专门移除命令。
+6. 两组框选互不影响。技能与速度组同时解除工作与暴力禁用，移除时恢复原始禁用；背景、特性、基因和其他健康状态保留。菜单没有单独的解禁或专门移除命令。
 7. 验证原版建造及使用相关速度 Stat 的普通制作；对固定等待/自定义流程记录覆盖边界，不笼统宣称所有动作都加速。
 8. 同一个矩形内混合已有/未有状态的小人，按各人状态翻转，Message 的添加/移除/跳过数量与实际一致；单目标提示可辨认姓名。
 9. 连续重复框选、空框选和含不合格目标的框选均有正确的 Message，不只输出日志，不弹 Letter 或确认窗口。
+10. 选有医疗、社交、灭火或无暴力禁用的小人，添加后角色卡可显示对应20技能，工作页可正常分配相关工作，原版装备武器/攻击入口不再因无暴力拒绝；移除后恢复原有限制。此项由用户游戏内验收。
 
 ### 9.5 集成回归
 
@@ -388,6 +392,7 @@ LogSyncMod
 | `Source/Verse/Messages.cs`、`Source/RimWorld/MessageTypeDefOf.cs` | Messages.Message、NeutralEvent 和 historical 参数 | 框选完成后使用真实游戏 Message 提示添加/移除结果 |
 | `Source/RimWorld/Need.cs`、`Need_Food.cs`、`Need_Mood.cs`、`Need_Seeker.cs` | 百分比需求、冻结、自然变化与思绪更新 | 需求锁定避免全局副作用 |
 | `Source/RimWorld/SkillRecord.cs` | GetLevel/GetLevelForUI/GetUnclampedLevel、Learn 与资质 | 临时覆盖最终技能，保留真实记录 |
+| `Source/Verse/Pawn.cs`、`Source/RimWorld/Pawn_WorkSettings.cs`、`Source/RimWorld/CharacterCardUtility.cs` | CombinedDisabledWorkTags、GetDisabledWorkTypes、技能禁用属性与缓存通知 | 同一测试状态临时解除工作/无暴力禁用，移除恢复 |
 | `WorkSpeedGlobal`、`ConstructionSpeed` 合并 StatDef | 全局倍率及建造速度依赖 | 用 Hediff statFactors，避免重复加速 |
 
 本地现有入口：`source/LogSyncMod/LogSyncMod.cs` 的 Harmony 初始化、`LogSyncSettings.cs` 的 ExposeData、`source/AutoTestRunner/LogSyncTurretTestTargetHediffComp.cs` 的已有 Comp 风格、`1.6/Defs/Internal/TestDefs.xml` 的测试 Def 风格、`RimDevTools/Infrastructure/RimWorldGameLayout.cs` 的版本布局说明。
@@ -432,3 +437,12 @@ LogSyncMod
 - RimDevTools 正式部署返回 `ok: true`，runId：`e5f7696adbd1493bb4af4f309fab60d1`；更新5个文件、删除0个文件，无警告。
 - 部署目标沿用 `H:\SteamLibrary\steamapps\common\RimWorld\Mods\LogSyncMod`，程序集版本为 `1.2.1.0`。
 - 部署 DLL 与本地构建 SHA-256 一致：`DE2854F69048D08CBA1DB99CF27D8C26CCB5DCC28C809671EC7A507912CF7915`。
+
+### 后续调整（1.2.2）
+
+- 在现有技能20与10倍工作速度状态中临时解除工作禁用和无暴力限制；重复框选一并恢复原有限制，沿用 Message 提示。
+- 解除技能禁用属性及刷新技能/工作缓存，处理医术、社交仍显示“—”的情况。
+- 明确物资分类支持已启用模组的分类树，并补齐无父节点的模组自定义分类显示。
+- 构建通过，0警告、0错误；不运行游戏或测试，由用户手动验收。
+- RimDevTools 正式部署返回 `ok: true`，runId：`ec6fcbe63d2b4fc9bca0f5f98d70327e`；更新5个文件、删除0个文件，无警告。
+- 部署程序集版本 `1.2.2.0`，SHA-256 与本地构建一致：`5203E976AB1C9F65286D764AEE09F07FD6895B76F11DCA1C44CD3BD6CBE859EB`。

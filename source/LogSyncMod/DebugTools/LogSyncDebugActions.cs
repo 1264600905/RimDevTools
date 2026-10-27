@@ -82,6 +82,11 @@ namespace LogSyncMod
                                 if (pawn.needs.food != null) pawn.needs.food.CurLevelPercentage = 1f;
                             }
                         }
+                        if (worker)
+                        {
+                            pawn.Notify_DisabledWorkTypesChanged();
+                            pawn.workSettings?.Notify_UseWorkPrioritiesChanged();
+                        }
                         foreach (StatDef stat in DefDatabase<StatDef>.AllDefsListForReading)
                             stat.Worker.ClearCacheForThing(pawn);
                         if (existing.Count > 0) removed++;
@@ -112,6 +117,51 @@ namespace LogSyncMod
         {
             return (need is Need_Food || need is Need_Mood) && pawn?.health?.hediffSet != null &&
                 LogSyncDebugDefOf.LogSync_DebugNeedsLock != null && pawn.health.hediffSet.HasHediff(LogSyncDebugDefOf.LogSync_DebugNeedsLock);
+        }
+    }
+
+    [HarmonyPatch(typeof(Pawn), "get_CombinedDisabledWorkTags")]
+    internal static class DebugWorkerDisabledTagsPatch
+    {
+        private static bool Prefix(Pawn __instance, ref WorkTags __result)
+        {
+            if (!DebugPawnState.WorkerLocked(__instance)) return true;
+            __result = WorkTags.None;
+            return false;
+        }
+    }
+
+    [HarmonyPatch(typeof(Pawn), nameof(Pawn.GetDisabledWorkTypes))]
+    internal static class DebugWorkerDisabledTypesPatch
+    {
+        private static bool Prefix(Pawn __instance, ref List<WorkTypeDef> __result)
+        {
+            if (!DebugPawnState.WorkerLocked(__instance)) return true;
+            // Do not clear the original list: it is cached by Pawn and must remain intact for removal.
+            __result = new List<WorkTypeDef>();
+            return false;
+        }
+    }
+
+    [HarmonyPatch(typeof(SkillRecord), "get_TotallyDisabled")]
+    internal static class DebugWorkerSkillDisabledPatch
+    {
+        private static bool Prefix(SkillRecord __instance, ref bool __result)
+        {
+            if (!DebugPawnState.WorkerLocked(__instance.Pawn)) return true;
+            __result = false;
+            return false;
+        }
+    }
+
+    [HarmonyPatch(typeof(SkillRecord), "get_PermanentlyDisabled")]
+    internal static class DebugWorkerSkillPermanentlyDisabledPatch
+    {
+        private static bool Prefix(SkillRecord __instance, ref bool __result)
+        {
+            if (!DebugPawnState.WorkerLocked(__instance.Pawn)) return true;
+            __result = false;
+            return false;
         }
     }
 
