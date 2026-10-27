@@ -55,7 +55,7 @@ namespace LogSyncMod
                 }
             }
             foreach (ThingCategoryDef root in used.Where(c => c.parent == null).OrderBy(c => c.label))
-                AddCategoryChildren(root, -1, used);
+                AddCategoryChildren(root, root.defName == "Root" ? -1 : 0, used);
         }
 
         private void AddCategoryChildren(ThingCategoryDef cat, int depth, HashSet<ThingCategoryDef> used)

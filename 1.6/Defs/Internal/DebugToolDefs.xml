@@ -2,8 +2,8 @@
 <Defs>
   <HediffDef>
     <defName>LogSync_DebugNeedsLock</defName>
-    <label>test: full mood and food</label>
-    <description>Keeps mood and food full. Select this pawn again with the mood and food rectangle tool to remove. Other needs and existing health conditions remain unchanged.</description>
+    <label>test: all needs full</label>
+    <description>Keeps every need this pawn currently has at its own maximum, including mood, food, rest, recreation, outdoors and mod-added needs using the game's needs system. Select this pawn again with the all-needs rectangle tool to remove. Needs then resume normal changes from their current full levels. Existing health conditions are preserved.</description>
     <hediffClass>HediffWithComps</hediffClass>
     <isBad>false</isBad>
     <defaultLabelColor>(0.45, 0.85, 0.8)</defaultLabelColor>
@@ -11,13 +11,19 @@
   </HediffDef>
   <HediffDef>
     <defName>LogSync_DebugSkilledWorker10x</defName>
-    <label>test: skills 20, work speed x10</label>
-    <description>Temporarily reads all skills as 20 and multiplies global work speed by 10. Learning and forgetting are suspended. Select this pawn again with the skilled worker rectangle tool to remove both effects. Disabled work types remain disabled.</description>
+    <label>test: skills 20, work speed x10, max move speed, carrying capacity +1000</label>
+    <description>Temporarily reads all skills as 20, including mod-added skills using the game's skill system, multiplies global work speed by 10, adds 300 move speed and 1000 carrying capacity, and bypasses work and violence incapabilities. Enables every work type, including mod-added work: inactive work uses default priority 3, while active work keeps its priority. All 24 timetable hours are treated as Work. Learning and forgetting are suspended. Select this pawn again with the skilled worker rectangle tool to remove these effects and restore the original restrictions and stored work assignments and timetable. Manual changes to stored assignments during this state are retained. Backstories, traits, genes and physical health requirements are preserved.</description>
     <hediffClass>HediffWithComps</hediffClass>
     <isBad>false</isBad>
     <defaultLabelColor>(0.45, 0.7, 1.0)</defaultLabelColor>
     <stages>
-      <li><statFactors><WorkSpeedGlobal>10</WorkSpeedGlobal></statFactors></li>
+      <li>
+        <statOffsets>
+          <MoveSpeed>300</MoveSpeed>
+          <CarryingCapacity>1000</CarryingCapacity>
+        </statOffsets>
+        <statFactors><WorkSpeedGlobal>10</WorkSpeedGlobal></statFactors>
+      </li>
     </stages>
   </HediffDef>
 </Defs>

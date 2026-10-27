@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using HarmonyLib;
 using LudeonTK;
 using RimWorld;
@@ -59,7 +60,7 @@ namespace LogSyncMod
                 foreach (Pawn pawn in targets)
                 {
                     if (pawn.Dead || pawn.Faction != Faction.OfPlayer || !pawn.RaceProps.Humanlike ||
-                        pawn.health == null || (worker ? pawn.skills == null : pawn.needs?.mood == null && pawn.needs?.food == null))
+                        pawn.health == null || (worker ? pawn.skills == null : pawn.needs == null || pawn.needs.AllNeeds.Count == 0))
                     {
                         skipped++;
                         continue;
@@ -74,13 +75,18 @@ namespace LogSyncMod
                         }
                         else
                         {
+                            if (worker) pawn.workSettings?.EnableAndInitializeIfNotAlreadyInitialized();
                             pawn.health.AddHediff(def);
                             if (!pawn.health.hediffSet.HasHediff(def)) throw new InvalidOperationException("Test hediff was not added.");
                             if (!worker)
                             {
-                                if (pawn.needs.mood != null) pawn.needs.mood.CurLevelPercentage = 1f;
-                                if (pawn.needs.food != null) pawn.needs.food.CurLevelPercentage = 1f;
+                                foreach (Need need in pawn.needs.AllNeeds.ToList()) need.CurLevelPercentage = 1f;
                             }
+                        }
+                        if (worker)
+                        {
+                            pawn.Notify_DisabledWorkTypesChanged();
+                            pawn.workSettings?.Notify_UseWorkPrioritiesChanged();
                         }
                         foreach (StatDef stat in DefDatabase<StatDef>.AllDefsListForReading)
                             stat.Worker.ClearCacheForThing(pawn);
@@ -100,6 +106,31 @@ namespace LogSyncMod
         }
     }
 
+    [HarmonyPatch(typeof(Pawn_WorkSettings), nameof(Pawn_WorkSettings.GetPriority))]
+    internal static class DebugWorkerAllWorkPatch
+    {
+        private static void Postfix(Pawn ___pawn, ref int __result)
+        {
+            if (__result <= 0 && DebugPawnState.WorkerLocked(___pawn))
+                __result = Pawn_WorkSettings.DefaultPriority;
+        }
+    }
+
+    [HarmonyPatch]
+    internal static class DebugWorkerSchedulePatch
+    {
+        private static MethodBase[] TargetMethods() => new MethodBase[]
+        {
+            AccessTools.Method(typeof(Pawn_TimetableTracker), nameof(Pawn_TimetableTracker.GetAssignment)),
+            AccessTools.PropertyGetter(typeof(Pawn_TimetableTracker), nameof(Pawn_TimetableTracker.CurrentAssignment))
+        };
+
+        private static void Postfix(Pawn ___pawn, ref TimeAssignmentDef __result)
+        {
+            if (DebugPawnState.WorkerLocked(___pawn)) __result = TimeAssignmentDefOf.Work;
+        }
+    }
+
     internal static class DebugPawnState
     {
         internal static bool WorkerLocked(Pawn pawn)
@@ -110,35 +141,53 @@ namespace LogSyncMod
 
         internal static bool NeedsLocked(Need need, Pawn pawn)
         {
-            return (need is Need_Food || need is Need_Mood) && pawn?.health?.hediffSet != null &&
+            return need?.def != null && pawn?.health?.hediffSet != null &&
                 LogSyncDebugDefOf.LogSync_DebugNeedsLock != null && pawn.health.hediffSet.HasHediff(LogSyncDebugDefOf.LogSync_DebugNeedsLock);
         }
     }
 
-    [HarmonyPatch(typeof(Need), "get_IsFrozen")]
-    internal static class DebugNeedsFrozenPatch
+    [HarmonyPatch(typeof(Pawn), "get_CombinedDisabledWorkTags")]
+    internal static class DebugWorkerDisabledTagsPatch
     {
-        private static void Postfix(Need __instance, Pawn ___pawn, ref bool __result)
+        private static bool Prefix(Pawn __instance, ref WorkTags __result)
         {
-            if (DebugPawnState.NeedsLocked(__instance, ___pawn)) __result = true;
+            if (!DebugPawnState.WorkerLocked(__instance)) return true;
+            __result = WorkTags.None;
+            return false;
         }
     }
 
-    [HarmonyPatch(typeof(Need), "get_CurLevel")]
-    internal static class DebugNeedsReadPatch
+    [HarmonyPatch(typeof(Pawn), nameof(Pawn.GetDisabledWorkTypes))]
+    internal static class DebugWorkerDisabledTypesPatch
     {
-        private static void Postfix(Need __instance, Pawn ___pawn, ref float __result)
+        private static bool Prefix(Pawn __instance, ref List<WorkTypeDef> __result)
         {
-            if (DebugPawnState.NeedsLocked(__instance, ___pawn)) __result = __instance.MaxLevel;
+            if (!DebugPawnState.WorkerLocked(__instance)) return true;
+            // Do not clear the original list: it is cached by Pawn and must remain intact for removal.
+            __result = new List<WorkTypeDef>();
+            return false;
         }
     }
 
-    [HarmonyPatch(typeof(Need), "set_CurLevel")]
-    internal static class DebugNeedsWritePatch
+    [HarmonyPatch(typeof(SkillRecord), "get_TotallyDisabled")]
+    internal static class DebugWorkerSkillDisabledPatch
     {
-        private static void Prefix(Need __instance, Pawn ___pawn, ref float value)
+        private static bool Prefix(SkillRecord __instance, ref bool __result)
         {
-            if (DebugPawnState.NeedsLocked(__instance, ___pawn)) value = __instance.MaxLevel;
+            if (!DebugPawnState.WorkerLocked(__instance.Pawn)) return true;
+            __result = false;
+            return false;
+        }
+    }
+
+    [HarmonyPatch(typeof(SkillRecord), "get_PermanentlyDisabled")]
+    internal static class DebugWorkerSkillPermanentlyDisabledPatch
+    {
+        private static bool Prefix(SkillRecord __instance, ref bool __result)
+        {
+            if (!DebugPawnState.WorkerLocked(__instance.Pawn)) return true;
+            __result = false;
+            return false;
         }
     }
 
