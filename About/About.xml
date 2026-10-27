@@ -2,9 +2,9 @@
 <ModMetaData>
     <name>环世界日志同步模组</name>
     <author>trigger</author>
-    <modVersion>1.1.9</modVersion>
+    <modVersion>1.2.6</modVersion>
     <url></url>
-    <supportedVersions><li>1.6</li></supportedVersions>
+    <supportedVersions><li>1.6</li><li>1.7</li></supportedVersions>
     <packageId>trigger.logsyncmod</packageId>
   <loadBefore />   
   <loadAfter>	
@@ -22,6 +22,13 @@
 - 支持自定义输出路径到 .log 或 .txt 文件
 - 支持从当前 Mod 列表中选择目标包名
 - 适合开发调试、问题复现和日志归档
+- 开发者菜单 LogSyncMod 分类直接提供测试物资与小人框选命令
+- 测试物资支持命名方案、保存与切换，显示物品数量和模组分布；未指定数量的物品默认3组
+- 框选持续锁定全部需求全满，包括心情、饱食、睡眠、娱乐、室外及模组需求；再次框选解除，并用游戏消息提示结果
+- 另一个框选切换全部技能20、10倍工作速度、满移速（+300）、携带能力+1000、工作/暴力解禁、启用全部工作及24小时工作作息，支持模组新增技能和工作；再次框选恢复
+- 独立框选赋予启灵6级、机控中枢与额外100带宽，按已启用DLC分别生效，再次框选恢复
+- 快速治愈框选区域内各阵营Pawn的伤口、旧伤、真实缺失部位、疾病和可明确识别的药物状态；重复框选仍为治愈
+- 带原版配方页或其子类的工作台提供“DEV: 给予原材料”，生成最上方已添加配方的一轮制作原料
 
 [h2]使用说明[/h2]
 1. 在模组设置中填写日志输出路径

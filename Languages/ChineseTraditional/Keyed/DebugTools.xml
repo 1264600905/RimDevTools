@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<LanguageData>
+  <LogSyncMod.DebugSuppliesTitle>測試物資</LogSyncMod.DebugSuppliesTitle>
+  <LogSyncMod.DebugSuppliesSubtitle>選擇或建立命名方案，儲存後在地圖上選擇落點。保留已指定的物資數量；其他物品預設3組，即堆疊上限×3。</LogSyncMod.DebugSuppliesSubtitle>
+  <LogSyncMod.DebugNeedsToggle>全部需求全滿開關（框選）</LogSyncMod.DebugNeedsToggle>
+  <LogSyncMod.DebugWorkerToggle>技能20＋工作10倍＋全工作＋滿移速＋負重+1000（框選）</LogSyncMod.DebugWorkerToggle>
+  <LogSyncMod.DebugNeuralToggle>啟靈6級＋機控中樞/頻寬100開關（框選）</LogSyncMod.DebugNeuralToggle>
+  <LogSyncMod.DebugNeuralUnavailable>目前沒有可用的皇權或生物科技內容，無法套用啟靈/機控測試狀態。</LogSyncMod.DebugNeuralUnavailable>
+  <LogSyncMod.DebugNeuralBoth>目前可用：啟靈神經6級、機控中樞和額外100頻寬。</LogSyncMod.DebugNeuralBoth>
+  <LogSyncMod.DebugNeuralPsyOnly>目前僅啟用皇權，可用效果為啟靈神經6級。</LogSyncMod.DebugNeuralPsyOnly>
+  <LogSyncMod.DebugNeuralMechOnly>目前僅啟用生物科技，可用效果為機控中樞和額外100頻寬。</LogSyncMod.DebugNeuralMechOnly>
+  <LogSyncMod.DebugPawnResult>{0}：已加入 {1} 人，已移除 {2} 人，略過 {3} 人，失敗 {4} 人。再次框選可切換。</LogSyncMod.DebugPawnResult>
+  <LogSyncMod.DebugQuickHeal>快速治癒</LogSyncMod.DebugQuickHeal>
+  <LogSyncMod.DebugQuickHealResult>快速治癒：已恢復 {0} 個Pawn，無需處理 {1} 個，失敗 {2} 個；清除 {3} 項傷病/藥物狀態，恢復 {4} 處缺失部位。再次框選仍為治癒。</LogSyncMod.DebugQuickHealResult>
+  <LogSyncMod.DebugGiveIngredients>給予原材料</LogSyncMod.DebugGiveIngredients>
+  <LogSyncMod.DebugGiveIngredientsDesc>為配方列表最上方的已加入配方產生一輪製作所需的全部原材料，放在工作台附近。遵守配方材料篩選及數量換算；固定材料按原版規則處理。每次點擊都會新增材料。</LogSyncMod.DebugGiveIngredientsDesc>
+  <LogSyncMod.DebugIngredientsNoBill>請先在工作台中加入一個配方。</LogSyncMod.DebugIngredientsNoBill>
+  <LogSyncMod.DebugIngredientsNotNeeded>配方「{0}」目前不需要原材料。</LogSyncMod.DebugIngredientsNotNeeded>
+  <LogSyncMod.DebugIngredientsUnavailable>未產生材料：配方「{0}」的以下原料沒有符合篩選且可產生的物品：{1}。詳情見日誌。</LogSyncMod.DebugIngredientsUnavailable>
+  <LogSyncMod.DebugIngredientsForBill>配方「{0}」的一輪原材料：{1}</LogSyncMod.DebugIngredientsForBill>
+  <LogSyncMod.DebugUnknownSource>未知來源</LogSyncMod.DebugUnknownSource>
+  <LogSyncMod.DebugSearchHint>搜尋物品名稱、DefName、模組名稱或 PackageId…</LogSyncMod.DebugSearchHint>
+  <LogSyncMod.DebugAllMods>全部模組 ▾</LogSyncMod.DebugAllMods>
+  <LogSyncMod.DebugAllItems>全部物品</LogSyncMod.DebugAllItems>
+  <LogSyncMod.DebugDefaultItems>預設物資</LogSyncMod.DebugDefaultItems>
+  <LogSyncMod.DebugSelectedItems>已選物品</LogSyncMod.DebugSelectedItems>
+  <LogSyncMod.DebugAllCategories>全部分類</LogSyncMod.DebugAllCategories>
+  <LogSyncMod.DebugThirdPartyOnly>僅第三方模組</LogSyncMod.DebugThirdPartyOnly>
+  <LogSyncMod.DebugItemName>物品名稱</LogSyncMod.DebugItemName>
+  <LogSyncMod.DebugItemSource>來源模組</LogSyncMod.DebugItemSource>
+  <LogSyncMod.DebugStackLimit>最大堆疊</LogSyncMod.DebugStackLimit>
+  <LogSyncMod.DebugQuantity>生成數量</LogSyncMod.DebugQuantity>
+  <LogSyncMod.DebugNoItems>沒有符合的物品。請更換分類、模組或搜尋詞。</LogSyncMod.DebugNoItems>
+  <LogSyncMod.DebugInvalidQuantity>請為已選物品填寫有效的正整數數量。</LogSyncMod.DebugInvalidQuantity>
+  <LogSyncMod.DebugSelectResults>勾選目前結果</LogSyncMod.DebugSelectResults>
+  <LogSyncMod.DebugDeselectResults>取消目前結果</LogSyncMod.DebugDeselectResults>
+  <LogSyncMod.DebugResetDefaults>恢復預設</LogSyncMod.DebugResetDefaults>
+  <LogSyncMod.DebugSupplySummary>已選 {0} 種 · 本次新增 {1} 個 · 約 {2} 堆</LogSyncMod.DebugSupplySummary>
+  <LogSyncMod.DebugCancel>取消</LogSyncMod.DebugCancel>
+  <LogSyncMod.DebugSavePreset>儲存方案</LogSyncMod.DebugSavePreset>
+  <LogSyncMod.DebugChooseLocation>選擇地圖落點</LogSyncMod.DebugChooseLocation>
+  <LogSyncMod.DebugPresetSaved>已儲存 {0} 套物資方案。</LogSyncMod.DebugPresetSaved>
+  <LogSyncMod.DebugDefaultProfile>預設方案</LogSyncMod.DebugDefaultProfile>
+  <LogSyncMod.DebugProfileSummary>{0} 種物品 / {1} 個 · {2} 個來源模組</LogSyncMod.DebugProfileSummary>
+  <LogSyncMod.DebugProfileModSummary>{0}：{1} 種 / {2} 個</LogSyncMod.DebugProfileModSummary>
+  <LogSyncMod.DebugMissingItems>其中 {0} 種物品尚未載入，暫不生成，設定會保留。</LogSyncMod.DebugMissingItems>
+  <LogSyncMod.DebugUnnamedProfile>未命名方案</LogSyncMod.DebugUnnamedProfile>
+  <LogSyncMod.DebugProfileNameHint>方案名稱。點擊「儲存方案」永久儲存；切換方案會保留本視窗內尚未儲存的編輯。</LogSyncMod.DebugProfileNameHint>
+  <LogSyncMod.DebugNewProfile>新增</LogSyncMod.DebugNewProfile>
+  <LogSyncMod.DebugCopyProfile>複製</LogSyncMod.DebugCopyProfile>
+  <LogSyncMod.DebugDeleteProfile>刪除</LogSyncMod.DebugDeleteProfile>
+  <LogSyncMod.DebugProfileCopySuffix>副本</LogSyncMod.DebugProfileCopySuffix>
+  <LogSyncMod.DebugNewProfileName>新方案</LogSyncMod.DebugNewProfileName>
+  <LogSyncMod.DebugInvalidProfileName>方案名稱不能為空或重複，請修改後儲存。</LogSyncMod.DebugInvalidProfileName>
+  <LogSyncMod.DebugSaveProfilesHint>儲存本視窗中所有方案的編輯，包含新增和刪除。關閉視窗會放棄未儲存的變更。</LogSyncMod.DebugSaveProfilesHint>
+  <LogSyncMod.DebugPlacementTool>左鍵放置測試物資；右鍵取消</LogSyncMod.DebugPlacementTool>
+  <LogSyncMod.DebugWrongMap>放置已取消：請在開啟物資視窗時所在的地圖內選擇落點。</LogSyncMod.DebugWrongMap>
+  <LogSyncMod.DebugGenerating>正在放置測試物資…</LogSyncMod.DebugGenerating>
+  <LogSyncMod.DebugSpawnFailed>物資生成中斷，詳情見遊戲日誌。</LogSyncMod.DebugSpawnFailed>
+  <LogSyncMod.DebugSpawnResult>測試物資：已完整放置 {0}/{1} 種，本次新增 {2} 個。</LogSyncMod.DebugSpawnResult>
+  <LogSyncMod.DebugSpawnPartial>另有 {0} 種未完整放置，以下為實際數量/請求數量（完整詳情見日誌）：</LogSyncMod.DebugSpawnPartial>
+</LanguageData>

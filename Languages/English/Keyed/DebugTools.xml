@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<LanguageData>
+  <LogSyncMod.DebugSuppliesTitle>Test supplies</LogSyncMod.DebugSuppliesTitle>
+  <LogSyncMod.DebugSuppliesSubtitle>Choose or create a named preset, save, then select a map location. Specified quantities are retained; other items default to 3 full stacks.</LogSyncMod.DebugSuppliesSubtitle>
+  <LogSyncMod.DebugNeedsToggle>Toggle all needs full (rectangle)</LogSyncMod.DebugNeedsToggle>
+  <LogSyncMod.DebugWorkerToggle>Skills 20 + work x10 + all work + max move + carry +1000 (rectangle)</LogSyncMod.DebugWorkerToggle>
+  <LogSyncMod.DebugNeuralToggle>Toggle psylink 6 + mechlink / bandwidth +100 (rectangle)</LogSyncMod.DebugNeuralToggle>
+  <LogSyncMod.DebugNeuralUnavailable>No Royalty or Biotech content is available for this test state.</LogSyncMod.DebugNeuralUnavailable>
+  <LogSyncMod.DebugNeuralBoth>Available: psylink level 6, mechlink and 100 additional bandwidth.</LogSyncMod.DebugNeuralBoth>
+  <LogSyncMod.DebugNeuralPsyOnly>Only Royalty is available: psylink level 6.</LogSyncMod.DebugNeuralPsyOnly>
+  <LogSyncMod.DebugNeuralMechOnly>Only Biotech is available: mechlink and 100 additional bandwidth.</LogSyncMod.DebugNeuralMechOnly>
+  <LogSyncMod.DebugPawnResult>{0}: added {1}, removed {2}, skipped {3}, failed {4}. Select again to toggle.</LogSyncMod.DebugPawnResult>
+  <LogSyncMod.DebugQuickHeal>Quick heal</LogSyncMod.DebugQuickHeal>
+  <LogSyncMod.DebugQuickHealResult>Quick heal: healed {0} pawns, unchanged {1}, failed {2}; removed {3} injury/disease/drug conditions and restored {4} missing parts. Selecting again heals again.</LogSyncMod.DebugQuickHealResult>
+  <LogSyncMod.DebugGiveIngredients>Give ingredients</LogSyncMod.DebugGiveIngredients>
+  <LogSyncMod.DebugGiveIngredientsDesc>Spawn all ingredients for one execution of the first bill in this worktable's list, near the worktable. Respects ingredient filters and quantity conversions; fixed ingredients follow vanilla rules. Each click adds new materials.</LogSyncMod.DebugGiveIngredientsDesc>
+  <LogSyncMod.DebugIngredientsNoBill>Add a bill to this worktable first.</LogSyncMod.DebugIngredientsNoBill>
+  <LogSyncMod.DebugIngredientsNotNeeded>Bill "{0}" currently requires no ingredients.</LogSyncMod.DebugIngredientsNotNeeded>
+  <LogSyncMod.DebugIngredientsUnavailable>No materials spawned: bill "{0}" has no matching spawnable items for these ingredients: {1}. See the log for details.</LogSyncMod.DebugIngredientsUnavailable>
+  <LogSyncMod.DebugIngredientsForBill>Ingredients for one execution of "{0}": {1}</LogSyncMod.DebugIngredientsForBill>
+  <LogSyncMod.DebugUnknownSource>Unknown source</LogSyncMod.DebugUnknownSource>
+  <LogSyncMod.DebugSearchHint>Search item name, DefName, mod name or PackageId…</LogSyncMod.DebugSearchHint>
+  <LogSyncMod.DebugAllMods>All mods ▾</LogSyncMod.DebugAllMods>
+  <LogSyncMod.DebugAllItems>All items</LogSyncMod.DebugAllItems>
+  <LogSyncMod.DebugDefaultItems>Default supplies</LogSyncMod.DebugDefaultItems>
+  <LogSyncMod.DebugSelectedItems>Selected items</LogSyncMod.DebugSelectedItems>
+  <LogSyncMod.DebugAllCategories>All categories</LogSyncMod.DebugAllCategories>
+  <LogSyncMod.DebugThirdPartyOnly>Third-party mods only</LogSyncMod.DebugThirdPartyOnly>
+  <LogSyncMod.DebugItemName>Item</LogSyncMod.DebugItemName>
+  <LogSyncMod.DebugItemSource>Source mod</LogSyncMod.DebugItemSource>
+  <LogSyncMod.DebugStackLimit>Stack limit</LogSyncMod.DebugStackLimit>
+  <LogSyncMod.DebugQuantity>Quantity</LogSyncMod.DebugQuantity>
+  <LogSyncMod.DebugNoItems>No matching items. Change the category, mod or search.</LogSyncMod.DebugNoItems>
+  <LogSyncMod.DebugInvalidQuantity>Enter a valid positive whole number for each selected item.</LogSyncMod.DebugInvalidQuantity>
+  <LogSyncMod.DebugSelectResults>Select results</LogSyncMod.DebugSelectResults>
+  <LogSyncMod.DebugDeselectResults>Deselect results</LogSyncMod.DebugDeselectResults>
+  <LogSyncMod.DebugResetDefaults>Restore defaults</LogSyncMod.DebugResetDefaults>
+  <LogSyncMod.DebugSupplySummary>{0} types selected · {1} new items · about {2} stacks</LogSyncMod.DebugSupplySummary>
+  <LogSyncMod.DebugCancel>Cancel</LogSyncMod.DebugCancel>
+  <LogSyncMod.DebugSavePreset>Save preset</LogSyncMod.DebugSavePreset>
+  <LogSyncMod.DebugChooseLocation>Choose map location</LogSyncMod.DebugChooseLocation>
+  <LogSyncMod.DebugPresetSaved>Saved {0} supply presets.</LogSyncMod.DebugPresetSaved>
+  <LogSyncMod.DebugDefaultProfile>Default preset</LogSyncMod.DebugDefaultProfile>
+  <LogSyncMod.DebugProfileSummary>{0} item types / {1} items · {2} source mods</LogSyncMod.DebugProfileSummary>
+  <LogSyncMod.DebugProfileModSummary>{0}: {1} types / {2} items</LogSyncMod.DebugProfileModSummary>
+  <LogSyncMod.DebugMissingItems>{0} item types are not loaded. They will not spawn; their configuration is retained.</LogSyncMod.DebugMissingItems>
+  <LogSyncMod.DebugUnnamedProfile>Unnamed preset</LogSyncMod.DebugUnnamedProfile>
+  <LogSyncMod.DebugProfileNameHint>Preset name. Save presets to persist changes. Switching retains unsaved edits within this window.</LogSyncMod.DebugProfileNameHint>
+  <LogSyncMod.DebugNewProfile>New</LogSyncMod.DebugNewProfile>
+  <LogSyncMod.DebugCopyProfile>Copy</LogSyncMod.DebugCopyProfile>
+  <LogSyncMod.DebugDeleteProfile>Delete</LogSyncMod.DebugDeleteProfile>
+  <LogSyncMod.DebugProfileCopySuffix>copy</LogSyncMod.DebugProfileCopySuffix>
+  <LogSyncMod.DebugNewProfileName>New preset</LogSyncMod.DebugNewProfileName>
+  <LogSyncMod.DebugInvalidProfileName>Preset names must be non-empty and unique.</LogSyncMod.DebugInvalidProfileName>
+  <LogSyncMod.DebugSaveProfilesHint>Save all preset edits in this window, including additions and deletions. Closing discards unsaved changes.</LogSyncMod.DebugSaveProfilesHint>
+  <LogSyncMod.DebugPlacementTool>Left-click to place supplies; right-click to cancel</LogSyncMod.DebugPlacementTool>
+  <LogSyncMod.DebugWrongMap>Placement cancelled: choose a location on the map where you opened the supplies window.</LogSyncMod.DebugWrongMap>
+  <LogSyncMod.DebugGenerating>Placing test supplies…</LogSyncMod.DebugGenerating>
+  <LogSyncMod.DebugSpawnFailed>Supply generation interrupted. See the game log for details.</LogSyncMod.DebugSpawnFailed>
+  <LogSyncMod.DebugSpawnResult>Test supplies: {0}/{1} types fully placed; {2} new items.</LogSyncMod.DebugSpawnResult>
+  <LogSyncMod.DebugSpawnPartial>{0} types were not fully placed. Placed/requested quantities below (full details in the log):</LogSyncMod.DebugSpawnPartial>
+</LanguageData>

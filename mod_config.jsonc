@@ -69,6 +69,8 @@
         "1.6\\Assemblies",
         "AssetBundles",
         "1.6\\Defs",
+        "1.7\\Assemblies",
+        "1.7\\Defs",
         "Languages",
         "About",
         "LoadFolders.xml"

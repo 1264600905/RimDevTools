@@ -62,10 +62,18 @@ namespace LogSyncMod
         public bool autoTestUseFastSpeed = true;
         public int autoTestPocketMapMaxConcurrent = 5;
         public bool autoTestRunRequested;
+        public List<DebugSupplyOverride> debugSupplyOverrides = new List<DebugSupplyOverride>();
+        public List<DebugSupplyProfile> debugSupplyProfiles = new List<DebugSupplyProfile>();
+        public string debugSupplyActiveProfileId = "";
 
         public override void ExposeData()
         {
             base.ExposeData();
+            Scribe_Collections.Look(ref debugSupplyOverrides, "debugSupplyOverrides", LookMode.Deep);
+            if (debugSupplyOverrides == null) debugSupplyOverrides = new List<DebugSupplyOverride>();
+            Scribe_Collections.Look(ref debugSupplyProfiles, "debugSupplyProfiles", LookMode.Deep);
+            if (debugSupplyProfiles == null) debugSupplyProfiles = new List<DebugSupplyProfile>();
+            Scribe_Values.Look(ref debugSupplyActiveProfileId, "debugSupplyActiveProfileId", "");
             Scribe_Values.Look(ref logPath, "logPath", "D:/RimWorldLogs.log");
             Scribe_Collections.Look(ref targetModIds, "targetModIds", LookMode.Value);
             Scribe_Collections.Look(ref keywords, "keywords", LookMode.Value);

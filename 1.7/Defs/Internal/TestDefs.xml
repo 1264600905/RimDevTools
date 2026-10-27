@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Defs>
+
+  <!-- 测试专用：空口袋地图生成器 -->
+  <MapGeneratorDef>
+    <defName>LogSync_AutoTestPocketMap</defName>
+    <label>log sync auto test pocket map</label>
+    <disableCallAid>true</disableCallAid>
+    <pocketMapProperties>
+      <biome>Underground</biome>
+      <temperature>15</temperature>
+      <canBeCleaned>true</canBeCleaned>
+    </pocketMapProperties>
+    <genSteps>
+      <!-- 只保留基础网格初始化，然后用专用 GenStep 强制铺成纯 Soil 平地 -->
+      <li>ElevationFertility</li>
+      <li>LogSync_AutoTestFlatSoil</li>
+      <li>Fog</li>
+    </genSteps>
+  </MapGeneratorDef>
+
+  <GenStepDef>
+    <defName>LogSync_AutoTestFlatSoil</defName>
+    <order>200</order>
+    <genStep Class="LogSyncMod.AutoTest.GenStep_LogSyncAutoTestFlatSoil" />
+  </GenStepDef>
+
+  <!-- 测试专用：大功率发电机 -->
+  <ThingDef>
+    <defName>LogSync_AutoTestPowerGenerator</defName>
+    <label>Auto-Test Power Generator</label>
+    <thingClass>Building</thingClass>
+    <category>Building</category>
+    <tickerType>Normal</tickerType>
+    <graphicData>
+      <texPath>UI/Buttons/Dev/Add</texPath>
+      <graphicClass>Graphic_Single</graphicClass>
+      <drawSize>(4,4)</drawSize>
+    </graphicData>
+    <altitudeLayer>Building</altitudeLayer>
+    <passability>Impassable</passability>
+    <pathCost>9999</pathCost>
+    <blockWind>true</blockWind>
+    <fillPercent>1.0</fillPercent>
+    <statBases>
+      <MaxHitPoints>1000</MaxHitPoints>
+      <WorkToBuild>0</WorkToBuild>
+      <Flammability>0</Flammability>
+    </statBases>
+    <size>(1,1)</size>
+    <comps>
+      <li Class="CompProperties_Power">
+        <compClass>CompPowerPlant</compClass>
+        <basePowerConsumption>-200000</basePowerConsumption>
+        <transmitsPower>true</transmitsPower>
+      </li>
+    </comps>
+    <building>
+      <ai_chillDestination>false</ai_chillDestination>
+    </building>
+  </ThingDef>
+
+  <!-- 测试专用：口袋地图入口 -->
+  <ThingDef>
+    <defName>LogSync_AutoTestPortal</defName>
+    <label>Auto-Test Portal</label>
+    <thingClass>Building</thingClass>
+    <category>Building</category>
+    <graphicData>
+      <texPath>UI/Buttons/Dev/Add</texPath>
+      <graphicClass>Graphic_Single</graphicClass>
+      <drawSize>(1,1)</drawSize>
+      <color>(1,0.5,1)</color>
+    </graphicData>
+    <altitudeLayer>Building</altitudeLayer>
+    <passability>PassThroughOnly</passability>
+    <statBases>
+      <MaxHitPoints>1000</MaxHitPoints>
+      <WorkToBuild>0</WorkToBuild>
+      <Flammability>0</Flammability>
+    </statBases>
+    <size>(1,1)</size>
+    <building>
+      <ai_chillDestination>false</ai_chillDestination>
+    </building>
+  </ThingDef>
+
+  <!-- 测试专用：靶子 Hediff -->
+  <HediffDef>
+    <defName>LogSync_TurretTestTarget</defName>
+    <label>Auto-Test Target Buff</label>
+    <description>Keeps incoming damage at 10%, applies an immediate 10-second stun, and stuns again for 10 seconds whenever the pawn moves to a new cell.</description>
+    <hediffClass>HediffWithComps</hediffClass>
+    <defaultLabelColor>(0.5, 0.5, 1.0)</defaultLabelColor>
+    <comps>
+      <li Class="LogSyncMod.AutoTest.HediffCompProperties_LogSyncTurretTestTarget">
+        <stunTicks>600</stunTicks>
+      </li>
+    </comps>
+    <stages>
+      <li>
+        <statOffsets>
+          <IncomingDamageFactor>-0.9</IncomingDamageFactor>
+        </statOffsets>
+      </li>
+    </stages>
+  </HediffDef>
+
+  <HediffDef>
+    <defName>LogSync_CombatPawnTargetMarker</defName>
+    <label>Auto-Test Combat Pawn Target Marker</label>
+    <description>Pure marker used to identify the receive-hit combat test target.</description>
+    <hediffClass>HediffWithComps</hediffClass>
+    <defaultLabelColor>(0.35, 0.85, 1.0)</defaultLabelColor>
+    <isBad>false</isBad>
+    <stages>
+      <li />
+    </stages>
+  </HediffDef>
+
+  <HediffDef>
+    <defName>LogSync_CombatAssaulter</defName>
+    <label>Auto-Test Combat Assaulter</label>
+    <description>Keeps incoming damage at 10% and grants +300 move speed for receive-hit combat tests.</description>
+    <hediffClass>HediffWithComps</hediffClass>
+    <defaultLabelColor>(1.0, 0.65, 0.35)</defaultLabelColor>
+    <stages>
+      <li>
+        <statOffsets>
+          <IncomingDamageFactor>-0.9</IncomingDamageFactor>
+          <MoveSpeed>300</MoveSpeed>
+        </statOffsets>
+      </li>
+    </stages>
+  </HediffDef>
+
+  <HediffDef>
+    <defName>LogSync_TestMechanitorBandwidth</defName>
+    <label>Auto-Test Mechanitor Bandwidth</label>
+    <description>Test-only hediff that grants massive mechanitor bandwidth for controlled mech skill tests.</description>
+    <hediffClass>HediffWithComps</hediffClass>
+    <isBad>false</isBad>
+    <stages>
+      <li>
+        <statOffsets>
+          <MechBandwidth>999</MechBandwidth>
+        </statOffsets>
+      </li>
+    </stages>
+  </HediffDef>
+
+</Defs>

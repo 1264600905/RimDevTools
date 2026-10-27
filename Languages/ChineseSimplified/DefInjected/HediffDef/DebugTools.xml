@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<LanguageData>
+  <LogSync_DebugNeedsLock.label>测试：全部需求全满</LogSync_DebugNeedsLock.label>
+  <LogSync_DebugNeedsLock.description>持续保持小人当前拥有的全部需求为各自上限，包括心情、饱食、睡眠、娱乐、室外，以及采用游戏需求系统的模组需求。再次用全部需求框选工具选中可移除，之后各需求从当前满值正常变化。已有健康状态保留。</LogSync_DebugNeedsLock.description>
+  <LogSync_DebugSkilledWorker10x.label>测试：技能20、工作10倍、满移速与负重+1000</LogSync_DebugSkilledWorker10x.label>
+  <LogSync_DebugSkilledWorker10x.description>临时将全部技能读数锁为20，包括采用游戏技能系统的模组技能；全局工作速度乘以10倍，并增加300移速和1000携带能力。解除工作禁用与无暴力限制，并暂停学习和遗忘。启用全部工作，包括模组新增工作：未勾选工作按默认优先级3启用，已启用工作的优先级保留；作息表24小时全部按工作处理。再次框选移除整组效果，恢复原有限制及保存的工作安排和作息；期间手动修改的底层安排仍会保留。背景、特性、基因保留；身体健康条件仍适用。</LogSync_DebugSkilledWorker10x.description>
+  <LogSync_DebugNeuralTest.label>测试：启灵与机控</LogSync_DebugNeuralTest.label>
+  <LogSync_DebugNeuralTest.description>启用皇权时赋予启灵神经6级；启用生物科技时赋予机控中枢并额外增加100带宽。缺少某个DLC时仅应用可用部分。用启灵/机控框选工具再次选中可恢复原启灵等级，仅移除本工具新增的中枢和灵能。移除测试新增的机控中枢时，按原版规则断开其机体的控制关系。</LogSync_DebugNeuralTest.description>
+</LanguageData>
