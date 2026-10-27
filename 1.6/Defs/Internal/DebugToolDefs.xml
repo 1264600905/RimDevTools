@@ -26,4 +26,19 @@
       </li>
     </stages>
   </HediffDef>
+  <HediffDef>
+    <defName>LogSync_DebugNeuralTest</defName>
+    <label>test: psylink and mechanitor</label>
+    <description>Grants psylink level 6 with Royalty and a mechlink with Biotech. Adds 100 mech bandwidth with Biotech. Each expansion is optional. Select again with the neural test rectangle tool to restore the original psylink level and remove only the implants and psycasts granted by this tool. Removing a test-granted mechlink disconnects its mechs under the normal game rules.</description>
+    <hediffClass>LogSyncMod.Hediff_LogSyncNeuralTest</hediffClass>
+    <isBad>false</isBad>
+    <defaultLabelColor>(0.75, 0.6, 1.0)</defaultLabelColor>
+    <stages>
+      <li>
+        <statOffsets>
+          <MechBandwidth MayRequire="Ludeon.RimWorld.Biotech">100</MechBandwidth>
+        </statOffsets>
+      </li>
+    </stages>
+  </HediffDef>
 </Defs>
