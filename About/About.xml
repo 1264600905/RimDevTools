@@ -2,7 +2,7 @@
 <ModMetaData>
     <name>环世界日志同步模组</name>
     <author>trigger</author>
-    <modVersion>1.2.6</modVersion>
+    <modVersion>1.2.7</modVersion>
     <url></url>
     <supportedVersions><li>1.6</li><li>1.7</li></supportedVersions>
     <packageId>trigger.logsyncmod</packageId>
