@@ -12,13 +12,17 @@ namespace LogSyncMod
         public readonly ThingDef Def;
         public readonly ThingDef Stuff;
         public readonly int Quantity;
+        private readonly Func<Thing> factory;
 
-        public DebugSupplyRequest(ThingDef def, ThingDef stuff, int quantity)
+        public DebugSupplyRequest(ThingDef def, ThingDef stuff, int quantity, Func<Thing> factory = null)
         {
             Def = def;
             Stuff = stuff;
             Quantity = quantity;
+            this.factory = factory;
         }
+
+        internal Thing MakeThing() => factory == null ? ThingMaker.MakeThing(Def, Stuff) : factory();
     }
 
     internal static class DebugSupplySpawner
@@ -34,13 +38,19 @@ namespace LogSyncMod
                     Messages.Message("LogSyncMod.DebugWrongMap".Translate(), MessageTypeDefOf.RejectInput, historical: false);
                     return;
                 }
-                LongEventHandler.QueueLongEvent(() => Spawn(map, center, requests), "LogSyncMod.DebugGenerating", false,
-                    ex =>
-                    {
-                        Log.Error("[LogSyncMod] Debug supplies failed: " + ex);
-                        Messages.Message("LogSyncMod.DebugSpawnFailed".Translate(), MessageTypeDefOf.RejectInput, historical: false);
-                    });
+                Queue(map, center, requests);
             });
+        }
+
+        internal static void Queue(Map map, IntVec3 center, List<DebugSupplyRequest> requests,
+            string context = null, Predicate<IntVec3> allowedCell = null)
+        {
+            LongEventHandler.QueueLongEvent(() => Spawn(map, center, requests, context, allowedCell), "LogSyncMod.DebugGenerating", false,
+                ex =>
+                {
+                    Log.Error("[LogSyncMod] Debug supplies failed: " + ex);
+                    Messages.Message("LogSyncMod.DebugSpawnFailed".Translate(), MessageTypeDefOf.RejectInput, historical: false);
+                });
         }
 
         private static bool SafeCell(IntVec3 cell, Map map)
@@ -54,10 +64,12 @@ namespace LogSyncMod
                 .Any(t => t.def.category == ThingCategory.Item && t.stackCount < t.def.stackLimit && t.CanStackWith(thing));
         }
 
-        private static void Spawn(Map map, IntVec3 center, List<DebugSupplyRequest> requests)
+        private static void Spawn(Map map, IntVec3 center, List<DebugSupplyRequest> requests,
+            string context, Predicate<IntVec3> allowedCell)
         {
+            bool ValidCell(IntVec3 cell) => SafeCell(cell, map) && (allowedCell == null || allowedCell(cell));
             // Sorting once keeps fallback placement bounded by this map, including very large material lists.
-            List<IntVec3> cells = map.AllCells.Where(c => SafeCell(c, map))
+            List<IntVec3> cells = map.AllCells.Where(ValidCell)
                 .OrderBy(c => (c - center).LengthHorizontalSquared).ToList();
             long totalPlaced = 0;
             int fullKinds = 0;
@@ -73,16 +85,16 @@ namespace LogSyncMod
                     while (remaining > 0 && cellIndex < cells.Count)
                     {
                         int stackSize = Math.Min(remaining, Math.Max(1, request.Def.stackLimit));
-                        pending = ThingMaker.MakeThing(request.Def, request.Stuff);
+                        pending = request.MakeThing();
                         pending.stackCount = stackSize;
                         int placed = 0;
                         while (cellIndex < cells.Count && !pending.Destroyed && !pending.Spawned)
                         {
                             IntVec3 cell = cells[cellIndex];
-                            if (!SafeCell(cell, map) || !HasRoom(cell, map, pending)) { cellIndex++; continue; }
+                            if (!ValidCell(cell) || !HasRoom(cell, map, pending)) { cellIndex++; continue; }
                             bool complete = GenPlace.TryPlaceThing(pending, cell, map, ThingPlaceMode.Near,
                                 (thing, count) => { placed += count; totalPlaced += count; remaining -= count; },
-                                c => SafeCell(c, map));
+                                ValidCell);
                             if (complete) break;
                             cellIndex++;
                         }
@@ -109,6 +121,7 @@ namespace LogSyncMod
                 }
             }
             string message = "LogSyncMod.DebugSpawnResult".Translate(fullKinds, requests.Count, totalPlaced);
+            if (!string.IsNullOrEmpty(context)) message = context + "\n" + message;
             if (failures.Count > 0)
             {
                 message += "\n" + "LogSyncMod.DebugSpawnPartial".Translate(failures.Count) + "\n" + string.Join("\n", failures.Take(5));

@@ -36,7 +36,8 @@ namespace LogSyncMod
                 CreateAction("LogSyncMod.DebugWorkerToggle",
                     () => StartPawnTool(true)),
                 CreateAction("LogSyncMod.DebugNeuralToggle", StartNeuralTool,
-                    () => ModsConfig.RoyaltyActive || ModsConfig.BiotechActive)
+                    () => ModsConfig.RoyaltyActive || ModsConfig.BiotechActive),
+                CreateAction("LogSyncMod.DebugQuickHeal", StartQuickHealTool)
             };
         }
 
