@@ -3,7 +3,7 @@
   <LogSyncMod.DebugSuppliesTitle>测试物资</LogSyncMod.DebugSuppliesTitle>
   <LogSyncMod.DebugSuppliesSubtitle>选择或新建命名方案，保存后在地图上选择落点。保留已指定的物资数量；其他物品默认3组，即堆叠上限×3。</LogSyncMod.DebugSuppliesSubtitle>
   <LogSyncMod.DebugNeedsToggle>全部需求全满开关（框选）</LogSyncMod.DebugNeedsToggle>
-  <LogSyncMod.DebugWorkerToggle>技能20＋工作10倍＋全工作开关（框选）</LogSyncMod.DebugWorkerToggle>
+  <LogSyncMod.DebugWorkerToggle>技能20＋工作10倍＋全工作＋满移速＋负重+1000（框选）</LogSyncMod.DebugWorkerToggle>
   <LogSyncMod.DebugNeuralToggle>启灵6级＋机控中枢/带宽100开关（框选）</LogSyncMod.DebugNeuralToggle>
   <LogSyncMod.DebugNeuralUnavailable>当前没有可用的皇权或生物科技内容，无法应用启灵/机控测试状态。</LogSyncMod.DebugNeuralUnavailable>
   <LogSyncMod.DebugNeuralBoth>当前可用：启灵神经6级、机控中枢和额外100带宽。</LogSyncMod.DebugNeuralBoth>

@@ -3,7 +3,7 @@
   <LogSyncMod.DebugSuppliesTitle>Test supplies</LogSyncMod.DebugSuppliesTitle>
   <LogSyncMod.DebugSuppliesSubtitle>Choose or create a named preset, save, then select a map location. Specified quantities are retained; other items default to 3 full stacks.</LogSyncMod.DebugSuppliesSubtitle>
   <LogSyncMod.DebugNeedsToggle>Toggle all needs full (rectangle)</LogSyncMod.DebugNeedsToggle>
-  <LogSyncMod.DebugWorkerToggle>Toggle skills 20 + work speed x10 + all work (rectangle)</LogSyncMod.DebugWorkerToggle>
+  <LogSyncMod.DebugWorkerToggle>Skills 20 + work x10 + all work + max move + carry +1000 (rectangle)</LogSyncMod.DebugWorkerToggle>
   <LogSyncMod.DebugNeuralToggle>Toggle psylink 6 + mechlink / bandwidth +100 (rectangle)</LogSyncMod.DebugNeuralToggle>
   <LogSyncMod.DebugNeuralUnavailable>No Royalty or Biotech content is available for this test state.</LogSyncMod.DebugNeuralUnavailable>
   <LogSyncMod.DebugNeuralBoth>Available: psylink level 6, mechlink and 100 additional bandwidth.</LogSyncMod.DebugNeuralBoth>
