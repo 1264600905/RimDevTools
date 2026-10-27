@@ -4,6 +4,11 @@
   <LogSyncMod.DebugSuppliesSubtitle>Choose or create a named preset, save, then select a map location. Specified quantities are retained; other items default to 3 full stacks.</LogSyncMod.DebugSuppliesSubtitle>
   <LogSyncMod.DebugNeedsToggle>Toggle full mood and food (rectangle)</LogSyncMod.DebugNeedsToggle>
   <LogSyncMod.DebugWorkerToggle>Toggle skills 20 + work speed x10 (rectangle)</LogSyncMod.DebugWorkerToggle>
+  <LogSyncMod.DebugNeuralToggle>Toggle psylink 6 + mechlink / bandwidth +100 (rectangle)</LogSyncMod.DebugNeuralToggle>
+  <LogSyncMod.DebugNeuralUnavailable>No Royalty or Biotech content is available for this test state.</LogSyncMod.DebugNeuralUnavailable>
+  <LogSyncMod.DebugNeuralBoth>Available: psylink level 6, mechlink and 100 additional bandwidth.</LogSyncMod.DebugNeuralBoth>
+  <LogSyncMod.DebugNeuralPsyOnly>Only Royalty is available: psylink level 6.</LogSyncMod.DebugNeuralPsyOnly>
+  <LogSyncMod.DebugNeuralMechOnly>Only Biotech is available: mechlink and 100 additional bandwidth.</LogSyncMod.DebugNeuralMechOnly>
   <LogSyncMod.DebugPawnResult>{0}: added {1}, removed {2}, skipped {3}, failed {4}. Select again to toggle.</LogSyncMod.DebugPawnResult>
   <LogSyncMod.DebugUnknownSource>Unknown source</LogSyncMod.DebugUnknownSource>
   <LogSyncMod.DebugSearchHint>Search item name, DefName, mod name or PackageId…</LogSyncMod.DebugSearchHint>

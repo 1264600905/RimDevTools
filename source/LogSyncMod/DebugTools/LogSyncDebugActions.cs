@@ -13,6 +13,7 @@ namespace LogSyncMod
     {
         public static HediffDef LogSync_DebugNeedsLock;
         public static HediffDef LogSync_DebugSkilledWorker10x;
+        public static HediffDef LogSync_DebugNeuralTest;
 
         static LogSyncDebugDefOf()
         {
@@ -20,7 +21,7 @@ namespace LogSyncMod
         }
     }
 
-    internal static class LogSyncDebugActions
+    internal static partial class LogSyncDebugActions
     {
         [DebugActionYielder]
         private static IEnumerable<DebugActionNode> TestActions()
@@ -32,16 +33,19 @@ namespace LogSyncMod
                 CreateAction("LogSyncMod.DebugNeedsToggle",
                     () => StartPawnTool(false)),
                 CreateAction("LogSyncMod.DebugWorkerToggle",
-                    () => StartPawnTool(true))
+                    () => StartPawnTool(true)),
+                CreateAction("LogSyncMod.DebugNeuralToggle", StartNeuralTool,
+                    () => ModsConfig.RoyaltyActive || ModsConfig.BiotechActive)
             };
         }
 
-        private static DebugActionNode CreateAction(string key, Action action)
+        private static DebugActionNode CreateAction(string key, Action action, Func<bool> visible = null)
         {
             return new DebugActionNode(key.Translate(), DebugActionType.Action, action)
             {
                 category = "LogSyncMod",
                 labelGetter = () => key.Translate(),
+                visibilityGetter = visible,
                 sourceAttribute = new DebugActionAttribute("LogSyncMod") { allowedGameStates = AllowedGameStates.PlayingOnMap }
             };
         }

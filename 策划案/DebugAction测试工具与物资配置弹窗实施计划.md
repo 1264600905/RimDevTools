@@ -2,7 +2,7 @@
 
 - 日期：2026-10-27（北京时间）。
 - 代码基线：`b9adc56`；实施分支：`codex/logsync-debug-tools-1.7`。
-- 状态：已实现并部署 LogSyncMod 1.2.2 的工作与暴力解禁；按用户要求不运行测试，由用户进行游戏内验收。
+- 状态：已实现并部署 LogSyncMod 1.2.3 的独立启灵/机控框选功能；按用户要求不运行测试，由用户进行游戏内验收。
 - 官方接口证据：按用户要求，统一使用 RimSage 1.7。
 
 ## 1. 本次交付范围
@@ -14,13 +14,14 @@
 | 测试物资弹窗 | 新建、复制、命名、删除和保存多个物资方案，显示各方案的物品数量与模组分布；选好后点击地图生成 |
 | 心情与饱食框选开关 | 同一个框选功能同时锁定满心情、满饱食；再次框选对应小人则移除这组状态 |
 | 技能与工作速度框选开关 | 同时锁定全部技能20、赋予固定10倍工作速度、临时解除工作与暴力禁用；再次框选移除整组状态并恢复原有限制 |
+| 启灵与机控框选开关 | 独立赋予启灵6级、机控中枢与额外100带宽，按皇权/生物科技分别生效；再次框选撤销本工具的改动 |
 | Message 提示 | 每次框选完成后，用游戏内 Message 明确提示添加、移除和跳过的结果 |
 
 以下内容已被物资生成方案替代，不进入本期：零材料蓝图、免费建造、跳过制作原料、修改 RecipeDef/ThingDef 的材料成本。
 
 “全属性 20”在本计划中解释为全部技能 20，不把意识、身体部位效率、移动速度、命中率等其他属性统一设置为 20。需求锁定默认指满心情、满饱食，而非冻结添加时的任意数值。
 
-小人操作只有上述两组独立的框选功能。技能锁定与工作速度必须一起添加、一起移除；不提供单独技能命令、单独倍率命令或专门的移除 DebugAction。按用户最终要求，工作倍率固定为 10 倍，省去倍率选择。
+小人操作为三组独立的框选功能。技能锁定与工作速度必须一起添加、一起移除；启灵/机控为新增的独立开关。不提供专门的移除 DebugAction。工作倍率固定为10倍，省去倍率选择。
 
 ## 2. 物资默认配置
 
@@ -68,7 +69,7 @@
 
 ### 3.1 入口与布局
 
-开发者菜单 `LogSyncMod` 分类直接平铺显示测试物资、心情与饱食开关、技能20与工作10倍开关。使用原版 DebugActionYielder 注册本地化的三个入口，不增加 Test tools 等二级分组。测试物资打开独立 `Window`，小人测试命令不放进物资窗口。
+开发者菜单 `LogSyncMod` 分类直接平铺显示测试物资、心情与饱食开关、技能20与工作10倍开关、启灵/机控开关。使用原版 DebugActionYielder 注册本地化入口，不增加二级分组。测试物资打开独立 `Window`，小人测试命令不放进物资窗口。
 
 建议初始尺寸约 **1080 × 720 个游戏 UI 单位**，按 `UI.screenWidth/UI.screenHeight` 限制在可见区域内。窗口有关闭按钮、可拖动，打开时暂停游戏并吸收窗口外输入；关闭后遵守游戏原有暂停状态。
 
@@ -198,7 +199,7 @@
 - 默认目标为区域内当前玩家阵营的类人小人；跳过尸体、动物、敌人及不存在相应需求/技能的目标。矩形命令应明确标注该目标范围，反馈成功与跳过数量。
 - 使用本工具独立、可见的测试 Hediff，不复用现有炮塔靶子 Hediff，避免附带眩晕、减伤等效果。
 - 每次矩形操作内，每个小人只处理一次；按该小人是否已有对应组的状态执行“无则添加、有则移除”，不重复叠加。不能根据框中第一个小人的状态给整组统一赋值。
-- 两组开关互不影响：需求框选只切换需求状态；技能与速度框选只切换技能和速度整组状态。移除只处理对应组的本工具 Def，不调用 `RemoveAllHediffs()`。
+- 三组开关互不影响。移除只撤销对应组管理的改动，不调用 `RemoveAllHediffs()`。
 - 状态随 Hediff 保存。开发者模式只控制命令入口；关闭开发者模式不静默删除已经添加的状态。
 - 功能独立于 AutoTestRunner 的运行会话，不需要开启 `autoTestEnabled`，也不自动修改其他测试用例的环境。
 
@@ -275,9 +276,22 @@ LogSyncMod
   测试物资
   心情与饱食开关（框选）
   技能20＋工作10倍开关（框选）
+  启灵6级＋机控中枢/带宽100开关（框选）
 ```
 
-两组命令均通过重复框选解除自身效果，没有专门的移除 DebugAction。DebugAction 使用 `AllowedGameStates.PlayingOnMap`。菜单标签、工具提示、窗口文案、Message 文案及 Hediff 标签纳入现有中简、中繁、英文翻译结构。
+三组命令均通过重复框选解除自身效果，没有专门的移除 DebugAction。DebugAction 使用 `AllowedGameStates.PlayingOnMap`。菜单标签、工具提示、窗口文案、Message 文案及 Hediff 标签纳入现有中简、中繁、英文翻译结构。
+
+### 5.6 启灵6级、机控中枢与额外100带宽
+
+- 对应皇权 Royalty 与生物科技 Biotech，分别检查 DLC 是否启用以及所需 Def 是否存在。
+- 皇权可用时，创建或提升官方 `PsychicAmplifier` 至6级；不会降低已有高于6级的模组状态。使用带 `sendLetter: false` 的升级接口，避免逐级发送启灵升级信件。
+- 生物科技可用时，没有 `MechlinkImplant` 才添加到大脑；已有中枢不重复植入。测试 Hediff 通过带 Biotech MayRequire 的 MechBandwidth statOffsets 额外增加100带宽，基础机控带宽另计，并刷新机控追踪器。
+- 只有一个 DLC 可用时只处理对应部分；都没有时隐藏该入口，若必要 Def 缺失则点击提示无效，不调用不可用内容。
+- 沿用当前玩家阵营类人小人的矩形目标规则；不存在可用大脑时跳过，使用 Message 汇总添加、移除、跳过、失败数量及可用效果。
+- 独立状态 `LogSync_DebugNeuralTest` 持久化原始启灵等级、是否新建启灵、工具新增的机控中枢引用及本次升级授予的灵能能力。
+- 再次框选时恢复原启灵等级，仅移除工具新增的植入物和升级授予的能力；原有机控中枢与灵能保留。恢复引用与归属记录随存档保存，不用 DefName 粗暴删除所有同类状态。
+- 移除新建的中枢会按原版解除其机体控制关系；原有中枢保留时，撤去100带宽会按原版重新计算可控机体。此处不额外生成武器、机体或灵能道具。
+- 验收矩阵为：仅皇权、仅生物科技、两者都有、两者都无，以及已有低级启灵/已有机控、重复框选和读档恢复；本轮按用户要求不运行这些游戏测试。
 
 ## 6. 代码边界与建议文件
 
@@ -289,9 +303,10 @@ LogSyncMod
 | `source/LogSyncMod/DebugTools/Dialog_DebugSupplies.cs` | 弹窗、筛选、表格、配置草稿 |
 | `source/LogSyncMod/DebugTools/DebugSupplyPreset.cs` | 默认集合、数量和用户覆盖记录、序列化 |
 | `source/LogSyncMod/DebugTools/DebugSupplySpawner.cs` | 放置快照、分堆、落点、实际数量统计 |
-| `source/LogSyncMod/DebugTools/DebugPawnTestState.cs` | 两组状态的逐小人翻转、Hediff/Comp、相关定点 Harmony 和 Message 统计 |
+| `source/LogSyncMod/DebugTools/LogSyncDebugActions.cs` | 入口、需求与技能组状态翻转、定点 Harmony 和 Message 统计 |
+| `source/LogSyncMod/DebugTools/DebugNeuralTest.cs` | 启灵/机控矩形开关、状态归属与原始等级保存、撤销和带宽刷新 |
 | `source/LogSyncMod/LogSyncSettings.cs` | 引用物资配置并持久化 |
-| `1.7/Defs/Internal/DebugToolDefs.xml` | 两个 HediffDef：需求锁、技能与工作 10 倍 |
+| `1.7/Defs/Internal/DebugToolDefs.xml` | 三个测试 HediffDef：需求锁、技能与工作10倍、启灵/机控 |
 | `Languages/*/Keyed/LogSyncMod.xml` 与对应 Def 翻译 | 菜单、窗口、状态和反馈文案 |
 
 游戏侧功能归入 `LogSyncMod.dll`，无需引用 AutoTestRunner。复用已有 Harmony 初始化；物资筛选和生成本身不需要 Harmony，只为小人持续状态添加最小的条件补丁。
@@ -393,6 +408,7 @@ LogSyncMod
 | `Source/RimWorld/Need.cs`、`Need_Food.cs`、`Need_Mood.cs`、`Need_Seeker.cs` | 百分比需求、冻结、自然变化与思绪更新 | 需求锁定避免全局副作用 |
 | `Source/RimWorld/SkillRecord.cs` | GetLevel/GetLevelForUI/GetUnclampedLevel、Learn 与资质 | 临时覆盖最终技能，保留真实记录 |
 | `Source/Verse/Pawn.cs`、`Source/RimWorld/Pawn_WorkSettings.cs`、`Source/RimWorld/CharacterCardUtility.cs` | CombinedDisabledWorkTags、GetDisabledWorkTypes、技能禁用属性与缓存通知 | 同一测试状态临时解除工作/无暴力禁用，移除恢复 |
+| `PsychicAmplifier`、`MechlinkImplant`、`MechBandwidth` 合并 Def，`Hediff_Psylink`、`Hediff_Mechlink`、`Pawn_MechanitorTracker` | 启灵6级、机控植入、带宽与增减级/移除生命周期 | 两个 DLC 独立判断，持久化归属，撤销工具改动 |
 | `WorkSpeedGlobal`、`ConstructionSpeed` 合并 StatDef | 全局倍率及建造速度依赖 | 用 Hediff statFactors，避免重复加速 |
 
 本地现有入口：`source/LogSyncMod/LogSyncMod.cs` 的 Harmony 初始化、`LogSyncSettings.cs` 的 ExposeData、`source/AutoTestRunner/LogSyncTurretTestTargetHediffComp.cs` 的已有 Comp 风格、`1.6/Defs/Internal/TestDefs.xml` 的测试 Def 风格、`RimDevTools/Infrastructure/RimWorldGameLayout.cs` 的版本布局说明。
@@ -446,3 +462,12 @@ LogSyncMod
 - 构建通过，0警告、0错误；不运行游戏或测试，由用户手动验收。
 - RimDevTools 正式部署返回 `ok: true`，runId：`ec6fcbe63d2b4fc9bca0f5f98d70327e`；更新5个文件、删除0个文件，无警告。
 - 部署程序集版本 `1.2.2.0`，SHA-256 与本地构建一致：`5203E976AB1C9F65286D764AEE09F07FD6895B76F11DCA1C44CD3BD6CBE859EB`。
+
+### 后续调整（1.2.3）
+
+- 新增独立的启灵/机控框选开关，分别按皇权与生物科技可用情况应用启灵6级、机控中枢和额外100带宽。
+- 两个 DLC 都未启用时隐藏入口；重复框选撤销本工具新增的效果并恢复原启灵等级。
+- 原有启灵和机控保留，归属与等级记录随存档保存；更新中简、中繁、英文文案。
+- 本轮仍不运行游戏测试；构建通过，0警告、0错误，相关XML格式检查通过。
+- RimDevTools 正式部署返回 `ok: true`，runId：`150ed9dd33aa43f3b3e1e54f94180fab`；更新8个文件、删除0个文件，无警告。
+- 部署程序集版本为 `1.2.3.0`，SHA-256 与本地构建一致：`DBB9F30AC5AE2CA38565750C4D775FE6139E18FCAFE68AF970734F5DB357D8CC`。
