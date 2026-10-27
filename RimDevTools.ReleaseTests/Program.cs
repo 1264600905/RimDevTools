@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Reflection;
 using System.Runtime.Versioning;
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Xml.Linq;
 using RimDevTools;
@@ -30,6 +31,10 @@ RequireFile(Path.Combine(".tools", "Data", "tool-mods.manifest.json"));
 RequireFile(Path.Combine(".tools", "Data", "LogSyncMod", "About", "About.xml"));
 RequireFile(Path.Combine(".tools", "Data", "LogSyncMod", "1.6", "Assemblies", "LogSyncMod.dll"));
 RequireFile(Path.Combine(".tools", "Data", "LogSyncMod", "1.6", "Assemblies", "AutoTestRunner.dll"));
+RequireFile(Path.Combine(".tools", "Data", "LogSyncMod", "1.7", "Assemblies", "LogSyncMod.dll"));
+RequireFile(Path.Combine(".tools", "Data", "LogSyncMod", "1.7", "Assemblies", "AutoTestRunner.dll"));
+RequireFile(Path.Combine(".tools", "Data", "LogSyncMod", "1.7", "Defs", "Internal", "DebugToolDefs.xml"));
+RequireFile(Path.Combine(".tools", "Data", "LogSyncMod", "1.7", "Defs", "Internal", "TestDefs.xml"));
 RequireFile(Path.Combine(".tools", "Ilspy", "ilspycmd.exe"));
 RequireFile(Path.Combine(".tools", "Data", "licenses", "ILSpy-LICENSE.txt"));
 RequireFile(Path.Combine(".tools", "Data", "licenses", "third-party-notices.txt"));
@@ -91,10 +96,16 @@ using (var manifestDocument = JsonDocument.Parse(File.ReadAllText(Path.Combine(d
 
 var logSyncAbout = XDocument.Load(Path.Combine(data, "LogSyncMod", "About", "About.xml"));
 Assert(logSyncAbout.Root?.Element("packageId")?.Value.Equals("trigger.logsyncmod", StringComparison.OrdinalIgnoreCase) == true, "packaged LogSyncMod has the expected packageId");
-Assert(logSyncAbout.Root?.Element("modVersion")?.Value == "1.1.9", "packaged LogSyncMod declares version 1.1.9");
+Assert(logSyncAbout.Root?.Element("modVersion")?.Value == "1.2.7", "packaged LogSyncMod declares version 1.2.7");
+var supportedVersions = logSyncAbout.Root?.Element("supportedVersions")?.Elements("li").Select(element => element.Value).ToHashSet(StringComparer.OrdinalIgnoreCase);
+Assert(supportedVersions?.SetEquals(["1.6", "1.7"]) == true, "packaged LogSyncMod declares both RimWorld versions");
 var logSyncAssembly = AssemblyName.GetAssemblyName(Path.Combine(data, "LogSyncMod", "1.6", "Assemblies", "LogSyncMod.dll")).Version;
 var autoTestAssembly = AssemblyName.GetAssemblyName(Path.Combine(data, "LogSyncMod", "1.6", "Assemblies", "AutoTestRunner.dll")).Version;
 Assert(logSyncAssembly is not null && autoTestAssembly is not null && logSyncAssembly.Major == autoTestAssembly.Major && logSyncAssembly.Minor == autoTestAssembly.Minor && logSyncAssembly.Build == autoTestAssembly.Build, "packaged LogSync assemblies share a product version");
+var logSyncAssembly17 = AssemblyName.GetAssemblyName(Path.Combine(data, "LogSyncMod", "1.7", "Assemblies", "LogSyncMod.dll")).Version;
+Assert(logSyncAssembly17 is not null && logSyncAssembly17.Major == 1 && logSyncAssembly17.Minor == 2 && logSyncAssembly17.Build == 6, "packaged LogSyncMod preserves the tracked RimWorld 1.7 assembly");
+var logSyncAssembly17Path = Path.Combine(data, "LogSyncMod", "1.7", "Assemblies", "LogSyncMod.dll");
+Assert(Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(logSyncAssembly17Path))) == "616FC2F4D1470827C0AF897BD3BA6D4EEC0F3954D45E6AB62DBD3BC7E640FBC6", "packaged RimWorld 1.7 assembly matches the preserved build");
 
 var templateAbout = XDocument.Load(Path.Combine(release, "About", "About.xml"));
 Assert(templateAbout.Root?.Element("name")?.Value == ProjectTemplatePreflight.TemplateDisplayName && templateAbout.Root?.Element("packageId")?.Value == ProjectTemplatePreflight.TemplatePackageId, "release uses the branded template name and packageId");

@@ -1,6 +1,6 @@
 # RimDevTools
 
-RimDevTools 是一套面向 RimWorld 1.6 模组开发的 Windows 工具链。本仓库同时维护开发 CLI、日志同步工具 Mod、游戏内自动测试运行器，以及可直接用于创建新项目的发布模板。
+RimDevTools 是一套面向 RimWorld 1.6 与 1.7+ 模组开发的 Windows 工具链。本仓库同时维护开发 CLI、双版本日志同步工具 Mod、游戏内自动测试运行器，以及可直接用于创建 1.6 项目的发布模板。
 
 它的目标是把模组开发中反复出现的环境检查、部署、依赖定位、日志采集、自动测试和发布打包流程统一起来，让开发者能够用可重复、可诊断的命令完成日常工作。
 
@@ -15,7 +15,7 @@ RimDevTools 是一套面向 RimWorld 1.6 模组开发的 Windows 工具链。本
 
 ## 主要能力
 
-- 检查 RimWorld、Steam、.NET SDK、.NET Framework Targeting Pack 和 Harmony 环境。
+- 检查 RimWorld 1.6/1.7+、Steam、对应的 .NET 构建环境与 Harmony 程序集。
 - 将项目程序集、Defs、About、语言文件等内容以事务化逐文件方式部署到 RimWorld Mods 目录，并检查目标文件占用。
 - 搜索本地及 Workshop 模组，并安全复制 XML、程序集和 ILSpy 反编译源码作为开发参考。
 - 事务化修改并恢复 `ModsConfig.xml` 和测试配置，避免测试中断后污染用户环境。
@@ -50,8 +50,8 @@ RimDevTools 是一套面向 RimWorld 1.6 模组开发的 Windows 工具链。本
 - 运行发布包中的 RimDevTools：.NET 10 Runtime。
 - 使用随包 ILSpy：.NET 8 Runtime。
 - 编译 RimDevTools：.NET 10 SDK。
-- 编译 RimWorld 模组：dotnet SDK，以及 .NET Framework 4.8 Developer/Targeting Pack；4.7.2 可作为兼容替代。
-- 运行游戏测试：RimWorld 1.6、Steam 客户端及有效登录会话。
+- 编译 RimWorld 1.6 模组：dotnet SDK 与 .NET Framework 4.8 Developer/Targeting Pack；4.7.2 可作为兼容替代。1.7+ 模组使用 .NET 10 SDK 与对应版本游戏程序集。
+- 运行游戏测试：目标 RimWorld 1.6 或 1.7+、Steam 客户端及有效登录会话。
 
 RimWorld、Harmony 和其他第三方模组程序集不随本仓库分发。
 

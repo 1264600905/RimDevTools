@@ -36,7 +36,7 @@ artifacts/RimDevTools-Package/
 └── .tools/
     ├── RimDevTools.exe
     ├── Data/
-    │   ├── LogSyncMod/
+    │   ├── LogSyncMod/ (RimWorld 1.6 and 1.7 assemblies and Defs)
     │   ├── tool-mods.manifest.json
     │   └── licenses/
     ├── Ilspy/
