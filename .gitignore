@@ -69,6 +69,7 @@ AutoTestOutput/
 
 # 忽略所有 DLL 文件
 *.dll
+/1.7/Assemblies/
 
 # 保留特定目录结构
 bin/Debug/

@@ -2,9 +2,9 @@
 <ModMetaData>
     <name>环世界日志同步模组</name>
     <author>trigger</author>
-    <modVersion>1.1.9</modVersion>
+    <modVersion>1.2.0</modVersion>
     <url></url>
-    <supportedVersions><li>1.6</li></supportedVersions>
+    <supportedVersions><li>1.7</li></supportedVersions>
     <packageId>trigger.logsyncmod</packageId>
   <loadBefore />   
   <loadAfter>	
@@ -22,6 +22,8 @@
 - 支持自定义输出路径到 .log 或 .txt 文件
 - 支持从当前 Mod 列表中选择目标包名
 - 适合开发调试、问题复现和日志归档
+- 开发者菜单 LogSyncMod / Test tools 提供测试物资配置弹窗，支持模组筛选、信息卡与选点放置
+- 框选切换满心情与饱食，或技能20与10倍工作速度；再次框选移除，并用游戏消息提示结果
 
 [h2]使用说明[/h2]
 1. 在模组设置中填写日志输出路径

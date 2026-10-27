@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<LanguageData>
+  <LogSyncMod.DebugSuppliesTitle>Test supplies</LogSyncMod.DebugSuppliesTitle>
+  <LogSyncMod.DebugSuppliesSubtitle>Choose items and quantities, then click a location on the map. Defaults: raw resources with stack limits ≥75, plus supplies.</LogSyncMod.DebugSuppliesSubtitle>
+  <LogSyncMod.DebugNeedsToggle>Toggle full mood and food (rectangle)</LogSyncMod.DebugNeedsToggle>
+  <LogSyncMod.DebugWorkerToggle>Toggle skills 20 + work speed x10 (rectangle)</LogSyncMod.DebugWorkerToggle>
+  <LogSyncMod.DebugPawnResult>{0}: added {1}, removed {2}, skipped {3}, failed {4}. Select again to toggle.</LogSyncMod.DebugPawnResult>
+  <LogSyncMod.DebugUnknownSource>Unknown source</LogSyncMod.DebugUnknownSource>
+  <LogSyncMod.DebugSearchHint>Search item name, DefName, mod name or PackageId…</LogSyncMod.DebugSearchHint>
+  <LogSyncMod.DebugAllMods>All mods ▾</LogSyncMod.DebugAllMods>
+  <LogSyncMod.DebugAllItems>All items</LogSyncMod.DebugAllItems>
+  <LogSyncMod.DebugDefaultItems>Default supplies</LogSyncMod.DebugDefaultItems>
+  <LogSyncMod.DebugSelectedItems>Selected items</LogSyncMod.DebugSelectedItems>
+  <LogSyncMod.DebugAllCategories>All categories</LogSyncMod.DebugAllCategories>
+  <LogSyncMod.DebugThirdPartyOnly>Third-party mods only</LogSyncMod.DebugThirdPartyOnly>
+  <LogSyncMod.DebugItemName>Item</LogSyncMod.DebugItemName>
+  <LogSyncMod.DebugItemSource>Source mod</LogSyncMod.DebugItemSource>
+  <LogSyncMod.DebugStackLimit>Stack limit</LogSyncMod.DebugStackLimit>
+  <LogSyncMod.DebugQuantity>Quantity</LogSyncMod.DebugQuantity>
+  <LogSyncMod.DebugNoItems>No matching items. Change the category, mod or search.</LogSyncMod.DebugNoItems>
+  <LogSyncMod.DebugInvalidQuantity>Enter a valid positive whole number for each selected item.</LogSyncMod.DebugInvalidQuantity>
+  <LogSyncMod.DebugSelectResults>Select results</LogSyncMod.DebugSelectResults>
+  <LogSyncMod.DebugDeselectResults>Deselect results</LogSyncMod.DebugDeselectResults>
+  <LogSyncMod.DebugResetDefaults>Restore defaults</LogSyncMod.DebugResetDefaults>
+  <LogSyncMod.DebugSupplySummary>{0} types selected · {1} new items · about {2} stacks</LogSyncMod.DebugSupplySummary>
+  <LogSyncMod.DebugCancel>Cancel</LogSyncMod.DebugCancel>
+  <LogSyncMod.DebugSavePreset>Save preset</LogSyncMod.DebugSavePreset>
+  <LogSyncMod.DebugChooseLocation>Choose map location</LogSyncMod.DebugChooseLocation>
+  <LogSyncMod.DebugPresetSaved>Test supplies preset saved.</LogSyncMod.DebugPresetSaved>
+  <LogSyncMod.DebugPlacementTool>Left-click to place supplies; right-click to cancel</LogSyncMod.DebugPlacementTool>
+  <LogSyncMod.DebugWrongMap>Placement cancelled: choose a location on the map where you opened the supplies window.</LogSyncMod.DebugWrongMap>
+  <LogSyncMod.DebugGenerating>Placing test supplies…</LogSyncMod.DebugGenerating>
+  <LogSyncMod.DebugSpawnFailed>Supply generation interrupted. See the game log for details.</LogSyncMod.DebugSpawnFailed>
+  <LogSyncMod.DebugSpawnResult>Test supplies: {0}/{1} types fully placed; {2} new items.</LogSyncMod.DebugSpawnResult>
+  <LogSyncMod.DebugSpawnPartial>{0} types were not fully placed. Placed/requested quantities below (full details in the log):</LogSyncMod.DebugSpawnPartial>
+</LanguageData>

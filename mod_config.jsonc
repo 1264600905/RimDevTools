@@ -12,7 +12,7 @@
 
     // 目标 RimWorld 版本号
     // 用途: pull_ref.py 反编译时定位版本化 Assemblies 文件夹、deploy.ps1 同步项的版本目录
-    "game_version": "1.6",
+    "game_version": "1.7",
 
     // 自动启动 RimWorld 时默认使用当前桌面；需要隔离桌面时显式传入命令行参数。
     // quick/auto/xml 使用此值，manual 默认仍使用普通桌面。
@@ -59,16 +59,14 @@
     // 如果是单 csproj 项目，格式为: source/{mod_name}/{mod_name}.csproj
     // 纯 XML 模组可以配置为空数组；为空时 deploy 跳过 C# 构建。
     "csproj_paths": [
-        "source\\LogSyncMod\\LogSyncMod.csproj",
-        "source\\AutoTestRunner\\AutoTestRunner.csproj"
+        "source\\LogSyncMod\\LogSyncMod.csproj"
     ],
 
     // 需要同步到游戏 Mods 目录的文件和文件夹（相对于项目根目录）
     // 不在此列表中的内容（如 .gemini, 参考文档, 规范化测试 等）不会被部署
     "sync_items": [
-        "1.6\\Assemblies",
-        "AssetBundles",
-        "1.6\\Defs",
+        "1.7\\Assemblies",
+        "1.7\\Defs",
         "Languages",
         "About",
         "LoadFolders.xml"
@@ -79,7 +77,7 @@
 
     // 部署时清空目标目录需要保留的文件（正则表达式）
     // PublishedFileId.txt 是 Steam 识别已发布模组的关键文件，删除会导致无法更新
-    "protected_files_regex": "^(PublishedFileId\\.txt)$",
+    "protected_files_regex": "^(PublishedFileId\\.txt|1\\.6)$",
 
     // ============================================================
     // Pull 引用配置 — pull_ref.py 专用

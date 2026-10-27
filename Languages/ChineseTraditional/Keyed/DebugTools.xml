@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<LanguageData>
+  <LogSyncMod.DebugSuppliesTitle>測試物資</LogSyncMod.DebugSuppliesTitle>
+  <LogSyncMod.DebugSuppliesSubtitle>挑選物品與數量，設定完成後在地圖上點擊落點。預設：原材料堆疊上限 ≥75，各1000，加指定補給。</LogSyncMod.DebugSuppliesSubtitle>
+  <LogSyncMod.DebugNeedsToggle>心情與飽食開關（框選）</LogSyncMod.DebugNeedsToggle>
+  <LogSyncMod.DebugWorkerToggle>技能20＋工作10倍開關（框選）</LogSyncMod.DebugWorkerToggle>
+  <LogSyncMod.DebugPawnResult>{0}：已加入 {1} 人，已移除 {2} 人，略過 {3} 人，失敗 {4} 人。再次框選可切換。</LogSyncMod.DebugPawnResult>
+  <LogSyncMod.DebugUnknownSource>未知來源</LogSyncMod.DebugUnknownSource>
+  <LogSyncMod.DebugSearchHint>搜尋物品名稱、DefName、模組名稱或 PackageId…</LogSyncMod.DebugSearchHint>
+  <LogSyncMod.DebugAllMods>全部模組 ▾</LogSyncMod.DebugAllMods>
+  <LogSyncMod.DebugAllItems>全部物品</LogSyncMod.DebugAllItems>
+  <LogSyncMod.DebugDefaultItems>預設物資</LogSyncMod.DebugDefaultItems>
+  <LogSyncMod.DebugSelectedItems>已選物品</LogSyncMod.DebugSelectedItems>
+  <LogSyncMod.DebugAllCategories>全部分類</LogSyncMod.DebugAllCategories>
+  <LogSyncMod.DebugThirdPartyOnly>僅第三方模組</LogSyncMod.DebugThirdPartyOnly>
+  <LogSyncMod.DebugItemName>物品名稱</LogSyncMod.DebugItemName>
+  <LogSyncMod.DebugItemSource>來源模組</LogSyncMod.DebugItemSource>
+  <LogSyncMod.DebugStackLimit>最大堆疊</LogSyncMod.DebugStackLimit>
+  <LogSyncMod.DebugQuantity>生成數量</LogSyncMod.DebugQuantity>
+  <LogSyncMod.DebugNoItems>沒有符合的物品。請更換分類、模組或搜尋詞。</LogSyncMod.DebugNoItems>
+  <LogSyncMod.DebugInvalidQuantity>請為已選物品填寫有效的正整數數量。</LogSyncMod.DebugInvalidQuantity>
+  <LogSyncMod.DebugSelectResults>勾選目前結果</LogSyncMod.DebugSelectResults>
+  <LogSyncMod.DebugDeselectResults>取消目前結果</LogSyncMod.DebugDeselectResults>
+  <LogSyncMod.DebugResetDefaults>恢復預設</LogSyncMod.DebugResetDefaults>
+  <LogSyncMod.DebugSupplySummary>已選 {0} 種 · 本次新增 {1} 個 · 約 {2} 堆</LogSyncMod.DebugSupplySummary>
+  <LogSyncMod.DebugCancel>取消</LogSyncMod.DebugCancel>
+  <LogSyncMod.DebugSavePreset>儲存設定</LogSyncMod.DebugSavePreset>
+  <LogSyncMod.DebugChooseLocation>選擇地圖落點</LogSyncMod.DebugChooseLocation>
+  <LogSyncMod.DebugPresetSaved>測試物資設定已儲存。</LogSyncMod.DebugPresetSaved>
+  <LogSyncMod.DebugPlacementTool>左鍵放置測試物資；右鍵取消</LogSyncMod.DebugPlacementTool>
+  <LogSyncMod.DebugWrongMap>放置已取消：請在開啟物資視窗時所在的地圖內選擇落點。</LogSyncMod.DebugWrongMap>
+  <LogSyncMod.DebugGenerating>正在放置測試物資…</LogSyncMod.DebugGenerating>
+  <LogSyncMod.DebugSpawnFailed>物資生成中斷，詳情見遊戲日誌。</LogSyncMod.DebugSpawnFailed>
+  <LogSyncMod.DebugSpawnResult>測試物資：已完整放置 {0}/{1} 種，本次新增 {2} 個。</LogSyncMod.DebugSpawnResult>
+  <LogSyncMod.DebugSpawnPartial>另有 {0} 種未完整放置，以下為實際數量/請求數量（完整詳情見日誌）：</LogSyncMod.DebugSpawnPartial>
+</LanguageData>
