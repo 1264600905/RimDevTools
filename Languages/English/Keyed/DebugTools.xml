@@ -2,14 +2,22 @@
 <LanguageData>
   <LogSyncMod.DebugSuppliesTitle>Test supplies</LogSyncMod.DebugSuppliesTitle>
   <LogSyncMod.DebugSuppliesSubtitle>Choose or create a named preset, save, then select a map location. Specified quantities are retained; other items default to 3 full stacks.</LogSyncMod.DebugSuppliesSubtitle>
-  <LogSyncMod.DebugNeedsToggle>Toggle full mood and food (rectangle)</LogSyncMod.DebugNeedsToggle>
-  <LogSyncMod.DebugWorkerToggle>Toggle skills 20 + work speed x10 (rectangle)</LogSyncMod.DebugWorkerToggle>
+  <LogSyncMod.DebugNeedsToggle>Toggle all needs full (rectangle)</LogSyncMod.DebugNeedsToggle>
+  <LogSyncMod.DebugWorkerToggle>Toggle skills 20 + work speed x10 + all work (rectangle)</LogSyncMod.DebugWorkerToggle>
   <LogSyncMod.DebugNeuralToggle>Toggle psylink 6 + mechlink / bandwidth +100 (rectangle)</LogSyncMod.DebugNeuralToggle>
   <LogSyncMod.DebugNeuralUnavailable>No Royalty or Biotech content is available for this test state.</LogSyncMod.DebugNeuralUnavailable>
   <LogSyncMod.DebugNeuralBoth>Available: psylink level 6, mechlink and 100 additional bandwidth.</LogSyncMod.DebugNeuralBoth>
   <LogSyncMod.DebugNeuralPsyOnly>Only Royalty is available: psylink level 6.</LogSyncMod.DebugNeuralPsyOnly>
   <LogSyncMod.DebugNeuralMechOnly>Only Biotech is available: mechlink and 100 additional bandwidth.</LogSyncMod.DebugNeuralMechOnly>
   <LogSyncMod.DebugPawnResult>{0}: added {1}, removed {2}, skipped {3}, failed {4}. Select again to toggle.</LogSyncMod.DebugPawnResult>
+  <LogSyncMod.DebugQuickHeal>Quick heal</LogSyncMod.DebugQuickHeal>
+  <LogSyncMod.DebugQuickHealResult>Quick heal: healed {0} pawns, unchanged {1}, failed {2}; removed {3} injury/disease/drug conditions and restored {4} missing parts. Selecting again heals again.</LogSyncMod.DebugQuickHealResult>
+  <LogSyncMod.DebugGiveIngredients>Give ingredients</LogSyncMod.DebugGiveIngredients>
+  <LogSyncMod.DebugGiveIngredientsDesc>Spawn all ingredients for one execution of the first bill in this worktable's list, near the worktable. Respects ingredient filters and quantity conversions; fixed ingredients follow vanilla rules. Each click adds new materials.</LogSyncMod.DebugGiveIngredientsDesc>
+  <LogSyncMod.DebugIngredientsNoBill>Add a bill to this worktable first.</LogSyncMod.DebugIngredientsNoBill>
+  <LogSyncMod.DebugIngredientsNotNeeded>Bill "{0}" currently requires no ingredients.</LogSyncMod.DebugIngredientsNotNeeded>
+  <LogSyncMod.DebugIngredientsUnavailable>No materials spawned: bill "{0}" has no matching spawnable items for these ingredients: {1}. See the log for details.</LogSyncMod.DebugIngredientsUnavailable>
+  <LogSyncMod.DebugIngredientsForBill>Ingredients for one execution of "{0}": {1}</LogSyncMod.DebugIngredientsForBill>
   <LogSyncMod.DebugUnknownSource>Unknown source</LogSyncMod.DebugUnknownSource>
   <LogSyncMod.DebugSearchHint>Search item name, DefName, mod name or PackageId…</LogSyncMod.DebugSearchHint>
   <LogSyncMod.DebugAllMods>All mods ▾</LogSyncMod.DebugAllMods>

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using HarmonyLib;
 using LudeonTK;
 using RimWorld;
@@ -35,7 +36,8 @@ namespace LogSyncMod
                 CreateAction("LogSyncMod.DebugWorkerToggle",
                     () => StartPawnTool(true)),
                 CreateAction("LogSyncMod.DebugNeuralToggle", StartNeuralTool,
-                    () => ModsConfig.RoyaltyActive || ModsConfig.BiotechActive)
+                    () => ModsConfig.RoyaltyActive || ModsConfig.BiotechActive),
+                CreateAction("LogSyncMod.DebugQuickHeal", StartQuickHealTool)
             };
         }
 
@@ -63,7 +65,7 @@ namespace LogSyncMod
                 foreach (Pawn pawn in targets)
                 {
                     if (pawn.Dead || pawn.Faction != Faction.OfPlayer || !pawn.RaceProps.Humanlike ||
-                        pawn.health == null || (worker ? pawn.skills == null : pawn.needs?.mood == null && pawn.needs?.food == null))
+                        pawn.health == null || (worker ? pawn.skills == null : pawn.needs == null || pawn.needs.AllNeeds.Count == 0))
                     {
                         skipped++;
                         continue;
@@ -78,12 +80,13 @@ namespace LogSyncMod
                         }
                         else
                         {
+                            // Initialize real assignments before applying the temporary all-work state.
+                            if (worker) pawn.workSettings?.EnableAndInitializeIfNotAlreadyInitialized();
                             pawn.health.AddHediff(def);
                             if (!pawn.health.hediffSet.HasHediff(def)) throw new InvalidOperationException("Test hediff was not added.");
                             if (!worker)
                             {
-                                if (pawn.needs.mood != null) pawn.needs.mood.CurLevelPercentage = 1f;
-                                if (pawn.needs.food != null) pawn.needs.food.CurLevelPercentage = 1f;
+                                foreach (Need need in pawn.needs.AllNeeds.ToList()) need.CurLevelPercentage = 1f;
                             }
                         }
                         if (worker)
@@ -109,6 +112,35 @@ namespace LogSyncMod
         }
     }
 
+    [HarmonyPatch(typeof(Pawn_WorkSettings), nameof(Pawn_WorkSettings.GetPriority))]
+    internal static class DebugWorkerAllWorkPatch
+    {
+        private static void Postfix(Pawn ___pawn, ref int __result)
+        {
+            // Applies to every WorkTypeDef, including mod work. Keep the stored assignments intact
+            // so toggling off restores them and hidden manual priorities are not flattened to 3.
+            if (__result <= 0 && DebugPawnState.WorkerLocked(___pawn))
+                __result = Pawn_WorkSettings.DefaultPriority;
+        }
+    }
+
+    [HarmonyPatch]
+    internal static class DebugWorkerSchedulePatch
+    {
+        private static MethodBase[] TargetMethods() => new MethodBase[]
+        {
+            AccessTools.Method(typeof(Pawn_TimetableTracker), nameof(Pawn_TimetableTracker.GetAssignment)),
+            AccessTools.PropertyGetter(typeof(Pawn_TimetableTracker), nameof(Pawn_TimetableTracker.CurrentAssignment))
+        };
+
+        private static void Postfix(Pawn ___pawn, ref TimeAssignmentDef __result)
+        {
+            // Both the 24-hour timetable UI and current scheduling use Work while the marker is present.
+            // Keep the stored timetable so removing the marker restores the underlying assignments.
+            if (DebugPawnState.WorkerLocked(___pawn)) __result = TimeAssignmentDefOf.Work;
+        }
+    }
+
     internal static class DebugPawnState
     {
         internal static bool WorkerLocked(Pawn pawn)
@@ -119,7 +151,8 @@ namespace LogSyncMod
 
         internal static bool NeedsLocked(Need need, Pawn pawn)
         {
-            return (need is Need_Food || need is Need_Mood) && pawn?.health?.hediffSet != null &&
+            // A Need's constructor runs before its NeedDef and subclass fields are initialized.
+            return need?.def != null && pawn?.health?.hediffSet != null &&
                 LogSyncDebugDefOf.LogSync_DebugNeedsLock != null && pawn.health.hediffSet.HasHediff(LogSyncDebugDefOf.LogSync_DebugNeedsLock);
         }
     }
@@ -169,38 +202,12 @@ namespace LogSyncMod
         }
     }
 
-    [HarmonyPatch(typeof(Need), "get_IsFrozen")]
-    internal static class DebugNeedsFrozenPatch
-    {
-        private static void Postfix(Need __instance, Pawn ___pawn, ref bool __result)
-        {
-            if (DebugPawnState.NeedsLocked(__instance, ___pawn)) __result = true;
-        }
-    }
-
-    [HarmonyPatch(typeof(Need), "get_CurLevel")]
-    internal static class DebugNeedsReadPatch
-    {
-        private static void Postfix(Need __instance, Pawn ___pawn, ref float __result)
-        {
-            if (DebugPawnState.NeedsLocked(__instance, ___pawn)) __result = __instance.MaxLevel;
-        }
-    }
-
-    [HarmonyPatch(typeof(Need), "set_CurLevel")]
-    internal static class DebugNeedsWritePatch
-    {
-        private static void Prefix(Need __instance, Pawn ___pawn, ref float value)
-        {
-            if (DebugPawnState.NeedsLocked(__instance, ___pawn)) value = __instance.MaxLevel;
-        }
-    }
-
     [HarmonyPatch(typeof(SkillRecord), nameof(SkillRecord.GetLevel))]
     internal static class DebugSkillLevelPatch
     {
         private static bool Prefix(SkillRecord __instance, ref int __result)
         {
+            // Every SkillRecord is covered; there is no vanilla SkillDef whitelist.
             if (!DebugPawnState.WorkerLocked(__instance.Pawn)) return true;
             __result = 20;
             return false;
