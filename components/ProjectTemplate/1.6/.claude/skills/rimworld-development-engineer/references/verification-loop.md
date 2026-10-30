@@ -2,7 +2,7 @@
 
 ## 变更前
 
-1. 确认 `mod_config.jsonc` 路径和目标身份。
+1. 确认 `mod_config.jsonc` 路径、目标身份，以及源码分支、`game_version`、构建引用和输出目录指向同一目标版本。
 2. 前提条件或恢复状态不确定时运行 `doctor`。
 3. 保持 RimWorld 关闭，除非所选命令负责启动它。
 4. 避免并发进行部署和测试操作。
@@ -11,9 +11,9 @@
 
 - 每次编辑后解析 XML。
 - 检查重复的 Def 名称和未解析的翻译键。
-- 使用配置的项目路径构建变更的 C# 项目。
+- 使用配置的项目路径仅构建当前目标版本下变更的 C# 项目；其他版本保留已有 DLL。
 - 用聚焦的 RimSage C# 符号和源码证据验证官方的 Harmony 目标。
-- 检查 `LoadFolders.xml` 和 `sync_items` 与编辑的位置一致。
+- 检查 `About.xml` 的 `supportedVersions`、`LoadFolders.xml` 和 `sync_items` 覆盖所有受支持版本及共享内容；确认各版本内容与所需 DLL 齐备，部署计划仅编译当前目标版本且不会清理其他版本。
 
 ## 运行时检查
 

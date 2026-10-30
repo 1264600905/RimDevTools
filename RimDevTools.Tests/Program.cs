@@ -456,6 +456,7 @@ internal sealed class TestSuite
     {
         var dataRoot = NewDirectory(Path.Combine("tool-mods", "data"));
         var modsRoot = NewDirectory(Path.Combine("tool-mods", "Mods"));
+        CreateGameStructure(Path.GetDirectoryName(modsRoot)!);
         var hashFixture = NewDirectory(Path.Combine("tool-mods", "hash-fixture"));
         File.WriteAllText(Path.Combine(hashFixture, "value.txt"), "first");
         var firstFixtureHash = DirectoryHasher.Compute(hashFixture);
@@ -807,6 +808,7 @@ internal sealed class TestSuite
         await transaction.WriteAllTextAsync(environment.ModsConfigPath, "<ModsConfigData><activeMods><li>temporary.mod</li></activeMods><other>tool</other></ModsConfigData>");
         var staleStaging = Path.Combine(environment.Game, "Mods", ".rimdev-staging-cccccccccccccccccccccccccccccccc");
         Directory.CreateDirectory(staleStaging);
+        var previousRunning = ProcessUtil.RimWorldRunningOverride;
         ProcessUtil.RimWorldRunningOverride = () => true;
         try
         {
@@ -831,7 +833,7 @@ internal sealed class TestSuite
             var refused = await CaptureAsync(() => TestCommand.CleanupAsync(["test", "cleanup"]));
             Assert(refused.ExitCode == ExitCodes.Busy && JsonErrorCode(refused.Output) == "GAME_RUNNING_CLEANUP_REFUSED" && TransactionRecovery.PendingDirectories(environment.ConfigDirectory).Count == 1, "cleanup command refuses mutation while RimWorld is running");
         }
-        finally { ProcessUtil.RimWorldRunningOverride = null; }
+        finally { ProcessUtil.RimWorldRunningOverride = previousRunning; }
 
         var preview = await CaptureAsync(() => TestCommand.CleanupAsync(["test", "cleanup", "--dry-run"]));
         Assert(preview.ExitCode == 0 && preview.Output.Contains("deploymentArtifacts") && Directory.Exists(staleStaging), "cleanup dry-run reports deployment artifacts without removing them");
@@ -940,7 +942,7 @@ internal sealed class TestSuite
         File.WriteAllText(Path.Combine(referenceMod, "Ignored", "ignored.txt"), "included on request");
         File.WriteAllText(environment.ConfigPath, Config(environment, extra: $"\"workshop_paths\":[\"{Escape(workshop)}\"],\"pull_ignore_folders\":[\"Ignored\"],\"project_paths\":{{\"reference_docs\":\"证据库\",\"planning_docs\":\"计划库\"}}"));
         var configuredReferenceRoot = Path.Combine(environment.Root, "证据库");
-        var dryRun = await CaptureAsync(() => ModCommand.CopyAsync(["mod", "copy", "demo.reference", "--dry-run"]));
+        var dryRun = await CaptureAsync(() => ModCommand.CopyAsync(["mod", "copy", "demo.reference", "--dry-run", "--verbose"]));
         Assert(dryRun.ExitCode == 0 && dryRun.Output.Contains("dependencyClosure") && !Directory.Exists(configuredReferenceRoot), "mod copy dry-run reports the plan without creating the configured reference target");
         var pulled = await CaptureAsync(() => ModCommand.CopyAsync(["mod", "copy", "demo.reference"]));
         Assert(pulled.ExitCode == 0
@@ -950,13 +952,13 @@ internal sealed class TestSuite
         Assert(overwritten.ExitCode == 0 && File.Exists(Path.Combine(configuredReferenceRoot, "Reference", "Ignored", "ignored.txt")), "mod copy includes ignored folders and overwrites an existing configured target only when explicitly requested");
 
         CreateMod(environment.Game, "OfficialDependency", "demo.official-dependency", "ludeon.rimworld.royalty");
-        var officialDependency = await CaptureAsync(() => ModCommand.CopyAsync(["mod", "copy", "demo.official-dependency", "--deps"]));
+        var officialDependency = await CaptureAsync(() => ModCommand.CopyAsync(["mod", "copy", "demo.official-dependency", "--deps", "--verbose"]));
         Assert(officialDependency.ExitCode == 0
             && officialDependency.Output.Contains("official_content", StringComparison.Ordinal)
             && Directory.Exists(Path.Combine(configuredReferenceRoot, "OfficialDependency")), "mod copy skips and reports official RimWorld dependencies");
 
         CreateMod(environment.Game, "HarmonyDependency", "demo.harmony-dependency", "brrainz.harmony");
-        var harmonyDependency = await CaptureAsync(() => ModCommand.CopyAsync(["mod", "copy", "demo.harmony-dependency", "--deps"]));
+        var harmonyDependency = await CaptureAsync(() => ModCommand.CopyAsync(["mod", "copy", "demo.harmony-dependency", "--deps", "--verbose"]));
         Assert(harmonyDependency.ExitCode == 0
             && harmonyDependency.Output.Contains("brrainz.harmony", StringComparison.OrdinalIgnoreCase)
             && harmonyDependency.Output.Contains("shared_harmony", StringComparison.Ordinal)
@@ -1033,6 +1035,7 @@ internal sealed class TestSuite
         File.WriteAllText(fallbackEnvironment.ConfigPath, Config(fallbackEnvironment, modName: "Demo", extra: "\"csproj_paths\":[],\"sync_items\":[\"About\"],\"protected_files_regex\":\"^(PublishedFileId\\\\.txt)$\""));
         using (UseEnvironment(fallbackEnvironment))
         {
+            var previousRunning = ProcessUtil.RimWorldRunningOverride;
             ProcessUtil.RimWorldRunningOverride = () => false;
             try
             {
@@ -1042,12 +1045,12 @@ internal sealed class TestSuite
                     && !fallbackResult.Plan.XmlHot
                     && fallbackResult.XmlHotReload is null
                     && !File.Exists(Path.Combine(fallbackTarget, "stale.txt"))
-                    && fallback.Warnings!.Any(warning => warning.Contains("普通构建和原子部署", StringComparison.Ordinal)),
-                    "XML hot deploy falls back to normal atomic deployment when RimWorld is not running");
+                    && fallback.Warnings!.Any(warning => warning.Contains("普通构建和逐文件事务部署", StringComparison.Ordinal)),
+                    "XML hot deploy falls back to normal transactional deployment when RimWorld is not running");
             }
             finally
             {
-                ProcessUtil.RimWorldRunningOverride = null;
+                ProcessUtil.RimWorldRunningOverride = previousRunning;
             }
         }
 
@@ -1091,6 +1094,7 @@ internal sealed class TestSuite
         File.WriteAllText(Path.Combine(target, "About", "Hot.DLL"), "old-dll");
         File.WriteAllText(Path.Combine(target, "stale.txt"), "keep-stale");
         File.WriteAllText(environment.ConfigPath, Config(environment, modName: "Demo", extra: "\"csproj_paths\":[\"missing.csproj\"],\"sync_items\":[\"About\"],\"shader_bundle\":{\"enabled\":true,\"unity_exe_path\":\"missing-unity.exe\",\"unity_project_path\":\"missing-project\",\"build_method\":\"Build.Run\"}"));
+        var previousHotRunning = ProcessUtil.RimWorldRunningOverride;
         ProcessUtil.RimWorldRunningOverride = () => true;
         try
         {
@@ -1107,12 +1111,14 @@ internal sealed class TestSuite
         }
         finally
         {
-            ProcessUtil.RimWorldRunningOverride = null;
+            ProcessUtil.RimWorldRunningOverride = previousHotRunning;
         }
 
         var httpEnvironment = CreateProjectEnvironment("deploy-xml-hot-http", createGameExecutable: true);
         using (UseEnvironment(httpEnvironment))
         {
+            var previousHttpRunning = ProcessUtil.RimWorldRunningOverride;
+            ProcessUtil.RimWorldRunningOverride = () => true;
             var defsPath = Path.Combine(httpEnvironment.Root, "1.6", "Defs");
             Directory.CreateDirectory(defsPath);
             File.WriteAllText(Path.Combine(defsPath, "HotReloadTest.xml"), "<Defs />");
@@ -1138,6 +1144,7 @@ internal sealed class TestSuite
             {
                 if (!game.Process.HasExited) await ProcessUtil.TerminateAsync(game.Process);
                 Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", previousFakeMode);
+                ProcessUtil.RimWorldRunningOverride = previousHttpRunning;
             }
         }
 
@@ -1274,7 +1281,7 @@ internal sealed class TestSuite
         Assert(compact.RootElement.GetProperty("result").TryGetProperty("ready", out _)
             && !result.Output.Contains("project.discovery", StringComparison.Ordinal)
             && compactChecks.Any(check => check.GetProperty("id").GetString() == "game.mods_config" && check.GetProperty("status").GetString() == "missing")
-            && compactChecks.Any(check => check.GetProperty("id").GetString() == "tools.mod_components" && check.GetProperty("required").GetBoolean() && check.GetProperty("status").GetString() == "missing")
+            && compactChecks.Any(check => check.GetProperty("id").GetString() == "tools.mod_components" && !check.GetProperty("required").GetBoolean() && check.GetProperty("status").GetString() == "missing")
             && compactChecks.Any(check => check.GetProperty("id").GetString() == "project.preview_image" && check.GetProperty("status").GetString() == "warning")
             && compactChecks.Any(check => check.GetProperty("id").GetString() == "build.game_assembly.Assembly-CSharp" && check.GetProperty("path").GetString() == Path.Combine(environment.Game, "RimWorldWin64_Data", "Managed", "Assembly-CSharp.dll"))
             && compactChecks.Any(check => check.GetProperty("id").GetString() == "build.harmony_assembly" && check.GetProperty("path").GetString() == Path.Combine(environment.Game, "Mods", "Harmony", "Current", "Assemblies", "0Harmony.dll")), "doctor returns a compact readiness summary with both critical resolved assembly paths visible by default");
@@ -1316,7 +1323,7 @@ internal sealed class TestSuite
                 && dependencyCheck.GetProperty("required").GetBoolean() == false
                 && dependencyCheck.GetProperty("details").GetProperty("warnings")[0].GetProperty("missingDependencyPackageId").GetString() == "doctor.parent"
                 && activeJson.RootElement.GetProperty("result").GetProperty("warningCount").GetInt32() > 0, "doctor reports disabled min_active_mods dependencies as non-blocking warnings");
-            Assert(componentCheck.GetProperty("required").GetBoolean() && componentCheck.GetProperty("status").GetString() == "missing", "doctor treats the bundled LogSyncMod component as a required dependency");
+            Assert(!componentCheck.GetProperty("required").GetBoolean() && componentCheck.GetProperty("status").GetString() == "missing", "doctor treats the bundled LogSyncMod component as an optional test dependency");
         }
         finally { Environment.SetEnvironmentVariable("RIMDEVTOOLS_DATA_PATH", oldDataPath); }
     }
@@ -1326,7 +1333,7 @@ internal sealed class TestSuite
         var environment = CreateProjectEnvironment("preflight", createGameExecutable: false);
         using var scope = UseEnvironment(environment);
         var result = await CaptureAsync(() => TestCommand.RunAsync(["test", "run", "--mode", "auto", "--timeout-seconds", "1"]));
-        Assert(result.ExitCode == ExitCodes.MissingDependency && JsonErrorCode(result.Output) == "GAME_NOT_FOUND", "test run rejects missing game before mutation");
+        Assert(result.ExitCode == ExitCodes.MissingDependency && JsonErrorCode(result.Output) == "GAME_VERSION_MISMATCH", "test run rejects a missing matching game before mutation");
         Assert(File.ReadAllText(environment.ModsConfigPath) == environment.OriginalMods && File.ReadAllText(environment.SettingsPath) == environment.OriginalSettings, "preflight failure preserves global configuration");
         var invalidScopeMode = await CaptureAsync(() => CliApplication.RunAsync(["test", "run", "--mode", "quick", "--scope", "turrets"]));
         var invalidDefMode = await CaptureAsync(() => CliApplication.RunAsync(["test", "run", "--mode", "xml", "--defname", "Demo_Coat"]));
@@ -1366,6 +1373,10 @@ internal sealed class TestSuite
         {
             Assert(quickJson.RootElement.GetProperty("warnings").GetArrayLength() == 1
                 && quickJson.RootElement.GetProperty("warnings")[0].GetString()!.Contains("demo.parent", StringComparison.OrdinalIgnoreCase), "test run emits a dependency warning and continues execution");
+            var artifacts = quickJson.RootElement.GetProperty("result").GetProperty("artifacts");
+            Assert(artifacts.GetProperty("syncLogPath").GetString() == quickSettings.Descendants("logPath").Single().Value
+                && artifacts.GetProperty("autoTestOutputPath").GetString() == quickSettings.Descendants("autoTestOutputPath").Single().Value
+                && artifacts.GetProperty("directoryPath").GetString() == Path.GetDirectoryName(quickSettings.Descendants("logPath").Single().Value), "default success JSON returns the artifact paths actually used by the game");
         }
         Assert(string.Equals(isolatedDesktop, callerDesktop, StringComparison.Ordinal), "default quick process runs on the current desktop");
         Assert(quickSettings.Descendants("testMuteAudio").Single().Value == "True", "quick mode enables transactional audio muting");
@@ -1412,7 +1423,7 @@ internal sealed class TestSuite
         AssertConfigurationRestored(environment, "auto mode restores settings changed by the game");
 
         Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", "auto");
-        var selected = await CaptureAsync(() => TestCommand.RunAsync(["test", "run", "--mode", "auto", "--scope", "turrets", "--scope", "threeviews", "--scope", "TURRETS", "--defname", "Demo_Coat", "--defname", "demo_coat", "--batch-size", "7", "--timeout-seconds", "5"]));
+        var selected = await CaptureAsync(() => TestCommand.RunAsync(["test", "run", "--mode", "auto", "--scope", "turrets", "--scope", "threeviews", "--scope", "TURRETS", "--defname", "Demo_Coat", "--defname", "demo_coat", "--batch-size", "7", "--timeout-seconds", "5", "--verbose"]));
         var selectedSettings = XDocument.Parse(File.ReadAllText(Path.Combine(environment.ConfigDirectory, "fake-settings.xml"))).Descendants("ModSettings").Single();
         Assert(selected.ExitCode == 0, "selected auto run succeeds: " + selected.Output);
         using (var selectedJson = JsonDocument.Parse(selected.Output))
@@ -1436,6 +1447,9 @@ internal sealed class TestSuite
         Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", "auto-fail");
         var failed = await CaptureAsync(() => TestCommand.RunAsync(["test", "run", "--mode", "xml", "--timeout-seconds", "5"]));
         Assert(failed.ExitCode == ExitCodes.GameFailed && JsonErrorCode(failed.Output) == "AUTO_RESULT_FAILED", "xml mode rejects failed auto-test JSON");
+        using (var failedJson = JsonDocument.Parse(failed.Output))
+            Assert(failedJson.RootElement.GetProperty("error").GetProperty("details").GetProperty("artifacts").GetProperty("syncLogPath").GetString()
+                == XDocument.Load(Path.Combine(environment.ConfigDirectory, "fake-settings.xml")).Descendants("logPath").Single().Value, "default failure JSON returns the original log path used by the failed run");
         AssertConfigurationRestored(environment, "failed auto test restores configuration");
 
         Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", "manual");
@@ -1512,7 +1526,11 @@ internal sealed class TestSuite
         CreateMod(game, "SmartSpeed", "sarg.smartspeed");
         CreateMod(game, "CameraPlus", "brrainz.cameraplus");
         CreateMod(game, "HumanoidAlienRaces", "erdelf.humanoidalienraces");
-        CreateMod(game, "LogSync", "trigger.logsyncmod");
+        var logSync = CreateMod(game, "LogSync", "trigger.logsyncmod");
+        var hostAssemblies = Path.Combine(logSync, "1.6", "Assemblies");
+        Directory.CreateDirectory(hostAssemblies);
+        File.WriteAllText(Path.Combine(hostAssemblies, "LogSyncMod.dll"), "test host");
+        File.WriteAllText(Path.Combine(hostAssemblies, "AutoTestRunner.dll"), "test runner");
 
         var settings = Path.Combine(config, "Mod_LogSyncMod_LogSyncMod.xml");
         var mods = Path.Combine(config, "ModsConfig.xml");
@@ -1629,15 +1647,18 @@ internal sealed class TestSuite
         var oldDirectory = Environment.CurrentDirectory;
         var oldConfig = Environment.GetEnvironmentVariable("RIMDEVTOOLS_CONFIG_DIR");
         var oldSteamProbe = SteamSessionGuard.ProbeOverride;
+        var oldRunning = ProcessUtil.RimWorldRunningOverride;
         Environment.CurrentDirectory = environment.Root;
         Environment.SetEnvironmentVariable("RIMDEVTOOLS_CONFIG_DIR", environment.ConfigDirectory);
         SteamSessionGuard.ProbeOverride = () => new SteamSessionStatus(true, true, "test", null, "STEAM_RUNNING", "测试 Steam 已运行");
+        ProcessUtil.RimWorldRunningOverride = () => false;
         return new ActionScope(() =>
         {
             Environment.CurrentDirectory = oldDirectory;
             Environment.SetEnvironmentVariable("RIMDEVTOOLS_CONFIG_DIR", oldConfig);
             Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", null);
             SteamSessionGuard.ProbeOverride = oldSteamProbe;
+            ProcessUtil.RimWorldRunningOverride = oldRunning;
         });
     }
 

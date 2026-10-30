@@ -6,6 +6,10 @@
 
 命令以 stdout 上的一个 JSON 对象结束；进度输出到 stderr。退出码为 `0` 成功、`2` 无效参数/配置、`3` 缺少依赖、`4` 忙、`5` 任务失败、`6` 超时、`7` 游戏/测试失败、`130` 取消。`--version` 必须作为唯一参数使用，仅返回 `ok`、`command` 和 `rimDevToolsVersion`。
 
+测试产物路径：新版 `test run` 和 `test settings` 在分配本轮目录后，成功结果的 `result.artifacts`、失败结果的 `error.details.artifacts` 默认包含 `directoryPath`、`syncLogPath`、`autoTestOutputPath` 三个绝对路径，不需要 `--verbose`。目录分配前的参数、环境或部署失败没有本轮产物，不应创建占位目录。路径表示输出位置，quick/manual 等模式可能没有 AutoTest 文件，应检查文件是否实际生成。旧版没有这些字段时读取已有 LogSync 设置和原始产物定位，不创建替代路径。
+
+除用户明确要求导出外，直接读取 stdout 和原始产物并在聊天中报告；禁止自建 evidence、任务或日期目录，禁止重定向、另存、复制日志/截图/存档或编写归档包装脚本。保留与清理由工具负责。
+
 ## 命令
 
 ### `doctor [--verbose]`
@@ -52,13 +56,13 @@ test run [--deploy] [--sync-source] [--mode quick|manual|auto|xml]
          [--isolated-desktop|--no-isolated-desktop]
 ```
 
-`test settings` 是持久化 LogSync 设置命令，不会启动测试。它会等待已有 RimWorld 退出、取得共享环境锁，然后把日志路径设置为当前项目的 `.tools/log/精选日志.log`，把 `mod_config.jsonc.log_keywords` 写入 LogSync，并更新自动测试输出路径、开关和筛选设置。写入不会像 `test run` 一样在结束后自动恢复，适合准备一次由用户手动启动的 RimWorld 会话；正常自动测试应使用 `test run`，由事务临时应用并恢复设置。
+`test settings` 是持久化 LogSync 设置命令，不会启动测试。它会等待已有 RimWorld 退出、取得共享环境锁，然后把日志路径设置为当前项目本轮目录中的精选日志（以返回的 `artifacts.syncLogPath` 为准），把 `mod_config.jsonc.log_keywords` 写入 LogSync，并更新自动测试输出路径、开关和筛选设置。写入不会像 `test run` 一样在结束后自动恢复，适合准备一次由用户手动启动的 RimWorld 会话；正常自动测试应使用 `test run`，由事务临时应用并恢复设置。
 
 quick 是启动冒烟测试。manual 是用户手动的。auto 和 XML 验证结构化的 AutoTest 结果。auto 模式默认截图；XML 驱动测试按每条测试定义的 `captureScreenshots` 设置截图，不需要截图命令行开关。隔离优先级为显式标志、项目设置，然后是模式默认值。
 
 `--scope` 可在 auto/XML 中重复，多个 scope 取并集。正式值为 `standard`、`ui`、`combat`、`view`、`misc`；旧细分值继续以原窄范围语义兼容。未传时默认为 `Standard`；Standard 横跨四类常规测试，但不隐式启用 CombatPawns 或 SkillPocketMaps。
 
-`--defname` 仅适用于 auto，可重复且按不区分大小写去重。scope 选择测试类型，DefName 选择目标，两者取交集；不传 DefName 时枚举所选范围。任何请求的 DefName 未产生用例时，本轮失败并在 JSON/Markdown 中列出未命中名称。`--batch-size` 适用于 auto/xml，默认 40；包括 Standard 在内的枚举运行都限制最终计划数量，候选超限时从全部候选中全局均匀、无放回随机抽取。显式 DefName 运行继续忽略该限制。游戏进程 stdout/stderr 写入 `.tools/log/RimWorldProcess.log`。
+`--defname` 仅适用于 auto，可重复且按不区分大小写去重。scope 选择测试类型，DefName 选择目标，两者取交集；不传 DefName 时枚举所选范围。任何请求的 DefName 未产生用例时，本轮失败并在 JSON/Markdown 中列出未命中名称。`--batch-size` 适用于 auto/xml，默认 40；包括 Standard 在内的枚举运行都限制最终计划数量，候选超限时从全部候选中全局均匀、无放回随机抽取。显式 DefName 运行继续忽略该限制。新版游戏进程 stdout/stderr 始终丢弃，不生成 `RimWorldProcess.log`；不要另存进程输出。
 
 例 1，只测试三视图：
 

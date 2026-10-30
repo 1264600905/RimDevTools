@@ -8,6 +8,8 @@ artifacts/
 参考文档/
 *.user
 *.suo
+# 各版本模组 DLL 为本地构建产物，部署时仍需同步。
+/*/Assemblies/*.dll
 *.pdb
 *.tmp
 *.cache

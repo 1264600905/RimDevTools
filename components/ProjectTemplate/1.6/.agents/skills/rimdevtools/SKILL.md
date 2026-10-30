@@ -13,6 +13,13 @@ description: 操作项目本地的 RimDevTools CLI，处理 RimWorld 1.6 模组�
 
 将 `mod_config.jsonc` 视为项目契约。应在其所在目录或直属子目录运行命令。修改配置，或使用参数、变更行为或错误契约重要的命令前，阅读 [references/commands-and-config.md](references/commands-and-config.md)。
 
+## 测试产物与归档
+
+- 日志、结果、截图和测试存档只读取工具生成的原始产物。除用户明确要求导出外，禁止自建 evidence、任务或日期归档目录，包括 `.tools` 和 `.tools/log` 下的额外目录，也不得换到其他目录绕过。
+- 禁止通过 `>`、`2>`、`Tee-Object`、`Out-File`、`Set-Content` 或文件复制另存工具 stdout/stderr 和测试产物；禁止为归档编写一次性包装脚本。
+- 新版工具以成功 JSON 的 `result.artifacts` 或失败 JSON 的 `error.details.artifacts` 定位本轮产物；字段为 `directoryPath`、`syncLogPath`、`autoTestOutputPath`。旧版没有这些字段时读取已有 LogSync 设置和产物定位，不创建替代路径或补造文件。路径是输出位置，文件是否生成仍需检查。
+- 直接在聊天中报告结论并引用原始路径。除用户明确要求外，不另写测试报告或校验文档；保留与清理由工具负责，不修改原始证据。历史测试产物不构成启动新测试的授权。
+
 ## 选择工作流
 
 1. 遇到环境失败、状态不清或能力疑问，先用只读的 `doctor`。

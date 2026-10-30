@@ -1,6 +1,6 @@
 ---
 name: rimworld-development-engineer
-description: 在此模板中端到端实现、诊断并验证 RimWorld 1.6 模组变更。当请求需要 C#/XML/资产工作、通过 RimSage 进行有证据支撑的官方 API 或 Def 研究、第三方参考研究、构建/部署决策、Harmony 目标、游戏测试、日志诊断或反复的修复与重测循环时使用。
+description: 在此模板中端到端实现、诊断并验证 RimWorld 模组变更，支持 1.6、1.7 等版本的分支开发、按目标版本构建和多版本部署。当请求需要 C#/XML/资产工作、通过 RimSage 进行有证据支撑的官方 API 或 Def 研究、第三方参考研究、构建/部署决策、Harmony 目标、游戏测试、日志诊断或反复的修复与重测循环时使用。
 ---
 
 # RimWorld 开发工程师
@@ -8,6 +8,24 @@ description: 在此模板中端到端实现、诊断并验证 RimWorld 1.6 模�
 负责从实现到验证的完整过程。当仍有安全、相关的构建或测试可用时，不要在编辑后停下。
 
 研究游戏/模组行为前阅读 [references/tool-priority.md](references/tool-priority.md)。部署或启动 RimWorld 前阅读 [references/verification-loop.md](references/verification-loop.md)。
+
+## 测试产物与归档
+
+- 日志、结果、截图和测试存档只使用 RimDevTools 自动生成的原始路径和产物。除用户明确要求导出外，禁止自建 evidence、任务或日期归档目录，包括 `.tools` 和 `.tools/log` 下的额外目录，也不得换到其他目录绕过。
+- 禁止通过 `>`、`2>`、`Tee-Object`、`Out-File`、`Set-Content` 或文件复制另存工具 stdout/stderr 和测试产物；禁止为归档编写一次性包装脚本。
+- 新版工具以成功 JSON 的 `result.artifacts` 或失败 JSON 的 `error.details.artifacts` 定位本轮产物；字段为 `directoryPath`、`syncLogPath`、`autoTestOutputPath`。旧版没有这些字段时读取已有 LogSync 设置和产物定位，不创建替代路径或补造文件。路径是输出位置，文件是否生成仍需检查。
+- 直接在聊天中报告结论并引用原始路径。除用户明确要求外，不另写测试报告或校验文档；保留与清理由工具负责，不修改原始证据。历史测试产物不构成启动新测试的授权。
+
+## 多版本管理与部署
+
+区分当前源码分支、当前编译目标和完整部署内容。一个模组可以同时包含 `1.6/`、`1.7/` 等版本目录，由游戏按版本加载；当前编译目标只决定本次构建哪一版 DLL。
+
+- **源码通过 Git 分支管理。** 遵循项目已有的版本分支约定，通过切换分支在同一份 `source/` 中开发对应版本；不要复制为 `source/1.6/`、`source/1.7/` 等平行源码树。切换前检查工作区，保留用户未提交的改动，不强制切换或自动丢弃改动。
+- **DLL 作为构建产物忽略。** 项目自产 DLL 原则上加入 `.gitignore`，各版本产物分别保留在对应的 `<版本>/Assemblies/` 中；Git 忽略只影响源码版本管理，不能据此排除部署所需 DLL。切换分支时保留已有的各版本产物，不清空其他版本的输出目录。
+- **只编译当前目标版本。** 核对当前分支、`mod_config.jsonc.game_version`、`csproj_paths`、游戏程序集引用和项目输出路径一致。目标为 `1.6` 时只编译并更新 `1.6/Assemblies/`，目标为 `1.7` 时只编译并更新 `1.7/Assemblies/`；不要在一次部署中遍历其他版本分支或构建其他版本 DLL。
+- **部署包含所有已支持版本。** `sync_items` 应覆盖项目支持的全部版本目录及 `About`、`Languages`、`LoadFolders.xml` 等共享内容，并与 `About.xml` 的 `supportedVersions` 和 `LoadFolders.xml` 的加载配置一致。部署 `1.6` 时仍须部署已有的 `1.7` 内容和 DLL，部署 `1.7` 时同样带上已有的 `1.6` 内容和 DLL；不要把同步范围缩减为当前游戏版本。
+- **其他版本复用对应版本的既有产物。** 保留其 XML、资源及 DLL，不用本次构建结果覆盖其他版本 DLL，也不因当前分支未跟踪 DLL 就将其从部署包删除。若完整部署所需的其他版本内容或 DLL 缺失，报告缺失版本和路径；不要静默漏发、借用另一版本 DLL，或擅自切分支补编译。
+- **部署前检查完整计划。** 用 `deploy --dry-run` 核对仅构建当前目标版本、同步项包含所有受支持版本，以及更新不会清理其他版本内容。需要查看完整路径和动作时使用 `--verbose`；当前配置无法满足这些条件时先修正配置，不直接执行部署。
 
 ## 实现前研究
 
@@ -24,7 +42,7 @@ description: 在此模板中端到端实现、诊断并验证 RimWorld 1.6 模�
 1. 完成上述适用的研究步骤。
 2. 在编辑位置阅读既有约定。
 3. 在选择字段、重载或 Harmony 目标前，记录相关的 Def/API/成员证据。
-4. 在 `1.6`、`Languages`、`About`、`source` 或已批准的资产目录中做出最小的连贯变更。
+4. 在当前目标版本目录（如 `1.6` 或 `1.7`）、`Languages`、`About`、`source` 或已批准的资产目录中做出最小的连贯变更。
 5. 保持 package ID、命名空间、程序集名称、翻译键、Def 名称和配置路径一致。
 6. 保留用户变更，避免无关重构。
 
@@ -47,15 +65,16 @@ description: 在此模板中端到端实现、诊断并验证 RimWorld 1.6 模�
 让验证与变更相匹配：
 
 - 解析变更的 XML 并校验引用/键。
-- 构建每个变更的 C# 项目。
-- 实际部署前运行 `RimDevTools.exe deploy --dry-run`。
+- 仅构建当前源码分支和目标游戏版本下变更的 C# 项目；其他版本沿用已有 DLL。
+- 实际部署前运行 `RimDevTools.exe deploy --dry-run`，按多版本原则检查构建目标和完整同步范围。
 - 对启动/运行冒烟测试使用 `RimDevTools.exe test run --deploy --mode quick`。
 - 不要先运行 auto 测试：它比 quick 模式慢。修复并重跑 quick 测试直至无当前模组错误通过，然后为相关功能用例运行一次 `RimDevTools.exe test run --deploy --mode auto`。
 - 仅在该后续 auto 测试通过后，功能变更才算完全验证。不要仅凭 quick 测试通过就宣称验证循环完成。
 - 当功能用例需要声明式 LogSync AutoTest 规范时使用 XML 模式。
 - 仅对真正交互式的行为使用 manual 模式。
+- 游戏测试结论只覆盖实际运行的版本；完整部署包含其他版本的既有产物，不代表本次已重新编译或验证其他版本。
 
-读取最终的结构化 JSON 结果及相关 `.tools/log/精选日志.log` 内容。不要仅从进程退出或缺少可见 UI 错误推断成功。
+读取最终的结构化 JSON，并按返回的 `artifacts.syncLogPath` 读取本轮精选日志；旧版未返回路径时按已有 LogSync 设置定位原始日志。不要仅从进程退出或缺少可见 UI 错误推断成功。
 
 ## 修复循环
 

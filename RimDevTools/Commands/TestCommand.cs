@@ -197,12 +197,13 @@ public static class TestCommand
             {
                 runId,
                 settingsPath = GameEnvironment.LogSyncSettingsPath(context),
+                artifacts,
                 changed,
                 recoveredTransaction = recovery.Found,
                 details = verbose ? new
                 {
-                    syncLogPath = SettingsEditor.SyncLogPath(context),
-                    autoTestOutputPath = SettingsEditor.AutoTestOutputPath(context),
+                    syncLogPath = artifacts.SyncLogPath,
+                    autoTestOutputPath = artifacts.AutoTestOutputPath,
                     keywordCount = context.Config.LogKeywords.Count
                 } : null
             });
@@ -210,7 +211,7 @@ public static class TestCommand
         catch (OperationCanceledException) { throw; }
         catch (Exception ex)
         {
-            return CliResult.WriteFailure(command, ExitCodes.TaskFailed, "SETTINGS_UPDATE_FAILED", ex.Message, context.Root);
+            return CliResult.WriteFailure(command, ExitCodes.TaskFailed, "SETTINGS_UPDATE_FAILED", ex.Message, context.Root, new { runId, artifacts });
         }
     }
 
@@ -306,10 +307,10 @@ public static class TestCommand
         GameProcessSession? gameSession = null;
         TestOutcome outcome;
         var gameExited = true;
-        var resultSnapshot = AutoResultValidator.Snapshot(outputPath);
         var logOffset = 0L;
         try
         {
+            var resultSnapshot = AutoResultValidator.Snapshot(outputPath);
             transaction = await ConfigTransaction.CreateAsync(
                 configDirectory,
                 runId,
@@ -362,6 +363,7 @@ public static class TestCommand
                 dependencyWarnings,
                 isolatedDesktop = isolation.Enabled,
                 isolatedDesktopSource = isolation.Source,
+                artifacts,
                 transactionRetained = transaction is not null
             }, dependencyWarnings);
 
@@ -403,6 +405,7 @@ public static class TestCommand
                 activeModCount = modList.Mods.Count,
                 mods = verbose ? modList.Mods : null,
                 additions = verbose ? modList.Additions : null,
+                artifacts,
                 outcome.Details
             }, dependencyWarnings);
 
@@ -423,6 +426,7 @@ public static class TestCommand
             additions = verbose ? modList.Additions : null,
             signal = outcome.Message,
             result = outcome.Details,
+            artifacts,
             recoveredTransaction = recovery.Found
         }, dependencyWarnings);
     }

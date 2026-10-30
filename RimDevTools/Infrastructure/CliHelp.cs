@@ -326,6 +326,10 @@ public static class CliHelp
         Output:
           Default JSON includes runId, mode, target, mod/addition counts, isolation source,
           signal, result, and dependency warnings. --verbose includes full mods/additions.
+          After a run directory is allocated, result.artifacts (success) or
+          error.details.artifacts (failure) includes the absolute directoryPath,
+          syncLogPath, and autoTestOutputPath. Some modes do not generate AutoTest files.
+          Read the original artifacts; do not create extra archives unless requested.
 
         Common errors:
           MODE_INVALID, MOD_NOT_RESOLVED, ENVIRONMENT_BUSY, GAME_EXIT_TIMEOUT,
@@ -347,6 +351,11 @@ public static class CliHelp
           writes the project log path, log_keywords, and AutoTest paths/options. Use it to
           prepare a manually launched game session. Unlike test run, it leaves the settings
           in place and does not restore the previous values.
+
+        Output:
+          After a run directory is allocated, result.artifacts (success) or
+          error.details.artifacts (failure) includes the absolute directoryPath,
+          syncLogPath, and autoTestOutputPath without requiring --verbose.
 
         Common errors:
           ENVIRONMENT_BUSY, GAME_EXIT_TIMEOUT, SETTINGS_UPDATE_FAILED.

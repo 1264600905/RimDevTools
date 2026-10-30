@@ -17,7 +17,7 @@ var passed = 0;
 
 RequireFile("mod_config.jsonc");
 RequireFile("LICENSE");
-RequireFile(Path.Combine(".codex", "config.toml"));
+Assert(!File.Exists(Path.Combine(release, ".codex", "config.toml")), "release does not contain the obsolete Codex config");
 RequireFile(".mcp.json");
 RequireFile(Path.Combine(".pi", "mcp.json"));
 RequireFile("opencode.jsonc");
@@ -63,8 +63,6 @@ var expectedRootFiles = templateFiles.Append("mod_config.jsonc").OrderBy(path =>
 Assert(expectedRootFiles.SequenceEqual(releaseFiles, StringComparer.OrdinalIgnoreCase), "release root equals the 1.6 template plus one config file");
 
 const string endpoint = "https://mcp.rimsage.com/mcp";
-var codexConfig = File.ReadAllText(Path.Combine(release, ".codex", "config.toml")).Replace("\r\n", "\n").Trim();
-Assert(codexConfig == $"[mcp_servers.rimsage]\nenabled = true\nurl = \"{endpoint}\"\ndefault_tools_approval_mode = \"approve\"", "Codex config declares the approved RimSage service");
 using (var claudeConfig = JsonDocument.Parse(File.ReadAllText(Path.Combine(release, ".mcp.json"))))
 {
     var server = claudeConfig.RootElement.GetProperty("mcpServers").GetProperty("rimsage");
@@ -161,6 +159,13 @@ var temporaryMods = Path.Combine(Path.GetTempPath(), "RimDevToolsReleaseTests", 
 Directory.CreateDirectory(temporaryMods);
 try
 {
+    var gameRoot = Path.GetDirectoryName(temporaryMods)!;
+    Directory.CreateDirectory(Path.Combine(gameRoot, "Data"));
+    var managed = Path.Combine(gameRoot, "RimWorldWin64_Data", "Managed");
+    Directory.CreateDirectory(managed);
+    File.WriteAllText(Path.Combine(gameRoot, "RimWorldWin64.exe"), "test game");
+    foreach (var assembly in RimWorldGameLayout.LegacyRequiredAssemblies)
+        File.WriteAllText(Path.Combine(managed, assembly), "test assembly");
     var dryRun = Run(Path.Combine(tools, "RimDevTools.exe"), release, "mods", "install-tools", "--mods-path", temporaryMods, "--dry-run");
     using var dryJson = JsonDocument.Parse(dryRun);
     Assert(dryJson.RootElement.GetProperty("ok").GetBoolean() && dryJson.RootElement.GetProperty("result").GetProperty("components").GetArrayLength() == 1, "packaged tool Mod dry-run plans one component in an explicit Mods directory");
