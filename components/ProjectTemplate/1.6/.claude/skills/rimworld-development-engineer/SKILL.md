@@ -1,13 +1,13 @@
 ---
 name: rimworld-development-engineer
-description: 在此模板中端到端实现、诊断并验证 RimWorld 模组变更，支持 1.6、1.7 等版本的分支开发、按目标版本构建和多版本部署。当请求需要 C#/XML/资产工作、通过 RimSage 进行有证据支撑的官方 API 或 Def 研究、第三方参考研究、构建/部署决策、Harmony 目标、游戏测试、日志诊断或反复的修复与重测循环时使用。
+description: 在此模板中实现并诊断 RimWorld 模组变更，支持 1.6/1.7 分支开发、按目标版本构建和多版本部署。需要 C#/XML/资产实现、官方 API/Def/Harmony 研究、部署决策或游戏日志诊断时使用；验证遵循最小范围，auto/XML 自动测试仅在玩家明确要求时运行。
 ---
 
 # RimWorld 开发工程师
 
-负责从实现到验证的完整过程。当仍有安全、相关的构建或测试可用时，不要在编辑后停下。
+负责实现和必要的最低限度验证。不要自行扩大测试范围，也不要因为测试能力可用就运行更多测试。
 
-研究游戏/模组行为前阅读 [references/tool-priority.md](references/tool-priority.md)。部署或启动 RimWorld 前阅读 [references/verification-loop.md](references/verification-loop.md)。
+研究游戏/模组行为前阅读 [references/tool-priority.md](references/tool-priority.md)。运行游戏验证前阅读 [references/verification-loop.md](references/verification-loop.md)。
 
 ## 测试产物与归档
 
@@ -58,6 +58,14 @@ description: 在此模板中端到端实现、诊断并验证 RimWorld 模组变
 5. 保持 package ID、命名空间、程序集名称、翻译键、Def 名称和配置路径一致。
 6. 保留用户变更，避免无关重构。
 
+## 游戏测试边界
+
+- 需要游戏运行时验证时，只通过 RimDevTools CLI 发起。禁止使用 CUA、computer-use、桌面/浏览器自动化、鼠标键盘注入、截图识别或远程控制能力操作 RimWorld。
+- 不要自行编写测试用例、AutoTest XML、测试项目、测试程序集或测试 DLL。只有玩家明确要求新增或扩展测试时，才编写这些内容。
+- 默认只做一次 quick 冒烟测试。RimDevTools 返回 `ok: true`、quick 流程正常完成，且精选日志没有当前模组导致的红色 Error/Exception，即可视为通过；warning 按来源和影响判断，不为清空无关 warning 扩测。
+- `auto` 和 `xml` 属于自动测试，只有玩家明确要求自动测试时才运行，并复用已有用例。不要自行扩大 scope 或补造用例。
+- `manual` 仅用于玩家明确要求的交互验证；由玩家操作游戏，agent 不代为点击或输入。
+
 ## 模组激活顺序
 
 将 `mod_config.jsonc.min_active_mods` 视为开发和测试工作流的权威默认模组列表。优先使用该列表而非临时 ModList，以便项目以其已知的正常基线启动。
@@ -82,14 +90,12 @@ description: 在此模板中端到端实现、诊断并验证 RimWorld 模组变
 - 仅构建当前源码分支和目标游戏版本下变更的 C# 项目；其他版本沿用已有 DLL。
 - 实际部署前运行 `RimDevTools.exe deploy --dry-run`，按多版本原则检查构建目标和完整同步范围。
 - 用户明确要求游戏运行时同步 XML/资源时，可检查 `deploy --dry-run --xml-hot` 后使用独立的 `deploy --xml-hot`。若 RimWorld 正在运行，它会就地同步非 DLL 文件；复制 `Defs/` 或 `Patches/` XML 后至少等待 3 秒，再向 LogSyncMod 本机 HTTP endpoint 请求内置 Def 热重载。游戏需处于 Playing 且启用开发者模式。若游戏未运行，该选项回退到普通构建和逐文件事务部署。`test run` 不接受 `--xml-hot`，其 `--deploy` 始终使用普通部署。
-- 对启动/运行冒烟测试使用 `RimDevTools.exe test run --deploy --mode quick`。
-- 不要先运行 auto 测试：它比 quick 模式慢。修复并重跑 quick 测试直至无当前模组错误通过，然后为相关功能用例运行一次 `RimDevTools.exe test run --deploy --mode auto`。
-- 仅在该后续 auto 测试通过后，功能变更才算完全验证。不要仅凭 quick 测试通过就宣称验证循环完成。
-- 当功能用例需要声明式 LogSync AutoTest 规范时使用 XML 模式。
-- 仅对真正交互式的行为使用 manual 模式。
+- 对确实需要游戏运行时检查的改动，默认运行一次 `RimDevTools.exe test run --deploy --mode quick`；满足“游戏测试边界”中的通过条件即可结束验证。
+- 只有玩家明确要求自动测试时，才运行现有的 `auto` 或 `xml` 用例；不要自行写用例、测试 DLL、扩大 scope 或做全量回归。
+- quick 失败并完成修复后，只重跑能验证该修复的最小检查。不要自动追加 auto/XML 测试。
 - 游戏测试结论只覆盖实际运行的版本；完整部署包含其他版本的既有产物，不代表本次已重新编译或验证其他版本。
 
-读取最终的结构化 JSON，并按返回的 `artifacts.syncLogPath` 读取本轮精选日志；旧版未返回路径时按已有 LogSync 设置定位原始日志。不要仅从进程退出或缺少可见 UI 错误推断成功。
+读取最终的结构化 JSON，并按返回的 `artifacts.syncLogPath` 读取本轮精选日志；旧版未返回路径时按已有 LogSync 设置定位原始日志。只有 JSON 成功且日志无当前模组导致的红色 Error/Exception，quick 才算通过。
 
 ## 修复循环
 
@@ -97,7 +103,7 @@ description: 在此模板中端到端实现、诊断并验证 RimWorld 模组变
 
 1. 使用堆栈/上下文证据将错误归因于当前模组、其他模组、游戏或基础设施。
 2. 修复根本原因，不要仅为让测试静默而移除必需行为。
-3. 重复最能证伪失败的最小验证，然后重跑端到端检查。
+3. 修复后只重复最能证伪该失败的最小验证；未经玩家要求，不扩展到 auto/XML 或全量测试。
 4. 同一阻塞条件在三种基于证据的方法后仍存在时，在扩大范围前报告确切的错误、证据和尝试过的修复。
 
 不要使用全局警告白名单。数值解析警告或翻译错误等消息在一个环境中可能无害，但由当前模组发出时则可能是可操作的。忽略前先归因。
