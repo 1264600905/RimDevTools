@@ -12,6 +12,7 @@
 - 每次编辑后解析 XML。
 - 检查重复的 Def 名称和未解析的翻译键。
 - 使用配置的项目路径仅构建当前目标版本下变更的 C# 项目；其他版本保留已有 DLL。
+- 构建前确认模组工程在所有配置中设置 `DebugSymbols=false`、`DebugType=none`、`GenerateDependencyFile=false`；构建后检查目标 `Assemblies/`，禁止生成、部署或打包 `.pdb`、`.deps.json`。
 - 用聚焦的 RimSage C# 符号和源码证据验证官方的 Harmony 目标。
 - 检查 `About.xml` 的 `supportedVersions`、`LoadFolders.xml` 和 `sync_items` 覆盖所有受支持版本及共享内容；确认各版本内容与所需 DLL 齐备，部署计划仅编译当前目标版本且不会清理其他版本。
 

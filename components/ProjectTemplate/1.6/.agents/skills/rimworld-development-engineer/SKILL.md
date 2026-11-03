@@ -27,6 +27,18 @@ description: 在此模板中端到端实现、诊断并验证 RimWorld 模组变
 - **其他版本复用对应版本的既有产物。** 保留其 XML、资源及 DLL，不用本次构建结果覆盖其他版本 DLL，也不因当前分支未跟踪 DLL 就将其从部署包删除。若完整部署所需的其他版本内容或 DLL 缺失，报告缺失版本和路径；不要静默漏发、借用另一版本 DLL，或擅自切分支补编译。
 - **部署前检查完整计划。** 用 `deploy --dry-run` 核对仅构建当前目标版本、同步项包含所有受支持版本，以及更新不会清理其他版本内容。需要查看完整路径和动作时使用 `--verbose`；当前配置无法满足这些条件时先修正配置，不直接执行部署。
 
+## 模组构建产物
+
+编译模组 C# 项目时，禁止生成 `.pdb` 和 `.deps.json`；此规则适用于 1.6、1.7+ 以及 Debug、Release 配置。在模组 `.csproj` 的无条件 `PropertyGroup` 中显式设置：
+
+```xml
+<DebugSymbols>false</DebugSymbols>
+<DebugType>none</DebugType>
+<GenerateDependencyFile>false</GenerateDependencyFile>
+```
+
+手动调用 `dotnet build` 或通过 RimDevTools 构建前，确认这些属性生效。构建后检查当前目标的 `Assemblies/`，禁止部署或打包这两类文件。发现残留时先修正生成配置，再仅清理已确认属于本项目的同名旧产物，不清空整个 `Assemblies/` 或其他版本目录。
+
 ## 实现前研究
 
 1. 首先阅读最近的当前项目源码、Defs、补丁、配置和测试。

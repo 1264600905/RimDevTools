@@ -43,6 +43,8 @@ description: 操作项目本地的 RimDevTools CLI，处理 RimWorld 1.6 模组�
 
 ## 部署
 
+构建模组项目时禁止生成 `.pdb` 和 `.deps.json`。执行 `deploy` 或 `test run --deploy` 前，确认模组 `.csproj` 在所有构建配置中显式设置 `DebugSymbols=false`、`DebugType=none`、`GenerateDependencyFile=false`；构建后检查当前目标的 `Assemblies/`，不得同步或打包这两类文件。
+
 1. 根据doctor的路径探测，尝试修复 `mod_config.jsonc` 中的 游戏路径，工坊路径，完成后重新执行 `doctor` 验证,检查状态是否更新。
 2. 填写正确的项目 `mod_name`、`rimworld_dir`、`csproj_paths` 和 `sync_items`。
 3. 运行 `deploy --dry-run` 并检查部署项目是否符合预期,确认包含所有预期程序集和内容根目录。

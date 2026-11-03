@@ -311,6 +311,8 @@ public static class TestCommand
         try
         {
             var resultSnapshot = AutoResultValidator.Snapshot(outputPath);
+            // Keep the target version after cleanup by updating it before the transaction snapshot.
+            ModListParser.UpdateGameVersion(modsConfigPath, context.Config.GameVersion!);
             transaction = await ConfigTransaction.CreateAsync(
                 configDirectory,
                 runId,
@@ -704,6 +706,16 @@ public static class ModListParser
 
     public static List<string>? Load(ProjectContext context, string? path, out CliError? error)
         => Resolve(context, path, out error)?.Mods.ToList();
+
+    public static void UpdateGameVersion(string path, string gameVersion)
+    {
+        var document = XDocument.Load(path);
+        var root = document.Root ?? throw new InvalidDataException("ModsConfig.xml 缺少根节点");
+        if (root.Element("version")?.Value == gameVersion) return;
+        root.SetElementValue("version", gameVersion);
+        var content = document.Declaration is null ? document.ToString() : $"{document.Declaration}{Environment.NewLine}{document}";
+        AtomicFile.WriteAllText(path, content);
+    }
 
     public static string Render(string path, IReadOnlyList<string> mods)
     {
