@@ -31,7 +31,6 @@ namespace LogSyncMod.AutoTest
         public bool WorktableIsMechGestator;
         public bool RecipeLooksLikeBaseMechanoidRecipe = false;
         public bool RecipeLooksCustom = false;
-        public string ExplicitAdapter = null;
     }
 
     internal sealed class AutoTestRecipeClassification
@@ -50,18 +49,6 @@ namespace LogSyncMod.AutoTest
                 throw new ArgumentNullException(nameof(input));
             }
 
-            string explicitAdapter = (input.ExplicitAdapter ?? string.Empty).Trim();
-            if (explicitAdapter.Length > 0)
-            {
-                if (explicitAdapter.Equals("Standard", StringComparison.OrdinalIgnoreCase))
-                    return Result(AutoTestRecipeExecutionKind.Standard, "StandardRecipeExecutionAdapter", "ExplicitAdapter=Standard");
-                if (explicitAdapter.Equals("MechGestation", StringComparison.OrdinalIgnoreCase))
-                    return Result(AutoTestRecipeExecutionKind.MechGestation, "MechGestationRecipeExecutionAdapter", "ExplicitAdapter=MechGestation");
-                if (explicitAdapter.Equals("MechResurrection", StringComparison.OrdinalIgnoreCase))
-                    return Result(AutoTestRecipeExecutionKind.MechResurrection, "MechResurrectionRecipeExecutionAdapter", "ExplicitAdapter=MechResurrection");
-                return Result(AutoTestRecipeExecutionKind.UnsupportedCustom, "UnsupportedSpecialRecipeExecutionAdapter", "UnknownExplicitAdapter=" + explicitAdapter);
-            }
-
             if (input.MechResurrection || (input.HasCorpseIngredient && input.WorktableIsMechGestator))
                 return Result(AutoTestRecipeExecutionKind.MechResurrection, "MechResurrectionRecipeExecutionAdapter",
                     input.MechResurrection ? "RecipeDef.mechResurrection" : "CorpseIngredient+MechGestator");
@@ -75,7 +62,7 @@ namespace LogSyncMod.AutoTest
                 return Result(AutoTestRecipeExecutionKind.PawnProduct, "UnsupportedSpecialRecipeExecutionAdapter", "PawnProductWithoutSafeGestatorPath");
 
             if (input.RecipeLooksCustom)
-                return Result(AutoTestRecipeExecutionKind.UnsupportedCustom, "UnsupportedSpecialRecipeExecutionAdapter", "CustomRecipeRequiresExplicitAdapter");
+                return Result(AutoTestRecipeExecutionKind.UnsupportedCustom, "UnsupportedSpecialRecipeExecutionAdapter", "CustomRecipeExecutionUnsupported");
 
             return Result(AutoTestRecipeExecutionKind.Standard, "StandardRecipeExecutionAdapter", "OrdinaryRecipeProducts");
         }
@@ -184,7 +171,6 @@ namespace LogSyncMod.AutoTest
 
     internal enum AutoTestHediffPawnCandidateSource
     {
-        ExplicitSpec,
         DirectStartingHediff,
         NativePrerequisiteEnvironment,
         SameModHumanlike,

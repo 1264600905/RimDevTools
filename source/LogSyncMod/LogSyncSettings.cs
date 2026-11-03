@@ -22,12 +22,6 @@ namespace LogSyncMod
         Misc = 13
     }
 
-    public enum AutoTestMode
-    {
-        Automatic = 0,
-        XmlDriven = 1
-    }
-
     public class LogSyncSettings : ModSettings
     {
         public string logPath = "D:/RimWorldLogs.log";
@@ -48,7 +42,6 @@ namespace LogSyncMod
         public string autoTestTargetPackageId = "";
         public string autoTestRunId = "";
         public string autoTestOutputPath = "D:/RimWorldAutoTest";
-        public AutoTestMode autoTestMode = AutoTestMode.Automatic;
         public AutoTestScope autoTestScope = AutoTestScope.Standard;
         public List<AutoTestScope> autoTestScopes = new List<AutoTestScope>();
         public List<string> autoTestTargetDefNames = new List<string>();
@@ -88,7 +81,6 @@ namespace LogSyncMod
             Scribe_Values.Look(ref autoTestTargetPackageId, "autoTestTargetPackageId", "");
             Scribe_Values.Look(ref autoTestRunId, "autoTestRunId", "");
             Scribe_Values.Look(ref autoTestOutputPath, "autoTestOutputPath", "D:/RimWorldAutoTest");
-            Scribe_Values.Look(ref autoTestMode, "autoTestMode", AutoTestMode.Automatic);
             Scribe_Values.Look(ref autoTestScope, "autoTestScope", AutoTestScope.Standard);
             Scribe_Collections.Look(ref autoTestScopes, "autoTestScopes", LookMode.Value);
             Scribe_Collections.Look(ref autoTestTargetDefNames, "autoTestTargetDefNames", LookMode.Value);
@@ -109,7 +101,6 @@ namespace LogSyncMod
             if (autoTestScopes == null) autoTestScopes = new List<AutoTestScope>();
             if (autoTestTargetDefNames == null) autoTestTargetDefNames = new List<string>();
             if (logMaxLines < 1) logMaxLines = 1;
-            if (!System.Enum.IsDefined(typeof(AutoTestMode), autoTestMode)) autoTestMode = AutoTestMode.Automatic;
             if (!System.Enum.IsDefined(typeof(AutoTestScope), autoTestScope)) autoTestScope = AutoTestScope.Standard;
             autoTestScopes = NormalizeScopes(autoTestScopes);
             autoTestTargetDefNames = NormalizeDefNames(autoTestTargetDefNames);
@@ -168,11 +159,6 @@ namespace LogSyncMod
         public bool ShouldTestContent()
         {
             return HasAnyScope(AutoTestScope.UI, AutoTestScope.Content) || ShouldRunStandardSuite();
-        }
-
-        public bool UseXmlDrivenAutoTest()
-        {
-            return autoTestMode == AutoTestMode.XmlDriven;
         }
 
         public bool ShouldTestRecipes()

@@ -86,12 +86,6 @@ namespace LogSyncMod.AutoTest
             };
         }
 
-        public static AutoTestPawnFactionMode ParseRequestedMode(string value)
-        {
-            return string.Equals(value, AutoTestPawnFactionMode.PlayerCompatibility.ToString(), StringComparison.OrdinalIgnoreCase)
-                ? AutoTestPawnFactionMode.PlayerCompatibility
-                : AutoTestPawnFactionMode.Native;
-        }
     }
 
     internal enum AutoTestBuildingContext
@@ -153,7 +147,7 @@ namespace LogSyncMod.AutoTest
                     thing.SetFactionDirect(desiredFaction);
                     finalFaction = thing.Faction;
                     prepared = finalFaction == desiredFaction;
-                    reason = explicitFaction != null ? "ExplicitSpecFaction" : context.ToString();
+                    reason = explicitFaction != null ? "ExplicitFaction" : context.ToString();
                 }
             }
 
@@ -171,11 +165,5 @@ namespace LogSyncMod.AutoTest
             return prepared;
         }
 
-        private static Faction ResolveFactionFromSpec(LogSyncAutoTestSpecDef spec)
-        {
-            if (string.IsNullOrWhiteSpace(spec?.buildingFactionDefName)) return null;
-            return Find.FactionManager?.AllFactionsListForReading?.FirstOrDefault(faction =>
-                string.Equals(faction?.def?.defName, spec.buildingFactionDefName, StringComparison.OrdinalIgnoreCase));
-        }
     }
 }

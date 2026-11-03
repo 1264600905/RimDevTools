@@ -5,6 +5,7 @@
     <RootNamespace>LogSyncMod</RootNamespace>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <GenerateDependencyFile>false</GenerateDependencyFile>
+    <DebugSymbols>false</DebugSymbols>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <OutputPath>../../1.7/Assemblies/</OutputPath>
     <DebugType>none</DebugType>

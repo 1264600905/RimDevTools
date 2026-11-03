@@ -105,8 +105,7 @@ namespace LogSyncMod.AutoTest
 
                 if (item.Kind == AutoTestKind.Building)
                 {
-                    PrepareBuildingFactionBeforeSpawn(thing, AutoTestBuildingContext.BuildingInfoCard, result,
-                        ResolveFactionFromSpec(item.SpecDef), item.SpecDef?.buildingFactionless == true);
+                    PrepareBuildingFactionBeforeSpawn(thing, AutoTestBuildingContext.BuildingInfoCard, result);
                     thing = GenSpawn.Spawn(thing, rootCell, map, Rot4.North, WipeMode.Vanish, false, false);
                 }
                 else
@@ -194,7 +193,7 @@ namespace LogSyncMod.AutoTest
                 Result = result,
                 SpawnedThing = preparedThing,
                 InfoCardDef = item.ThingDef,
-                AllowScreenshots = ShouldCaptureScreenshots(item.SpecDef),
+                AllowScreenshots = ShouldCaptureScreenshots(),
                 RemainingUiFrames = PreOpenSettleRepaintFrames,
                 Phase = SessionPhase.WaitingForPreOpenSettle,
                 EvidenceAdapter = adapter,
@@ -267,7 +266,7 @@ namespace LogSyncMod.AutoTest
                     Result = result,
                     TerrainDef = item.TerrainDef,
                     InfoCardDef = item.TerrainDef,
-                    AllowScreenshots = ShouldCaptureScreenshots(item.SpecDef),
+                    AllowScreenshots = ShouldCaptureScreenshots(),
                     RemainingUiFrames = PreOpenSettleRepaintFrames,
                     Phase = SessionPhase.WaitingForPreOpenSettle
                 };
@@ -323,7 +322,7 @@ namespace LogSyncMod.AutoTest
                 Mode = ActiveSessionMode.RecipeBill,
                 RecipeWorktableThing = worktableThing,
                 InfoCardDef = item.ThingDef ?? (Def)item.RecipeDef,
-                AllowScreenshots = ShouldCaptureScreenshots(item.SpecDef),
+                AllowScreenshots = ShouldCaptureScreenshots(),
                 RemainingUiFrames = PreOpenSettleRepaintFrames,
                 Phase = SessionPhase.WaitingForPreOpenSettle
             };
@@ -344,7 +343,7 @@ namespace LogSyncMod.AutoTest
                     ClearArea(rootCell, 1, 1);
                     return rootCell;
                 });
-                AutoTestHediffPawnResolution context = pawnResolver.Resolve(item.HediffDef, item.SpecDef);
+                AutoTestHediffPawnResolution context = pawnResolver.Resolve(item.HediffDef);
                 pawn = context.Pawn;
                 if (pawn == null)
                 {
@@ -417,11 +416,10 @@ namespace LogSyncMod.AutoTest
                     AttachedHediff = hediff,
                     DestroyTestPawnOnCleanup = true,
                     PassedAfterRetry = context.PassedAfterRetry,
-                    AllowScreenshots = ShouldCaptureScreenshots(item.SpecDef),
+                    AllowScreenshots = ShouldCaptureScreenshots(),
                     RemainingUiFrames = PreOpenSettleRepaintFrames,
                     Phase = SessionPhase.WaitingForPreOpenSettle
                 };
-                activeSession.PrerequisiteHediffs.AddRange(context.AddedPrerequisites);
                 result.Stage = "info_open";
             }
             catch (Exception ex)
@@ -447,8 +445,7 @@ namespace LogSyncMod.AutoTest
             {
                 pendingItems.Enqueue(CreateWorkItem(
                     AutoTestKind.Building,
-                    thingDef: def,
-                    specDef: ResolveBestMatchingSpec(AutoTestKind.Building, def)));
+                    thingDef: def));
             }
 
             foreach (ThingDef def in DefDatabase<ThingDef>.AllDefsListForReading
@@ -457,8 +454,7 @@ namespace LogSyncMod.AutoTest
             {
                 pendingItems.Enqueue(CreateWorkItem(
                     AutoTestKind.Item,
-                    thingDef: def,
-                    specDef: ResolveBestMatchingSpec(AutoTestKind.Item, def)));
+                    thingDef: def));
             }
         }
 
@@ -470,8 +466,7 @@ namespace LogSyncMod.AutoTest
             {
                 pendingItems.Enqueue(CreateWorkItem(
                     AutoTestKind.Terrain,
-                    terrainDef: def,
-                    specDef: ResolveBestMatchingSpec(AutoTestKind.Terrain, def)));
+                    terrainDef: def));
             }
         }
 
@@ -483,8 +478,7 @@ namespace LogSyncMod.AutoTest
             {
                 pendingItems.Enqueue(CreateWorkItem(
                     AutoTestKind.Hediff,
-                    hediffDef: def,
-                    specDef: ResolveBestMatchingSpec(AutoTestKind.Hediff, def)));
+                    hediffDef: def));
             }
         }
 
@@ -498,7 +492,7 @@ namespace LogSyncMod.AutoTest
                 .OrderBy(recipe => recipe.defName))
             {
                 ThingDef productDef = ResolvePrimaryRecipeProduct(recipe);
-                AutoTestRecipeClassification classification = ClassifyRecipe(recipe, ResolveRecipeWorktable(recipe), ResolveBestMatchingSpec(AutoTestKind.Recipe, recipe));
+                AutoTestRecipeClassification classification = ClassifyRecipe(recipe, ResolveRecipeWorktable(recipe));
                 if (productDef == null && classification.Kind != AutoTestRecipeExecutionKind.MechResurrection)
                 {
                     QueueImmediateResult(
@@ -532,8 +526,7 @@ namespace LogSyncMod.AutoTest
                     AutoTestKind.Recipe,
                     thingDef: productDef,
                     recipeDef: recipe,
-                    worktableDef: worktableDef,
-                    specDef: ResolveBestMatchingSpec(AutoTestKind.Recipe, recipe)));
+                    worktableDef: worktableDef));
             }
 
             PlaceRecipeWorktables(requiredWorktables);
@@ -567,7 +560,7 @@ namespace LogSyncMod.AutoTest
                    def.thingClass != null &&
                    !def.IsBlueprint &&
                    !def.IsFrame &&
-                   MatchesSpecFilters(AutoTestKind.Building, def);
+                   MatchesTargetDefNameFilter(def);
         }
 
         private bool IsTargetItemDef(ThingDef def)
@@ -580,14 +573,14 @@ namespace LogSyncMod.AutoTest
                    !typeof(Corpse).IsAssignableFrom(def.thingClass) &&
                    !def.IsBlueprint &&
                    !def.IsFrame &&
-                   MatchesSpecFilters(AutoTestKind.Item, def);
+                   MatchesTargetDefNameFilter(def);
         }
 
         private bool IsTargetTerrainDef(TerrainDef def)
         {
             return def != null &&
                    def.modContentPack == targetMod &&
-                   MatchesSpecFilters(AutoTestKind.Terrain, def);
+                   MatchesTargetDefNameFilter(def);
         }
 
         private bool IsTargetHediffDef(HediffDef def)
@@ -595,7 +588,7 @@ namespace LogSyncMod.AutoTest
             return def != null &&
                    def.modContentPack == targetMod &&
                    def.hediffClass != null &&
-                   MatchesSpecFilters(AutoTestKind.Hediff, def);
+                   MatchesTargetDefNameFilter(def);
         }
 
         private bool IsTargetRecipeDef(RecipeDef recipe)
@@ -612,7 +605,7 @@ namespace LogSyncMod.AutoTest
             if (!recipeOwnedByTargetMod && !producesTargetModThing) return false;
             bool hasDiscoverableProduct = ResolvePrimaryRecipeProduct(recipe) != null;
             bool discoverableResurrection = recipeOwnedByTargetMod && recipe.mechResurrection;
-            return (hasDiscoverableProduct || discoverableResurrection) && MatchesSpecFilters(AutoTestKind.Recipe, recipe);
+            return (hasDiscoverableProduct || discoverableResurrection) && MatchesTargetDefNameFilter(recipe);
         }
 
         private ThingDef ResolvePrimaryRecipeProduct(RecipeDef recipe)

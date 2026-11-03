@@ -1299,7 +1299,7 @@ namespace LogSyncMod.AutoTest
             {
                 AbilityDef = abilityDef,
                 Result = result,
-                AllowScreenshots = ShouldCaptureScreenshots(ResolveBestMatchingSpec(AutoTestKind.SkillPocketMap, abilityDef)),
+                AllowScreenshots = ShouldCaptureScreenshots(),
                 Phase = SkillPocketMapTestPhase.Initializing
             };
 
@@ -1336,7 +1336,7 @@ namespace LogSyncMod.AutoTest
         {
             return def != null &&
                 def.modContentPack == targetMod &&
-                MatchesSpecFilters(AutoTestKind.SkillPocketMap, def);
+                MatchesTargetDefNameFilter(def);
         }
 
         internal bool ShouldForceAbilityForSkillTest(Ability ability)

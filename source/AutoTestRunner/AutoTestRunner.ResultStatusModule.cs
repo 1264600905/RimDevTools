@@ -29,11 +29,6 @@ namespace LogSyncMod.AutoTest
             CompleteResult(result, AutoTestResultStatus.Unsupported, reasonCode, stage, errorMessage, notes);
         }
 
-        private static void CompleteCompatibilityWarning(AutoTestResult result, string reasonCode, string stage, string errorMessage, string notes)
-        {
-            CompleteResult(result, AutoTestResultStatus.CompatibilityWarning, reasonCode, stage, errorMessage, notes);
-        }
-
         private static void CompleteResult(AutoTestResult result, string status, string reasonCode, string stage, string errorMessage, string notes)
         {
             if (result == null) return;

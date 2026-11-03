@@ -15,8 +15,7 @@ namespace LogSyncMod.AutoTest
             {
                 pendingItems.Enqueue(CreateWorkItem(
                     AutoTestKind.Plant,
-                    thingDef: def,
-                    specDef: ResolveBestMatchingSpec(AutoTestKind.Plant, def)));
+                    thingDef: def));
             }
 
             foreach (PawnKindDef def in DefDatabase<PawnKindDef>.AllDefsListForReading
@@ -24,45 +23,25 @@ namespace LogSyncMod.AutoTest
                 .OrderBy(def => def.defName))
             {
                 AutoTestKind kind = ResolvePawnInfoCardKind(def);
-                LogSyncAutoTestSpecDef matchedSpec = ResolveBestMatchingSpec(kind, def);
-                pendingItems.Enqueue(CreateWorkItem(
-                    kind,
-                    pawnKindDef: def,
-                    specDef: matchedSpec));
-                if (AutoTestPawnFactionResolver.ParseRequestedMode(matchedSpec?.pawnFactionMode) == AutoTestPawnFactionMode.PlayerCompatibility)
-                {
-                    AutoTestWorkItem compatibilityItem = CreateWorkItem(kind, pawnKindDef: def, specDef: matchedSpec);
-                    AutoTestManifestEntry compatibilityEntry = RegisterDiscoveredCase(
-                        compatibilityItem.CaseType,
-                        nameof(PawnKindDef),
-                        def.defName + "@PlayerCompatibility",
-                        (def.label ?? def.defName) + " [PlayerCompatibility]");
-                    compatibilityItem.CaseId = compatibilityEntry.CaseId;
-                    compatibilityItem.ManifestEntry = compatibilityEntry;
-                    compatibilityItem.PawnFactionMode = AutoTestPawnFactionMode.PlayerCompatibility;
-                    compatibilityItem.CompatibilityObservation = true;
-                    pendingItems.Enqueue(compatibilityItem);
-                }
+                pendingItems.Enqueue(CreateWorkItem(kind, pawnKindDef: def));
             }
 
             foreach (GeneDef def in DefDatabase<GeneDef>.AllDefsListForReading
-                .Where(def => def != null && def.modContentPack == targetMod && MatchesSpecFilters(AutoTestKind.GeneInfoCard, def))
+                .Where(def => def != null && def.modContentPack == targetMod && MatchesTargetDefNameFilter(def))
                 .OrderBy(def => def.defName))
             {
                 pendingItems.Enqueue(CreateWorkItem(
                     AutoTestKind.GeneInfoCard,
-                    geneDef: def,
-                    specDef: ResolveBestMatchingSpec(AutoTestKind.GeneInfoCard, def)));
+                    geneDef: def));
             }
 
             foreach (XenotypeDef def in DefDatabase<XenotypeDef>.AllDefsListForReading
-                .Where(def => def != null && def.modContentPack == targetMod && MatchesSpecFilters(AutoTestKind.XenotypeInfoCard, def))
+                .Where(def => def != null && def.modContentPack == targetMod && MatchesTargetDefNameFilter(def))
                 .OrderBy(def => def.defName))
             {
                 pendingItems.Enqueue(CreateWorkItem(
                     AutoTestKind.XenotypeInfoCard,
-                    xenotypeDef: def,
-                    specDef: ResolveBestMatchingSpec(AutoTestKind.XenotypeInfoCard, def)));
+                    xenotypeDef: def));
             }
         }
 
@@ -73,7 +52,7 @@ namespace LogSyncMod.AutoTest
                    def.plant != null &&
                    def.thingClass != null &&
                    typeof(Plant).IsAssignableFrom(def.thingClass) &&
-                   MatchesSpecFilters(AutoTestKind.Plant, def);
+                   MatchesTargetDefNameFilter(def);
         }
 
         private bool IsTargetPawnKindInfoCardDef(PawnKindDef def)
@@ -83,8 +62,7 @@ namespace LogSyncMod.AutoTest
                 return false;
             }
 
-            AutoTestKind kind = ResolvePawnInfoCardKind(def);
-            return MatchesSpecFilters(kind, def);
+            return MatchesTargetDefNameFilter(def);
         }
 
         private static AutoTestKind ResolvePawnInfoCardKind(PawnKindDef def)
@@ -151,7 +129,7 @@ namespace LogSyncMod.AutoTest
                 Item = item,
                 Result = result,
                 InfoCardDef = targetDef,
-                AllowScreenshots = ShouldCaptureScreenshots(item.SpecDef),
+                AllowScreenshots = ShouldCaptureScreenshots(),
                 RemainingUiFrames = PreOpenSettleRepaintFrames,
                 Phase = SessionPhase.WaitingForPreOpenSettle,
                 EvidenceAdapter = adapter,
@@ -165,8 +143,6 @@ namespace LogSyncMod.AutoTest
             PawnKindDef pawnKind = item.PawnKindDef;
             AutoTestResult result = CreateResult(item.ManifestEntry, nameof(PawnKindDef), pawnKind?.defName, pawnKind?.label);
             results.Add(result);
-            result.Notes = AppendNote(result.Notes, "CompatibilityObservation=" + item.CompatibilityObservation);
-
             string caseId = item.CaseId ?? item.ManifestEntry?.CaseId ?? result.CaseId;
             InfoCardOperationAdapter adapter = new InfoCardOperationAdapter(runId, caseId, operationRunner, operationJournal, logJournal, evidenceBuilder, evidenceClock);
             IDisposable caseScope = adapter.BeginCase();
@@ -186,7 +162,7 @@ namespace LogSyncMod.AutoTest
                     return null;
                 }
 
-                AutoTestPawnFactionMode requestedMode = item.PawnFactionMode;
+                AutoTestPawnFactionMode requestedMode = AutoTestPawnFactionMode.Native;
                 AutoTestPawnFactionResolution primaryResolution = AutoTestPawnFactionResolver.Resolve(pawnKind, requestedMode);
                 AutoTestPawnFactionResolution usedResolution = null;
                 System.Collections.Generic.List<AutoTestPawnFactionResolution> resolutions = new System.Collections.Generic.List<AutoTestPawnFactionResolution> { primaryResolution };
@@ -288,7 +264,7 @@ namespace LogSyncMod.AutoTest
                 SpawnedThing = preparedPawn,
                 TestPawn = preparedPawn,
                 InfoCardDef = preparedPawn.def,
-                AllowScreenshots = ShouldCaptureScreenshots(item.SpecDef),
+                AllowScreenshots = ShouldCaptureScreenshots(),
                 RemainingUiFrames = PreOpenSettleRepaintFrames,
                 Phase = SessionPhase.WaitingForPreOpenSettle,
                 EvidenceAdapter = adapter,

@@ -211,7 +211,7 @@ namespace LogSyncMod.AutoTest
 
         private AutoTestRecipeExecutionResult ExecuteRecipe(ActiveSession session)
         {
-            AutoTestRecipeClassification classification = ClassifyRecipe(session.Item.RecipeDef, session.Item.WorktableDef, session.Item.SpecDef);
+            AutoTestRecipeClassification classification = ClassifyRecipe(session.Item.RecipeDef, session.Item.WorktableDef);
             session.Result.Notes = AppendNote(session.Result.Notes, "RecipeExecutionKind=" + classification.Kind);
             session.Result.Notes = AppendNote(session.Result.Notes, "RecipeExecutionAdapter=" + classification.Adapter);
             session.Result.Notes = AppendNote(session.Result.Notes, "RecipeClassificationReason=" + classification.Reason);
@@ -229,7 +229,7 @@ namespace LogSyncMod.AutoTest
                 : adapter.Execute(session);
         }
 
-        private AutoTestRecipeClassification ClassifyRecipe(RecipeDef recipe, ThingDef worktableDef, LogSyncAutoTestSpecDef spec)
+        private AutoTestRecipeClassification ClassifyRecipe(RecipeDef recipe, ThingDef worktableDef)
         {
             bool productIsPawn = recipe?.products != null && recipe.products.Any(product => product?.thingDef?.race != null ||
                 (product?.thingDef?.thingClass != null && typeof(Pawn).IsAssignableFrom(product.thingDef.thingClass)));
@@ -243,8 +243,7 @@ namespace LogSyncMod.AutoTest
                 HasCorpseIngredient = hasCorpseIngredient,
                 WorktableIsMechGestator = gestator,
                 RecipeLooksLikeBaseMechanoidRecipe = (recipe?.gestationCycles ?? 0) > 0 || recipe?.mechResurrection == true,
-                RecipeLooksCustom = false,
-                ExplicitAdapter = spec?.recipeExecutionAdapter
+                RecipeLooksCustom = false
             });
         }
 

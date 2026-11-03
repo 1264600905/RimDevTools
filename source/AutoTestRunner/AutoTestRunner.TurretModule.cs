@@ -1440,15 +1440,9 @@ namespace LogSyncMod.AutoTest
         {
             var result = CreateResult(AutoTestCaseType.TurretPocketMap, "ThingDef", turretDef.defName, turretDef.label);
             var session = new TurretTestSession(this, turretDef, result);
-            LogSyncAutoTestSpecDef spec = ResolveBestMatchingSpec(AutoTestKind.TurretPocketMap, turretDef);
-            session.AllowScreenshots = ShouldCaptureScreenshots(spec);
-            session.CaptureProjectileScreenshots = ShouldCaptureProjectileScreenshots(spec, AutoTestKind.TurretPocketMap);
-            session.ProjectileScreenshotTicks = ResolveProjectileScreenshotTicks(spec);
-            result.Notes = AppendNote(result.Notes, "AutoTestMode=" + (settings.UseXmlDrivenAutoTest() ? "XmlDriven" : "Automatic"));
-            if (spec != null)
-            {
-                result.Notes = AppendNote(result.Notes, "Spec=" + spec.defName);
-            }
+            session.AllowScreenshots = ShouldCaptureScreenshots();
+            session.CaptureProjectileScreenshots = ShouldCaptureProjectileScreenshots(AutoTestKind.TurretPocketMap);
+            session.ProjectileScreenshotTicks = ResolveProjectileScreenshotTicks();
 
             try
             {
@@ -1497,13 +1491,13 @@ namespace LogSyncMod.AutoTest
                 return false;
 
             if (def.building?.turretGunDef != null)
-                return MatchesSpecFilters(AutoTestKind.TurretPocketMap, def);
+                return MatchesTargetDefNameFilter(def);
 
             Type type = def.thingClass;
             while (type != null && type != typeof(object))
             {
                 if (type.Name == "Building_Turret" || type.Name == "Building_TurretGunCE")
-                    return MatchesSpecFilters(AutoTestKind.TurretPocketMap, def);
+                    return MatchesTargetDefNameFilter(def);
                 type = type.BaseType;
             }
 

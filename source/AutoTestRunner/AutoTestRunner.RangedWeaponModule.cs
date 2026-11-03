@@ -1359,16 +1359,10 @@ namespace LogSyncMod.AutoTest
         {
             AutoTestResult result = CreateResult(AutoTestCaseType.RangedWeaponPocketMap, "ThingDef", weaponDef.defName, weaponDef.label);
             RangedWeaponTestSession session = new RangedWeaponTestSession(this, weaponDef, result);
-            LogSyncAutoTestSpecDef spec = ResolveBestMatchingSpec(AutoTestKind.RangedWeaponPocketMap, weaponDef);
-            session.AllowScreenshots = ShouldCaptureScreenshots(spec);
+            session.AllowScreenshots = ShouldCaptureScreenshots();
             session.CaptureProjectileScreenshots = session.AllowScreenshots ||
-                ShouldCaptureProjectileScreenshots(spec, AutoTestKind.RangedWeaponPocketMap);
-            session.ProjectileScreenshotTicks = ResolveProjectileScreenshotTicks(spec);
-            result.Notes = AppendNote(result.Notes, "AutoTestMode=" + (settings.UseXmlDrivenAutoTest() ? "XmlDriven" : "Automatic"));
-            if (spec != null)
-            {
-                result.Notes = AppendNote(result.Notes, "Spec=" + spec.defName);
-            }
+                ShouldCaptureProjectileScreenshots(AutoTestKind.RangedWeaponPocketMap);
+            session.ProjectileScreenshotTicks = ResolveProjectileScreenshotTicks();
 
             try
             {
@@ -1416,7 +1410,7 @@ namespace LogSyncMod.AutoTest
                 def.IsWeapon &&
                 def.IsRangedWeapon &&
                 !IsTurretMountedGunDef(def) &&
-                MatchesSpecFilters(AutoTestKind.RangedWeaponPocketMap, def);
+                MatchesTargetDefNameFilter(def);
         }
     }
 }

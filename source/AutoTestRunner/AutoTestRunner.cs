@@ -240,7 +240,6 @@ namespace LogSyncMod.AutoTest
                 return;
             }
 
-            LoadActiveSpecs();
             RebuildTurretMountedGunDefs();
 
             nextTerrainX = Math.Max(map.Size.x / 2, 10);
@@ -1142,8 +1141,7 @@ namespace LogSyncMod.AutoTest
             HediffDef hediffDef = null,
             PawnKindDef pawnKindDef = null,
             GeneDef geneDef = null,
-            XenotypeDef xenotypeDef = null,
-            LogSyncAutoTestSpecDef specDef = null)
+            XenotypeDef xenotypeDef = null)
         {
             AutoTestCaseType caseType = ResolveCaseType(kind);
             // Recipe cases are keyed by the RecipeDef even though the produced ThingDef
@@ -1165,7 +1163,6 @@ namespace LogSyncMod.AutoTest
                 PawnKindDef = pawnKindDef,
                 GeneDef = geneDef,
                 XenotypeDef = xenotypeDef,
-                SpecDef = specDef,
                 ManifestEntry = entry
             };
         }
@@ -1207,7 +1204,7 @@ namespace LogSyncMod.AutoTest
 
         private bool IsFullCoverageRun()
         {
-            return !settings.UseXmlDrivenAutoTest() && settings.ShouldRunStandardSuite() && settings.EffectiveAutoTestScopes().Count == 1;
+            return settings.ShouldRunStandardSuite() && settings.EffectiveAutoTestScopes().Count == 1;
         }
 
         private AutoTestPocketMapHandle CreatePocketMapHandle(string mapGeneratorDefName, IntVec3 mapSize, Action<Map> onGenerated, out string errorMessage)

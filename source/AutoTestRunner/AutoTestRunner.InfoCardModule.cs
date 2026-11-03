@@ -36,7 +36,6 @@ namespace LogSyncMod.AutoTest
             public Def InfoCardDef;
             public Pawn TestPawn;
             public Hediff AttachedHediff;
-            public readonly List<Hediff> PrerequisiteHediffs = new List<Hediff>();
             public bool DestroyTestPawnOnCleanup;
             public bool PassedAfterRetry;
             public ActiveSessionMode Mode;
@@ -785,16 +784,6 @@ namespace LogSyncMod.AutoTest
                     activeSession.Result.Notes = AppendNote(activeSession.Result.Notes, "TargetHediffRemoved=" + removed);
                 }
 
-                foreach (Hediff prerequisite in activeSession.PrerequisiteHediffs.ToList())
-                {
-                    try
-                    {
-                        if (prerequisite != null && activeSession.TestPawn.health.hediffSet.hediffs.Contains(prerequisite))
-                            activeSession.TestPawn.health.RemoveHediff(prerequisite);
-                    }
-                    catch { }
-                }
-                activeSession.Result.Notes = AppendNote(activeSession.Result.Notes, "PrerequisiteHediffsRestored=True");
             }
 
             if (activeSession?.DestroyTestPawnOnCleanup == true && activeSession.TestPawn != null)

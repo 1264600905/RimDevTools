@@ -68,18 +68,9 @@ namespace LogSyncMod.AutoTest
             if (result == null || !semanticCases.TryGetValue(result.CaseId, out SemanticCaseState state) || state.Completed) return;
             NormalizeResultStatus(result);
             long logThroughSequence = logJournal?.LastSequence ?? long.MaxValue;
-            ResolveAllowPatterns(result, out List<string> allowedErrors, out List<string> allowedWarnings);
-            AutoTestErrorPolicyResult policy = semanticErrorPolicy.Evaluate(logJournal, state.LogAfterSequence, runId, result.CaseId, allowedErrors, allowedWarnings, logThroughSequence);
+            AutoTestErrorPolicyResult policy = semanticErrorPolicy.Evaluate(
+                logJournal, state.LogAfterSequence, runId, result.CaseId, throughSequence: logThroughSequence);
             result.UnexpectedSevereLogCount = policy.UnexpectedSevereLogs.Count;
-            bool compatibilityObservation = (result.Notes ?? string.Empty).IndexOf("CompatibilityObservation=True", StringComparison.OrdinalIgnoreCase) >= 0;
-            if (compatibilityObservation && (AutoTestResultStatus.IsFailure(result.Status) || !policy.Success))
-            {
-                string compatibilityReason = string.IsNullOrWhiteSpace(result.ResultReasonCode)
-                    ? "player_compatibility_observation_failed"
-                    : result.ResultReasonCode;
-                CompleteCompatibilityWarning(result, compatibilityReason, result.Stage, result.ErrorMessage,
-                    "CompatibilityWarningReason=" + (policy.Success ? result.ErrorMessage : policy.Summary));
-            }
             bool nonFailureDiagnosticStatus = string.Equals(result.Status, AutoTestResultStatus.Unsupported, StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(result.Status, AutoTestResultStatus.CompatibilityWarning, StringComparison.OrdinalIgnoreCase);
             SemanticAssert(result, "logs.no_unexpected_severe", policy.Success || nonFailureDiagnosticStatus, "0 unexpected Error/Fatal logs or diagnostic non-failure status", policy.Summary,
@@ -128,17 +119,6 @@ namespace LogSyncMod.AutoTest
             if (result == null) return;
             CompleteSemanticCase(result);
             results.Add(result);
-        }
-
-        private void ResolveAllowPatterns(AutoTestResult result, out List<string> errors, out List<string> warnings)
-        {
-            IEnumerable<LogSyncAutoTestSpecDef> matches = activeSpecDefs.Where(spec => spec != null &&
-                (spec.scope == AutoTestScope.Standard || string.Equals(spec.scope.ToString(), result.Scope, StringComparison.OrdinalIgnoreCase)) &&
-                ((spec.defNames?.Count ?? 0) == 0 && (spec.categories?.Count ?? 0) == 0 ||
-                 spec.defNames.Any(value => string.Equals(value, result.DefName, StringComparison.OrdinalIgnoreCase)) ||
-                 spec.categories.Any(value => string.Equals(value, result.Category, StringComparison.OrdinalIgnoreCase))));
-            errors = matches.SelectMany(spec => spec.allowedErrorPatterns ?? new List<string>()).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-            warnings = matches.SelectMany(spec => spec.allowedWarningPatterns ?? new List<string>()).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         }
 
         private static string NormalizeSemanticStep(string name)

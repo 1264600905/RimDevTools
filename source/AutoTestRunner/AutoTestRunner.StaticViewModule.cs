@@ -326,21 +326,21 @@ namespace LogSyncMod.AutoTest
         private void BeginStaticViewTestSession()
         {
             foreach (ThingDef plantDef in DefDatabase<ThingDef>.AllDefsListForReading
-                .Where(def => def != null && def.modContentPack == targetMod && def.plant != null && def.thingClass != null && MatchesSpecFilters(AutoTestKind.PlantGrowthView, def))
+                .Where(def => def != null && def.modContentPack == targetMod && def.plant != null && def.thingClass != null && MatchesTargetDefNameFilter(def))
                 .OrderBy(def => def.defName))
             {
                 pendingStaticViewTargets.Enqueue(CreateStaticViewSpec(AutoTestKind.PlantGrowthView, AutoTestCaseType.PlantGrowthView, plantDef, AutoTestScreenshotProfiles.ThreeViewHumanoid, "growth_stages"));
             }
 
             foreach (ThingDef buildingDef in DefDatabase<ThingDef>.AllDefsListForReading
-                .Where(def => def != null && def.modContentPack == targetMod && def.category == ThingCategory.Building && def.thingClass != null && !def.IsBlueprint && !def.IsFrame && MatchesSpecFilters(AutoTestKind.BuildingView, def))
+                .Where(def => def != null && def.modContentPack == targetMod && def.category == ThingCategory.Building && def.thingClass != null && !def.IsBlueprint && !def.IsFrame && MatchesTargetDefNameFilter(def))
                 .OrderBy(def => def.defName))
             {
                 pendingStaticViewTargets.Enqueue(CreateStaticViewSpec(AutoTestKind.BuildingView, AutoTestCaseType.BuildingView, buildingDef, AutoTestScreenshotProfiles.ThreeViewHumanoid, "view"));
             }
 
             foreach (TerrainDef terrainDef in DefDatabase<TerrainDef>.AllDefsListForReading
-                .Where(def => def != null && def.modContentPack == targetMod && MatchesSpecFilters(AutoTestKind.TerrainPatchView, def))
+                .Where(def => def != null && def.modContentPack == targetMod && MatchesTargetDefNameFilter(def))
                 .OrderBy(def => def.defName))
             {
                 pendingStaticViewTargets.Enqueue(CreateStaticViewSpec(AutoTestKind.TerrainPatchView, AutoTestCaseType.TerrainPatchView, terrainDef, AutoTestScreenshotProfiles.ThreeViewHumanoid, "9x9"));
@@ -376,10 +376,8 @@ namespace LogSyncMod.AutoTest
             }
 
             AutoTestResult result = CreateResult(spec.ManifestEntry, spec.TargetDef?.GetType().Name ?? nameof(Def), spec.DefName, spec.Label);
-            result.Notes = AppendNote(result.Notes, "AutoTestMode=" + (settings.UseXmlDrivenAutoTest() ? "XmlDriven" : "Automatic"));
             result.Notes = AppendNote(result.Notes, "ViewProfile=" + (spec.Profile?.ProfileId ?? "Unknown"));
-            LogSyncAutoTestSpecDef matchedSpec = ResolveBestMatchingSpec(spec.Kind, spec.TargetDef);
-            StaticViewTestSession session = StaticViewTestSession.Create(this, spec, result, ShouldCaptureScreenshots(matchedSpec));
+            StaticViewTestSession session = StaticViewTestSession.Create(this, spec, result, ShouldCaptureScreenshots());
             if (session.Phase == StaticViewTestPhase.Done)
             {
                 RecordResult(result);
@@ -611,9 +609,7 @@ namespace LogSyncMod.AutoTest
             }
 
             Rot4 rotation = buildingDef.rotatable ? Rot4.East : Rot4.North;
-            LogSyncAutoTestSpecDef matchedSpec = ResolveBestMatchingSpec(session.Spec.Kind, buildingDef);
-            PrepareBuildingFactionBeforeSpawn(building, AutoTestBuildingContext.BuildingStaticView, session.Result,
-                ResolveFactionFromSpec(matchedSpec), matchedSpec?.buildingFactionless == true);
+            PrepareBuildingFactionBeforeSpawn(building, AutoTestBuildingContext.BuildingStaticView, session.Result);
             GenSpawn.Spawn(building, session.Context.AnchorCell, session.Context.Map, rotation, WipeMode.Vanish, false, false);
             if (building.Destroyed || !building.Spawned)
             {
