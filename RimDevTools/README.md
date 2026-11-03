@@ -1,6 +1,6 @@
 # RimDevTools
 
-RimDevTools 是 Windows x64 的 .NET 10 CLI，可检查和部署 RimWorld 1.6 与 1.7+ 模组项目，并提供第三方参考模组拉取、反编译和可选的 LogSync 测试集成。
+RimDevTools 是 Windows x64 的 .NET 10 CLI，可检查和部署 RimWorld 1.6/1.7+ 模组项目，并提供第三方参考模组拉取、反编译和可选的 LogSync 测试集成。随包 LogSyncMod 提供 RimWorld 1.6 与 1.7 对应的程序集和 Defs。
 
 ## 运行要求
 
@@ -36,7 +36,7 @@ artifacts/RimDevTools-Package/
 └── .tools/
     ├── RimDevTools.exe
     ├── Data/
-    │   ├── LogSyncMod/ (RimWorld 1.6 and 1.7 assemblies and Defs)
+    │   ├── LogSyncMod/ (RimWorld 1.6/1.7 assemblies and Defs)
     │   ├── tool-mods.manifest.json
     │   └── licenses/
     ├── Ilspy/
