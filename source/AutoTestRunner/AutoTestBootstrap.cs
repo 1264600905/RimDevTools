@@ -394,7 +394,6 @@ namespace LogSyncMod.AutoTest
             settings.autoTestTargetDefNames = (request.DefNames ?? new List<string>()).Where(value => !string.IsNullOrWhiteSpace(value)).Select(value => value.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
             settings.autoTestTargetDefNamesInput = string.Join(",", settings.autoTestTargetDefNames.ToArray());
             settings.autoTestCaptureScreenshots = request.CaptureScreenshots;
-            settings.autoTestMode = string.Equals(request.Mode, "xml", StringComparison.OrdinalIgnoreCase) ? AutoTestMode.XmlDriven : AutoTestMode.Automatic;
             if (!string.IsNullOrWhiteSpace(request.OutputPath)) settings.autoTestOutputPath = request.OutputPath.Trim();
             settings.autoTestEnabled = true;
             settings.RequestAutoTestRun();

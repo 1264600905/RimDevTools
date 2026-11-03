@@ -136,7 +136,7 @@ public static class DoctorCommand
         checks.Add(new DoctorCheck("test.logsync_mod", testHost.LogSyncMod is null ? "missing" : testHost.LogSyncAssemblyPath is null ? "unsupported" : "available", false, testHost.LogSyncAssemblyPath ?? testHost.LogSyncMod?.Directory, testHost.LogSyncMessage, new { gameVersion = config.GameVersion }));
         var logSyncSettings = GameEnvironment.LogSyncSettingsPath(context);
         checks.Add(new DoctorCheck("test.logsync_settings", File.Exists(logSyncSettings) ? "available" : "not_applicable", false, logSyncSettings, File.Exists(logSyncSettings) ? null : "设置文件尚不存在；test run 会在事务内临时创建"));
-        checks.Add(new DoctorCheck("test.autotest_extension", testHost.AutoTestAssemblyPath is null ? "missing" : "available", false, testHost.AutoTestAssemblyPath, testHost.AutoTestMessage ?? "AutoTestRunner 仅在显式运行 auto/XML 测试时需要；项目不要求 AutoTest XML", new { gameVersion = config.GameVersion }));
+        checks.Add(new DoctorCheck("test.autotest_extension", testHost.AutoTestAssemblyPath is null ? "missing" : "available", false, testHost.AutoTestAssemblyPath, testHost.AutoTestMessage ?? "AutoTestRunner 仅在显式运行 auto 测试时需要", new { gameVersion = config.GameVersion }));
 
         AddToolModChecks(checks, environment.Mods, config.GameVersion);
         var lockPath = configDirectory is null ? null : Path.Combine(configDirectory, "RimDevTools.lock.json");

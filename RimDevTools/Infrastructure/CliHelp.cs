@@ -286,13 +286,13 @@ public static class CliHelp
         Options:
           --deploy                    Build and transactionally update before testing.
           --sync-source               Include source/; requires --deploy.
-          --mode <value>              quick (default), manual, auto, or xml.
+          --mode <value>              quick (default), manual, or auto.
           --active-mods-file <path>   External ModsConfig XML activeMods list.
           --timeout-seconds <n>       Positive wait limit; defaults to timeouts.max_wait.
-          --target-package-id <id>    Auto/XML target; defaults to current project.
-          --scope <value>             Repeatable auto/xml scope; defaults to Standard.
+          --target-package-id <id>    Auto target; defaults to current project.
+          --scope <value>             Repeatable auto scope; defaults to Standard.
           --defname <value>           Repeatable auto-mode DefName allowlist.
-          --batch-size <n>            Positive auto/xml random-case limit; defaults to 40.
+          --batch-size <n>            Positive auto random-case limit; defaults to 40.
           --isolated-desktop          Force a private Windows desktop for this run.
           --no-isolated-desktop       Force the current visible desktop for this run.
           --verbose                  Include the active mod list, additions, and deploy diagnostics.
@@ -304,7 +304,7 @@ public static class CliHelp
 
         Isolation precedence:
           Explicit CLI flag > isolated_desktop project config > built-in false for
-          quick/auto/xml. Manual defaults to the visible desktop regardless of config,
+          quick/auto. Manual defaults to the visible desktop regardless of config,
           unless --isolated-desktop is explicitly supplied.
 
         Examples:
@@ -316,12 +316,12 @@ public static class CliHelp
           Legacy detailed values remain accepted with their original narrow behavior.
 
         Batch behavior:
-          Auto/XML runs, including Standard, plan at most --batch-size cases.
+          Auto runs, including Standard, plan at most --batch-size cases.
           If more candidates are available, targets are sampled uniformly at random without replacement.
           Explicit --defname runs ignore the batch limit.
 
         Screenshot behavior:
-          Automatic tests enable screenshots by default. XML-driven tests follow each spec's captureScreenshots setting.
+          Automatic tests enable screenshots by default.
 
         Output:
           Default JSON includes runId, mode, target, mod/addition counts, isolation source,

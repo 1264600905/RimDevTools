@@ -11,7 +11,7 @@ public sealed record TestHostResolution(
     {
         if (LogSyncAssemblyPath is null)
             return new CliError("LOGSYNC_TEST_HOST_UNAVAILABLE", LogSyncMessage ?? "缺少所选 RimWorld 版本对应的 LogSync 测试宿主");
-        if ((mode is "auto" or "xml") && AutoTestAssemblyPath is null)
+        if (mode == "auto" && AutoTestAssemblyPath is null)
             return new CliError("AUTOTEST_RUNNER_UNAVAILABLE", AutoTestMessage ?? "缺少所选 RimWorld 版本对应的 AutoTestRunner 程序集");
         return null;
     }
@@ -23,7 +23,7 @@ public static class TestHostResolver
     {
         var logSync = environment.Mods.Find("trigger.logsyncmod");
         if (logSync is null)
-            return new TestHostResolution(null, null, null, "测试宿主 trigger.logsyncmod 未安装；普通项目检查不要求它", "AutoTestRunner 只用于显式运行 auto/XML 测试");
+            return new TestHostResolution(null, null, null, "测试宿主 trigger.logsyncmod 未安装；普通项目检查不要求它", "AutoTestRunner 只用于显式运行 auto 测试");
         if (!RimWorldGameLayout.TryGet(gameVersion, out var layout))
             return new TestHostResolution(logSync, null, null, $"game_version={gameVersion ?? "未配置"} 不支持测试宿主解析", "game_version 未支持");
 

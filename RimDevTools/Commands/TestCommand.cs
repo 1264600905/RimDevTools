@@ -231,18 +231,18 @@ public static class TestCommand
         var logSyncSettingsPath = GameEnvironment.LogSyncSettingsPath(context)!;
 
         var mode = CliArgs.Value(args, "--mode")?.ToLowerInvariant() ?? "quick";
-        if (mode is not ("quick" or "manual" or "auto" or "xml"))
+        if (mode is not ("quick" or "manual" or "auto"))
             return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "MODE_INVALID", $"不支持的测试模式: {mode}", context.Root);
         if (!AutoTestSelectionParser.TryParse(args, mode, out var selection, out var selectionError))
             return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "INVALID_ARGUMENT", selectionError!, context.Root);
-        if (CliArgs.Has(args, "--batch-size") && mode is not ("auto" or "xml"))
-            return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "INVALID_ARGUMENT", "--batch-size 仅适用于 --mode auto 或 --mode xml", context.Root);
+        if (CliArgs.Has(args, "--batch-size") && mode != "auto")
+            return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "INVALID_ARGUMENT", "--batch-size 仅适用于 --mode auto", context.Root);
         if (CliArgs.Has(args, "--sync-source") && !CliArgs.Has(args, "--deploy"))
             return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "SYNC_SOURCE_REQUIRES_DEPLOY", "--sync-source 必须与 --deploy 一起使用", context.Root);
         if (!CliArgs.TryPositiveInt(args, "--timeout-seconds", context.Config.Timeouts.MaxWait, out var timeout, out var timeoutError))
             return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "TIMEOUT_INVALID", timeoutError!, context.Root);
         int? batchSize = null;
-        if (mode is "auto" or "xml")
+        if (mode == "auto")
         {
             if (!CliArgs.TryPositiveInt(args, "--batch-size", 40, out var parsedBatchSize, out var batchSizeError))
                 return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "BATCH_SIZE_INVALID", batchSizeError!, context.Root);
@@ -320,7 +320,7 @@ public static class TestCommand
             await SettingsEditor.UpdateAsync(context, mode, transaction, runId, targetPackageId, muteAudio: mode != "manual", scopes: selection.Scopes, hasExplicitScopes: selection.HasExplicitScopes, defNames: selection.DefNames, batchSize: batchSize, artifacts: artifacts);
 
             var gameArguments = new List<string> { "-popupwindow" };
-            if (mode is "auto" or "xml") gameArguments.Add("quicktest");
+            if (mode == "auto") gameArguments.Add("quicktest");
             gameSession = GameProcessLauncher.Start(gamePath, environment.References.RimWorldDirectory, gameArguments, isolation.Enabled, runId);
             outcome = await WaitForModeAsync(mode, gameSession.Process, timeout, syncLogPath, logOffset, outputPath, targetPackageId, runId, resultSnapshot, cancellationToken, verbose);
         }
@@ -373,7 +373,7 @@ public static class TestCommand
             catch (Exception ex) { outcome = TestOutcome.Failure(ExitCodes.TaskFailed, "TRANSACTION_RESTORE_FAILED", ex.Message); }
         }
 
-        if (mode is "auto" or "xml")
+        if (mode == "auto")
         {
             try { LogArchive.PruneAutoTestRuns(outputPath, context.Config.Retention.MaxAutoTestRuns); }
             catch (Exception ex) { outcome = TestOutcome.Failure(ExitCodes.TaskFailed, "AUTO_RESULT_RETENTION_FAILED", ex.Message); }
@@ -381,7 +381,7 @@ public static class TestCommand
 
         try
         {
-            var keepCount = mode is "auto" or "xml"
+            var keepCount = mode == "auto"
                 ? Math.Min(context.Config.Retention.MaxLogFiles, context.Config.Retention.MaxAutoTestRuns)
                 : context.Config.Retention.MaxLogFiles;
             LogArchive.PruneTestRunDirectories(TestArtifactPaths.LogRoot(context), keepCount);
@@ -416,7 +416,7 @@ public static class TestCommand
             scopes = selection.Scopes,
             defNames = verbose ? selection.DefNames : null,
             batchSize,
-            captureScreenshots = mode is "auto" or "xml",
+            captureScreenshots = mode == "auto",
             isolatedDesktop = isolation.Enabled,
             isolatedDesktopSource = isolation.Source,
             activeModCount = modList.Mods.Count,
@@ -469,7 +469,7 @@ public static class TestCommand
             if (mode == "quick" && scanner.QuickReadyFollowedByHeartbeat)
                 return TestOutcome.Success("quick ready signal followed by main-thread heartbeat");
 
-            if (mode is "auto" or "xml")
+            if (mode == "auto")
             {
                 if (scanner.AutoCompleted || game.HasExited)
                 {
@@ -554,8 +554,8 @@ public static class AutoTestSelectionParser
         error = null;
 
         var nativeScopes = CliArgs.Values(args, "--scope");
-        if (nativeScopes.Count > 0 && mode is not ("auto" or "xml"))
-            return Fail("--scope 仅适用于 --mode auto 或 --mode xml。示例：RimDevTools.exe test run --mode auto --scope turrets", out error);
+        if (nativeScopes.Count > 0 && mode != "auto")
+            return Fail("--scope 仅适用于 --mode auto。示例：RimDevTools.exe test run --mode auto --scope turrets", out error);
 
         var rawScopes = nativeScopes;
         var scopes = new List<string>();
@@ -834,12 +834,11 @@ public static class SettingsEditor
         changed |= Set(settings, "logPath", effectiveArtifacts?.SyncLogPath ?? SyncLogPath(context));
         changed |= SetList(settings, "keywords", context.Config.LogKeywords);
 
-        var auto = mode is "auto" or "xml";
+        var auto = mode == "auto";
         changed |= Set(settings, "autoTestEnabled", auto ? "True" : "False");
         changed |= Set(settings, "autoTestTargetPackageId", auto ? targetPackageId?.ToLowerInvariant() ?? context.Config.CurrentPackageId(context.Root)?.ToLowerInvariant() ?? "" : "");
         changed |= Set(settings, "autoTestRunId", runId ?? "");
         changed |= Set(settings, "autoTestOutputPath", effectiveArtifacts?.AutoTestOutputPath ?? AutoTestOutputPath(context));
-        changed |= Set(settings, "autoTestMode", mode == "xml" ? "XmlDriven" : "Automatic");
         var effectiveScopes = scopes is { Count: > 0 } ? DistinctValues(scopes) : ["Standard"];
         var effectiveDefNames = defNames is { Count: > 0 } ? DistinctValues(defNames) : [];
         changed |= Set(settings, "autoTestScope", hasExplicitScopes ? effectiveScopes[0] : "Standard");
