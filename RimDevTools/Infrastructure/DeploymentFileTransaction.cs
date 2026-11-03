@@ -27,12 +27,33 @@ public sealed record DeploymentFileCommitResult(
     int ReplacedFileCount,
     int RemovedFileCount,
     int ReplacedDirectoryCount,
-    string? CleanupWarning);
+    string? CleanupWarning,
+    int ManifestWriteRetries = 0);
 
 internal sealed class DeploymentTargetBusyException(DeploymentTargetBusyDetails details, string message, Exception? inner = null)
     : IOException(message, inner)
 {
     public DeploymentTargetBusyDetails Details { get; } = details;
+}
+
+internal sealed class DeploymentManifestWriteException(
+    string backupDirectory,
+    string manifestPath,
+    string attemptedState,
+    string? persistedState,
+    int? win32ErrorCode,
+    int attempts,
+    IReadOnlyList<DeploymentFileProcess> processes,
+    Exception inner)
+    : Exception($"部署事务清单写入失败（尝试状态 {attemptedState}，Win32={win32ErrorCode?.ToString() ?? "unknown"}）: {inner.Message}", inner)
+{
+    public string BackupDirectory { get; } = backupDirectory;
+    public string ManifestPath { get; } = manifestPath;
+    public string AttemptedState { get; } = attemptedState;
+    public string? PersistedState { get; } = persistedState;
+    public int? Win32ErrorCode { get; } = win32ErrorCode;
+    public int Attempts { get; } = attempts;
+    public IReadOnlyList<DeploymentFileProcess> Processes { get; } = processes;
 }
 
 internal sealed class DeploymentRollbackFailedException(string backupPath, Exception commitError, Exception rollbackError)
@@ -44,8 +65,11 @@ internal sealed class DeploymentRollbackFailedException(string backupPath, Excep
 internal static class DeploymentFileTransaction
 {
     public const string ManifestFileName = ".rimdev-transaction.json";
+    private const int ErrorAccessDenied = 5;
     private const int ErrorSharingViolation = 32;
     private const int ErrorLockViolation = 33;
+    private const int ErrorUnableToRemoveReplaced = 1175;
+    private const int ManifestWriteMaxAttempts = 4;
 
     public static DeploymentTransactionManifest? TryReadManifest(string directory, out string? error)
     {
@@ -133,10 +157,11 @@ internal static class DeploymentFileTransaction
 
         Directory.CreateDirectory(fullBackup);
         var manifest = new DeploymentTransactionManifest(1, fullTarget, packageId, "preparing", originals, additions);
+        var manifestWriteRetries = 0;
         string? activePath = null;
         try
         {
-            WriteManifest(fullBackup, manifest);
+            manifestWriteRetries += WriteManifest(fullBackup, manifest);
             foreach (var relative in originals)
             {
                 var source = FullPath(fullTarget, relative);
@@ -148,7 +173,7 @@ internal static class DeploymentFileTransaction
             }
 
             manifest = manifest with { State = "committing" };
-            WriteManifest(fullBackup, manifest);
+            manifestWriteRetries += WriteManifest(fullBackup, manifest);
 
             try
             {
@@ -188,7 +213,7 @@ internal static class DeploymentFileTransaction
                 }
 
                 manifest = manifest with { State = "committed" };
-                WriteManifest(fullBackup, manifest);
+                manifestWriteRetries += WriteManifest(fullBackup, manifest);
             }
             catch (Exception commitError)
             {
@@ -230,12 +255,12 @@ internal static class DeploymentFileTransaction
         try
         {
             RemoveGeneratedDirectory(fullBackup);
-            return new DeploymentFileCommitResult(absoluteAffected.Length + absoluteDirectories.Length, replacements.Length, deletions.Length, directoriesToReplace.Length, null);
+            return new DeploymentFileCommitResult(absoluteAffected.Length + absoluteDirectories.Length, replacements.Length, deletions.Length, directoriesToReplace.Length, null, manifestWriteRetries);
         }
         catch (Exception ex)
         {
             return new DeploymentFileCommitResult(absoluteAffected.Length + absoluteDirectories.Length, replacements.Length, deletions.Length, directoriesToReplace.Length,
-                $"部署已完成，但事务备份清理失败: {fullBackup}: {ex.Message}");
+                $"部署已完成，但事务备份清理失败: {fullBackup}: {ex.Message}", manifestWriteRetries);
         }
     }
 
@@ -287,8 +312,51 @@ internal static class DeploymentFileTransaction
         }
     }
 
-    private static void WriteManifest(string backupDirectory, DeploymentTransactionManifest manifest)
-        => AtomicFile.WriteAllText(Path.Combine(backupDirectory, ManifestFileName), JsonSerializer.Serialize(manifest, JsonDefaults.Storage));
+    private static int WriteManifest(string backupDirectory, DeploymentTransactionManifest manifest)
+    {
+        var manifestPath = Path.Combine(backupDirectory, ManifestFileName);
+        for (var attempt = 1; attempt <= ManifestWriteMaxAttempts; attempt++)
+        {
+            try
+            {
+                AtomicFile.WriteAllTextUsingMoveReplacement(manifestPath, JsonSerializer.Serialize(manifest, JsonDefaults.Storage));
+                return attempt - 1;
+            }
+            catch (Exception ex) when (attempt < ManifestWriteMaxAttempts && IsRetryableManifestWriteError(GetWin32ErrorCode(ex)))
+            {
+                Thread.Sleep(TimeSpan.FromMilliseconds(50 * (1 << (attempt - 1))));
+            }
+            catch (Exception ex)
+            {
+                string? persistedState = TryReadManifest(backupDirectory, out _)?.State;
+                IReadOnlyList<DeploymentFileProcess> processes;
+                try { processes = RestartManager.FindProcesses([manifestPath]); }
+                catch { processes = Array.Empty<DeploymentFileProcess>(); }
+
+                throw new DeploymentManifestWriteException(
+                    backupDirectory,
+                    manifestPath,
+                    manifest.State,
+                    persistedState,
+                    GetWin32ErrorCode(ex),
+                    attempt,
+                    processes,
+                    ex);
+            }
+        }
+
+        throw new InvalidOperationException("部署事务清单写入重试结束，但未能写入或返回结果");
+    }
+
+    private static int? GetWin32ErrorCode(Exception exception)
+    {
+        const int Win32HResultFacility = unchecked((int)0x80070000);
+        if ((exception.HResult & unchecked((int)0xFFFF0000)) != Win32HResultFacility) return null;
+        return exception.HResult & 0xFFFF;
+    }
+
+    private static bool IsRetryableManifestWriteError(int? errorCode)
+        => errorCode is ErrorAccessDenied or ErrorSharingViolation or ErrorLockViolation or ErrorUnableToRemoveReplaced;
 
     public static void Remove(string generatedDirectory) => RemoveGeneratedDirectory(Path.GetFullPath(generatedDirectory));
 

@@ -243,6 +243,22 @@ public static class DeployCommand
             {
                 return Failure(ExitCodes.TaskFailed, new CliError("DEPLOY_ROLLBACK_FAILED", ex.Message, new { ex.BackupPath, cause = ex.InnerException?.Message }), context.Root);
             }
+            catch (DeploymentManifestWriteException ex)
+            {
+                var errorCode = ex.Win32ErrorCode == 1175 ? "DEPLOY_MANIFEST_REPLACE_FAILED" : "DEPLOY_MANIFEST_WRITE_FAILED";
+                return Failure(ExitCodes.TaskFailed, new CliError(errorCode, ex.Message, new
+                {
+                    runId,
+                    hot = true,
+                    backupDirectory = ex.BackupDirectory,
+                    manifestPath = ex.ManifestPath,
+                    attemptedState = ex.AttemptedState,
+                    persistedState = ex.PersistedState,
+                    nativeErrorCode = ex.Win32ErrorCode,
+                    attempts = ex.Attempts,
+                    processes = ex.Processes
+                }), context.Root);
+            }
             catch (Exception ex)
             {
                 return Failure(ExitCodes.TaskFailed, new CliError("DEPLOY_FAILED", ex.Message, new { runId, hot = true }), context.Root);
@@ -276,6 +292,22 @@ public static class DeployCommand
         catch (DeploymentRollbackFailedException ex)
         {
             return Failure(ExitCodes.TaskFailed, new CliError("DEPLOY_ROLLBACK_FAILED", ex.Message, new { ex.BackupPath, cause = ex.InnerException?.Message }), context.Root);
+        }
+        catch (DeploymentManifestWriteException ex)
+        {
+            var errorCode = ex.Win32ErrorCode == 1175 ? "DEPLOY_MANIFEST_REPLACE_FAILED" : "DEPLOY_MANIFEST_WRITE_FAILED";
+            return Failure(ExitCodes.TaskFailed, new CliError(errorCode, ex.Message, new
+            {
+                runId,
+                staging,
+                backupDirectory = ex.BackupDirectory,
+                manifestPath = ex.ManifestPath,
+                attemptedState = ex.AttemptedState,
+                persistedState = ex.PersistedState,
+                nativeErrorCode = ex.Win32ErrorCode,
+                attempts = ex.Attempts,
+                processes = ex.Processes
+            }), context.Root);
         }
         catch (Exception ex)
         {

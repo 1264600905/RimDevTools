@@ -6,6 +6,13 @@ public static class AtomicFile
         => WriteAllBytes(path, new System.Text.UTF8Encoding(false).GetBytes(content));
 
     public static void WriteAllBytes(string path, ReadOnlySpan<byte> content)
+        => WriteAllBytesCore(path, content, useMoveForReplacement: false);
+
+    // Manifest updates use a same-directory rename; File.Replace can fail with 1175 when a transient handle denies deletion.
+    internal static void WriteAllTextUsingMoveReplacement(string path, string content)
+        => WriteAllBytesCore(path, new System.Text.UTF8Encoding(false).GetBytes(content), useMoveForReplacement: true);
+
+    private static void WriteAllBytesCore(string path, ReadOnlySpan<byte> content, bool useMoveForReplacement)
     {
         var full = Path.GetFullPath(path);
         Directory.CreateDirectory(Path.GetDirectoryName(full)!);
@@ -17,7 +24,11 @@ public static class AtomicFile
                 stream.Write(content);
                 stream.Flush(true);
             }
-            if (File.Exists(full)) File.Replace(temp, full, null, true);
+            if (File.Exists(full))
+            {
+                if (useMoveForReplacement) File.Move(temp, full, true);
+                else File.Replace(temp, full, null, true);
+            }
             else File.Move(temp, full);
         }
         finally
