@@ -1,6 +1,6 @@
 # RimDevTools
 
-RimDevTools 是一套面向 RimWorld 1.6/1.7+ 模组开发的 Windows 工具链。LogSyncMod 随包提供 RimWorld 1.6 与 1.7 两套兼容文件；项目发布模板当前针对 RimWorld 1.6。
+RimDevTools 是一套面向 RimWorld 1.6/1.7+ 模组开发的 Windows 工具链。LogSyncMod 随包提供 RimWorld 1.6 与 1.7 两套兼容文件；项目发布模板提供可分别选择的 RimWorld 1.6 与 1.7 版本。
 
 它的目标是把模组开发中反复出现的环境检查、部署、依赖定位、日志采集、自动测试和发布打包流程统一起来，让开发者能够用可重复、可诊断的命令完成日常工作。
 
@@ -11,7 +11,7 @@ RimDevTools 是一套面向 RimWorld 1.6/1.7+ 模组开发的 Windows 工具链�
 | RimDevTools CLI | 检查 1.6/1.7+ 开发环境、部署模组、复制参考模组、管理测试配置并启动测试 |
 | LogSyncMod | 兼容 RimWorld 1.6/1.7；按 PackageId、关键词和日志级别筛选日志并同步到独立文件 |
 | AutoTestRunner | 在游戏内执行 UI、战斗、视图、配方、技能等自动测试并生成结构化结果与证据 |
-| Project Template | 提供 RimWorld 1.6 项目结构、三语翻译目录和构建配置 |
+| Project Template | 提供 RimWorld 1.6 与 1.7 项目结构、三语翻译目录和构建配置 |
 
 ## 主要能力
 
@@ -25,7 +25,7 @@ RimDevTools 是一套面向 RimWorld 1.6/1.7+ 模组开发的 Windows 工具链�
 
 ## 下载与快速开始
 
-从 [GitHub Releases](https://github.com/1264600905/RimDevTools/releases) 下载最新的 `RimDevTools-Package-*.zip`，解压到独立的开发目录。不要把开发项目放在 RimWorld 的 `Mods` 或 Steam Workshop 目录内。
+从 [GitHub Releases](https://github.com/1264600905/RimDevTools/releases) 下载目标游戏版本对应的 `RimDevTools-<工具版本>-Template-RimWorld-<游戏版本>.zip`，解压到独立的开发目录。不要把开发项目放在 RimWorld 的 `Mods` 或 Steam Workshop 目录内。
 
 首次使用需要编辑 `mod_config.jsonc`，至少确认：
 
@@ -119,19 +119,19 @@ dotnet RimDevTools.Tests\bin\Debug\net10.0\RimDevTools.Tests.dll
 powershell -ExecutionPolicy Bypass -File .tools\publish-rimdevtools.ps1
 ```
 
-生成带版本后缀的目录和 ZIP：
+一次生成 RimWorld 1.6 与 1.7 两个模板包；程序版本和模板游戏版本都会出现在包名与 `--version` 输出中：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .tools\publish-rimdevtools.ps1 `
-  -VersionSuffix v1.0.8 `
-  -CreateZip
+powershell -ExecutionPolicy Bypass -File .tools\publish-rimdevtools.ps1 -CreateZip
 ```
 
 输出为：
 
 ```text
-artifacts/RimDevTools-Package-v1.0.8/
-artifacts/RimDevTools-Package-v1.0.8.zip
+artifacts/RimDevTools-1.1.0.0-Template-RimWorld-1.6/
+artifacts/RimDevTools-1.1.0.0-Template-RimWorld-1.6.zip
+artifacts/RimDevTools-1.1.0.0-Template-RimWorld-1.7/
+artifacts/RimDevTools-1.1.0.0-Template-RimWorld-1.7.zip
 ```
 
 验证发布布局：
@@ -139,7 +139,7 @@ artifacts/RimDevTools-Package-v1.0.8.zip
 ```powershell
 dotnet build RimDevTools.ReleaseTests\RimDevTools.ReleaseTests.csproj
 dotnet RimDevTools.ReleaseTests\bin\Debug\net10.0\RimDevTools.ReleaseTests.dll `
-  artifacts\RimDevTools-Package-v1.0.8
+  artifacts\RimDevTools-1.1.0.0-Template-RimWorld-1.7
 ```
 
 ## 目录结构

@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "rimsage": {
+      "type": "http",
+      "url": "https://mcp.rimsage.com/mcp"
+    }
+  }
+}

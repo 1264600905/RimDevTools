@@ -1,0 +1,100 @@
+{
+    "config_version": 2,
+
+    // ============================================================
+    // 项目信息 — 每个模组项目必须修改的核心字段
+    // ============================================================
+    // 模组名称（英文，不含空格）。部署目标、日志关键词和程序集名称会使用它。
+    "mod_name": "TriggersProjectTemplate",
+    // 目标 RimWorld 版本号；用于定位版本化 Assemblies 和 Defs 目录。
+    "game_version": "1.7",
+    // quick/auto 默认使用当前桌面；需要隔离桌面时显式传入命令行参数。
+    "isolated_desktop": false,
+
+    // 项目语义目录；可按项目习惯改名，必须保持在项目根目录内。
+    "project_paths": {
+        "reference_docs": "参考文档",
+        "planning_docs": "策划案"
+    },
+
+    // ============================================================
+    // 本机环境 — 需要根据开发者本机的 Steam 安装位置修改
+    // ============================================================
+    // RimWorld 安装根目录；工具会自动推导游戏、部署和本地模组搜索路径。
+    "rimworld_dir": "H:\\SteamLibrary\\steamapps\\common\\RimWorld",
+    // RimWorld 实际读取的 ModsConfig.xml。doctor、deploy 和 test 均使用此文件；请改为当前 Windows 用户的真实文件路径。
+    "mods_config_path": "C:\\Users\\YOUR_WINDOWS_USER\\AppData\\LocalLow\\Ludeon Studios\\RimWorld by Ludeon Studios\\Config\\ModsConfig.xml",
+    // 额外的 Steam Workshop 模组搜索路径；{rimworld_dir}/Mods 会自动包含。
+    "workshop_paths": [
+        "C:\\Program Files (x86)\\Steam\\steamapps\\workshop\\content\\294100",
+        "D:\\SteamLibrary\\steamapps\\workshop\\content\\294100",
+        "E:\\SteamLibrary\\steamapps\\workshop\\content\\294100",
+        "F:\\SteamLibrary\\steamapps\\workshop\\content\\294100",
+        "G:\\SteamLibrary\\steamapps\\workshop\\content\\294100",
+        "H:\\SteamLibrary\\steamapps\\workshop\\content\\294100"
+    ],
+
+    // ============================================================
+    // 部署配置 — deploy 专用
+    // ============================================================
+    // C# 项目文件路径（相对于项目根目录），按编译顺序排列。
+    // 单程序集项目通常为 source/{mod_name}/{mod_name}.csproj。
+    // 纯 XML 模组可以配置为空数组；为空时 deploy 跳过 C# 构建。
+    "csproj_paths": ["source\\MyCustomMod\\MyCustomMod.csproj"],
+    // 需要同步到游戏 Mods 目录的文件和文件夹（相对于项目根目录）。
+    "sync_items": [
+        "1.7\\Assemblies",
+        "1.7\\Defs",
+        "1.7\\Patches",
+        "Languages",
+        "About",
+        "LoadFolders.xml"
+    ],
+    // 启用后 deploy 默认包含 source/；也可用 --sync-source 单次启用。
+    "sync_source": false,
+    // 部署时清空目标目录需要保留的文件（正则表达式）。
+    "protected_files_regex": "^(PublishedFileId\\.txt)$",
+
+    // ============================================================
+    // 引用与测试配置
+    // ============================================================
+    // 拉取参考模组时忽略的文件夹（节省空间和复制时间）。
+    "pull_ignore_folders": ["Textures", "Sounds", "News", ".git", ".vs", "obj", "bin"],
+    // ILSpy 命令行反编译器路径（相对于 .tools 目录）。
+    "ilspycmd_path": "Ilspy\\ilspycmd.exe",
+    // 日志同步关键词。测试启动时会写入 LogSyncMod 的配置文件。
+    "log_keywords": ["MyCustomMod"],
+    // 默认的最小测试模组集（无 --active-mods-file 时使用）。
+    // 启动 RimWorld 前必须包含基础模组。
+    "min_active_mods": [
+        "brrainz.harmony",
+		"ludeon.rimworld",
+        "sarg.smartspeed",
+        "brrainz.cameraplus",
+        "ludeon.rimworld.royalty",
+        "ludeon.rimworld.ideology",
+        "ludeon.rimworld.biotech",
+        "ludeon.rimworld.anomaly",
+        "ludeon.rimworld.odyssey",
+        "erdelf.humanoidalienraces",
+        "trigger.logsyncmod"
+    ],
+    // 超时参数（单位: 秒）。
+    "timeouts": {
+        // Steam 协议启动后等待游戏进程出现的最大时间。
+        "steam_launch_detect": 120,
+        // 测试或数据导出的最大等待时间。
+        "max_wait": 600,
+        // 等待已有游戏进程退出的最大时间。
+        "existing_game_exit": 600,
+        // 游戏退出后额外稳定等待时间。
+        "post_exit_delay": 10
+    },
+    // 日志和测试输出的保留策略。
+    "retention": {
+        // 同步日志最多保留几份（含当前文件）。
+        "max_log_files": 3,
+        // 自动测试输出最多保留几次运行。
+        "max_auto_test_runs": 3
+    }
+}

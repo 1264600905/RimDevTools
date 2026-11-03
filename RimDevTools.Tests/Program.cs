@@ -313,7 +313,10 @@ internal sealed class TestSuite
         var version = await CaptureAsync(() => CliApplication.RunAsync(["--version"]));
         using var versionJson = JsonDocument.Parse(version.Output);
         Assert(version.ExitCode == 0
-            && versionJson.RootElement.EnumerateObject().Select(property => property.Name).SequenceEqual(["ok", "command", "rimDevToolsVersion"]), "version output only reports the RimDevTools version");
+            && versionJson.RootElement.GetProperty("rimDevToolsVersion").GetString() == typeof(CliApplication).Assembly.GetName().Version?.ToString()
+            && versionJson.RootElement.GetProperty("templateGameVersion").GetString() == "unpackaged"
+            && versionJson.RootElement.GetProperty("templateSchemaVersion").GetInt32() == 0
+            && versionJson.RootElement.EnumerateObject().Select(property => property.Name).SequenceEqual(["ok", "command", "rimDevToolsVersion", "templateGameVersion", "templateSchemaVersion"]), "unpackaged version output reports the tool version and explicit unpackage metadata");
 
         var localized = await CaptureAsync(() => Task.FromResult(CliResult.WriteFailure("deploy", ExitCodes.InvalidArguments,
             "PROJECT_TEMPLATE_NOT_CONFIGURED", "部署或测试被拒绝：项目仍包含模板占位符。")));

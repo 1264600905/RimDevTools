@@ -8,11 +8,20 @@ using RimDevTools;
 
 [assembly: SupportedOSPlatform("windows")]
 
-var release = Path.GetFullPath(args.Length > 0 ? args[0] : Path.Combine(Environment.CurrentDirectory, "artifacts", "RimDevTools-Package"));
+var releaseToolVersion = typeof(CliApplication).Assembly.GetName().Version?.ToString() ?? "unknown";
+var defaultRelease = Path.Combine(Environment.CurrentDirectory, "artifacts", $"RimDevTools-{releaseToolVersion}-Template-RimWorld-1.6");
+var release = Path.GetFullPath(args.Length > 0 ? args[0] : defaultRelease);
 var tools = Path.Combine(release, ".tools");
 var data = Path.Combine(tools, "Data");
-var template = Path.GetFullPath(Path.Combine(Environment.CurrentDirectory, "components", "ProjectTemplate", "1.6"));
-var templateConfig = Path.GetFullPath(Path.Combine(Environment.CurrentDirectory, "components", "ProjectTemplate", "mod_config.jsonc"));
+var templateMetadataPath = Path.Combine(data, "project-template.manifest.json");
+using var templateMetadataDocument = JsonDocument.Parse(File.ReadAllText(templateMetadataPath));
+var templateMetadata = templateMetadataDocument.RootElement;
+var templateGameVersion = templateMetadata.GetProperty("templateGameVersion").GetString() ?? throw new InvalidDataException("templateGameVersion is missing");
+var templateSchemaVersion = templateMetadata.GetProperty("templateSchemaVersion").GetInt32();
+var templateRoot = Path.Combine(Environment.CurrentDirectory, "components", "ProjectTemplate");
+var template = Path.GetFullPath(Path.Combine(templateRoot, templateGameVersion));
+var templateConfigName = templateGameVersion == "1.6" ? "mod_config.jsonc" : $"mod_config.{templateGameVersion}.jsonc";
+var templateConfig = Path.GetFullPath(Path.Combine(templateRoot, templateConfigName));
 var passed = 0;
 
 RequireFile("mod_config.jsonc");
@@ -28,6 +37,7 @@ RequireFile(Path.Combine(".claude", "skills", "rimsage", "SKILL.md"));
 RequireFile(Path.Combine(".claude", "skills", "rimsage", "references", "tool-reference.md"));
 RequireFile(Path.Combine(".tools", "RimDevTools.exe"));
 RequireFile(Path.Combine(".tools", "Data", "tool-mods.manifest.json"));
+RequireFile(Path.Combine(".tools", "Data", "project-template.manifest.json"));
 RequireFile(Path.Combine(".tools", "Data", "LogSyncMod", "About", "About.xml"));
 RequireFile(Path.Combine(".tools", "Data", "LogSyncMod", "1.6", "Assemblies", "LogSyncMod.dll"));
 RequireFile(Path.Combine(".tools", "Data", "LogSyncMod", "1.6", "Assemblies", "AutoTestRunner.dll"));
@@ -49,18 +59,20 @@ Assert(File.ReadAllText(Path.Combine(release, "LICENSE")).Contains("Copyright (c
 Assert(!Directory.Exists(Path.Combine(release, "UnityProjects")), "release does not contain a Unity shader project");
 Assert(!Directory.Exists(Path.Combine(release, "source", "MyCustomMod", "Shader")), "release does not contain shader example source");
 Assert(!Directory.Exists(Path.Combine(release, "AssetBundles")), "release does not contain shader asset bundles");
-Assert(!File.Exists(Path.Combine(release, "1.6", "Assemblies", "MyCustomMod.dll")), "release does not contain a stale template DLL");
-Assert(File.ReadAllBytes(Path.Combine(release, "mod_config.jsonc")).SequenceEqual(File.ReadAllBytes(templateConfig)), "release uses the single shared template mod_config.jsonc");
-Assert(!File.Exists(Path.Combine(template, "mod_config.jsonc")), "1.6 template does not contain a duplicate mod_config.jsonc");
+Assert(!File.Exists(Path.Combine(release, templateGameVersion, "Assemblies", "MyCustomMod.dll")), "release does not contain a stale template DLL");
+Assert(File.ReadAllBytes(Path.Combine(release, "mod_config.jsonc")).SequenceEqual(File.ReadAllBytes(templateConfig)), "release uses the matching template mod_config.jsonc");
+Assert(!File.Exists(Path.Combine(template, "mod_config.jsonc")), $"{templateGameVersion} template does not contain a duplicate mod_config.jsonc");
 
+var excludedTemplateDirectories = new HashSet<string>([".git", ".vs", ".tools", ".rimdev", "artifacts", "bin", "obj"], StringComparer.OrdinalIgnoreCase);
 var templateFiles = RelativeEntries(template, files: true)
+    .Where(path => !path.Split([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar], StringSplitOptions.RemoveEmptyEntries).Any(excludedTemplateDirectories.Contains))
     .Where(path => !path.Equals(Path.Combine(".claude", "settings.local.json"), StringComparison.OrdinalIgnoreCase))
     .ToArray();
 var releaseFiles = RelativeEntries(release, files: true)
     .Where(path => !path.Equals(".tools", StringComparison.OrdinalIgnoreCase) && !path.StartsWith($".tools{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase))
     .OrderBy(path => path, StringComparer.OrdinalIgnoreCase).ToArray();
 var expectedRootFiles = templateFiles.Append("mod_config.jsonc").OrderBy(path => path, StringComparer.OrdinalIgnoreCase).ToArray();
-Assert(expectedRootFiles.SequenceEqual(releaseFiles, StringComparer.OrdinalIgnoreCase), "release root equals the 1.6 template plus one config file");
+Assert(expectedRootFiles.SequenceEqual(releaseFiles, StringComparer.OrdinalIgnoreCase), $"release root equals the {templateGameVersion} template plus one config file");
 
 const string endpoint = "https://mcp.rimsage.com/mcp";
 using (var claudeConfig = JsonDocument.Parse(File.ReadAllText(Path.Combine(release, ".mcp.json"))))
@@ -108,16 +120,18 @@ Assert(Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(logSyncAssembly17Pa
 var templateAbout = XDocument.Load(Path.Combine(release, "About", "About.xml"));
 Assert(templateAbout.Root?.Element("name")?.Value == ProjectTemplatePreflight.TemplateDisplayName && templateAbout.Root?.Element("packageId")?.Value == ProjectTemplatePreflight.TemplatePackageId, "release uses the branded template name and packageId");
 Assert(templateAbout.Root?.Element("incompatibleWith")?.Elements("li").Any(item => item.Value.Equals("ludeon.rimworld", StringComparison.OrdinalIgnoreCase)) == true, "release template is incompatible with Core until it is configured");
+Assert(templateAbout.Root?.Element("supportedVersions")?.Elements("li").Select(item => item.Value).SequenceEqual([templateGameVersion]) == true, "release About metadata matches the packaged template game version");
 var templateDescription = templateAbout.Root?.Element("description")?.Value ?? "";
 Assert(templateDescription.Contains("[h2][b]快速开始[/b][/h2]", StringComparison.Ordinal) && !templateDescription.Contains("------", StringComparison.Ordinal) && System.Text.Encoding.UTF8.GetByteCount(templateDescription) <= 8000, "release template provides a Chinese quick-start guide within Steam description limits");
 var templateProject = XDocument.Load(Path.Combine(release, "source", "MyCustomMod", "MyCustomMod.csproj"));
-var releaseOutputPath = templateProject.Descendants().FirstOrDefault(element => element.Name.LocalName == "PropertyGroup" && element.Attribute("Condition")?.Value.Contains("Release", StringComparison.OrdinalIgnoreCase) == true)?.Elements().FirstOrDefault(element => element.Name.LocalName == "OutputPath")?.Value.Trim();
-Assert(releaseOutputPath == @"..\..\1.6\Assemblies\", "template Release builds write the DLL to the deployed Assemblies directory");
+var releaseOutputPath = templateProject.Descendants().FirstOrDefault(element => element.Name.LocalName == "OutputPath")?.Value.Trim();
+Assert(releaseOutputPath == $@"..\..\{templateGameVersion}\Assemblies\", "template builds write the DLL to the matching deployed Assemblies directory");
 
 using (var config = JsonDocument.Parse(File.ReadAllText(Path.Combine(release, "mod_config.jsonc")), new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true }))
 {
     var root = config.RootElement;
     Assert(root.GetProperty("mod_name").GetString() == ProjectTemplatePreflight.TemplateModName, "packaged configuration uses the template deployment name");
+    Assert(root.GetProperty("game_version").GetString() == templateGameVersion, "packaged configuration matches the template game version");
     Assert(root.GetProperty("ilspycmd_path").GetString() == "Ilspy\\ilspycmd.exe", "packaged configuration points at the packaged ILSpy directory");
     Assert(!root.GetProperty("isolated_desktop").GetBoolean(), "packaged configuration uses the normal desktop by default");
     Assert(!root.GetProperty("sync_source").GetBoolean(), "packaged configuration disables source synchronization by default");
@@ -132,7 +146,9 @@ using (var document = JsonDocument.Parse(versionOutput))
     var root = document.RootElement;
     Assert(root.GetProperty("ok").GetBoolean()
         && !string.IsNullOrWhiteSpace(root.GetProperty("rimDevToolsVersion").GetString())
-        && root.EnumerateObject().Select(property => property.Name).SequenceEqual(["ok", "command", "rimDevToolsVersion"]), "packaged version output only reports RimDevTools");
+        && root.GetProperty("templateGameVersion").GetString() == templateGameVersion
+        && root.GetProperty("templateSchemaVersion").GetInt32() == templateSchemaVersion
+        && root.EnumerateObject().Select(property => property.Name).SequenceEqual(["ok", "command", "rimDevToolsVersion", "templateGameVersion", "templateSchemaVersion"]), "packaged version output reports RimDevTools and its template metadata");
 }
 
 var help = Run(Path.Combine(tools, "RimDevTools.exe"), release, "mods", "install-tools", "--help");

@@ -18,17 +18,20 @@ RimDevTools 是 Windows x64 的 .NET 10 CLI，可检查和部署 RimWorld 1.6/1.
 dotnet build RimDevTools\RimDevTools.csproj -c Release
 dotnet publish RimDevTools\RimDevTools.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true
 powershell -ExecutionPolicy Bypass -File .tools\publish-rimdevtools.ps1
-powershell -ExecutionPolicy Bypass -File .tools\publish-rimdevtools.ps1 -VersionSuffix v1.0.8 -CreateZip
+powershell -ExecutionPolicy Bypass -File .tools\publish-rimdevtools.ps1 -CreateZip
 ```
 
-第二条发布命令会生成 `artifacts/RimDevTools-Package-v1.0.8/` 和同名 ZIP。未传入版本后缀时仍使用兼容目录 `artifacts/RimDevTools-Package/`。
+默认发布会同时生成 1.6 与 1.7 两个模板包，目录和 ZIP 分别命名为 `RimDevTools-<工具版本>-Template-RimWorld-<游戏版本>`。可传 `-TemplateGameVersion 1.6` 或 `1.7` 只生成单个模板。
+
+`RimDevTools.exe --version` 同时报告 `rimDevToolsVersion`、`templateGameVersion` 和 `templateSchemaVersion`。模板版本信息来自每个发布包中的 `.tools/Data/project-template.manifest.json`，所以同一个工具版本可随不同游戏版本模板发布。
 
 发布目录内容：
 
 ```text
-artifacts/RimDevTools-Package/
+artifacts/RimDevTools-1.1.0.0-Template-RimWorld-1.6/
+artifacts/RimDevTools-1.1.0.0-Template-RimWorld-1.7/
 ├── mod_config.jsonc
-├── 1.6/
+├── 1.6/ or 1.7/
 ├── About/
 ├── source/
 ├── .mcp.json
@@ -37,6 +40,7 @@ artifacts/RimDevTools-Package/
     ├── RimDevTools.exe
     ├── Data/
     │   ├── LogSyncMod/ (RimWorld 1.6/1.7 assemblies and Defs)
+    │   ├── project-template.manifest.json
     │   ├── tool-mods.manifest.json
     │   └── licenses/
     ├── Ilspy/
@@ -110,7 +114,7 @@ dotnet build RimDevTools.Tests\RimDevTools.Tests.csproj
 dotnet RimDevTools.Tests\bin\Debug\net10.0\RimDevTools.Tests.dll
 
 dotnet build RimDevTools.ReleaseTests\RimDevTools.ReleaseTests.csproj
-dotnet RimDevTools.ReleaseTests\bin\Debug\net10.0\RimDevTools.ReleaseTests.dll artifacts\RimDevTools-Package-v1.0.8
+dotnet RimDevTools.ReleaseTests\bin\Debug\net10.0\RimDevTools.ReleaseTests.dll artifacts\RimDevTools-1.1.0.0-Template-RimWorld-1.7
 ```
 
 单元测试使用临时游戏目录。发布测试验证模板逐文件一致、三种 MCP 配置、两套 RimSage skill、单工具 Mod 清单、ILSpy 和干净日志/参考目录。

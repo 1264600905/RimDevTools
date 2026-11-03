@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <!-- Settings -->
+  <ModEnabled>啟用模組</ModEnabled>
+  <EnableDeveloperTools>啟用開發者工具</EnableDeveloperTools>
+  <ShowDebugLog>顯示調試日誌</ShowDebugLog>
+  <ForcePlaceBlueprint>強制放置藍圖</ForcePlaceBlueprint>
+  <ResetToDefault>恢復默認設置</ResetToDefault>
+</LanguageData>

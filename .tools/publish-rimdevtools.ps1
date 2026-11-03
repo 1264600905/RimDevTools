@@ -1,11 +1,42 @@
 param(
-    [string]$OutputPath = "artifacts\RimDevTools-Package",
+    [string]$OutputPath = "",
+    [ValidateSet("All", "1.6", "1.7")]
+    [string]$TemplateGameVersion = "All",
     [string]$VersionSuffix = "",
     [switch]$CreateZip
 )
 
 $ErrorActionPreference = "Stop"
 $projectRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+$templateRoot = Join-Path $projectRoot "components\ProjectTemplate"
+$projectFile = Join-Path $projectRoot "RimDevTools\RimDevTools.csproj"
+$projectXml = [xml](Get-Content -Raw -LiteralPath $projectFile)
+$projectVersion = [string](($projectXml.Project.PropertyGroup | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_.Version) } | Select-Object -First 1).Version)
+$toolVersionValue = [System.Version]::Parse($projectVersion)
+$toolVersion = "{0}.{1}.{2}.{3}" -f $toolVersionValue.Major, [Math]::Max(0, $toolVersionValue.Minor), [Math]::Max(0, $toolVersionValue.Build), [Math]::Max(0, $toolVersionValue.Revision)
+
+if ($TemplateGameVersion -eq "All") {
+    foreach ($gameVersion in @("1.6", "1.7")) {
+        $childParameters = @{ TemplateGameVersion = $gameVersion }
+        if (-not [string]::IsNullOrWhiteSpace($OutputPath)) {
+            $outputParent = Split-Path -Parent $OutputPath
+            $outputName = Split-Path -Leaf $OutputPath
+            $childParameters.OutputPath = Join-Path $outputParent ($outputName + "-RimWorld-" + $gameVersion)
+        }
+        if (-not [string]::IsNullOrWhiteSpace($VersionSuffix)) { $childParameters.VersionSuffix = $VersionSuffix }
+        if ($CreateZip) { $childParameters.CreateZip = $true }
+
+        try { & $PSCommandPath @childParameters }
+        catch { throw "RimWorld $gameVersion 模板打包失败: $($_.Exception.Message)" }
+        if (-not $?) { throw "RimWorld $gameVersion 模板打包失败" }
+    }
+    return
+}
+
+if ([string]::IsNullOrWhiteSpace($OutputPath)) {
+    $packageName = "RimDevTools-$toolVersion-Template-RimWorld-$TemplateGameVersion"
+    $OutputPath = Join-Path "artifacts" $packageName
+}
 $output = [System.IO.Path]::GetFullPath((Join-Path $projectRoot $OutputPath))
 $artifactsRoot = [System.IO.Path]::GetFullPath((Join-Path $projectRoot "artifacts"))
 
@@ -29,15 +60,23 @@ if (-not ($archive.StartsWith($artifactsRoot + [System.IO.Path]::DirectorySepara
 }
 
 $temporary = Join-Path $artifactsRoot ".rimdevtools-package-build"
-$templateRoot = Join-Path $projectRoot "components\ProjectTemplate"
-$templateVersionRoot = Join-Path $templateRoot "1.6"
-$templateConfig = Join-Path $templateRoot "mod_config.jsonc"
+$templateVersionRoot = Join-Path $templateRoot $TemplateGameVersion
+$templateConfigName = if ($TemplateGameVersion -eq "1.6") { "mod_config.jsonc" } else { "mod_config.$TemplateGameVersion.jsonc" }
+$templateConfig = Join-Path $templateRoot $templateConfigName
+$templateManifestName = if ($TemplateGameVersion -eq "1.6") { "manifest.json" } else { "manifest.$TemplateGameVersion.json" }
+$templateManifestPath = Join-Path $templateRoot $templateManifestName
 
 function Copy-DirectoryContents([string]$Source, [string]$Destination) {
     if (-not (Test-Path -LiteralPath $Source -PathType Container)) { throw "缺少目录: $Source" }
     New-Item -ItemType Directory -Path $Destination -Force | Out-Null
     foreach ($entry in Get-ChildItem -LiteralPath $Source -Force) {
-        Copy-Item -LiteralPath $entry.FullName -Destination (Join-Path $Destination $entry.Name) -Recurse -Force
+        if ($entry.PSIsContainer) {
+            if ($entry.Name -in @(".git", ".vs", ".tools", ".rimdev", "artifacts", "bin", "obj")) { continue }
+            Copy-DirectoryContents $entry.FullName (Join-Path $Destination $entry.Name)
+        }
+        else {
+            Copy-Item -LiteralPath $entry.FullName -Destination $Destination -Force
+        }
     }
 }
 
@@ -96,7 +135,9 @@ if (Test-Path -LiteralPath $temporary) { Remove-Item -LiteralPath $temporary -Re
 
 try {
     if (-not (Test-Path -LiteralPath $templateConfig -PathType Leaf)) { throw "缺少通用项目配置: $templateConfig" }
-    if (Test-Path -LiteralPath (Join-Path $templateVersionRoot "mod_config.jsonc")) { throw "1.6 模板内不得重复包含 mod_config.jsonc" }
+    if (-not (Test-Path -LiteralPath $templateVersionRoot -PathType Container)) { throw "缺少 RimWorld $TemplateGameVersion 模板目录: $templateVersionRoot" }
+    if (-not (Test-Path -LiteralPath $templateManifestPath -PathType Leaf)) { throw "缺少 RimWorld $TemplateGameVersion 模板清单: $templateManifestPath" }
+    if (Test-Path -LiteralPath (Join-Path $templateVersionRoot "mod_config.jsonc")) { throw "$TemplateGameVersion 模板目录内不得重复包含 mod_config.jsonc" }
 
     Copy-DirectoryContents $templateVersionRoot $output
     Copy-Item -LiteralPath $templateConfig -Destination (Join-Path $output "mod_config.jsonc") -Force
@@ -171,8 +212,18 @@ try {
     Copy-Item -Path (Join-Path $projectRoot ".tools\test\modlist\*.xml") -Destination $modListRoot -Force
     [System.IO.File]::WriteAllText((Join-Path $logRoot "精选日志.log"), "", [System.Text.UTF8Encoding]::new($false))
 
-    $layoutManifest = Get-Content -Raw -LiteralPath (Join-Path $templateRoot "manifest.json") | ConvertFrom-Json
+    $layoutManifest = Get-Content -Raw -LiteralPath $templateManifestPath | ConvertFrom-Json
     if ($layoutManifest.schemaVersion -ne 2) { throw "发布布局清单 schemaVersion 必须为 2" }
+    if ($layoutManifest.supportedVersions -notcontains $TemplateGameVersion) { throw "模板清单不声明支持 RimWorld $TemplateGameVersion" }
+    $templateMetadata = [ordered]@{
+        schemaVersion = 1
+        templateGameVersion = $TemplateGameVersion
+        templateSchemaVersion = [int]$layoutManifest.schemaVersion
+    }
+    [System.IO.File]::WriteAllText(
+        (Join-Path $dataRoot "project-template.manifest.json"),
+        ($templateMetadata | ConvertTo-Json -Depth 4),
+        [System.Text.UTF8Encoding]::new($false))
     foreach ($relative in $layoutManifest.requiredFiles) {
         if (-not (Test-Path -LiteralPath (Join-Path $output $relative) -PathType Leaf)) { throw "发布包缺少必需文件: $relative" }
     }
@@ -187,6 +238,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "发布后的 RimDevTools --version 验证失败" }
     $version = $versionJson | ConvertFrom-Json
     if (-not $version.ok -or [string]::IsNullOrWhiteSpace([string]$version.rimDevToolsVersion)) { throw "发布后的 RimDevTools 版本输出无效: $versionJson" }
+    if ($version.templateGameVersion -ne $TemplateGameVersion -or $version.templateSchemaVersion -ne $layoutManifest.schemaVersion) { throw "发布后的模板版本信息不匹配（期望 RimWorld $TemplateGameVersion / schema $($layoutManifest.schemaVersion)）: $versionJson" }
     Write-Host $versionJson.Trim()
 }
 finally {

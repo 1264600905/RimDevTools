@@ -18,11 +18,14 @@ public static class CliApplication
 
         if (args.Length == 1 && args[0].Equals("--version", StringComparison.OrdinalIgnoreCase))
         {
+            var templateVersion = TemplatePackageVersionReader.Read();
             CliResult.Write(new
             {
                 ok = true,
                 command = "version",
-                rimDevToolsVersion = typeof(CliApplication).Assembly.GetName().Version?.ToString() ?? "1.0.0"
+                rimDevToolsVersion = typeof(CliApplication).Assembly.GetName().Version?.ToString() ?? "unknown",
+                templateGameVersion = templateVersion.GameVersion,
+                templateSchemaVersion = templateVersion.SchemaVersion
             });
             return ExitCodes.Success;
         }

@@ -61,7 +61,7 @@ public static class CliHelp
 
         Global options:
           -h, --help          Show top-level or command-specific help.
-          --version           Print the RimDevTools version as JSON; must be the only argument.
+          --version           Print RimDevTools and packaged template versions as JSON; must be the only argument.
           --verbose           After a supported command, include detailed results and subprocess diagnostics.
 
         Project discovery:
