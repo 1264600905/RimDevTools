@@ -1403,7 +1403,7 @@ internal sealed class TestSuite
         var invalidBatchMode = await CaptureAsync(() => CliApplication.RunAsync(["test", "run", "--mode", "quick", "--batch-size", "5"]));
         var invalidBatchSize = await CaptureAsync(() => CliApplication.RunAsync(["test", "run", "--mode", "auto", "--batch-size", "0"]));
         Assert(invalidScopeMode.ExitCode == ExitCodes.InvalidArguments && JsonErrorCode(invalidScopeMode.Output) == "INVALID_ARGUMENT", "quick/manual scope misuse returns stable INVALID_ARGUMENT");
-        Assert(invalidDefMode.ExitCode == ExitCodes.InvalidArguments && JsonErrorCode(invalidDefMode.Output) == "INVALID_ARGUMENT", "non-auto DefName misuse returns stable INVALID_ARGUMENT");
+        Assert(invalidDefMode.ExitCode == ExitCodes.InvalidArguments && JsonErrorCode(invalidDefMode.Output) == "MODE_INVALID", "removed xml mode returns stable MODE_INVALID");
         Assert(invalidScreenshotMode.ExitCode == ExitCodes.InvalidArguments && JsonErrorCode(invalidScreenshotMode.Output) == "INVALID_ARGUMENT", "non-auto screenshot misuse returns stable INVALID_ARGUMENT");
         Assert(invalidBatchMode.ExitCode == ExitCodes.InvalidArguments && JsonErrorCode(invalidBatchMode.Output) == "INVALID_ARGUMENT", "non-auto batch-size misuse returns stable INVALID_ARGUMENT");
         Assert(invalidBatchSize.ExitCode == ExitCodes.InvalidArguments && JsonErrorCode(invalidBatchSize.Output) == "BATCH_SIZE_INVALID", "non-positive batch size returns stable BATCH_SIZE_INVALID");
@@ -1517,8 +1517,8 @@ internal sealed class TestSuite
 
         SimulateVersionSwitch();
         Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", "auto-fail");
-        var failed = await CaptureAsync(() => TestCommand.RunAsync(["test", "run", "--mode", "xml", "--timeout-seconds", "5"]));
-        Assert(failed.ExitCode == ExitCodes.GameFailed && JsonErrorCode(failed.Output) == "AUTO_RESULT_FAILED", "xml mode rejects failed auto-test JSON");
+        var failed = await CaptureAsync(() => TestCommand.RunAsync(["test", "run", "--mode", "auto", "--timeout-seconds", "5"]));
+        Assert(failed.ExitCode == ExitCodes.GameFailed && JsonErrorCode(failed.Output) == "AUTO_RESULT_FAILED", "auto mode rejects failed auto-test JSON");
         using (var failedJson = JsonDocument.Parse(failed.Output))
             Assert(failedJson.RootElement.GetProperty("error").GetProperty("details").GetProperty("artifacts").GetProperty("syncLogPath").GetString()
                 == XDocument.Load(Path.Combine(environment.ConfigDirectory, "fake-settings.xml")).Descendants("logPath").Single().Value, "default failure JSON returns the original log path used by the failed run");

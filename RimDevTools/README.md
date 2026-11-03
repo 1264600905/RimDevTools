@@ -59,7 +59,7 @@ RimDevTools.exe mod copy <query> [--version <value>] [--deps] [--include-ignored
 RimDevTools.exe mod dependencies <query> [--version <value>] [--fuzzy] [--verbose]
 RimDevTools.exe mod dependents <query> [--version <value>] [--fuzzy] [--verbose]
 RimDevTools.exe test settings [--verbose]
-RimDevTools.exe test run [--deploy] [--mode quick|manual|auto|xml] [--active-mods-file <path>] [--scope <value>]... [--defname <value>]... [--batch-size <n>] [--verbose]
+RimDevTools.exe test run [--deploy] [--mode quick|manual|auto] [--active-mods-file <path>] [--scope <value>]... [--defname <value>]... [--batch-size <n>] [--verbose]
 RimDevTools.exe test cleanup [--dry-run] [--status] [--verbose]
 RimDevTools.exe mods install-tools [--mods-path <path>] [--dry-run] [--verbose]
 ```
@@ -70,7 +70,7 @@ RimDevTools.exe mods install-tools [--mods-path <path>] [--dry-run] [--verbose]
 
 `game_version` 必须填写当前目标游戏的精确版本，例如 `1.6`、`1.7` 或 `1.8`。1.6 使用 `RimWorldWin64.exe` 与 `RimWorldWin64_Data/Managed`；1.7 及更高版本默认使用 `RimWorld.exe`、游戏根目录程序集和 .NET 10。工具会核对 `Assembly-CSharp.dll` 的版本，并拒绝把配置指向另一游戏版本。Harmony 和其他模组程序集仍按 `game_version` 精确查找，1.8 不会回退到 1.7 DLL。
 
-`test run` 在启动前将 `ModsConfig.xml` 的 `<version>` 自动写为已校验的 `game_version`，避免切换游戏版本时启用列表被游戏重置。此更新先于配置事务备份；测试结束、失败、取消或中断恢复时会恢复原模组列表与设置，并保留目标版本号。quick、manual、auto 和 xml 模式均适用。
+`test run` 在启动前将 `ModsConfig.xml` 的 `<version>` 自动写为已校验的 `game_version`，避免切换游戏版本时启用列表被游戏重置。此更新先于配置事务备份；测试结束、失败、取消或中断恢复时会恢复原模组列表与设置，并保留目标版本号。quick、manual 和 auto 模式均适用。
 
 RimDevTools 的 Unity Shader Bundle 构建仅适用于 1.6。1.7+ 项目使用游戏原生 GLSL/ShaderDef 工作流，不要启用旧的 `shader_bundle`。
 
@@ -88,7 +88,7 @@ RimDevTools 的 Unity Shader Bundle 构建仅适用于 1.6。1.7+ 项目使用�
 
 `test run` 和 `test settings` 分配本轮目录后，成功 JSON 的 `result.artifacts`、失败 JSON 的 `error.details.artifacts` 默认返回 `directoryPath`、`syncLogPath`、`autoTestOutputPath` 三个绝对路径，无需 `--verbose`。目录分配前的参数、环境或部署失败不返回本轮产物；路径表示输出位置，quick/manual 等模式可能没有 AutoTest 文件。直接读取 stdout 和原始产物，在聊天中报告结论；除用户明确要求导出外，禁止自建 evidence、任务或日期归档目录，禁止重定向、另存或复制日志、截图、存档及编写归档包装脚本。保留与清理由工具负责。
 
-quick 是启动烟雾测试；manual 用于交互；auto/XML 验证结构化 AutoTest 结果。测试命令在执行时才要求与 `game_version` 匹配的 LogSync 宿主；auto/XML 还要求同版本 AutoTestRunner。项目无需包含 AutoTest XML；Spec 文件只用于显式的 `--mode xml`。当前随包测试宿主只覆盖其清单中声明的版本，缺少 1.7/1.8 版本程序集时工具会停止测试，不会加载 1.6 宿主。auto/xml 支持可重复的 `--scope`，范围按首次出现顺序去重，未传时默认为 Standard。`--defname` 仅适用于 auto，可重复指定精确目标；任何未命中目标都会使结果不完整并失败。`--batch-size` 是 auto/xml 的正整数计划上限，默认 40；包括 Standard 在内的枚举运行都会受该上限控制，候选超限时从全部候选中全局均匀、无放回随机抽取。显式 DefName 运行继续忽略该限制。XML 模式的具体用例仍由 Spec 决定。测试控制信号和每 5 秒一次的主线程心跳从 `.tools/log/精选日志.log` 读取，不再依赖 Unity `Player.log`；进程存活但连续 60 秒没有当前 runId 的心跳时返回 `GAME_HUNG` 并终止游戏。RimWorld stdout/stderr 会被安静丢弃，不再生成 `RimWorldProcess.log`；自动测试会落盘独立 `*_Evidence.json`，并在 `*_Result.json` 中写入 `evidenceSchemaVersion` 与 `evidencePath`，CLI 会验证其 schema、runId、packageId 和 success。CLI stdout 只保留最终 JSON。测试会检查本轮 activeMods 中每个可解析模组的必要硬依赖；依赖已安装但未启用、或完全找不到时，会在成功/失败 JSON 的 `warnings` 或 `details.dependencyWarnings` 中提示，但不会阻挡执行。`doctor` 通过 `mods.min_active_dependencies` 以非必需 warning 检查 `min_active_mods`。测试通过共享环境锁与配置事务恢复 `mods_config_path` 所在目录中的 RimWorld 配置。无论使用 `min_active_mods` 还是外部 `--active-mods-file`，都必须启用 `min_active_mods` 中的全部模组。`--deploy` 用于测试当前源码改动。事务冲突后，可在 RimWorld 完全退出后运行 `test cleanup`；`--dry-run` 只检查不修改，`--status` 只读报告锁、游戏、事务和部署现场。
+quick 是启动烟雾测试；manual 用于交互；auto 验证结构化 AutoTest 结果。测试命令在执行时才要求与 `game_version` 匹配的 LogSync 宿主；auto 还要求同版本 AutoTestRunner。项目无需包含 AutoTest Spec XML。当前随包测试宿主只覆盖其清单中声明的版本，缺少 1.7/1.8 版本程序集时工具会停止测试，不会加载 1.6 宿主。auto 支持可重复的 `--scope`，范围按首次出现顺序去重，未传时默认为 Standard。`--defname` 仅适用于 auto，可重复指定精确目标；任何未命中目标都会使结果不完整并失败。`--batch-size` 是 auto 的正整数计划上限，默认 40；包括 Standard 在内的枚举运行都会受该上限控制，候选超限时从全部候选中全局均匀、无放回随机抽取。显式 DefName 运行继续忽略该限制。测试控制信号和每 5 秒一次的主线程心跳从 `.tools/log/精选日志.log` 读取，不再依赖 Unity `Player.log`；进程存活但连续 60 秒没有当前 runId 的心跳时返回 `GAME_HUNG` 并终止游戏。RimWorld stdout/stderr 会被安静丢弃，不再生成 `RimWorldProcess.log`；自动测试会落盘独立 `*_Evidence.json`，并在 `*_Result.json` 中写入 `evidenceSchemaVersion` 与 `evidencePath`，CLI 会验证其 schema、runId、packageId 和 success。CLI stdout 只保留最终 JSON。测试会检查本轮 activeMods 中每个可解析模组的必要硬依赖；依赖已安装但未启用、或完全找不到时，会在成功/失败 JSON 的 `warnings` 或 `details.dependencyWarnings` 中提示，但不会阻挡执行。`doctor` 通过 `mods.min_active_dependencies` 以非必需 warning 检查 `min_active_mods`。测试通过共享环境锁与配置事务恢复 `mods_config_path` 所在目录中的 RimWorld 配置。无论使用 `min_active_mods` 还是外部 `--active-mods-file`，都必须启用 `min_active_mods` 中的全部模组。`--deploy` 用于测试当前源码改动。事务冲突后，可在 RimWorld 完全退出后运行 `test cleanup`；`--dry-run` 只检查不修改，`--status` 只读报告锁、游戏、事务和部署现场。
 
 正式 scope 值为：`standard`、`ui`、`combat`、`view`、`misc`。Standard 横跨四类常规测试，但不隐式启用 `combatpawns` 与 `skillpocketmaps`；旧细分值继续作为窄范围兼容入口。
 

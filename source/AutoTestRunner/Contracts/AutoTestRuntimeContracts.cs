@@ -31,8 +31,7 @@ namespace LogSyncMod.AutoTest
         [DataMember(Name = "scopes", Order = 3)] public List<string> Scopes { get; set; }
         [DataMember(Name = "defNames", Order = 4)] public List<string> DefNames { get; set; }
         [DataMember(Name = "captureScreenshots", Order = 5)] public bool CaptureScreenshots { get; set; }
-        [DataMember(Name = "mode", Order = 6)] public string Mode { get; set; }
-        [DataMember(Name = "outputPath", Order = 7)] public string OutputPath { get; set; }
+        [DataMember(Name = "outputPath", Order = 6)] public string OutputPath { get; set; }
     }
 
     [DataContract]
