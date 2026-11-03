@@ -1,4 +1,4 @@
 interface:
   display_name: "测试结果校验器"
-  short_description: "校验 auto/XML 测试结果并编写校验文档"
-  default_prompt: "使用 $test-result-validation 校验 auto/XML 自动测试结果，区分真实 bug 与测试误报，并为确认的 bug 编写测试结果校验文档。"
+  short_description: "校验 auto/XML 测试结果，区分真实 bug、测试误报与环境问题"
+  default_prompt: "使用 $test-result-validation 校验已有 auto/XML 测试结果，区分真实 bug、测试误报与环境问题，在聊天中说明结论并引用原始产物，不额外归档。"

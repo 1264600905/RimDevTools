@@ -124,13 +124,20 @@ try {
     Copy-Item -LiteralPath (Join-Path $projectRoot "About") -Destination (Join-Path $logSyncComponent "About") -Recurse -Force
     Copy-Item -LiteralPath (Join-Path $projectRoot "Languages") -Destination (Join-Path $logSyncComponent "Languages") -Recurse -Force
     Copy-Item -LiteralPath (Join-Path $projectRoot "LoadFolders.xml") -Destination $logSyncComponent -Force
-    $logSyncAssemblies = Join-Path $logSyncComponent "1.6\Assemblies"
-    New-Item -ItemType Directory -Path $logSyncAssemblies -Force | Out-Null
-    foreach ($assembly in @("LogSyncMod.dll", "AutoTestRunner.dll")) {
-        Copy-Item -LiteralPath (Join-Path $projectRoot "1.6\Assemblies\$assembly") -Destination $logSyncAssemblies -Force
-    }
-    if (Test-Path -LiteralPath (Join-Path $projectRoot "1.6\Defs")) {
-        Copy-Item -LiteralPath (Join-Path $projectRoot "1.6\Defs") -Destination (Join-Path $logSyncComponent "1.6\Defs") -Recurse -Force
+    foreach ($gameVersion in @("1.6", "1.7")) {
+        $sourceAssemblies = Join-Path $projectRoot "$gameVersion\Assemblies"
+        if (-not (Test-Path -LiteralPath $sourceAssemblies -PathType Container)) { throw "缺少 $gameVersion LogSyncMod 程序集目录: $sourceAssemblies" }
+        $destinationAssemblies = Join-Path $logSyncComponent "$gameVersion\Assemblies"
+        New-Item -ItemType Directory -Path $destinationAssemblies -Force | Out-Null
+        foreach ($assembly in @("LogSyncMod.dll", "AutoTestRunner.dll")) {
+            $sourceAssembly = Join-Path $sourceAssemblies $assembly
+            if (-not (Test-Path -LiteralPath $sourceAssembly -PathType Leaf)) { throw "缺少 $gameVersion 程序集: $sourceAssembly" }
+            Copy-Item -LiteralPath $sourceAssembly -Destination $destinationAssemblies -Force
+        }
+        $sourceDefs = Join-Path $projectRoot "$gameVersion\Defs"
+        if (Test-Path -LiteralPath $sourceDefs -PathType Container) {
+            Copy-Item -LiteralPath $sourceDefs -Destination (Join-Path $logSyncComponent "$gameVersion\Defs") -Recurse -Force
+        }
     }
 
     $logSyncVersion = Get-ModVersion $logSyncComponent "1.6\Assemblies\LogSyncMod.dll"
