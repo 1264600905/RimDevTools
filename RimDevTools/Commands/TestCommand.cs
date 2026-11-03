@@ -352,11 +352,21 @@ public static class TestCommand
             }
         }
 
+        var artifactPaths = new
+        {
+            directoryPath = artifacts.DirectoryPath,
+            syncLogPath = artifacts.SyncLogPath,
+            autoTestOutputPath = artifacts.AutoTestOutputPath
+        };
+        var logSummary = TestLogSummary.Read(syncLogPath, gameExited);
+
         if (!gameExited)
             return CliResult.WriteFailure(command, outcome.ExitCode, outcome.Code, outcome.Message, context.Root, new
             {
                 runId,
                 mode,
+                artifacts = artifactPaths,
+                logSummary,
                 batchSize,
                 activeModCount = modList.Mods.Count,
                 additions = verbose ? modList.Additions : null,
@@ -396,6 +406,8 @@ public static class TestCommand
             {
                 runId,
                 mode,
+                artifacts = artifactPaths,
+                logSummary,
                 scopes = selection.Scopes,
                 defNames = verbose ? selection.DefNames : null,
                 batchSize,
@@ -412,6 +424,8 @@ public static class TestCommand
         {
             runId,
             mode,
+            artifacts = artifactPaths,
+            logSummary,
             targetPackageId,
             scopes = selection.Scopes,
             defNames = verbose ? selection.DefNames : null,
@@ -523,6 +537,49 @@ public static class TestCommand
     {
         public static TestOutcome Success(string message, object? details = null) => new(true, ExitCodes.Success, "", message, details);
         public static TestOutcome Failure(int exitCode, string code, string message, object? details = null) => new(false, exitCode, code, message, details);
+    }
+
+    private sealed record TestLogSummary(
+        int ErrorCount,
+        int WarningCount,
+        bool Available,
+        bool CountComplete,
+        bool Truncated,
+        string? ReadError)
+    {
+        public string Source => "syncLog";
+
+        public static TestLogSummary Read(string path, bool gameExited)
+        {
+            if (!File.Exists(path))
+                return new TestLogSummary(0, 0, false, false, false, "本轮精选日志文件不存在");
+
+            try
+            {
+                var errorCount = 0;
+                var warningCount = 0;
+                var truncated = false;
+                foreach (var line in File.ReadLines(path))
+                {
+                    if (line.StartsWith("--- Log line limit reached", StringComparison.Ordinal))
+                        truncated = true;
+
+                    var levelStart = line.IndexOf("] [", StringComparison.Ordinal);
+                    if (levelStart < 0) continue;
+                    var levelAndTimestamp = line.Substring(levelStart + 3);
+                    if (levelAndTimestamp.StartsWith("Error] [", StringComparison.OrdinalIgnoreCase))
+                        errorCount++;
+                    else if (levelAndTimestamp.StartsWith("Warning] [", StringComparison.OrdinalIgnoreCase))
+                        warningCount++;
+                }
+
+                return new TestLogSummary(errorCount, warningCount, true, gameExited && !truncated, truncated, null);
+            }
+            catch (Exception ex)
+            {
+                return new TestLogSummary(0, 0, false, false, false, ex.Message);
+            }
+        }
     }
 }
 
@@ -833,6 +890,11 @@ public static class SettingsEditor
         var effectiveArtifacts = artifacts;
         changed |= Set(settings, "logPath", effectiveArtifacts?.SyncLogPath ?? SyncLogPath(context));
         changed |= SetList(settings, "keywords", context.Config.LogKeywords);
+        if (mode is "quick" or "auto")
+        {
+            changed |= Set(settings, "syncWarning", "True");
+            changed |= Set(settings, "syncError", "True");
+        }
 
         var auto = mode == "auto";
         changed |= Set(settings, "autoTestEnabled", auto ? "True" : "False");

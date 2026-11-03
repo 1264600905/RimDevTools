@@ -20,6 +20,7 @@
 | 目标选择 | `--defname` 只用于 `auto`，允许重复传入 |
 | 批次上限 | `--batch-size` 只用于 `auto`，默认值保持 40 |
 | 截图 | 保留 `autoTestCaptureScreenshots` 和现有 `auto` 默认行为 |
+| 测试报告 | quick/auto 完成 JSON 必须包含产物路径，以及精选日志 `errorCount` / `warningCount`；无需 `--verbose` |
 | 逐用例 XML 覆盖 | 删除；不再配置截图、pawn、建筑、recipe 或视图覆盖 |
 | 日志豁免 | 删除 Spec 提供的 `allowedErrorPatterns` / `allowedWarningPatterns` |
 
@@ -69,6 +70,7 @@
 4. 在 `TestHostResolver.cs`、`DoctorCommand.cs` 和 CLI 帮助中删除 XML 模式说明。
 5. 从 `AutoTestRunRequestDto` 删除 `Mode`，从 `AutoTestBootstrap.RequestRuntimeRun` 删除 XML 分支。确认 RimSage/运行时调用方无需再发送该字段。
 6. 删除按模式选择的隔离桌面默认分支时，保留现行 `auto` 行为；同步更新 `components/ProjectTemplate/mod_config.jsonc` 的 quick/auto/xml 注释。
+7. quick/auto 成功或失败响应始终返回 `artifacts` 与 `logSummary`；摘要包括精选日志错误/警告数、读取状态、计数完整度和截断状态。测试事务临时启用 Warning/Error 同步，并在结束时恢复原设置。
 
 ### 阶段 B：移除游戏设置中的模式开关
 
@@ -131,6 +133,7 @@
 - `test run --mode xml` 明确返回 `MODE_INVALID`，没有 XML 到 auto 的回退。
 - CLI、运行时请求 DTO、游戏设置和 AutoTestRunner 中不再存在 XML 模式状态或 `LogSyncAutoTestSpecDef` 运行时依赖。
 - 普通 `auto` 仍支持 scope、DefName、batch size、截图、完成/失败结果验证和现有结果输出。
+- quick/auto 的已分配运行目录始终带有 `artifacts` 和 `logSummary`；`errorCount`、`warningCount` 不因 `--verbose` 缺省，读日志失败或行数截断由状态字段标明。
 - Spec 的 allowed error/warning 列表不再改变自动测试通过条件。
 - 自动测试运行不再要求或查找 XML Spec；`TestDefs.xml` 中仍被 auto 使用的测试夹具完整保留。
 - 发布 README、模板 README、技能说明和 CLI help 均不再指导用户运行 XML 自动测试。
@@ -140,6 +143,7 @@
 ## 7. 风险与注意事项
 
 - Spec 的 `allowedErrorPatterns` / `allowedWarningPatterns` 当前会进入普通 `auto` 的语义检查。移除会让原先被 Spec 豁免的日志重新参与失败判定；这属于有意移除的配置行为，应在验收时确认。
+- `logSummary` 统计的是本轮精选日志实际记录的 Warning/Error 条目，受 `targetModIds`、`log_keywords` 和 LogSync 行数上限影响；`countComplete`、`truncated` 必须随计数一起返回。
 - `TestDefs.xml` 虽然是 XML 文件，但提供自动测试运行时夹具，误删会破坏普通 `auto`。
 - `AutoTestRunRequestDto.Mode` 属于运行时 API 契约；删除后外部调用方需按单一 auto 流程提交请求。
 - `--xml-hot` 与 XML 自动测试模式名称相近，但属于部署功能，必须保留。

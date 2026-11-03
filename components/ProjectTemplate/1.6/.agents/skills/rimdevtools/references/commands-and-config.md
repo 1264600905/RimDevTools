@@ -6,7 +6,7 @@
 
 命令以 stdout 上的一个 JSON 对象结束；进度输出到 stderr。退出码为 `0` 成功、`2` 无效参数/配置、`3` 缺少依赖、`4` 忙、`5` 任务失败、`6` 超时、`7` 游戏/测试失败、`130` 取消。`--version` 必须作为唯一参数使用，仅返回 `ok`、`command` 和 `rimDevToolsVersion`。
 
-测试产物路径：新版 `test run` 和 `test settings` 在分配本轮目录后，成功结果的 `result.artifacts`、失败结果的 `error.details.artifacts` 默认包含 `directoryPath`、`syncLogPath`、`autoTestOutputPath` 三个绝对路径，不需要 `--verbose`。目录分配前的参数、环境或部署失败没有本轮产物，不应创建占位目录。路径表示输出位置，quick/manual 等模式可能没有 AutoTest 文件，应检查文件是否实际生成。旧版没有这些字段时读取已有 LogSync 设置和原始产物定位，不创建替代路径。
+测试产物路径：新版 `test run` 和 `test settings` 在分配本轮目录后，成功结果的 `result.artifacts`、失败结果的 `error.details.artifacts` 默认包含 `directoryPath`、`syncLogPath`、`autoTestOutputPath` 三个绝对路径，不需要 `--verbose`。quick/auto `test run` 还会返回 `result.logSummary` 或 `error.details.logSummary`，其中 `errorCount`、`warningCount` 统计本轮精选日志记录；`available`、`countComplete` 和 `truncated` 说明读取状态。计数受 LogSync 的模组/关键词筛选和行数上限影响。目录分配前的参数、环境或部署失败没有本轮产物，不应创建占位目录。路径表示输出位置，quick/manual 等模式可能没有 AutoTest 文件，应检查文件是否实际生成。旧版没有这些字段时读取已有 LogSync 设置和原始产物定位，不创建替代路径。
 
 除用户明确要求导出外，直接读取 stdout 和原始产物并在聊天中报告；禁止自建 evidence、任务或日期目录，禁止重定向、另存、复制日志/截图/存档或编写归档包装脚本。保留与清理由工具负责。
 

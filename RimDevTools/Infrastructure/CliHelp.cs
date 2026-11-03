@@ -328,7 +328,10 @@ public static class CliHelp
           signal, result, and dependency warnings. --verbose includes full mods/additions.
           After a run directory is allocated, result.artifacts (success) or
           error.details.artifacts (failure) includes the absolute directoryPath,
-          syncLogPath, and autoTestOutputPath. Some modes do not generate AutoTest files.
+          syncLogPath, and autoTestOutputPath. Quick/auto runs also return
+          result.logSummary or error.details.logSummary with errorCount and warningCount
+          from the selected sync log, plus availability, completeness, and truncation status.
+          Some modes do not generate AutoTest files.
           Read the original artifacts; do not create extra archives unless requested.
 
         Common errors:

@@ -99,6 +99,8 @@ RimDevTools 默认返回关键摘要，并隐藏大段构建、Unity 和 ILSpy �
 
 `auto` 模式默认启用截图，不需要额外参数。
 
+quick/auto `test run` 完成后，成功 JSON 的 `result.artifacts` 或失败 JSON 的 `error.details.artifacts` 包含日志目录、精选日志和 AutoTest 输出路径；`result.logSummary` 或 `error.details.logSummary` 始终带有 `errorCount` 和 `warningCount`。计数对应本轮精选日志中的记录，并提供日志可用、计数完整和行数截断状态。
+
 测试结果写入 `.tools/log/AutoTestOutput`。自动测试会生成 `*_Result.json` 和独立的 `*_Evidence.json`；连续 60 秒没有当前 runId 的主线程心跳时，工具会以 `GAME_HUNG` 结束并尝试恢复环境。
 
 ## 从源码构建和测试
