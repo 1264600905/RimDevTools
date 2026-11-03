@@ -40,6 +40,8 @@ RimDevTools 默认只返回摘要和关键字段；所有命令仍将最终结�
 
 ## 部署
 
+构建模组项目时禁止生成 `.pdb` 和 `.deps.json`。执行 `deploy` 或 `test run --deploy` 前，确认模组 `.csproj` 在所有构建配置中显式设置 `DebugSymbols=false`、`DebugType=none`、`GenerateDependencyFile=false`；构建后检查当前目标的 `Assemblies/`，不得同步或打包这两类文件。
+
 1. 根据doctor的路径探测，尝试修复 `mod_config.jsonc` 中的 游戏路径，工坊路径，完成后重新执行 `doctor` 验证,检查状态是否更新。
 2. 填写正确的项目 `mod_name`、`rimworld_dir`、`csproj_paths` 和 `sync_items`。
 3. 运行 `deploy --dry-run` 检查部署摘要；需要核对所有目标路径和替换动作时添加 `--verbose`。

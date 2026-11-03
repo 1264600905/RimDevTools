@@ -48,6 +48,20 @@ internal static class FakeRimWorld
         Console.WriteLine("FAKE_GAME_STDOUT");
         var configDirectory = Environment.GetEnvironmentVariable("RIMDEVTOOLS_CONFIG_DIR")!;
         Directory.CreateDirectory(configDirectory);
+        var modsConfigPath = Path.Combine(configDirectory, "ModsConfig.xml");
+        var modsConfig = XDocument.Load(modsConfigPath);
+        var configuredVersion = modsConfig.Root?.Element("version")?.Value;
+        if (configuredVersion is not null)
+        {
+            var version = Version.Parse(configuredVersion.Split(' ')[0]);
+            if (version.Major != 1 || version.Minor != 6)
+            {
+                // Simulate the game's version check before LogSync can produce any signals.
+                modsConfig.Root!.Element("activeMods")?.RemoveNodes();
+                modsConfig.Save(modsConfigPath);
+                return;
+            }
+        }
         File.WriteAllText(Path.Combine(configDirectory, "fake-args.txt"), string.Join(" ", args));
         File.WriteAllText(Path.Combine(configDirectory, "fake-desktop.txt"), GameProcessLauncher.CurrentDesktopName() ?? "<unknown>");
 
@@ -175,6 +189,7 @@ internal sealed class TestSuite
             TestCliSelectionParsing();
             await TestToolModDeploymentAsync();
             TestModListParser();
+            await TestModsConfigVersionAsync();
             TestIncrementalLogSignalScanner();
             await TestSettingsAsync();
             await TestTransactionsAsync();
@@ -634,6 +649,53 @@ internal sealed class TestSuite
         var rejected = ModListParser.Resolve(context, modsFile, out var rejectedError);
         Assert(rejected is null && rejectedError?.Code == "REQUIRED_MODS_DISABLED" && JsonSerializer.Serialize(rejectedError.Details).Contains("demo.helper", StringComparison.OrdinalIgnoreCase), "ModList rejects external mod lists that omit configured min_active_mods");
 
+    }
+
+    private async Task TestModsConfigVersionAsync()
+    {
+        var directory = NewDirectory("mods-config-version");
+        var path = Path.Combine(directory, "ModsConfig.xml");
+        foreach (var (previous, target) in new (string?, string)[]
+        {
+            ("1.6.4871 rev590", "1.7"),
+            ("1.7.4976 rev1043", "1.6"),
+            ("1.7.4976 rev1043", "1.8"),
+            (null, "1.6")
+        })
+        {
+            var original = XDocument.Parse("<ModsConfigData><activeMods><li>original.mod</li></activeMods><knownExpansions><li>ludeon.rimworld.biotech</li></knownExpansions></ModsConfigData>");
+            if (previous is not null) original.Root!.AddFirst(new XElement("version", previous));
+            File.WriteAllText(path, original.ToString());
+
+            ModListParser.UpdateGameVersion(path, target);
+            var updated = XDocument.Load(path);
+            Assert(updated.Root!.Element("version")?.Value == target, $"ModsConfig updates {previous ?? "missing version"} to target {target}");
+            Assert(XNode.DeepEquals(updated.Root.Element("activeMods"), original.Root!.Element("activeMods"))
+                && XNode.DeepEquals(updated.Root.Element("knownExpansions"), original.Root.Element("knownExpansions")), "version update preserves the original active list and known expansions");
+            var baseline = File.ReadAllText(path);
+            ModListParser.UpdateGameVersion(path, target);
+            Assert(File.ReadAllText(path) == baseline, "matching target version leaves the configuration unchanged");
+
+            var transaction = await ConfigTransaction.CreateAsync(directory, "version-normal", [path]);
+            await transaction.WriteAllTextAsync(path, ModListParser.Render(path, ["temporary.mod"]));
+            await transaction.RestoreAsync(force: true);
+            Assert(File.ReadAllText(path) == baseline, "normal restoration keeps the target version and restores the original list");
+
+            var interrupted = await ConfigTransaction.CreateAsync(directory, "version-interrupted", [path]);
+            await interrupted.WriteAllTextAsync(path, ModListParser.Render(path, ["temporary.mod"]));
+            var recovered = await TransactionRecovery.RecoverAsync(directory);
+            Assert(recovered.Ok && File.ReadAllText(path) == baseline, "interrupted transaction recovery keeps the target version and restores the original list");
+
+            var cleanup = await ConfigTransaction.CreateAsync(directory, "version-cleanup", [path]);
+            await cleanup.WriteAllTextAsync(path, ModListParser.Render(path, ["temporary.mod"]));
+            var gameWritten = XDocument.Load(path);
+            gameWritten.Root!.SetElementValue("version", target + ".9999 rev1");
+            File.WriteAllText(path, gameWritten.ToString());
+            var cleaned = await TransactionRecovery.CleanupAsync(directory, path, dryRun: false);
+            var restored = XDocument.Load(path);
+            Assert(cleaned.Ok && restored.Root!.Element("version")?.Value == target + ".9999 rev1"
+                && XNode.DeepEquals(restored.Root.Element("activeMods"), original.Root.Element("activeMods")), "explicit cleanup preserves the game's target version and restores the original list");
+        }
     }
 
     private void TestIncrementalLogSignalScanner()
@@ -1355,6 +1417,14 @@ internal sealed class TestSuite
         CreateMod(environment.Game, "DemoParent", "demo.parent");
         var callerDesktop = GameProcessLauncher.CurrentDesktopName();
 
+        void SimulateVersionSwitch()
+        {
+            var previous = XDocument.Parse(environment.OriginalMods);
+            previous.Root!.SetElementValue("version", "1.7.4976 rev1043");
+            File.WriteAllText(environment.ModsConfigPath, previous.ToString());
+        }
+
+        SimulateVersionSwitch();
         Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", "quick");
         var quick = await CaptureAsync(() => TestCommand.RunAsync(["test", "run", "--mode", "quick", "--timeout-seconds", "5"]));
         var isolatedDesktop = File.ReadAllText(Path.Combine(environment.ConfigDirectory, "fake-desktop.txt"));
@@ -1390,6 +1460,7 @@ internal sealed class TestSuite
         var largeQuick = await CaptureAsync(() => TestCommand.RunAsync(["test", "run", "--mode", "quick", "--timeout-seconds", "5"]));
         Assert(largeQuick.ExitCode == 0, "quick mode recognizes a signal before more than 32 KiB of trailing log output");
 
+        SimulateVersionSwitch();
         Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", "auto");
         var autoLogRoot = Path.Combine(environment.Root, ".tools", "log");
         var oldAutoOutput = Path.Combine(autoLogRoot, "[2026-01, 10-00]", "AutoTestOutput");
@@ -1433,16 +1504,19 @@ internal sealed class TestSuite
         var largeAuto = await CaptureAsync(() => TestCommand.RunAsync(["test", "run", "--mode", "auto", "--timeout-seconds", "5"]));
         Assert(largeAuto.ExitCode == 0, "auto mode recognizes a completion signal before more than 32 KiB of trailing log output");
 
+        SimulateVersionSwitch();
         Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", "auto-fail");
         var failed = await CaptureAsync(() => TestCommand.RunAsync(["test", "run", "--mode", "xml", "--timeout-seconds", "5"]));
         Assert(failed.ExitCode == ExitCodes.GameFailed && JsonErrorCode(failed.Output) == "AUTO_RESULT_FAILED", "xml mode rejects failed auto-test JSON");
         AssertConfigurationRestored(environment, "failed auto test restores configuration");
 
+        SimulateVersionSwitch();
         Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", "manual");
         var manual = await CaptureAsync(() => TestCommand.RunAsync(["test", "run", "--mode", "manual", "--timeout-seconds", "5"]));
         var manualSettings = XDocument.Parse(File.ReadAllText(Path.Combine(environment.ConfigDirectory, "fake-settings.xml")));
         Assert(manual.ExitCode == 0 && manual.Output.Contains("\"isolatedDesktop\": false") && File.ReadAllText(Path.Combine(environment.ConfigDirectory, "fake-desktop.txt")) == callerDesktop, "manual mode defaults to the current desktop despite project configuration");
         Assert(manualSettings.Descendants("testMuteAudio").Single().Value == "False", "manual mode leaves test audio muting disabled");
+        AssertConfigurationRestored(environment, "manual mode keeps the target version and restores the original list");
 
         Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", "manual");
         var isolatedManual = await CaptureAsync(() => TestCommand.RunAsync(["test", "run", "--mode", "manual", "--isolated-desktop", "--timeout-seconds", "5"]));
@@ -1471,6 +1545,7 @@ internal sealed class TestSuite
             TestCommand.HeartbeatTimeoutOverride = null;
         }
 
+        SimulateVersionSwitch();
         using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
         var cancelled = await CaptureAsync(() => TestCommand.RunAsync(["test", "run", "--mode", "quick", "--timeout-seconds", "10"], cancellation.Token));
         Assert(cancelled.ExitCode == ExitCodes.Cancelled && JsonErrorCode(cancelled.Output) == "CANCELLED", "cancellation enters unified cleanup path");
@@ -1517,7 +1592,7 @@ internal sealed class TestSuite
         var settings = Path.Combine(config, "Mod_LogSyncMod_LogSyncMod.xml");
         var mods = Path.Combine(config, "ModsConfig.xml");
         const string originalSettings = "<Root><ModSettings><logPath>old</logPath><keywords><li>Old</li></keywords><autoTestEnabled>False</autoTestEnabled></ModSettings></Root>";
-        const string originalMods = "<ModsConfigData><activeMods><li>ludeon.rimworld</li></activeMods></ModsConfigData>";
+        var originalMods = XDocument.Parse("<ModsConfigData><version>1.6</version><activeMods><li>ludeon.rimworld</li></activeMods></ModsConfigData>").ToString();
         if (createConfigDirectory)
         {
             if (createSettings) File.WriteAllText(settings, originalSettings);

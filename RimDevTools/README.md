@@ -70,6 +70,8 @@ RimDevTools.exe mods install-tools [--mods-path <path>] [--dry-run] [--verbose]
 
 `game_version` 必须填写当前目标游戏的精确版本，例如 `1.6`、`1.7` 或 `1.8`。1.6 使用 `RimWorldWin64.exe` 与 `RimWorldWin64_Data/Managed`；1.7 及更高版本默认使用 `RimWorld.exe`、游戏根目录程序集和 .NET 10。工具会核对 `Assembly-CSharp.dll` 的版本，并拒绝把配置指向另一游戏版本。Harmony 和其他模组程序集仍按 `game_version` 精确查找，1.8 不会回退到 1.7 DLL。
 
+`test run` 在启动前将 `ModsConfig.xml` 的 `<version>` 自动写为已校验的 `game_version`，避免切换游戏版本时启用列表被游戏重置。此更新先于配置事务备份；测试结束、失败、取消或中断恢复时会恢复原模组列表与设置，并保留目标版本号。quick、manual、auto 和 xml 模式均适用。
+
 RimDevTools 的 Unity Shader Bundle 构建仅适用于 1.6。1.7+ 项目使用游戏原生 GLSL/ShaderDef 工作流，不要启用旧的 `shader_bundle`。
 
 ### 部署

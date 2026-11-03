@@ -62,6 +62,8 @@ test cleanup [--dry-run] [--status] [--verbose]
 
 quick 是启动冒烟测试。manual 是用户手动的。auto 和 XML 验证结构化的 AutoTest 结果。auto 模式默认截图；XML 驱动测试按每条测试定义的 `captureScreenshots` 设置截图，不需要截图命令行开关。隔离优先级为显式标志、项目设置，然后是模式默认值。`test run` 不接受 `--xml-hot`；`test run --deploy` 会先关闭已有 RimWorld，再在启动测试进程前执行普通构建和逐文件事务部署。
 
+所有 `test run` 模式都会在启动前将 `ModsConfig.xml` 的 `<version>` 写为已校验的 `game_version`，防止切换版本时游戏重置启用列表。版本号先于事务备份更新；测试结束、失败、取消或中断恢复后保留目标版本号，原模组列表与设置照常恢复。
+
 `test run` 默认输出运行结果、测试信号、模组数量和依赖 warning；`--verbose` 附加完整启用模组列表、设置时新增的模组以及部署子进程诊断。
 
 `--scope` 可在 auto/XML 中重复，多个 scope 取并集。正式值为 `standard`、`ui`、`combat`、`view`、`misc`；旧细分值继续以原窄范围语义兼容。未传时默认为 `Standard`；Standard 横跨四类常规测试，但不隐式启用 CombatPawns 或 SkillPocketMaps。
