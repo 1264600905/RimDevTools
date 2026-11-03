@@ -25,7 +25,7 @@
 .\.tools\RimDevTools.exe test run --deploy --mode quick
 ```
 
-不要使用 CUA、computer-use、鼠标键盘注入、截图识别或其他桌面自动化操作 RimWorld。不要自行编写测试用例、AutoTest XML、测试项目或测试 DLL。`auto`/`xml` 仅在玩家明确要求自动测试时运行，并使用已有用例；`manual` 仅在玩家明确要求交互验证时使用，由玩家操作游戏。仅在打算部署源码时使用 `--sync-source`。
+不要使用 CUA、computer-use、鼠标键盘注入、截图识别或其他桌面自动化操作 RimWorld。不要自行编写测试用例、测试项目或测试 DLL。`auto` 仅在玩家明确要求自动测试时运行，并使用 AutoTestRunner 生成的用例；`manual` 仅在玩家明确要求交互验证时使用，由玩家操作游戏。仅在打算部署源码时使用 `--sync-source`。
 
 ## 结果审查
 

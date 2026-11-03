@@ -49,7 +49,7 @@ public static class CliHelp
           mod copy            Copy and decompile a reference mod.
           mod dependencies    List one mod's hard dependencies.
           mod dependents      List local mods depending on a target.
-          test run            Run quick, manual, automatic, or XML tests.
+          test run            Run quick, manual, or automatic tests.
           test settings       Persist LogSync settings for manual game launches.
           test cleanup        Inspect or recover interrupted transactions.
           mods install-tools  Install the packaged LogSync tool mod.
@@ -99,7 +99,7 @@ public static class CliHelp
           Configured game version and its matching 1.6 or 1.7+ layout/target framework, Steam libraries
           and RimWorld app 294100, About.xml/Preview.png, game/Harmony assemblies, Harmony DLL version,
           Unity shader-bundle compatibility, Git/worktree, ILSpy, optional test-host readiness,
-          lock, and recoverable transactions. Test mods and AutoTest XML are not project prerequisites.
+          lock, and recoverable transactions. LogSync and AutoTestRunner are not project prerequisites.
 
         Output:
           JSON ready/issueCount/warningCount summary. By default checks contains items that

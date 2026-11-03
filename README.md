@@ -19,7 +19,7 @@ RimDevTools 是一套面向 RimWorld 1.6/1.7+ 模组开发的 Windows 工具链�
 - 将项目程序集、Defs、About、语言文件等内容以事务化逐文件方式部署到 RimWorld Mods 目录，并检查目标文件占用。
 - 搜索本地及 Workshop 模组，并安全复制 XML、程序集和 ILSpy 反编译源码作为开发参考。
 - 事务化修改并恢复 `ModsConfig.xml` 和测试配置，避免测试中断后污染用户环境。
-- 运行 quick、manual、auto 和 XML 测试，支持分类、精确 DefName、批量上限和截图。
+- 运行 quick、manual、auto 自动测试，支持分类、精确 DefName、批量上限和截图。
 - 输出单一 JSON 结果、独立 Evidence 文件、关联日志和主线程心跳诊断。
 - 生成包含 CLI、工具 Mod、ILSpy、项目模板和技能配置的完整发布包。
 
@@ -88,7 +88,7 @@ RimDevTools 默认返回关键摘要，并隐藏大段构建、Unity 和 ILSpy �
 
 ## 自动测试模型
 
-`auto` 和 `xml` 模式支持重复传入 `--scope`。正式分类为 `ui`、`combat`、`view` 和 `misc`；未指定时使用 Standard 测试集。
+`auto` 模式支持重复传入 `--scope`。正式分类为 `ui`、`combat`、`view` 和 `misc`；未指定时使用 Standard 测试集。
 
 `auto` 还支持：
 
@@ -97,7 +97,7 @@ RimDevTools 默认返回关键摘要，并隐藏大段构建、Unity 和 ILSpy �
 - `--active-mods-file <path>`：使用外部 ModsConfig XML。
 - `--isolated-desktop`：在隔离桌面运行游戏。
 
-`auto` 模式默认启用截图，不需要额外参数。XML 驱动测试的截图仍由每条测试定义的 `captureScreenshots` 控制。
+`auto` 模式默认启用截图，不需要额外参数。
 
 测试结果写入 `.tools/log/AutoTestOutput`。自动测试会生成 `*_Result.json` 和独立的 `*_Evidence.json`；连续 60 秒没有当前 runId 的主线程心跳时，工具会以 `GAME_HUNG` 结束并尝试恢复环境。
 

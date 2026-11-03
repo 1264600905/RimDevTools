@@ -727,7 +727,7 @@ internal sealed class TestSuite
     {
         Assert(CliArgs.Validate("test run", ["test", "run", "--scope", "turrets", "--scope", "threeviews"]) is null, "repeated --scope is accepted");
         Assert(CliArgs.Validate("test run", ["test", "run", "--defname", "Coat", "--defname", "Rifle"]) is null, "repeated --defname is accepted");
-        Assert(CliArgs.Validate("test run", ["test", "run", "--mode", "auto", "--mode", "xml"])?.Contains("参数重复") == true, "non-repeatable options still reject duplicates");
+        Assert(CliArgs.Validate("test run", ["test", "run", "--mode", "auto", "--mode", "manual"])?.Contains("参数重复") == true, "non-repeatable options still reject duplicates");
 
         Assert(AutoTestSelectionParser.TryParse(["test", "run", "--mode", "auto", "--scope", "turrets", "--scope", "THREEVIEWS", "--scope", "turrets", "--defname", "Coat", "--defname", "coat"], "auto", out var selection, out _)
             && selection.Scopes.SequenceEqual(["Turrets", "ThreeViews"])
@@ -736,9 +736,9 @@ internal sealed class TestSuite
             && formalSelection.Scopes.SequenceEqual(["UI", "Combat", "View", "Misc"]), "selection parser accepts the four formal scopes");
         Assert(AutoTestSelectionParser.TryParse(["test", "run", "--mode", "auto", "--scope", "content", "--scope", "combatpawns"], "auto", out var legacySelection, out _)
             && legacySelection.Scopes.SequenceEqual(["Content", "CombatPawns"]), "selection parser preserves legacy narrow scopes");
-        Assert(!AutoTestSelectionParser.TryParse(["test", "run", "--mode", "xml", "--scope", "all"], "xml", out _, out _), "all scope alias is no longer accepted");
-        Assert(!AutoTestSelectionParser.TryParse(["test", "run", "--mode", "quick", "--scope", "turrets"], "quick", out _, out _), "scope is rejected outside auto/xml modes");
-        Assert(!AutoTestSelectionParser.TryParse(["test", "run", "--mode", "xml", "--defname", "Coat"], "xml", out _, out _), "defname is rejected outside auto mode");
+        Assert(!AutoTestSelectionParser.TryParse(["test", "run", "--mode", "auto", "--scope", "all"], "auto", out _, out _), "all scope alias is no longer accepted in auto mode");
+        Assert(!AutoTestSelectionParser.TryParse(["test", "run", "--mode", "quick", "--scope", "turrets"], "quick", out _, out _), "quick mode rejects scope selection");
+        Assert(!AutoTestSelectionParser.TryParse(["test", "run", "--mode", "quick", "--defname", "Coat"], "quick", out _, out _), "defname is rejected outside auto mode");
         Assert(!AutoTestSelectionParser.TryParse(["test", "run", "--mode", "auto", "--scope", "unknown"], "auto", out _, out _), "unknown scope is rejected");
         Assert(CliArgs.Validate("test run", ["test", "run", "--active-mods-file", "ModsConfig.xml"]) is null, "active mods file option is accepted");
         Assert(CliArgs.Validate("test run", ["test", "run", "--batch-size", "7"]) is null, "batch size option is accepted");
