@@ -1,6 +1,6 @@
 # RimDevTools
 
-RimDevTools 是一套面向 RimWorld 1.6 与 1.7+ 模组开发的 Windows 工具链。本仓库同时维护开发 CLI、双版本日志同步工具 Mod、游戏内自动测试运行器，以及可直接用于创建 1.6 项目的发布模板。
+RimDevTools 是一套面向 RimWorld 1.6/1.7+ 模组开发的 Windows 工具链。LogSyncMod 随包提供 RimWorld 1.6 与 1.7 两套兼容文件；项目发布模板当前针对 RimWorld 1.6。
 
 它的目标是把模组开发中反复出现的环境检查、部署、依赖定位、日志采集、自动测试和发布打包流程统一起来，让开发者能够用可重复、可诊断的命令完成日常工作。
 
@@ -8,8 +8,8 @@ RimDevTools 是一套面向 RimWorld 1.6 与 1.7+ 模组开发的 Windows 工具
 
 | 组件 | 作用 |
 | --- | --- |
-| RimDevTools CLI | 检查开发环境、部署模组、复制参考模组、管理测试配置并启动测试 |
-| LogSyncMod | 按 PackageId、关键词和日志级别筛选 RimWorld 日志，并同步到独立文件 |
+| RimDevTools CLI | 检查 1.6/1.7+ 开发环境、部署模组、复制参考模组、管理测试配置并启动测试 |
+| LogSyncMod | 兼容 RimWorld 1.6/1.7；按 PackageId、关键词和日志级别筛选日志并同步到独立文件 |
 | AutoTestRunner | 在游戏内执行 UI、战斗、视图、配方、技能等自动测试并生成结构化结果与证据 |
 | Project Template | 提供 RimWorld 1.6 项目结构、三语翻译目录和构建配置 |
 
@@ -143,7 +143,7 @@ dotnet RimDevTools.ReleaseTests\bin\Debug\net10.0\RimDevTools.ReleaseTests.dll `
 ## 目录结构
 
 ```text
-1.6/                         LogSyncMod 与 AutoTestRunner 构建输出、Defs
+1.6/、1.7/                  LogSyncMod 与 AutoTestRunner 的分版本构建输出和 Defs
 About/                       LogSyncMod 元数据和预览图
 Languages/                   LogSyncMod 简中、繁中和英文翻译
 source/                      LogSyncMod 与 AutoTestRunner 源码
