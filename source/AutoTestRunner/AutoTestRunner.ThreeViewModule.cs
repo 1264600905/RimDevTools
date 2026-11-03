@@ -448,10 +448,6 @@ namespace LogSyncMod.AutoTest
                     continue;
                 }
 
-                LogSyncAutoTestSpecDef matchedSpec = ResolveBestMatchingSpec(spec.Kind, spec.TargetDef ?? (Def)spec.PawnKindDef);
-                ApplyThreeViewSpecOverrides(spec, matchedSpec);
-                bool playerCompatibilityRequested = AutoTestPawnFactionResolver.ParseRequestedMode(matchedSpec?.pawnFactionMode) == AutoTestPawnFactionMode.PlayerCompatibility;
-
                 if (!threeViewService.TryResolveAppearancePresenter(spec, out string appearanceSkipReason))
                 {
                     spec.SkipReason = string.IsNullOrWhiteSpace(appearanceSkipReason)
@@ -460,51 +456,6 @@ namespace LogSyncMod.AutoTest
                 }
 
                 pendingThreeViewTargets.Enqueue(spec);
-                if (playerCompatibilityRequested && IsPawnKindThreeViewCase(spec.CaseType))
-                {
-                    string compatibilityDefName = (spec.DefName ?? spec.PawnKindDef?.defName ?? "UnknownPawn") + "@PlayerCompatibility";
-                    AutoTestManifestEntry compatibilityEntry = RegisterDiscoveredCase(
-                        spec.CaseType,
-                        nameof(PawnKindDef),
-                        compatibilityDefName,
-                        (spec.Label ?? spec.PawnKindDef?.label ?? compatibilityDefName) + " [PlayerCompatibility]");
-                    pendingThreeViewTargets.Enqueue(spec.CloneForPlayerCompatibility(compatibilityEntry));
-                }
-            }
-        }
-
-        private static bool IsPawnKindThreeViewCase(AutoTestCaseType caseType)
-        {
-            return caseType == AutoTestCaseType.HumanoidThreeView ||
-                caseType == AutoTestCaseType.AnimalThreeView ||
-                caseType == AutoTestCaseType.MechanoidThreeView ||
-                caseType == AutoTestCaseType.AlienThreeView ||
-                caseType == AutoTestCaseType.PawnLifeStageThreeView;
-        }
-
-        private static void ApplyThreeViewSpecOverrides(AutoTestThreeViewTargetSpec spec, LogSyncAutoTestSpecDef matchedSpec)
-        {
-            if (spec == null || matchedSpec == null) return;
-            if (matchedSpec.requireBodyTypeMatch || !string.IsNullOrWhiteSpace(matchedSpec.expectedBodyTypeDefName))
-            {
-                spec.RequireBodyTypeMatch = true;
-                spec.ExpectedBodyTypeSource = string.IsNullOrWhiteSpace(matchedSpec.expectedBodyTypeSource)
-                    ? "LogSyncAutoTestSpecDef"
-                    : matchedSpec.expectedBodyTypeSource;
-                if (!string.IsNullOrWhiteSpace(matchedSpec.expectedBodyTypeDefName))
-                {
-                    BodyTypeDef expected = DefDatabase<BodyTypeDef>.GetNamedSilentFail(matchedSpec.expectedBodyTypeDefName);
-                    if (expected == null)
-                    {
-                        spec.SkipReason = "expected_body_type_missing:" + matchedSpec.expectedBodyTypeDefName;
-                    }
-                    else
-                    {
-                        spec.ForcedBodyType = expected;
-                        spec.PawnBodyTypeDefName = expected.defName;
-                        spec.PawnBodyTypeLabel = expected.label ?? expected.defName;
-                    }
-                }
             }
         }
 
@@ -513,12 +464,6 @@ namespace LogSyncMod.AutoTest
             if (spec == null)
             {
                 return false;
-            }
-
-            Def primaryDef = spec.TargetDef ?? (Def)spec.PawnKindDef;
-            if (settings.UseXmlDrivenAutoTest())
-            {
-                return MatchesSpecFilters(spec.Kind, primaryDef);
             }
 
             if (settings.autoTestTargetDefNames == null || settings.autoTestTargetDefNames.Count == 0)
@@ -613,11 +558,8 @@ namespace LogSyncMod.AutoTest
 
             string defType = spec.TargetDef?.GetType().Name ?? nameof(PawnKindDef);
             AutoTestResult result = CreateResult(spec.ManifestEntry, defType, spec.DefName, spec.Label);
-            LogSyncAutoTestSpecDef matchedSpec = ResolveBestMatchingSpec(spec.Kind, spec.TargetDef ?? (Def)spec.PawnKindDef);
-            bool allowScreenshots = ShouldCaptureScreenshots(matchedSpec);
-            result.Notes = AppendNote(result.Notes, "AutoTestMode=" + (settings.UseXmlDrivenAutoTest() ? "XmlDriven" : "Automatic"));
+            bool allowScreenshots = ShouldCaptureScreenshots();
             result.Notes = AppendNote(result.Notes, "ThreeViewProfile=" + (spec.Profile?.ProfileId ?? "Unknown"));
-            result.Notes = AppendNote(result.Notes, "CompatibilityObservation=" + (spec.RequestedFactionMode == AutoTestPawnFactionMode.PlayerCompatibility));
             result.Notes = AppendNote(result.Notes, "RequireBodyTypeMatch=" + spec.RequireBodyTypeMatch);
             result.Notes = AppendNote(result.Notes, "ExpectedBodyTypeSource=" + (spec.ExpectedBodyTypeSource ?? "InformationalOnly"));
             if (!string.IsNullOrWhiteSpace(spec.CompatibilitySource))

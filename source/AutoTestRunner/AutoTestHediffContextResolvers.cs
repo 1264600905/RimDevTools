@@ -155,7 +155,6 @@ namespace LogSyncMod.AutoTest
         public PawnKindDef PawnKind;
         public string Source;
         public AutoTestHediffPartResolution PartResolution;
-        public readonly List<Hediff> AddedPrerequisites = new List<Hediff>();
         public bool PassedAfterRetry;
         public string FirstFailure;
         public string ErrorMessage;
@@ -176,13 +175,11 @@ namespace LogSyncMod.AutoTest
             partResolver = new AutoTestHediffPartResolver(targetMod);
         }
 
-        public AutoTestHediffPawnResolution Resolve(HediffDef hediffDef, LogSyncAutoTestSpecDef spec)
+        public AutoTestHediffPawnResolution Resolve(HediffDef hediffDef)
         {
             AutoTestHediffPawnResolution final = new AutoTestHediffPawnResolution();
-            string requiredRace = (spec?.requiredRace ?? string.Empty).Trim();
-            List<AutoTestHediffPawnCandidate<PawnKindDef>> candidates = BuildCandidates(hediffDef, spec)
-                .Where(candidate => candidate.Value?.race != null &&
-                    (requiredRace.Length == 0 || string.Equals(candidate.Value.race.defName, requiredRace, StringComparison.OrdinalIgnoreCase)))
+            List<AutoTestHediffPawnCandidate<PawnKindDef>> candidates = BuildCandidates(hediffDef)
+                .Where(candidate => candidate.Value?.race != null)
                 .ToList();
 
             foreach (AutoTestHediffPawnCandidate<PawnKindDef> candidate in AutoTestHediffPawnPolicy.Order(candidates))
@@ -193,13 +190,12 @@ namespace LogSyncMod.AutoTest
                     Pawn pawn = null;
                     try
                     {
-                        pawn = GeneratePawn(candidate.Value, spec);
+                        pawn = GeneratePawn(candidate.Value);
                         if (pawn == null)
                             throw new InvalidOperationException("PawnGenerator.GeneratePawn returned null.");
                         if (pawn.health == null)
                             throw new InvalidOperationException("Generated pawn has no health tracker.");
 
-                        List<Hediff> addedPrerequisites = AddDeclaredPrerequisites(pawn, spec);
                         AutoTestHediffPartResolution part = partResolver.Resolve(hediffDef, pawn);
                         if (!part.Supported)
                         {
@@ -219,7 +215,6 @@ namespace LogSyncMod.AutoTest
                         final.PawnKind = candidate.Value;
                         final.Source = candidate.Source.ToString();
                         final.PartResolution = part;
-                        final.AddedPrerequisites.AddRange(addedPrerequisites);
                         final.PassedAfterRetry = attempt == 2;
                         final.FirstFailure = firstFailure;
                         return final;
@@ -240,13 +235,9 @@ namespace LogSyncMod.AutoTest
             return final;
         }
 
-        private List<AutoTestHediffPawnCandidate<PawnKindDef>> BuildCandidates(HediffDef hediffDef, LogSyncAutoTestSpecDef spec)
+        private List<AutoTestHediffPawnCandidate<PawnKindDef>> BuildCandidates(HediffDef hediffDef)
         {
             List<AutoTestHediffPawnCandidate<PawnKindDef>> candidates = new List<AutoTestHediffPawnCandidate<PawnKindDef>>();
-            string explicitPawnKind = (spec?.presenterPawnKind ?? string.Empty).Trim();
-            if (explicitPawnKind.Length > 0)
-                AddCandidate(candidates, DefDatabase<PawnKindDef>.GetNamedSilentFail(explicitPawnKind), AutoTestHediffPawnCandidateSource.ExplicitSpec);
-
             IEnumerable<PawnKindDef> allKinds = DefDatabase<PawnKindDef>.AllDefsListForReading.Where(kind => kind?.race?.race != null);
             foreach (PawnKindDef kind in allKinds.Where(kind => HasStartingHediff(kind, hediffDef)))
                 AddCandidate(candidates, kind, AutoTestHediffPawnCandidateSource.DirectStartingHediff);
@@ -294,9 +285,9 @@ namespace LogSyncMod.AutoTest
             return kind.startingHediffs != null && kind.startingHediffs.Any(starting => starting?.def == hediffDef);
         }
 
-        private Pawn GeneratePawn(PawnKindDef kind, LogSyncAutoTestSpecDef spec)
+        private Pawn GeneratePawn(PawnKindDef kind)
         {
-            Faction faction = ResolveFaction(kind, spec);
+            Faction faction = ResolveFaction();
             PawnGenerationRequest request = new PawnGenerationRequest(
                 kind,
                 faction,
@@ -317,35 +308,8 @@ namespace LogSyncMod.AutoTest
             return PawnGenerator.GeneratePawn(request);
         }
 
-        private static Faction ResolveFaction(PawnKindDef kind, LogSyncAutoTestSpecDef spec)
-        {
-            string mode = (spec?.requiredFactionMode ?? spec?.pawnFactionMode ?? string.Empty).Trim();
-            if (mode.Equals("Factionless", StringComparison.OrdinalIgnoreCase) || mode.Equals("None", StringComparison.OrdinalIgnoreCase))
-                return null;
-            if (mode.Equals("Native", StringComparison.OrdinalIgnoreCase) && kind.defaultFactionDef != null)
-                return Find.FactionManager?.FirstFactionOfDef(kind.defaultFactionDef);
-            return Faction.OfPlayer ?? Find.FactionManager?.OfPlayer;
-        }
-
-        private List<Hediff> AddDeclaredPrerequisites(Pawn pawn, LogSyncAutoTestSpecDef spec)
-        {
-            List<Hediff> added = new List<Hediff>();
-            foreach (string defName in spec?.prerequisiteHediffs ?? new List<string>())
-            {
-                HediffDef prerequisiteDef = DefDatabase<HediffDef>.GetNamedSilentFail(defName);
-                if (prerequisiteDef == null)
-                    throw new InvalidOperationException("Declared prerequisite Hediff was not found: " + defName);
-                if (pawn.health.hediffSet.HasHediff(prerequisiteDef)) continue;
-
-                AutoTestHediffPartResolution part = partResolver.Resolve(prerequisiteDef, pawn);
-                if (!part.Supported)
-                    throw new InvalidOperationException("Declared prerequisite Hediff has no legal part: " + defName + ". " + part.ErrorMessage);
-                Hediff hediff = HediffMaker.MakeHediff(prerequisiteDef, pawn, part.Part);
-                pawn.health.AddHediff(hediff, part.Part, null, null);
-                added.Add(hediff);
-            }
-            return added;
-        }
+        private static Faction ResolveFaction()
+            => Faction.OfPlayer ?? Find.FactionManager?.OfPlayer;
 
         private static void DestroyPawn(Pawn pawn)
         {

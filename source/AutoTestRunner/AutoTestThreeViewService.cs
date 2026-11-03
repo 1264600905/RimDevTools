@@ -68,20 +68,6 @@ namespace LogSyncMod.AutoTest
         public string Label;
         public AutoTestScreenshotProfile Profile;
 
-        public AutoTestThreeViewTargetSpec CloneForPlayerCompatibility(AutoTestManifestEntry manifestEntry)
-        {
-            AutoTestThreeViewTargetSpec clone = (AutoTestThreeViewTargetSpec)MemberwiseClone();
-            clone.ManifestEntry = manifestEntry;
-            clone.RequestedFactionMode = AutoTestPawnFactionMode.PlayerCompatibility;
-            clone.GenerationFactionMode = AutoTestPawnFactionMode.PlayerCompatibility;
-            clone.GenerationFactionModeResolved = false;
-            clone.GenerationFactionDefName = string.Empty;
-            clone.GenerationFactionReason = string.Empty;
-            clone.GenerationFallbackNotes = string.Empty;
-            clone.DefName = (DefName ?? PawnKindDef?.defName ?? "UnknownPawn") + "@PlayerCompatibility";
-            clone.Label = (Label ?? PawnKindDef?.label ?? clone.DefName) + " [PlayerCompatibility]";
-            return clone;
-        }
     }
 
     internal sealed class AutoTestThreeViewTargetContext

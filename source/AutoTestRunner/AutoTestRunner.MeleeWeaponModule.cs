@@ -646,13 +646,7 @@ namespace LogSyncMod.AutoTest
         {
             AutoTestResult result = CreateResult(AutoTestCaseType.MeleeWeaponPocketMap, "ThingDef", weaponDef.defName, weaponDef.label);
             MeleeWeaponTestSession session = new MeleeWeaponTestSession(this, weaponDef, result);
-            LogSyncAutoTestSpecDef spec = ResolveBestMatchingSpec(AutoTestKind.MeleeWeaponPocketMap, weaponDef);
-            session.AllowScreenshots = ShouldCaptureScreenshots(spec);
-            result.Notes = AppendNote(result.Notes, "AutoTestMode=" + (settings.UseXmlDrivenAutoTest() ? "XmlDriven" : "Automatic"));
-            if (spec != null)
-            {
-                result.Notes = AppendNote(result.Notes, "Spec=" + spec.defName);
-            }
+            session.AllowScreenshots = ShouldCaptureScreenshots();
 
             try
             {
@@ -699,7 +693,7 @@ namespace LogSyncMod.AutoTest
                 def.category == ThingCategory.Item &&
                 def.IsWeapon &&
                 def.IsMeleeWeapon &&
-                MatchesSpecFilters(AutoTestKind.MeleeWeaponPocketMap, def);
+                MatchesTargetDefNameFilter(def);
         }
     }
 }

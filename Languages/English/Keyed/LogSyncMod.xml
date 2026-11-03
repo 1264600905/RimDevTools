@@ -15,10 +15,6 @@
   <LogSyncMod.AutoTestEnabled>Enable targeted auto test</LogSyncMod.AutoTestEnabled>
   <LogSyncMod.AutoTestTargetPackageId>Target mod PackageId:</LogSyncMod.AutoTestTargetPackageId>
   <LogSyncMod.AutoTestOutputPath>Auto test report output directory:</LogSyncMod.AutoTestOutputPath>
-  <LogSyncMod.AutoTestMode>Test mode: {0}</LogSyncMod.AutoTestMode>
-  <LogSyncMod.AutoTestModeSelect>Select test mode (current: {0})</LogSyncMod.AutoTestModeSelect>
-  <LogSyncMod.AutoTestModeAutomatic>Automatic discovery</LogSyncMod.AutoTestModeAutomatic>
-  <LogSyncMod.AutoTestModeXmlDriven>XML-driven spec</LogSyncMod.AutoTestModeXmlDriven>
   <LogSyncMod.AutoTestScope>Test scope: {0}</LogSyncMod.AutoTestScope>
   <LogSyncMod.AutoTestScopeSelect>Select test scope (current: {0})</LogSyncMod.AutoTestScopeSelect>
   <LogSyncMod.AutoTestScopeStandard>Standard</LogSyncMod.AutoTestScopeStandard>
@@ -37,7 +33,6 @@
   <LogSyncMod.AutoTestScopeSkillPocketMaps>Skill pocket maps</LogSyncMod.AutoTestScopeSkillPocketMaps>
   <LogSyncMod.AutoTestScopes>Test scopes (multiple allowed; Standard spans all four groups but excludes combat pawns and skill pocket maps):</LogSyncMod.AutoTestScopes>
   <LogSyncMod.AutoTestTargetDefNames>Exact DefName allowlist (comma-separated; blank means all):</LogSyncMod.AutoTestTargetDefNames>
-  <LogSyncMod.AutoTestTargetDefNamesXmlHint>XML-driven mode ignores this allowlist; Specs select the targets.</LogSyncMod.AutoTestTargetDefNamesXmlHint>
   <LogSyncMod.AutoTestCaptureScreenshots>Capture screenshots for opened InfoCards</LogSyncMod.AutoTestCaptureScreenshots>
   <LogSyncMod.AutoTestPreventPause>Prevent game pause during auto tests</LogSyncMod.AutoTestPreventPause>
   <LogSyncMod.AutoTestUseFastSpeed>Force 2x speed during auto tests</LogSyncMod.AutoTestUseFastSpeed>

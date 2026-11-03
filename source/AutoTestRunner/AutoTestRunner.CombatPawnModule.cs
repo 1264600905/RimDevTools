@@ -592,7 +592,7 @@ namespace LogSyncMod.AutoTest
                     }
 
                     Def filterDef = spec.TargetDef ?? (Def)spec.PawnKindDef;
-                    if (!MatchesSpecFilters(spec.Kind, filterDef))
+                    if (!MatchesTargetDefNameFilter(filterDef))
                     {
                         continue;
                     }
@@ -623,7 +623,6 @@ namespace LogSyncMod.AutoTest
                 AutoTestResult result = CreateResult(spec.ManifestEntry, spec.TargetDef?.GetType().Name ?? nameof(Def), spec.DefName, spec.Label);
                 result.OverlayLine3 = string.IsNullOrWhiteSpace(spec.PawnRaceLabel) ? string.Empty : "PawnRace: " + spec.PawnRaceLabel;
                 result.OverlayLine4 = string.IsNullOrWhiteSpace(spec.PawnBodyTypeLabel) ? string.Empty : "BodyType: " + spec.PawnBodyTypeLabel;
-                result.Notes = AppendNote(result.Notes, "AutoTestMode=" + (settings.UseXmlDrivenAutoTest() ? "XmlDriven" : "Automatic"));
                 result.Notes = AppendNote(result.Notes, "CombatKind=" + spec.Kind);
                 if (!string.IsNullOrWhiteSpace(spec.PawnRaceDefName))
                 {
@@ -634,13 +633,7 @@ namespace LogSyncMod.AutoTest
                     result.Notes = AppendNote(result.Notes, "CombatBodyType=" + spec.PawnBodyTypeDefName);
                 }
 
-                LogSyncAutoTestSpecDef specDef = ResolveBestMatchingSpec(spec.Kind, spec.TargetDef ?? (Def)spec.PawnKindDef);
-                if (specDef != null)
-                {
-                    result.Notes = AppendNote(result.Notes, "Spec=" + specDef.defName);
-                }
-
-                CombatPawnTestSession session = CombatPawnTestSession.Create(this, spec, result, ShouldCaptureScreenshots(specDef));
+                CombatPawnTestSession session = CombatPawnTestSession.Create(this, spec, result, ShouldCaptureScreenshots());
                 if (session.Phase == CombatPawnTestPhase.Done)
                 {
                     RecordResult(result);

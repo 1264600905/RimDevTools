@@ -33,7 +33,7 @@ namespace LogSyncMod
                 LogLoadedMods();
                 ScheduleWindowModeLog();
 
-                // Auto/XML 由 AutoTestRunner 在完成信号前恢复；只有 quick 使用 ready timer。
+                // AutoTestRunner 在完成信号前恢复；只有 quick 使用 ready timer。
                 if (settings == null || !settings.autoTestEnabled)
                 {
                     var timer = new System.Timers.Timer(10000);
@@ -198,17 +198,6 @@ namespace LogSyncMod
             settings.autoTestTargetPackageId = listingStandard.TextEntry(settings.autoTestTargetPackageId);
             listingStandard.Label("LogSyncMod.AutoTestOutputPath".Translate());
             settings.autoTestOutputPath = listingStandard.TextEntry(settings.autoTestOutputPath);
-            string modeLabel = GetAutoTestModeLabel(settings.autoTestMode);
-            listingStandard.Label("LogSyncMod.AutoTestMode".Translate(modeLabel));
-            if (listingStandard.ButtonText("LogSyncMod.AutoTestModeSelect".Translate(modeLabel)))
-            {
-                List<FloatMenuOption> modeOptions = new List<FloatMenuOption>
-                {
-                    new FloatMenuOption("LogSyncMod.AutoTestModeAutomatic".Translate(), () => settings.autoTestMode = AutoTestMode.Automatic),
-                    new FloatMenuOption("LogSyncMod.AutoTestModeXmlDriven".Translate(), () => settings.autoTestMode = AutoTestMode.XmlDriven)
-                };
-                Find.WindowStack.Add(new FloatMenu(modeOptions));
-            }
             listingStandard.Label("LogSyncMod.AutoTestScopes".Translate());
             DrawAutoTestScopeCheckbox(listingStandard, AutoTestScope.Standard, "LogSyncMod.AutoTestScopeStandard".Translate());
             DrawAutoTestScopeCheckbox(listingStandard, AutoTestScope.UI, "LogSyncMod.AutoTestScopeUI".Translate());
@@ -216,14 +205,7 @@ namespace LogSyncMod
             DrawAutoTestScopeCheckbox(listingStandard, AutoTestScope.View, "LogSyncMod.AutoTestScopeView".Translate());
             DrawAutoTestScopeCheckbox(listingStandard, AutoTestScope.Misc, "LogSyncMod.AutoTestScopeMisc".Translate());
             listingStandard.Label("LogSyncMod.AutoTestTargetDefNames".Translate());
-            bool targetNamesEnabled = settings.autoTestMode == AutoTestMode.Automatic;
-            GUI.enabled = targetNamesEnabled;
             settings.autoTestTargetDefNamesInput = listingStandard.TextEntry(settings.autoTestTargetDefNamesInput);
-            GUI.enabled = true;
-            if (!targetNamesEnabled)
-            {
-                listingStandard.Label("LogSyncMod.AutoTestTargetDefNamesXmlHint".Translate());
-            }
             listingStandard.CheckboxLabeled("LogSyncMod.AutoTestCaptureScreenshots".Translate(), ref settings.autoTestCaptureScreenshots);
             listingStandard.CheckboxLabeled("LogSyncMod.AutoTestPreventPause".Translate(), ref settings.autoTestPreventPause);
             listingStandard.CheckboxLabeled("LogSyncMod.AutoTestUseFastSpeed".Translate(), ref settings.autoTestUseFastSpeed);
@@ -362,15 +344,5 @@ namespace LogSyncMod
             }
         }
 
-        private static string GetAutoTestModeLabel(AutoTestMode mode)
-        {
-            switch (mode)
-            {
-                case AutoTestMode.XmlDriven:
-                    return "LogSyncMod.AutoTestModeXmlDriven".Translate();
-                default:
-                    return "LogSyncMod.AutoTestModeAutomatic".Translate();
-            }
-        }
     }
 }

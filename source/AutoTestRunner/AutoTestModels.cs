@@ -95,9 +95,6 @@ namespace LogSyncMod.AutoTest
         public PawnKindDef PawnKindDef;
         public GeneDef GeneDef;
         public XenotypeDef XenotypeDef;
-        public LogSyncAutoTestSpecDef SpecDef;
-        public AutoTestPawnFactionMode PawnFactionMode = AutoTestPawnFactionMode.Native;
-        public bool CompatibilityObservation;
         public AutoTestManifestEntry ManifestEntry;
     }
 

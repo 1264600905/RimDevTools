@@ -15,10 +15,6 @@
   <LogSyncMod.AutoTestEnabled>啟用定向自動測試</LogSyncMod.AutoTestEnabled>
   <LogSyncMod.AutoTestTargetPackageId>目標模組 PackageId：</LogSyncMod.AutoTestTargetPackageId>
   <LogSyncMod.AutoTestOutputPath>自動測試報告輸出目錄：</LogSyncMod.AutoTestOutputPath>
-  <LogSyncMod.AutoTestMode>測試模式：{0}</LogSyncMod.AutoTestMode>
-  <LogSyncMod.AutoTestModeSelect>選擇測試模式（當前：{0}）</LogSyncMod.AutoTestModeSelect>
-  <LogSyncMod.AutoTestModeAutomatic>自動枚舉</LogSyncMod.AutoTestModeAutomatic>
-  <LogSyncMod.AutoTestModeXmlDriven>XML 規範驅動</LogSyncMod.AutoTestModeXmlDriven>
   <LogSyncMod.AutoTestScope>測試範圍：{0}</LogSyncMod.AutoTestScope>
   <LogSyncMod.AutoTestScopeSelect>選擇測試範圍（當前：{0}）</LogSyncMod.AutoTestScopeSelect>
   <LogSyncMod.AutoTestScopeStandard>標準測試</LogSyncMod.AutoTestScopeStandard>
@@ -37,7 +33,6 @@
   <LogSyncMod.AutoTestScopeSkillPocketMaps>技能口袋地圖</LogSyncMod.AutoTestScopeSkillPocketMaps>
   <LogSyncMod.AutoTestScopes>測試範圍（可多選；Standard 橫跨四類，但不包含戰鬥 Pawn 與技能口袋地圖）：</LogSyncMod.AutoTestScopes>
   <LogSyncMod.AutoTestTargetDefNames>精確 DefName 白名單（逗號分隔，留空表示全部）：</LogSyncMod.AutoTestTargetDefNames>
-  <LogSyncMod.AutoTestTargetDefNamesXmlHint>XML 規範驅動模式忽略此白名單，具體目標由 Spec 決定。</LogSyncMod.AutoTestTargetDefNamesXmlHint>
   <LogSyncMod.AutoTestCaptureScreenshots>為已打開的 InfoCard 自動截圖</LogSyncMod.AutoTestCaptureScreenshots>
   <LogSyncMod.AutoTestPreventPause>自動測試期間阻止遊戲暫停</LogSyncMod.AutoTestPreventPause>
   <LogSyncMod.AutoTestUseFastSpeed>自動測試期間強制二倍速</LogSyncMod.AutoTestUseFastSpeed>
