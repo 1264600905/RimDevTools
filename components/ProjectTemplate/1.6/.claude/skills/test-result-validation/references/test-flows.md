@@ -1,10 +1,10 @@
 # AutoTest 测试流程与核心函数参考
 
-记录 auto/XML 模式自动测试的各项测试流程与核心调用函数（保留核心部分）。校验测试结果前先在此定位用例所属流程。
+记录 auto 模式自动测试的各项测试流程与核心调用函数（保留核心部分）。校验测试结果前先在此定位用例所属流程。
 
 ## 通用调度流程
 
-所有 auto/XML 测试共用：
+所有 auto 测试共用：
 
 - `AutoTestBootstrap.Initialize`：解析运行时请求并初始化。
 - `AutoTestBootstrap.Tick` / `AutoTestRunner.Tick`：每 tick 驱动测试调度，分发到各模块。
@@ -70,11 +70,6 @@
 ## 结果状态（ResultStatusModule）
 
 - `AutoTestResultStatus`：结果状态判定，输出成功/失败分类。
-
-## XML Spec（SpecModule）
-
-- 从目标模组 XML Spec（如 `RimLane_LogSyncAutoTests.xml`）解析测试目标。
-- `AutoTestGenerationContext.Resolve`：解析 pawn/派系生成上下文。
 
 ## 截图
 

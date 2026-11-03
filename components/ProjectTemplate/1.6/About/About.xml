@@ -27,7 +27,7 @@
 [*] 在 About 元数据的 incompatibleWith 列表中移除 ludeon.rimworld。模板故意与 Core 冲突，因此在完成这一步前不能在游戏中启用。
 [*] 运行 .tools/RimDevTools.exe doctor，逐项处理项目身份、游戏路径、Steam、编译前置和工具状态；所有模板默认值被替换后，doctor 才会将项目标记为可继续。
 [*] 先运行 .tools/RimDevTools.exe deploy --dry-run 审查构建与同步计划。确认目标、程序集和同步项正确后，再运行 deploy。
-[*] 修改代码后使用 test run --deploy --mode quick 进行启动冒烟测试；交互验证使用 manual，最终功能验证使用 auto，需要声明式用例时使用 xml。
+[*] 修改代码后使用 test run --deploy --mode quick 进行启动冒烟测试；交互验证使用 manual，最终功能验证使用 auto。
 [/list]
 [img]图片展示：从 doctor、部署预演到快速测试的完整起步流程[/img]
 
@@ -44,7 +44,7 @@
 [list]
 [*] doctor 为只读诊断，检查项目配置、About.xml、Preview.png 与图片大小、部署位置安全性、RimWorld 和 Steam 发现、游戏程序集、Harmony、1.6 所需的 .NET Framework targeting pack、Git 状态、ILSpy、LogSync、AutoTest、环境锁和未完成事务。1.7+ 默认隐藏不适用的 .NET Framework 检查，使用 --verbose 可查看。
 [*] deploy 会等待 RimWorld 退出，构建 csproj_paths 并准备 sync_items 暂存目录，然后在目标目录保持原位的情况下逐文件事务更新。提交前会检查变更文件占用，失败时回滚；protected_files_regex 可保留 PublishedFileId.txt 等发布文件。sync_source 或 --sync-source 只在需要同步源码时启用。
-[*] test run 在事务中写入并恢复 ModsConfig 与 LogSync 设置。quick 等待运行就绪信号；manual 供人工观察；auto 和 xml 验证结构化 AutoTest 结果。auto 模式默认截图；XML 测试按每条定义的 captureScreenshots 设置截图。可设置 --timeout-seconds、--active-mods-file、--target-package-id、--scope、--defname 和隔离桌面。
+[*] test run 在事务中写入并恢复 ModsConfig 与 LogSync 设置。quick 等待运行就绪信号；manual 供人工观察；auto 验证结构化 AutoTest 结果并默认截图。可设置 --timeout-seconds、--active-mods-file、--target-package-id、--scope、--defname 和隔离桌面。
 [*] test settings 用于给手动启动的 RimWorld 会话持久化 LogSync 日志路径和关键词，不会像 test run 一样自动恢复原设置。
 [*] test cleanup --status 可只读查看环境锁、RimWorld 运行状态、遗留事务和部署暂存/备份现场；--dry-run 用于预览恢复动作，普通 test cleanup 才会执行恢复。
 [*] 测试和部署共享环境锁。不要在运行期间手工修改 RimWorld 配置、LogSync 设置、事务目录或自动测试结果；失败后应读取 JSON 结果、精选日志和保留报告定位问题。

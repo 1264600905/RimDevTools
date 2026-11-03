@@ -10,7 +10,7 @@ RimDevTools 是 Windows x64 的 .NET 10 CLI，可检查和部署 RimWorld 1.6/1.
 - RimWorld 1.6 模组编译需要 .NET Framework 4.8 Developer/Targeting Pack；4.7.2 也受支持。
 - RimWorld 1.7 及更高版本默认沿用 1.7 布局，模组工程使用 .NET 10；`game_version` 仍须填写实际的精确版本号，以便只解析对应 `LoadFolders.xml` 版本目录。
 
-`doctor` 根据 `game_version` 选择对应的游戏目录、程序集和工程目标框架，并检查 About.xml/Preview.png、配置路径、Steam/RimWorld、Harmony、ILSpy、锁和事务。1.7+ 默认隐藏不适用的 .NET Framework targeting pack 检查，`doctor --verbose` 会显示它。LogSync、AutoTestRunner 与 `min_active_mods` 属于可选测试能力，不会阻止普通项目检查或部署；AutoTest XML 只在显式运行 XML 测试时才由测试流程使用。缺少 About 文件或 Preview.png 不小于 1 MiB 时只给出 warning。`mods_config_path` 必须指向游戏实际读取的现有 `ModsConfig.xml`；`deploy` 和 `test` 会拒绝在该项无效时继续。它不检查启动 CLI 所需的 Runtime，也不探测 RimSage 网络或进程。
+`doctor` 根据 `game_version` 选择对应的游戏目录、程序集和工程目标框架，并检查 About.xml/Preview.png、配置路径、Steam/RimWorld、Harmony、ILSpy、锁和事务。1.7+ 默认隐藏不适用的 .NET Framework targeting pack 检查，`doctor --verbose` 会显示它。LogSync、AutoTestRunner 与 `min_active_mods` 属于可选测试能力，不会阻止普通项目检查或部署；普通项目无需包含自动测试 Spec XML。缺少 About 文件或 Preview.png 不小于 1 MiB 时只给出 warning。`mods_config_path` 必须指向游戏实际读取的现有 `ModsConfig.xml`；`deploy` 和 `test` 会拒绝在该项无效时继续。它不检查启动 CLI 所需的 Runtime，也不探测 RimSage 网络或进程。
 
 ## 构建与发布
 

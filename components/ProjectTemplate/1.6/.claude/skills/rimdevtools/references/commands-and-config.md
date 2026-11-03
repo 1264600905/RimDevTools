@@ -54,7 +54,7 @@ mod dependents <query> [--version <value>] [--fuzzy] [--verbose]
 
 ```text
 test settings [--verbose]
-test run [--deploy] [--sync-source] [--mode quick|manual|auto|xml]
+test run [--deploy] [--sync-source] [--mode quick|manual|auto]
          [--active-mods-file <path>] [--timeout-seconds <n>]
          [--target-package-id <id>]
          [--scope <value>]... [--defname <value>]... [--batch-size <n>]
@@ -64,15 +64,15 @@ test cleanup [--dry-run] [--status] [--verbose]
 
 `test settings` 是持久化 LogSync 设置命令，不会启动测试。它会等待已有 RimWorld 退出、取得共享环境锁，然后把日志路径设置为当前项目本轮目录中的精选日志（以返回的 `artifacts.syncLogPath` 为准），把 `mod_config.jsonc.log_keywords` 写入 LogSync，并更新自动测试输出路径、开关和筛选设置。写入不会像 `test run` 一样在结束后自动恢复，适合准备一次由用户手动启动的 RimWorld 会话；正常自动测试应使用 `test run`，由事务临时应用并恢复设置。
 
-quick 是启动冒烟测试。manual 是用户手动的。auto 和 XML 验证结构化的 AutoTest 结果。auto 模式默认截图；XML 驱动测试按每条测试定义的 `captureScreenshots` 设置截图，不需要截图命令行开关。隔离优先级为显式标志、项目设置，然后是模式默认值。`test run` 不接受 `--xml-hot`；`test run --deploy` 会先关闭已有 RimWorld，再在启动测试进程前执行普通构建和逐文件事务部署。
+quick 是启动冒烟测试。manual 是用户手动的。auto 验证结构化的 AutoTest 结果并默认截图。隔离优先级为显式标志、项目设置，然后是模式默认值。`test run` 不接受 `--xml-hot`；`test run --deploy` 会先关闭已有 RimWorld，再在启动测试进程前执行普通构建和逐文件事务部署。
 
 所有 `test run` 模式都会在启动前将 `ModsConfig.xml` 的 `<version>` 写为已校验的 `game_version`，防止切换版本时游戏重置启用列表。版本号先于事务备份更新；测试结束、失败、取消或中断恢复后保留目标版本号，原模组列表与设置照常恢复。
 
 `test run` 默认输出运行结果、测试信号、模组数量和依赖 warning；`--verbose` 附加完整启用模组列表、设置时新增的模组以及部署子进程诊断。
 
-`--scope` 可在 auto/XML 中重复，多个 scope 取并集。正式值为 `standard`、`ui`、`combat`、`view`、`misc`；旧细分值继续以原窄范围语义兼容。未传时默认为 `Standard`；Standard 横跨四类常规测试，但不隐式启用 CombatPawns 或 SkillPocketMaps。
+`--scope` 可在 auto 中重复，多个 scope 取并集。正式值为 `standard`、`ui`、`combat`、`view`、`misc`；未传时默认为 `Standard`；Standard 横跨四类常规测试，但不隐式启用 CombatPawns 或 SkillPocketMaps。
 
-`--defname` 仅适用于 auto，可重复且按不区分大小写去重。scope 选择测试类型，DefName 选择目标，两者取交集；不传 DefName 时枚举所选范围。任何请求的 DefName 未产生用例时，本轮失败并在 JSON/Markdown 中列出未命中名称。`--batch-size` 适用于 auto/xml，默认 40；包括 Standard 在内的枚举运行都限制最终计划数量，候选超限时从全部候选中全局均匀、无放回随机抽取。显式 DefName 运行继续忽略该限制。游戏进程 stdout/stderr 会被安静丢弃，不生成独立进程日志；自动测试不落盘独立 Evidence JSON。
+`--defname` 仅适用于 auto，可重复且按不区分大小写去重。scope 选择测试类型，DefName 选择目标，两者取交集；不传 DefName 时枚举所选范围。任何请求的 DefName 未产生用例时，本轮失败并在 JSON/Markdown 中列出未命中名称。`--batch-size` 适用于 auto，默认 40；包括 Standard 在内的枚举运行都限制最终计划数量，候选超限时从全部候选中全局均匀、无放回随机抽取。显式 DefName 运行继续忽略该限制。游戏进程 stdout/stderr 会被安静丢弃，不生成独立进程日志；自动测试不落盘独立 Evidence JSON。
 
 例 1，只测试三视图：
 
@@ -115,7 +115,7 @@ quick 是启动冒烟测试。manual 是用户手动的。auto 和 XML 验证结
 - `ilspycmd_path`：相对 `.tools` 的路径，通常为 `Ilspy\ilspycmd.exe`。
 - `log_keywords`：应用于 LogSync 设置的字符串。
 - `min_active_mods`：始终包含在临时测试模组列表中的 package ID。
-- `isolated_desktop`：quick/auto/XML 的默认隔离。
+- `isolated_desktop`：quick/auto 的默认隔离。
 - `timeouts.steam_launch_detect`：Steam/游戏出现超时。
 - `timeouts.max_wait`：默认测试完成超时。
 - `timeouts.existing_game_exit`：等待现有游戏进程退出。

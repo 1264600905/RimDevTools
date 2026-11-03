@@ -8,7 +8,7 @@
     "mod_name": "TriggersProjectTemplate",
     // 目标 RimWorld 版本号；用于定位版本化 Assemblies 和 Defs 目录。
     "game_version": "1.6",
-    // quick/auto/xml 默认使用当前桌面；需要隔离桌面时显式传入命令行参数。
+    // quick/auto 默认使用当前桌面；需要隔离桌面时显式传入命令行参数。
     "isolated_desktop": false,
 
     // 项目语义目录；可按项目习惯改名，必须保持在项目根目录内。

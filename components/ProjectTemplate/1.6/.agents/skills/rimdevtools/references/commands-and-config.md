@@ -14,7 +14,7 @@
 
 ### `doctor [--verbose]`
 
-检查所选游戏版本对应的路径和构建目标框架、About.xml/Preview.png、Steam/RimWorld/创意工坊发现、项目目录安全性、游戏与 Harmony 程序集、Unity Shader Bundle 版本、Git/工作树状态、ILSpy、可选的 LogSync/AutoTest 测试宿主、锁和事务。测试宿主与 `min_active_mods` 是可选测试前提，不是普通模组工程的必需组件；AutoTest XML 仅在显式 XML 测试时使用。缺少 About 文件或 Preview.png 不小于 1 MiB 时只给出 warning。项目不能位于 RimWorld `Mods` 或 Steam Workshop 内容目录。它是只读的，不探测 RimSage。默认输出包含可操作检查项和关键程序集路径，默认会自动隐藏满足条件的选项；`--verbose` 显示所有检查结果，包括已经满足选项。
+检查所选游戏版本对应的路径和构建目标框架、About.xml/Preview.png、Steam/RimWorld/创意工坊发现、项目目录安全性、游戏与 Harmony 程序集、Unity Shader Bundle 版本、Git/工作树状态、ILSpy、可选的 LogSync/AutoTest 测试宿主、锁和事务。测试宿主与 `min_active_mods` 是可选测试前提，不是普通模组工程的必需组件；AutoTest 用例由 AutoTestRunner 代码生成，无需 Spec XML。缺少 About 文件或 Preview.png 不小于 1 MiB 时只给出 warning。项目不能位于 RimWorld `Mods` 或 Steam Workshop 内容目录。它是只读的，不探测 RimSage。默认输出包含可操作检查项和关键程序集路径，默认会自动隐藏满足条件的选项；`--verbose` 显示所有检查结果，包括已经满足选项。
 
 ### `deploy [--sync-source] [--dry-run]`
 
@@ -49,7 +49,7 @@ mod dependents <query> [--version <value>] [--fuzzy]
 
 ```text
 test settings
-test run [--deploy] [--sync-source] [--mode quick|manual|auto|xml]
+test run [--deploy] [--sync-source] [--mode quick|manual|auto]
          [--active-mods-file <path>] [--timeout-seconds <n>]
          [--target-package-id <id>]
          [--scope <value>]... [--defname <value>]... [--batch-size <n>]
@@ -58,13 +58,13 @@ test run [--deploy] [--sync-source] [--mode quick|manual|auto|xml]
 
 `test settings` 是持久化 LogSync 设置命令，不会启动测试。它会等待已有 RimWorld 退出、取得共享环境锁，然后把日志路径设置为当前项目本轮目录中的精选日志（以返回的 `artifacts.syncLogPath` 为准），把 `mod_config.jsonc.log_keywords` 写入 LogSync，并更新自动测试输出路径、开关和筛选设置。写入不会像 `test run` 一样在结束后自动恢复，适合准备一次由用户手动启动的 RimWorld 会话；正常自动测试应使用 `test run`，由事务临时应用并恢复设置。
 
-quick 是启动冒烟测试。manual 是用户手动的。auto 和 XML 验证结构化的 AutoTest 结果。auto 模式默认截图；XML 驱动测试按每条测试定义的 `captureScreenshots` 设置截图，不需要截图命令行开关。隔离优先级为显式标志、项目设置，然后是模式默认值。
+quick 是启动冒烟测试。manual 是用户手动的。auto 验证结构化的 AutoTest 结果并默认截图。隔离优先级为显式标志、项目设置，然后是模式默认值。
 
 所有 `test run` 模式都会在启动前将 `ModsConfig.xml` 的 `<version>` 写为已校验的 `game_version`，防止切换版本时游戏重置启用列表。版本号先于事务备份更新；测试结束、失败、取消或中断恢复后保留目标版本号，原模组列表与设置照常恢复。
 
-`--scope` 可在 auto/XML 中重复，多个 scope 取并集。正式值为 `standard`、`ui`、`combat`、`view`、`misc`；旧细分值继续以原窄范围语义兼容。未传时默认为 `Standard`；Standard 横跨四类常规测试，但不隐式启用 CombatPawns 或 SkillPocketMaps。
+`--scope` 可在 auto 中重复，多个 scope 取并集。正式值为 `standard`、`ui`、`combat`、`view`、`misc`；未传时默认为 `Standard`；Standard 横跨四类常规测试，但不隐式启用 CombatPawns 或 SkillPocketMaps。
 
-`--defname` 仅适用于 auto，可重复且按不区分大小写去重。scope 选择测试类型，DefName 选择目标，两者取交集；不传 DefName 时枚举所选范围。任何请求的 DefName 未产生用例时，本轮失败并在 JSON/Markdown 中列出未命中名称。`--batch-size` 适用于 auto/xml，默认 40；包括 Standard 在内的枚举运行都限制最终计划数量，候选超限时从全部候选中全局均匀、无放回随机抽取。显式 DefName 运行继续忽略该限制。新版游戏进程 stdout/stderr 始终丢弃，不生成 `RimWorldProcess.log`；不要另存进程输出。
+`--defname` 仅适用于 auto，可重复且按不区分大小写去重。scope 选择测试类型，DefName 选择目标，两者取交集；不传 DefName 时枚举所选范围。任何请求的 DefName 未产生用例时，本轮失败并在 JSON/Markdown 中列出未命中名称。`--batch-size` 适用于 auto，默认 40；包括 Standard 在内的枚举运行都限制最终计划数量，候选超限时从全部候选中全局均匀、无放回随机抽取。显式 DefName 运行继续忽略该限制。新版游戏进程 stdout/stderr 始终丢弃，不生成 `RimWorldProcess.log`；不要另存进程输出。
 
 例 1，只测试三视图：
 
@@ -107,7 +107,7 @@ quick 是启动冒烟测试。manual 是用户手动的。auto 和 XML 验证结
 - `ilspycmd_path`：相对 `.tools` 的路径，通常为 `Ilspy\ilspycmd.exe`。
 - `log_keywords`：应用于 LogSync 设置的字符串。
 - `min_active_mods`：始终包含在临时测试模组列表中的 package ID。
-- `isolated_desktop`：quick/auto/XML 的默认隔离。
+- `isolated_desktop`：quick/auto 的默认隔离。
 - `timeouts.steam_launch_detect`：Steam/游戏出现超时。
 - `timeouts.max_wait`：默认测试完成超时。
 - `timeouts.existing_game_exit`：等待现有游戏进程退出。

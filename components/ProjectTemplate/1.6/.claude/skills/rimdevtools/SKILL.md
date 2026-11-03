@@ -1,6 +1,6 @@
 ---
 name: rimdevtools
-description: 操作项目本地的 RimDevTools CLI，处理 RimWorld 1.6 模组配置、健康检查、构建、事务化逐文件部署和非 DLL 文件热同步、参考模组发现与 ILSpy 反编译、由 LogSync 支持的 quick/manual/auto/XML 测试，以及打包的 LogSyncMod 安装。处理 mod_config.jsonc、.tools/RimDevTools.exe、部署、测试、参考模组或工具模组安装时使用。
+description: 操作项目本地的 RimDevTools CLI，处理 RimWorld 模组配置、健康检查、构建、事务化逐文件部署和非 DLL 文件热同步、参考模组发现与 ILSpy 反编译、由 LogSync 支持的 quick/manual/auto 测试，以及打包的 LogSyncMod 安装。处理 mod_config.jsonc、.tools/RimDevTools.exe、部署、测试、参考模组或工具模组安装时使用。
 ---
 
 # RimDevTools 工具
@@ -25,7 +25,7 @@ description: 操作项目本地的 RimDevTools CLI，处理 RimWorld 1.6 模组�
 1. 遇到环境失败、状态不清或能力疑问，先用只读的 `doctor`。
 2. 用 `deploy --dry-run` 检查构建和同步计划。仅当用户要求部署或工作流明确需要时，才运行会修改内容的 `deploy`。
 3. 用 `mod search`、`mod dependencies` 或 `mod dependents` 只读发现参考模组。仅在任务范围包含复制/反编译参考模组时使用 `mod copy`。
-4. 用 `test run --mode quick` 验证启动和运行就绪；用 `manual` 进行用户观察的游玩；对 LogSync AutoTest 用 `auto` 或 `xml`。
+4. 用 `test run --mode quick` 验证启动和运行就绪；用 `manual` 进行用户观察的游玩；对 LogSync AutoTest 用 `auto`。
 5. 用 `mods install-tools --dry-run` 检查打包的 LogSyncMod 安装计划；仅在任务范围包含安装时才去掉 `--dry-run`。
 6. 仅在需要持久化 LogSync 设置时使用 `test settings`。正常测试会以事务方式应用并还原设置。
 
@@ -66,15 +66,14 @@ RimDevTools 默认只返回摘要和关键字段；所有命令仍将最终结�
 - `quick`：自动启动并等待运行就绪信号；冒烟测试默认模式。此测试速度最快，只会检查游戏启动报错。
 - `manual`：提供人工手动测试的游戏窗口；默认使用当前桌面。
 - `auto`：自动发现测试目标，可使用多个 scope 和精确 DefName 白名单。
-- `xml`：由目标模组中的 XML Spec 决定具体测试目标。
 
 auto 测试参数遵循以下规则：
 
 - `--scope <value>` 可重复，多个 scope 取并集。正式值为 `standard/ui/combat/view/misc`；旧细分值仍以原窄范围语义兼容。
 - `--defname <value>` 可重复，仅适用于 auto。DefName 是精确白名单，与 scope 取交集；不传 DefName 时枚举所选 scope 下的目标。
-- `--batch-size <n>` 适用于 auto/xml，默认 40。包括 Standard 在内的枚举运行都受该计划上限控制；候选超限时从全部候选中全局均匀、无放回随机抽取。
+- `--batch-size <n>` 适用于 auto，默认 40。包括 Standard 在内的枚举运行都受该计划上限控制；候选超限时从全部候选中全局均匀、无放回随机抽取。
 - 未传 scope 时默认为 `Standard`；Standard 横跨 UI、Combat、View、Misc，但不隐式启用 `CombatPawns` 和 `SkillPocketMaps`。
-- 显式 DefName 测试继续忽略 `autoTestBatchSize`；其他 auto/XML 运行（包括 Standard）都受该限制。
+- 显式 DefName 测试继续忽略 `autoTestBatchSize`；其他 auto 运行（包括 Standard）都受该限制。
 - 启用模组缺少必要上级依赖时只输出 warning，不阻挡测试；应根据 warning 补齐 `min_active_mods` 或 `--active-mods-file`。
 
 例 1，只测试目标模组的三视图：
@@ -91,7 +90,7 @@ auto 测试参数遵循以下规则：
   --defname DMS_StunBaton --defname DMS_TacticalPistol
 ```
 
-测试必须覆盖当前源代码变更时使用 `--deploy`。`--sync-source` 需要 `--deploy`。quick、auto 和 XML 使用配置的桌面隔离默认值；manual 除非明确覆盖，否则使用当前桌面。
+测试必须覆盖当前源代码变更时使用 `--deploy`。`--sync-source` 需要 `--deploy`。quick 和 auto 使用配置的桌面隔离默认值；manual 除非明确覆盖，否则使用当前桌面。
 
 运行期间绝不编辑活动 RimWorld 的 `ModsConfig.xml`、LogSync 设置、事务清单或请求/结果文件。RimDevTools 负责事务性还原。失败时报告稳定错误代码并保留恢复产物。
 

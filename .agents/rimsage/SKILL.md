@@ -37,7 +37,7 @@ description: 通过 RimSage MCP 研究官方 RimWorld 和 DLC 的 Def、XML 继�
 4. 用 `search_source` 定位类型、成员、字段访问和相关 XML。
 5. 对聚焦的类型或方法使用 `read_csharp_symbol`。
 6. 长类型、缺失索引条目或需上下文时，用 `read_file` 按行范围读取。用 `list_directory` 发现服务器路径，不要猜测。
-7. 记录准确的 Def 名称、类型、成员、路径和决定性片段。以本项目的构建及 quick/auto/XML 或真实游戏测试验证最终实现。
+7. 记录准确的 Def 名称、类型、成员、路径和决定性片段。以本项目的构建及 quick/auto 或真实游戏测试验证最终实现。
 
 ## 研究第三方模组
 
