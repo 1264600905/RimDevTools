@@ -12,6 +12,7 @@
 /obj/
 /artifacts/
 /.rimdev/
+/.tools/ProjectData/
 RimDevTools/packages.lock.json
 
 # 日志和临时文件

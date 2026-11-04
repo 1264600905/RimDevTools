@@ -20,6 +20,15 @@ public static class CliHelp
             "test cleanup" => TestCleanup,
             "mods" => Mods,
             "mods install-tools" => ModsInstallTools,
+            "workshop" => Workshop,
+            "workshop probe" => WorkshopProbe,
+            "workshop upload" => WorkshopUpload,
+            "steamworkshops" => SteamWorkshops,
+            "steamworkshops upload" => SteamWorkshopsUpload,
+            "steamworkshops edit" => SteamWorkshopsEdit,
+            "steamworkshops search" => SteamWorkshopsSearch,
+            "steamworkshops subscribe" => SteamWorkshopsSubscribe,
+            "steamworkshops status" => SteamWorkshopsStatus,
             _ => null
         };
         if (text is null) return false;
@@ -30,7 +39,7 @@ public static class CliHelp
     public static string Path(string[] args)
     {
         if (args.Length == 0 || args[0] is "--help" or "-h") return "help";
-        if (args[0] is "mod" or "test" or "mods" && args.Length > 1 && !args[1].StartsWith('-'))
+        if (args[0] is "mod" or "test" or "mods" or "workshop" or "steamworkshops" && args.Length > 1 && !args[1].StartsWith('-'))
             return $"{args[0]} {args[1]}";
         return args[0];
     }
@@ -53,6 +62,8 @@ public static class CliHelp
           test settings       Persist LogSync settings for manual game launches.
           test cleanup        Inspect or recover interrupted transactions.
           mods install-tools  Install the packaged LogSync tool mod.
+          workshop probe      Probe standalone Steamworks without launching RimWorld or uploading.
+          steamworkshops      upload, edit, search, subscribe, status through desktop Steam.
 
         Hot file sync:
           RimDevTools.exe deploy --xml-hot checks whether RimWorld is running. If so,
@@ -83,6 +94,152 @@ public static class CliHelp
         Exit codes:
           0 success; 2 invalid arguments/config; 3 missing dependency; 4 busy;
           5 task failure; 6 timeout; 7 game/test failure; 130 cancelled.
+        """;
+
+    private const string Workshop = """
+        Inspect standalone Steamworks access without publishing content.
+
+        Usage:
+          RimDevTools.exe workshop probe [options]
+
+        Commands:
+          probe               Check Steam login, app id, and optional Workshop item query.
+          upload              Upload the deployed mod; explicit private creation or expected id required.
+        """;
+
+    private const string SteamWorkshops = """
+        Steam Workshop commands through the installed game's native libraries.
+        Usage:
+          RimDevTools.exe steamworkshops <upload|edit|search|subscribe|status> [options]
+        Use each subcommand's --help. No API key or game launch is required.
+        Runtime metadata belongs to the project's ignored .tools/ProjectData directory.
+        """;
+
+    private const string SteamWorkshopsUpload = """
+        Validate and upload the last successful full deployment; automatically create or update.
+        Usage:
+          RimDevTools.exe steamworkshops upload [--project <path>] [--dry-run]
+        Options:
+          --project <path>             Project root (otherwise current directory/direct parent).
+          --dry-run                    Verify receipt, complete target hashes and project inputs.
+          --timeout-seconds <seconds>  Upload wait budget; default 1800.
+          --verbose                    Include diagnostics.
+          -h, --help                   Show help.
+        Requires .tools/ProjectData/deployment-receipt.json from a full deploy.
+        Assets required but not verified block publication. No hash bypass or --create.
+        Batch 1 implements preflight only; remote writes arrive in batch 2.
+        """;
+
+    private const string SteamWorkshopsEdit = """
+        Edit explicit metadata fields; with no field options, synchronize About description only.
+        Usage:
+          RimDevTools.exe steamworkshops edit [options]
+        Options:
+          --project <path>             Project root.
+          --id <id-or-link>            Explicit item; otherwise project's PublishedFileId.txt.
+          --description-file <path>    UTF-8 description (BBCode preserved).
+          --visibility <value>         private, public, friends-only, unlisted.
+          --preview-file <path>        Primary preview image.
+          --dry-run                    Inspect requested fields and owner permissions.
+          --timeout-seconds <seconds>  Submit wait budget; default 1800.
+          --verbose                    Include diagnostics.
+          -h, --help                   Show help.
+        Never builds, deploys or sends content. Remote writes arrive in batch 2.
+        """;
+
+    private const string SteamWorkshopsSearch = """
+        Search RimWorld Workshop; only the requested user page is printed.
+        Usage:
+          RimDevTools.exe steamworkshops search <keyword|id|link|next> [options]
+        Options:
+          --project <path>             Project root for the most recent search context.
+          --page <n>                   Simple: 25 items, pages 1-3; details: 10 items, pages 1-5.
+          --details                    Add Steam's official default 255-byte description summary.
+          --verbose                    Include diagnostics.
+          -h, --help                   Show help.
+        search next reuses the latest keyword/mode/page for this project (10-minute cache).
+        next cannot combine with --page/--details. Narrow keywords to exceed page limits.
+        ID/link requests return full description and status; no page/details flags allowed.
+        Native 50-item pages are sliced in official order, without discarding intervening items.
+        """;
+
+    private const string SteamWorkshopsSubscribe = """
+        Subscribe and request a download; never enables or sorts mods.
+        Usage:
+          RimDevTools.exe steamworkshops subscribe <id-or-link> [options]
+        Options:
+          --project <path>             Optional project root for game discovery.
+          --wait                       Wait for download completion.
+          --timeout-seconds <seconds>  Wait budget.
+          --verbose                    Include diagnostics.
+          -h, --help                   Show help.
+        This capability arrives in batch 3; until then no remote action is taken.
+        """;
+
+    private const string SteamWorkshopsStatus = """
+        Read live environment, full item description, permissions, statistics and download state.
+        Usage:
+          RimDevTools.exe steamworkshops status [id-or-link] [options]
+        Options:
+          --project <path>             Optional project root.
+          --wait                       Observe existing download; never subscribes/requests download.
+          --timeout-seconds <seconds>  Wait budget.
+          --verbose                    Include diagnostics.
+          -h, --help                   Show help.
+        Default identity is About/PublishedFileId.txt; packageId is separate.
+        Contributor identification is deferred; only verified owners may write.
+        Download waiting arrives in batch 3. Unknown statistics/time stay null.
+        """;
+
+    private const string WorkshopUpload = """
+        Upload the current project's deployed mod without launching RimWorld.
+
+        Usage:
+          RimDevTools.exe workshop upload --create-private [options]
+          RimDevTools.exe workshop upload --expected-published-file-id <id> [options]
+
+        Options:
+          --create-private          Create one new private test item; requires no existing local ids.
+          --expected-published-file-id <id>  Update only when project and deployed ids both match.
+          --update-description      Replace the Workshop description with deployed About.xml description.
+          --visibility <value>      public, friends-only, private, or unlisted; omitted preserves it.
+          --timeout-seconds <seconds>  Helper timeout, 10 to 1800; default 180.
+          --dry-run                 Inspect deployed content and metadata without contacting Steam.
+          --verbose                 Include native diagnostics on stderr.
+          -h, --help                Show this help.
+
+        Behavior:
+          Deploy first. Uses RimWorld/Mods/<mod_name> and verifies its About.xml against this project.
+          New ids are written to project and deployed About/PublishedFileId.txt immediately after creation.
+          Existing item ownership and consumer app id are checked before mutation. Existing visibility
+          and description are preserved unless explicitly requested. New items are private. The primary
+          preview is read from deployed About/Preview.png. No automatic retry or game fallback.
+          Does not bake assets. SubmitItemUpdate success and post-upload item details are returned as JSON.
+        """;
+
+    private const string WorkshopProbe = """
+        Probe Steamworks in a child process without launching RimWorld or uploading content.
+
+        Usage:
+          RimDevTools.exe workshop probe [--published-file-id <id>] [--timeout-seconds <seconds>] [--verbose]
+
+        Options:
+          --published-file-id <id>   Query one positive Workshop item id; omitted means session-only.
+          --timeout-seconds <seconds>  Native probe timeout, 1 to 120 seconds; default 15.
+          --verbose                 Include captured native subprocess diagnostics on stderr.
+          -h, --help                Show this help.
+
+        Requirements:
+          A valid project, a local Windows x64 Steam API DLL, and a running logged-on Steam client.
+          Reads the native DLL from the configured game installation; creates no probe files.
+
+        Output:
+          JSON with initialization/login status, actual app id and Steam id, UGC availability,
+          optional query result, and RimWorld process ids before/after. This is a read-only probe;
+          it does not verify item ownership or actual upload permission and never submits an update.
+
+        Example:
+          RimDevTools.exe workshop probe --published-file-id 2009463077
         """;
 
     private const string Doctor = """

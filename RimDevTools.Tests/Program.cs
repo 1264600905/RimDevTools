@@ -31,6 +31,12 @@ if (Path.GetFileNameWithoutExtension(Environment.ProcessPath ?? "").Equals("RimW
     return;
 }
 
+if (args.Contains("--live-steamworkshops"))
+{
+    Environment.ExitCode = await SteamWorkshopsLiveTests.RunAsync(args);
+    return;
+}
+
 var suite = new TestSuite();
 await suite.RunAsync();
 
@@ -180,8 +186,12 @@ internal sealed class TestSuite
     public async Task RunAsync()
     {
         Directory.CreateDirectory(_temp);
+        var originalDirectory = Environment.CurrentDirectory;
+        Environment.CurrentDirectory = _temp;
         try
         {
+            SteamworksSessionProbe.ProbeOverride = _ => Task.FromResult(new SteamworksResponse { Reason = "unit test: native session not invoked" });
+            _passed += await SteamWorkshopsTests.RunAsync(_temp);
             TestJsoncAndDiscovery();
             TestEnvironmentDiscovery();
             await TestTemplatePreflightAsync();
@@ -208,7 +218,9 @@ internal sealed class TestSuite
         finally
         {
             Environment.SetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE", null);
+            SteamworksSessionProbe.ProbeOverride = null;
             TestCommand.HeartbeatTimeoutOverride = null;
+            Environment.CurrentDirectory = originalDirectory;
             if (Directory.Exists(_temp)) Directory.Delete(_temp, true);
         }
     }
@@ -1650,6 +1662,15 @@ internal sealed class TestSuite
         if (!File.Exists(Path.Combine(gameDirectory, "RimWorldWin64.exe"))) File.WriteAllText(Path.Combine(gameDirectory, "RimWorldWin64.exe"), "game");
         foreach (var assembly in RimWorldEnvironmentResolver.RequiredManagedAssemblies)
             if (!File.Exists(Path.Combine(managed, assembly))) File.WriteAllText(Path.Combine(managed, assembly), "assembly");
+        // Explicit Mods-path tests need a detectable version, independent of the caller's project.
+        var gameAssembly = Path.Combine(managed, "Assembly-CSharp.dll");
+        if (File.ReadAllText(gameAssembly) == "assembly")
+        {
+            var metadata = new System.Reflection.Emit.PersistedAssemblyBuilder(
+                new System.Reflection.AssemblyName("Assembly-CSharp") { Version = new Version(1, 6, 0, 0) }, typeof(object).Assembly);
+            metadata.DefineDynamicModule("Assembly-CSharp");
+            metadata.Save(gameAssembly);
+        }
     }
 
     private static void CopyTestDirectory(string source, string destination)

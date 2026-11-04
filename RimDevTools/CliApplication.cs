@@ -56,6 +56,9 @@ public static class CliApplication
                 "test settings" => await TestCommand.SettingsAsync(args, cancellation.Token),
                 "test cleanup" => await TestCommand.CleanupAsync(args, cancellation.Token),
                 "mods install-tools" => await ModsCommand.InstallToolsAsync(args, cancellation.Token),
+                "steamworkshops upload" or "steamworkshops edit" or "steamworkshops search" or "steamworkshops subscribe" or "steamworkshops status" => await SteamWorkshopsCommand.RunAsync(args, cancellation.Token),
+                "workshop probe" => await WorkshopCommand.ProbeAsync(args, cancellation.Token),
+                "workshop upload" => CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "WORKSHOP_LEGACY_ENTRY_DISABLED", "请使用 steamworkshops upload；旧入口不能绕过部署收据"),
                 _ => CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "UNKNOWN_COMMAND", $"未知命令: {command}")
             };
         }
@@ -81,7 +84,7 @@ public static class CliApplication
     public static string CommandPath(string[] args)
     {
         if (args.Length == 0) return "help";
-        if (args[0] is "mod" or "test" or "mods" && args.Length > 1 && !args[1].StartsWith('-')) return $"{args[0]} {args[1]}";
+        if (args[0] is "mod" or "test" or "mods" or "workshop" or "steamworkshops" && args.Length > 1 && !args[1].StartsWith('-')) return $"{args[0]} {args[1]}";
         return args[0];
     }
 
@@ -118,7 +121,14 @@ public static class CliArgs
             ["test run"] = (2, 0, [new("--deploy", false), new("--sync-source", false), new("--mode", true), new("--active-mods-file", true), new("--timeout-seconds", true), new("--target-package-id", true), new("--scope", true, true), new("--defname", true, true), new("--batch-size", true), new("--isolated-desktop", false), new("--no-isolated-desktop", false), new("--verbose", false)]),
             ["test settings"] = (2, 0, [new("--verbose", false)]),
             ["test cleanup"] = (2, 0, [new("--dry-run", false), new("--status", false), new("--verbose", false)]),
-            ["mods install-tools"] = (2, 0, [new("--mods-path", true), new("--dry-run", false), new("--verbose", false)])
+            ["mods install-tools"] = (2, 0, [new("--mods-path", true), new("--dry-run", false), new("--verbose", false)]),
+            ["workshop probe"] = (2, 0, [new("--published-file-id", true), new("--timeout-seconds", true), new("--verbose", false)]),
+            ["steamworkshops upload"] = (2, 0, [new("--project", true), new("--timeout-seconds", true), new("--dry-run", false), new("--verbose", false)]),
+            ["steamworkshops edit"] = (2, 0, [new("--project", true), new("--id", true), new("--description-file", true), new("--visibility", true), new("--preview-file", true), new("--timeout-seconds", true), new("--dry-run", false), new("--verbose", false)]),
+            ["steamworkshops search"] = (2, 1, [new("--project", true), new("--page", true), new("--details", false), new("--verbose", false)]),
+            ["steamworkshops subscribe"] = (2, 1, [new("--project", true), new("--wait", false), new("--timeout-seconds", true), new("--verbose", false)]),
+            ["steamworkshops status"] = (2, -1, [new("--project", true), new("--wait", false), new("--timeout-seconds", true), new("--verbose", false)]),
+            ["workshop upload"] = (2, 0, [new("--create-private", false), new("--expected-published-file-id", true), new("--update-description", false), new("--visibility", true), new("--timeout-seconds", true), new("--dry-run", false), new("--verbose", false)])
         };
 
     public static string? Validate(string command, string[] args)
@@ -144,7 +154,7 @@ public static class CliArgs
             if (++index >= args.Length || args[index].StartsWith('-')) return $"缺少参数值: {option.Name}";
         }
 
-        return positionals == contract.Positionals
+        return (contract.Positionals == -1 ? positionals <= 1 : positionals == contract.Positionals)
             ? null
             : $"命令 {command} 需要 {contract.Positionals} 个位置参数，实际为 {positionals}";
     }
@@ -155,6 +165,18 @@ public static class CliArgs
             : [];
 
     public static bool Has(string[] args, string name) => args.Any(x => x.Equals(name, StringComparison.OrdinalIgnoreCase));
+
+    internal static string[] Positionals(string command, string[] args)
+    {
+        if (!Contracts.TryGetValue(command, out var contract)) return [];
+        var result = new List<string>();
+        for (var i = contract.PrefixLength; i < args.Length; i++)
+        {
+            if (!args[i].StartsWith('-')) result.Add(args[i]);
+            else if (contract.Options.FirstOrDefault(x => x.Name.Equals(args[i], StringComparison.OrdinalIgnoreCase))?.TakesValue == true) i++;
+        }
+        return result.ToArray();
+    }
 
     public static string? Value(string[] args, string name)
     {

@@ -18,18 +18,21 @@ public static class DoctorCommand
         "config.game_version",
         "build.netfx_targeting_pack",
         "build.game_assembly.Assembly-CSharp",
-        "build.harmony_assembly"
+        "build.harmony_assembly",
+        "steam.runtime", "steam.rimworld_library", "steam.workshop_online"
     };
 
-    public static Task<int> RunAsync(string[] args)
+    public static async Task<int> RunAsync(string[] args)
     {
         var verbose = CliArgs.Has(args, "--verbose");
         var context = ProjectDiscovery.Find(Environment.CurrentDirectory, out var discoveryError);
+        var steamStatus = await SteamworksSessionProbe.RunAsync(context, seconds: 10);
+        SteamworksSessionProbe.WriteSummary(steamStatus);
         if (context is null)
         {
-            var discoveryChecks = new[] { new DoctorCheck("project.discovery", discoveryError?.Code == "CONFIG_INVALID" ? "invalid" : "missing", true, null, discoveryError?.Message) };
+            var discoveryChecks = new[] { new DoctorCheck("project.discovery", discoveryError?.Code == "CONFIG_INVALID" ? "invalid" : "missing", true, null, discoveryError?.Message) }.Concat(SteamworksSessionProbe.Checks(steamStatus));
             var discoverySummary = Summarize(discoveryChecks, verbose);
-            return Task.FromResult(CliResult.WriteSuccess("doctor", null, new { ready = discoverySummary.Ready, issueCount = discoverySummary.IssueCount, warningCount = discoverySummary.WarningCount, checks = discoverySummary.Checks }, [discoveryError?.Code ?? "PROJECT_NOT_FOUND"]));
+            return CliResult.WriteSuccess("doctor", null, new { ready = discoverySummary.Ready, issueCount = discoverySummary.IssueCount, warningCount = discoverySummary.WarningCount, checks = discoverySummary.Checks }, [discoveryError?.Code ?? "PROJECT_NOT_FOUND"]);
         }
 
         var config = context.Config;
@@ -38,6 +41,7 @@ public static class DoctorCommand
             new("project.discovery", "available", true, context.ConfigPath),
             new("project.config_version", config.ConfigVersion == 2 ? "available" : "invalid", true, context.ConfigPath, config.ConfigVersion == 2 ? null : $"需要 config_version=2，当前为 {config.ConfigVersion}")
         };
+        checks.AddRange(SteamworksSessionProbe.Checks(steamStatus));
         var supportedGameVersion = RimWorldGameLayout.TryGet(config.GameVersion, out _);
         var modernGameVersion = supportedGameVersion && RimWorldGameLayout.TryGet(config.GameVersion, out var configuredLayout) && configuredLayout.UsesModernRuntime;
         checks.Add(new DoctorCheck(
@@ -156,7 +160,7 @@ public static class DoctorCommand
             warningCount = summary.WarningCount,
             checks = summary.Checks
         };
-        return Task.FromResult(CliResult.WriteSuccess("doctor", context.Root, result));
+        return CliResult.WriteSuccess("doctor", context.Root, result);
     }
 
     public static DoctorSummary Summarize(IEnumerable<DoctorCheck> checks, bool verbose)

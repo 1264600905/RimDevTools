@@ -189,6 +189,21 @@ public static class DeployCommand
         if (failedTransactions.Length > 0)
             return Failure(ExitCodes.TaskFailed, new CliError("DEPLOY_RECOVERY_FAILED", "无法恢复此前中断的文件级部署事务；已保留备份，请先运行 test cleanup --dry-run 检查", failedTransactions), context.Root);
 
+        var receiptSyncSource = config.SyncSource || CliArgs.Has(args, "--sync-source");
+        var buildOutputs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        DeploymentFingerprint[] inputsBefore;
+        try
+        {
+            DeploymentReceiptStore.Invalidate(context, runId, target, xmlHot, receiptSyncSource);
+            inputsBefore = xmlHot ? [] : await DeploymentReceiptStore.CaptureInputsAsync(context, receiptSyncSource, cancellationToken, buildOutputs);
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex)
+        {
+            return Failure(ExitCodes.TaskFailed, new CliError("BUILD_FAILED", "无法建立部署前构建输入基线: " + ex.Message,
+                new { artifacts = File.Exists(DeploymentReceiptStore.PathFor(context)) ? new[] { DeploymentReceiptStore.PathFor(context) } : Array.Empty<string>() }), context.Root);
+        }
+
         if (!xmlHot && config.ShaderBundle.Enabled)
         {
             var shaderResult = await BuildShaderAsync(context, config, cancellationToken, verbose);
@@ -279,10 +294,31 @@ public static class DeployCommand
             Directory.CreateDirectory(staging);
             foreach (var item in plan.Where(x => x.Exists)) CopySyncItem(context.Root, staging, item.Item);
             ValidateStaging(staging, plan, target, protectedRegex);
+            var stagedFiles = DeploymentReceiptStore.Files(staging).Select(path => Path.GetRelativePath(staging, path).Replace('\\', '/')).ToHashSet(StringComparer.OrdinalIgnoreCase);
             var backup = Path.Combine(targetRoot, $".rimdev-backup-{runId}");
             var fileCommit = DeploymentFileTransaction.Commit(target, staging, backup, packageId, protectedRegex);
             if (fileCommit.CleanupWarning is not null) warnings.Add(fileCommit.CleanupWarning);
-            return new DeployExecution(true, ExitCodes.Success, new DeployResult(context.Root, false, runId, target, projectFiles, preview, recovery.Found, artifactResults, FileCommit: fileCommit), null, warnings);
+            var inputsAfter = await DeploymentReceiptStore.CaptureInputsAsync(context, receiptSyncSource, cancellationToken);
+            var inputChanges = DeploymentReceiptStore.Compare("project", inputsBefore, inputsAfter);
+            if (inputChanges.Length > 0)
+                return Failure(ExitCodes.TaskFailed, new CliError("PROJECT_CHANGED_DURING_DEPLOY", "部署期间项目输入变化，未签发成功收据", new { differences = inputChanges, artifacts = new[] { DeploymentReceiptStore.PathFor(context) } }), context.Root);
+            var files = DeploymentReceiptStore.ScanTarget(target).Select(file => file with
+            {
+                Source = file.Source == "identity" ? "identity" : !stagedFiles.Contains(file.Path) ? "retained"
+                    : buildOutputs.Contains(Path.GetFullPath(file.Path, context.Root)) ? "build_output" : "copied"
+            }).ToArray();
+            var publishedId = WorkshopUploadCommand.ReadId(Path.Combine(context.Root, "About", "PublishedFileId.txt"))?.ToString();
+            var deployedId = WorkshopUploadCommand.ReadId(Path.Combine(target, "About", "PublishedFileId.txt"))?.ToString();
+            if (publishedId != deployedId) throw new InvalidDataException("部署后工坊绑定不一致");
+            DeploymentReceiptStore.RememberBinding(context, publishedId);
+            var requiresPack = config.GameVersion == "1.7" && files.Any(file => file.Path.Split('/').Any(part => part is "Textures" or "Sounds"));
+            var assetPackState = requiresPack ? "required_unverified" : "not_required";
+            DeploymentReceiptStore.Save(context, new(1, typeof(CliApplication).Assembly.GetName().Version!.ToString(), runId,
+                "completed", "full", context.Root, target, packageId, config.GameVersion,
+                DeploymentReceiptStore.ConfigurationFingerprint(context, receiptSyncSource), DateTimeOffset.UtcNow,
+                inputsAfter, files, publishedId, assetPackState, !requiresPack, receiptSyncSource));
+            return new DeployExecution(true, ExitCodes.Success, new DeployResult(context.Root, false, runId, target, projectFiles, preview, recovery.Found, artifactResults, FileCommit: fileCommit,
+                Artifacts: [DeploymentReceiptStore.PathFor(context)], PublishReady: !requiresPack, AssetPackState: assetPackState), null, warnings);
         }
         catch (OperationCanceledException) { throw; }
         catch (DeploymentTargetBusyException ex)
@@ -348,7 +384,8 @@ public static class DeployCommand
             deploy.RecoveredTransaction,
             fileCommit = deploy.FileCommit,
             xmlHotReload = deploy.XmlHotReload,
-            shaderBuildEnabled = deploy.Plan.Shader.Enabled
+            shaderBuildEnabled = deploy.Plan.Shader.Enabled,
+            deploy.Artifacts, deploy.PublishReady, deploy.AssetPackState
         };
     }
 
@@ -392,6 +429,7 @@ public static class DeployCommand
     private static void CopySyncItem(string root, string staging, string item)
     {
         var source = Path.GetFullPath(item, root);
+        if (ProjectDataPaths.IsDataPath(source)) return;
         var destination = Path.GetFullPath(Path.Combine(staging, item));
         if (!PathSafety.IsWithin(source, root) || !PathSafety.IsWithin(destination, staging)) throw new IOException($"同步路径越界: {item}");
         if (File.Exists(source))
@@ -407,6 +445,7 @@ public static class DeployCommand
     private static bool CopyHotSyncItem(string root, string target, string item)
     {
         var source = Path.GetFullPath(item, root);
+        if (ProjectDataPaths.IsDataPath(source)) return false;
         var destination = Path.GetFullPath(Path.Combine(target, item));
         if (!PathSafety.IsWithin(source, root) || !PathSafety.IsWithin(destination, target)) throw new IOException($"同步路径越界: {item}");
         if (File.Exists(source))
@@ -422,6 +461,7 @@ public static class DeployCommand
 
     private static bool CopyHotDirectory(string source, string destination, bool filterAbout = false)
     {
+        if (ProjectDataPaths.IsDataPath(source)) return false;
         var sourceInfo = new DirectoryInfo(source);
         if (sourceInfo.Attributes.HasFlag(FileAttributes.ReparsePoint)) throw new IOException($"拒绝跟随 Reparse Point: {source}");
         Directory.CreateDirectory(destination);
@@ -442,6 +482,7 @@ public static class DeployCommand
 
     private static void CopyDirectory(string source, string destination, bool filterAbout = false)
     {
+        if (ProjectDataPaths.IsDataPath(source)) return;
         var sourceInfo = new DirectoryInfo(source);
         if (sourceInfo.Attributes.HasFlag(FileAttributes.ReparsePoint)) throw new IOException($"拒绝跟随 Reparse Point: {source}");
         Directory.CreateDirectory(destination);
@@ -476,7 +517,7 @@ public sealed record BuildReferencePlan(string GameVersion, string? RimWorldDire
     public string? ManagedDirectory => GameVersion == "1.6" ? AssemblyDirectory : null;
 }
 public sealed record DeployPlan(string ProjectRoot, string Target, ShaderPlan Shader, BuildReferencePlan References, IReadOnlyList<string> Projects, IReadOnlyList<DeploySyncPlan> SyncItems, IReadOnlyList<DeployTargetAction> TargetActions, IReadOnlyList<DeploymentArtifactAction> ArtifactActions, string? ProtectedPattern, bool XmlHot);
-public sealed record DeployResult(string ProjectRoot, bool DryRun, string? RunId, string Target, IReadOnlyList<string> BuiltProjects, DeployPlan Plan, bool RecoveredTransaction, IReadOnlyList<DeploymentArtifactAction> ArtifactActions, XmlHotReloadRequestResult? XmlHotReload = null, DeploymentFileCommitResult? FileCommit = null);
+public sealed record DeployResult(string ProjectRoot, bool DryRun, string? RunId, string Target, IReadOnlyList<string> BuiltProjects, DeployPlan Plan, bool RecoveredTransaction, IReadOnlyList<DeploymentArtifactAction> ArtifactActions, XmlHotReloadRequestResult? XmlHotReload = null, DeploymentFileCommitResult? FileCommit = null, IReadOnlyList<string>? Artifacts = null, bool PublishReady = false, string? AssetPackState = null);
 public sealed record ProcessTerminationResult(bool Exited, string? Error = null);
 
 internal static class ProcessUtil
