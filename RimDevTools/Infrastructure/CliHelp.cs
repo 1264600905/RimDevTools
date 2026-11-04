@@ -164,12 +164,12 @@ public static class CliHelp
         Options:
           --project <path>             Project root for the most recent search context.
           --page <n>                   Simple: 25 items, pages 1-3; details: 10 items, pages 1-5.
-          --details                    Add Steam's official default 255-byte description summary.
+          --details                    Add Steam's official default 255-byte summary, cleaned to plain text.
           --verbose                    Include diagnostics.
           -h, --help                   Show help.
         search next reuses the latest keyword/mode/page for this project (10-minute cache).
         next cannot combine with --page/--details. Narrow keywords to exceed page limits.
-        ID/link requests return full description and status; no page/details flags allowed.
+        ID/link requests return full plain-text description and status with direct dependencies; no page/details flags allowed.
         Native 50-item pages are sliced in official order, without discarding intervening items.
         """;
 
@@ -196,12 +196,16 @@ public static class CliHelp
           --project <path>             Optional project root.
           --wait                       Observe existing download; never subscribes/requests download.
           --timeout-seconds <seconds>  Wait budget.
-          --verbose                    Include diagnostics.
+          --verbose                    Include flags, permission/binding evidence, preview URLs and raw time formats.
           -h, --help                   Show help.
         Default identity is About/PublishedFileId.txt; packageId is separate.
         Contributor identification is deferred; only verified owners may write.
         --wait observes current flags/installation in this invocation; never requests a download.
         Unknown statistics/time stay null. Installed with NeedsUpdate is not complete.
+        Default output contains full plain-text description, publisher name/SteamID, concise permission/download
+        conclusions and direct Steam-declared required mods (ID/name/local state) and DLC (App ID/name).
+        Does not recursively resolve dependencies, subscribe, download or enable them. Collection children are not required mods.
+        Missing dependency data remains unknown with reasons; an API failure is never reported as no dependencies.
         """;
 
     private const string WorkshopUpload = """

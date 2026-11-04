@@ -96,6 +96,10 @@ RimDevTools 的 Unity Shader Bundle 构建仅适用于 1.6。1.7+ 项目使用�
 
 所有 `edit` 操作均校验 owner、沿用非阻塞超时约定，且不构建、部署或传输模组内容。只改标题、附图等显式字段时保留未指定字段；不带字段选项的 `edit` 仍只同步本地 About 描述。
 
+关键词 `search --details` 清洗官方 255 字节摘要；`status` 及精确 ID/链接搜索清洗官方全文，不另行截断。展示会移除裸露 HTTP/HTTPS 地址、图片块和实际 BBCode，保留链接的说明文字、普通 `[新增]` / `[NEW]`、列表与段落；原始分页缓存及上传文本保持原样。
+
+`status` 默认只显示关键信息、发布者昵称和 SteamID、一份带时区的更新时间、权限及下载摘要；`--verbose` 展开原始 flags、权限和绑定依据、预览地址与其他时间格式。未知值及失败原因在普通结果中也可见，绑定冲突会保留完整来源。`dependencies` 仅查询工坊登记的直接前置模组（ID、名称、是否订阅、本机状态）及 DLC（App ID、名称）；接口失败时保留已知 ID，缺失部分标为未知，不把集合成员当作前置。不自动订阅、下载、启用、排序或递归解析依赖；主体尚未下载也可查询，结果不代表包内 About.xml 的全部依赖和版本约束。
+
 ### 第三方参考
 
 `mod search` 消除名称歧义；`mod copy` 将目标复制到 `mod_config.jsonc` 的 `project_paths.reference_docs`（默认 `参考文档`）并调用 ILSpy。`--deps`、`--include-ignored` 和 `--overwrite-existing` 均保持显式语义，不会自动启用；官方本体、DLC 和 Harmony 作为共享依赖不会被闭包复制。`--dry-run` 预览依赖闭包、跳过的共享依赖、目标、冲突和待反编译程序集，不修改文件。

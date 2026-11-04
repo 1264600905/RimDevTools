@@ -11,6 +11,9 @@ internal sealed record WorkshopItemInfo(string PublishedFileId, string OwnerStea
     int FileBytes, string? PreviewUrl, string Tags)
 {
     public WorkshopPreview[]? AdditionalPreviews { get; init; }
+    public int FileType { get; init; }
+    public ulong[]? Children { get; init; }
+    public string? ChildrenReason { get; init; }
 }
 internal sealed record WorkshopQueryPage(int NativePage, uint TotalMatchingResults, bool CachedData,
     DateTimeOffset FetchedAt, WorkshopItemInfo[] Items);
@@ -20,7 +23,7 @@ internal sealed record WorkshopDownloadState(uint Flags, bool Subscribed, bool I
 
 // Native ABI is Windows x64 Steamworks (the same versioned interfaces used by the game).
 // One session lives in an isolated helper, so it cannot bind another game's loaded libraries.
-internal sealed class SteamworksClient : IDisposable
+internal sealed partial class SteamworksClient : IDisposable
 {
     internal const uint AppId = 294100;
     private IntPtr library;
@@ -35,6 +38,7 @@ internal sealed class SteamworksClient : IDisposable
     private bool manualDispatch;
     private int steamPipe;
     private readonly List<WorkshopDownloadCallback> downloadCallbacks = [];
+    private readonly List<AppDependenciesResult> appDependencyCallbacks = [];
     private readonly Dictionary<ulong, PendingCall> pendingCalls = [];
     private readonly Dictionary<int, int> callbackSizes = [];
     internal string CallbackDiagnostics => string.Join(",", callbackSizes.Select(x => x.Key + ":" + x.Value));
@@ -97,6 +101,8 @@ internal sealed class SteamworksClient : IDisposable
                     var downloaded = Marshal.PtrToStructure<DownloadCompleted>(message.Data);
                     downloadCallbacks.Add(new(downloaded.AppId, downloaded.Id, downloaded.Result));
                 }
+                if (message.Callback == 3416 && message.Size == Marshal.SizeOf<AppDependenciesResult>())
+                    appDependencyCallbacks.Add(Marshal.PtrToStructure<AppDependenciesResult>(message.Data));
             }
             finally { Bind<ManualFrame>("SteamAPI_ManualDispatch_FreeLastCallback")(steamPipe); }
         }
@@ -149,11 +155,12 @@ internal sealed class SteamworksClient : IDisposable
         finally { pendingCalls.Remove(call); Marshal.FreeHGlobal(buffer); }
     }
 
-    internal WorkshopQueryPage Query(string? keyword = null, int page = 1, ulong? id = null, string? language = null)
+    internal WorkshopQueryPage Query(string? keyword = null, int page = 1, ulong? id = null, string? language = null, bool children = false, ulong[]? ids = null)
     {
         if (!LoggedOn) throw new IOException("Steam 当前账号未在线登录");
-        var handle = id.HasValue
-            ? Bind<DetailsQuery>("SteamAPI_ISteamUGC_CreateQueryUGCDetailsRequest")(Ugc, [id.Value], 1)
+        var detailIds = ids ?? (id.HasValue ? [id.Value] : null);
+        var handle = detailIds is not null
+            ? Bind<DetailsQuery>("SteamAPI_ISteamUGC_CreateQueryUGCDetailsRequest")(Ugc, detailIds, (uint)detailIds.Length)
             : Bind<AllQuery>("SteamAPI_ISteamUGC_CreateQueryAllUGCRequestPage")(Ugc, keyword is null ? 0 : 11, 0, AppId, AppId, (uint)page);
         if (handle is 0 or ulong.MaxValue) throw new IOException("创建 Steam UGC 查询失败");
         try
@@ -162,6 +169,7 @@ internal sealed class SteamworksClient : IDisposable
             Require(Bind<QueryBool>("SteamAPI_ISteamUGC_SetReturnLongDescription")(Ugc, handle, id.HasValue), "SetReturnLongDescription");
             if (language is not null) Require(Bind<QueryString>("SteamAPI_ISteamUGC_SetLanguage")(Ugc, handle, language), "SetLanguage");
             if (id.HasValue) Require(Bind<QueryBool>("SteamAPI_ISteamUGC_SetReturnAdditionalPreviews")(Ugc, handle, true), "SetReturnAdditionalPreviews");
+            if (children) Require(Bind<QueryBool>("SteamAPI_ISteamUGC_SetReturnChildren")(Ugc, handle, true), "SetReturnChildren");
             if (keyword is not null) Require(Bind<QueryString>("SteamAPI_ISteamUGC_SetSearchText")(Ugc, handle, keyword), "SetSearchText");
             var done = Wait<QueryCompleted>(Bind<SendQuery>("SteamAPI_ISteamUGC_SendQueryUGCRequest")(Ugc, handle), 3401);
             if (done.Handle != handle || done.Result != 1 || done.Cached != 0)
@@ -172,18 +180,26 @@ internal sealed class SteamworksClient : IDisposable
             for (uint i = 0; i < done.ReturnedResults; i++)
             {
                 Require(read(Ugc, handle, i, out var d), "GetQueryUGCResult");
+                if (ids is not null && (d.Result != 1 || d.ConsumerAppId != AppId)) continue;
                 if (d.Result != 1 || d.ConsumerAppId != AppId || id.HasValue && d.Id != id.Value)
                     throw new IOException("条目查询失败或条目不属于 RimWorld: EResult=" + d.Result);
                 var countOk = statistic(Ugc, handle, i, 0, out var count);
                 var url = new byte[4096];
                 var previewOk = Bind<PreviewUrl>("SteamAPI_ISteamUGC_GetQueryUGCPreviewURL")(Ugc, handle, i, url, (uint)url.Length);
                 DateTimeOffset? updated = d.UpdatedAt == 0 ? null : DateTimeOffset.FromUnixTimeSeconds(d.UpdatedAt);
+                ulong[]? childIds = null; string? childReason = null;
+                if (children)
+                {
+                    childIds = new ulong[d.Children];
+                    if (d.Children > 0 && !Bind<ChildrenCall>("SteamAPI_ISteamUGC_GetQueryUGCChildren")(Ugc, handle, i, childIds, d.Children))
+                    { childIds = null; childReason = "GetQueryUGCChildren 返回 false"; }
+                }
                 items.Add(new(d.Id.ToString(CultureInfo.InvariantCulture), d.Owner.ToString(CultureInfo.InvariantCulture),
                     d.ConsumerAppId, Utf8(d.Title), Utf8(d.Description), id.HasValue ? "full" : "official_summary_255_bytes",
                     VisibilityName(d.Visibility), countOk ? count : null, countOk ? null : "GetQueryUGCStatistic 返回 false",
                     d.UpdatedAt == 0 ? null : d.UpdatedAt, updated?.ToString("O"), updated?.ToOffset(TimeSpan.FromHours(8)).ToString("O"),
                     d.FileBytes, previewOk ? Utf8(url) : null, Utf8(d.Tags))
-                { AdditionalPreviews = id.HasValue ? ReadPreviews(handle, i) : null });
+                { AdditionalPreviews = id.HasValue ? ReadPreviews(handle, i) : null, FileType = d.FileType, Children = childIds, ChildrenReason = childReason });
             }
             if (id.HasValue && items.Count != 1) throw new IOException("未取得目标条目；可能不存在或当前账号无权访问");
             return new(page, done.TotalResults, false, DateTimeOffset.UtcNow, items.ToArray());
@@ -205,6 +221,7 @@ internal sealed class SteamworksClient : IDisposable
     }
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate uint PreviewCount(IntPtr self, ulong query, uint item);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] [return: MarshalAs(UnmanagedType.I1)] private delegate bool ChildrenCall(IntPtr self, ulong query, uint item, [Out] ulong[] ids, uint capacity);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] [return: MarshalAs(UnmanagedType.I1)] private delegate bool AdditionalPreview(IntPtr self, ulong query, uint item, uint index, [Out] byte[] url, uint urlSize, [Out] byte[] name, uint nameSize, out int type);
 
     internal WorkshopDownloadState DownloadState(ulong id, bool allowInstallInfo = true)

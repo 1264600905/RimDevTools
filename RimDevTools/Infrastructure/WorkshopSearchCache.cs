@@ -63,7 +63,7 @@ internal static class WorkshopSearchPages
             hasNextPage = !end && page < map.Max && hasMore, limitReached = limit, endOfResults = end,
             message = limit ? LimitMessage : null, source, native.FetchedAt, cache.ExpiresAt,
             items = items.Select(item => cache.Details
-                ? (object)new { name = item.Title, item.PublishedFileId, item.SubscriptionCount, item.Description }
+                ? (object)new { name = item.Title, item.PublishedFileId, item.SubscriptionCount, description = WorkshopText.Plain(item.Description) }
                 : new { name = item.Title, item.PublishedFileId, item.SubscriptionCount }).ToArray(),
             subscriptionCountUnavailable = items.Any(item => item.SubscriptionCount is null) ? "Steam GetQueryUGCStatistic 未返回部分订阅人数；对应字段为 null" : null
         };

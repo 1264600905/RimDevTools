@@ -24,11 +24,13 @@ internal static class WorkshopImprovementsLiveTests
             Check(WorkshopUploadCommand.ReadId(Path.Combine(Project, "About", "PublishedFileId.txt")) == Id
                 && WorkshopUploadCommand.ReadId(Path.Combine(Target, "About", "PublishedFileId.txt")) == Id, "Current authorized CowGun identity");
             Check(ProjectDiscovery.Find(Project, out _)!.Config.CurrentPackageId(Project) == "trigger.cowgun", "CowGun package identity");
-            Check(CliArgs.RequiredValue(args, "--batch") == "1", "Supported improvement batch");
+            var batch = CliArgs.RequiredValue(args, "--batch");
+            Check(batch is "1" or "2", "Supported improvement batch");
             // Run web acceptance separately: repeated visibility propagation polling can hit Steam HTTP 429.
-            if (args.Contains("--pages-only")) await Pages();
+            if (batch == "2") await Queries();
+            else if (args.Contains("--pages-only")) await Pages();
             else await Metadata(args.Contains("--metadata-only"));
-            Console.WriteLine(JsonSerializer.Serialize(new { ok = true, batch = 1, mode = args.Contains("--pages-only") ? "web-pages" : args.Contains("--metadata-only") ? "metadata-only" : "metadata-and-content", checks, publishedFileId = Id.ToString(), tool }));
+            Console.WriteLine(JsonSerializer.Serialize(new { ok = true, batch = int.Parse(batch), mode = batch == "2" ? "queries" : args.Contains("--pages-only") ? "web-pages" : args.Contains("--metadata-only") ? "metadata-only" : "metadata-and-content", checks, publishedFileId = Id.ToString(), tool }));
             return 0;
         }
         catch (Exception ex)
@@ -178,12 +180,95 @@ internal static class WorkshopImprovementsLiveTests
     }
 
     private static string Hash(string path) => Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path)));
+
+    private static async Task Queries()
+    {
+        var receipt = Path.Combine(Project, ".tools", "ProjectData", "deployment-receipt.json");
+        var receiptHash = Hash(receipt);
+        var modsConfig = GameEnvironment.ModsConfigPath(ProjectDiscovery.Find(Project, out _)!);
+        var modsHash = Hash(modsConfig!);
+        var raw = await Inspect(null); // Preserve Steam's existing client-language query behavior.
+        var own = await Run(["steamworkshops", "status"]);
+        var verbose = await Run(["steamworkshops", "status", "--verbose"]);
+        Check(own.GetProperty("description").GetString() == WorkshopText.Plain(raw.Description) && own.GetProperty("visibility").GetString() == "private"
+            && own.GetProperty("bindingConsistent").GetBoolean(), "CowGun full clean description, private identity and binding");
+        Check(own.GetProperty("permissions").GetProperty("userRole").GetString() == "owner"
+            && verbose.GetProperty("permissions").GetProperty("userRole").GetString() == "owner", "Concise/verbose owner conclusions agree");
+        Check(!own.TryGetProperty("lastUpdatedAtUnix", out _) && verbose.TryGetProperty("lastUpdatedAtUnix", out _)
+            && !own.TryGetProperty("previewUrl", out _) && verbose.TryGetProperty("previewUrl", out _), "Default hides duplicate times/diagnostics, verbose retains them");
+        Check(own.GetProperty("dependencies").GetProperty("status").GetString() == "complete"
+            && own.GetProperty("dependencies").GetProperty("mods").GetArrayLength() == 0 && own.GetProperty("dependencies").GetProperty("dlc").GetArrayLength() == 0,
+            "CowGun has genuinely empty registered dependencies");
+        var direct = await Run(["steamworkshops", "status", "3819799478"]);
+        var exact = await Run(["steamworkshops", "search", "https://steamcommunity.com/sharedfiles/filedetails/?id=3819799478"]);
+        Check(direct.GetProperty("description").GetString() == exact.GetProperty("description").GetString()
+            && direct.GetProperty("description").GetString()!.Contains("常见问题") && direct.GetProperty("description").GetString()!.Contains("[新增]")
+            && !direct.GetProperty("description").GetString()!.Contains("https://") && !direct.GetProperty("description").GetString()!.Contains("[url"), "DMS2 status and exact search preserve full Chinese text/FAQ and normal brackets");
+        Check(direct.GetProperty("author").GetProperty("steamId").GetString() == "76561198208644840"
+            && !string.IsNullOrWhiteSpace(direct.GetProperty("author").GetProperty("name").GetString()), "Publisher nickname returned from native Steam");
+        Check(!direct.TryGetProperty("packageId", out _) && !direct.TryGetProperty("bindingSources", out _) && direct.GetProperty("download").GetProperty("ready").GetBoolean(),
+            "Foreign item omits project identity; DMS2 remains ready");
+        foreach (var (id, expectedIds) in new[] { ("3609835606", new[] { "2023507013" }), ("3799737423", new[] { "2023507013", "3609835606" }) })
+        {
+            var status = await Run(["steamworkshops", "status", id]);
+            var deps = status.GetProperty("dependencies");
+            var required = deps.GetProperty("mods").EnumerateArray().ToArray();
+            Check(deps.GetProperty("status").GetString() == "complete" && required.Select(x => x.GetProperty("publishedFileId").GetString()).Order().SequenceEqual(expectedIds.Order()),
+                "Chapter required IDs: " + id);
+            Check(deps.GetProperty("dlc").EnumerateArray().Any(x => x.GetProperty("appId").GetUInt32() == 3022790 && x.GetProperty("name").GetString()!.Contains("Odyssey")), "Odyssey DLC name/App ID: " + id);
+            foreach (var mod in required)
+            {
+                var installed = await Run(["steamworkshops", "status", mod.GetProperty("publishedFileId").GetString()!]);
+                Check(mod.GetProperty("state").GetString() == installed.GetProperty("download").GetProperty("state").GetString()
+                    && mod.GetProperty("subscribed").GetBoolean() == installed.GetProperty("download").GetProperty("subscribed").GetBoolean(), "Dependency install state matches direct status");
+            }
+        }
+        var candidates = await Run(["steamworkshops", "search", "失能机关2"]);
+        var foundNotInstalled = false;
+        foreach (var candidate in candidates.GetProperty("items").EnumerateArray().Take(10))
+        {
+            var missing = await Run(["steamworkshops", "status", candidate.GetProperty("publishedFileId").GetString()!]);
+            if (missing.GetProperty("download").GetProperty("state").GetString() != "not_installed"
+                || missing.GetProperty("dependencies").GetProperty("status").GetString() != "complete"
+                || missing.GetProperty("dependencies").GetProperty("mods").GetArrayLength() == 0) continue;
+            foundNotInstalled = true;
+            Check(!missing.GetProperty("download").GetProperty("ready").GetBoolean(), "Subject not downloaded still exposes nonempty native dependencies");
+            break;
+        }
+        Check(foundNotInstalled, "Read-only search found an uninstalled dependency-bearing subject");
+        foreach (var details in new[] { false, true })
+        {
+            var max = details ? 5 : 3; var size = details ? 10 : 25;
+            var all = new List<string>();
+            for (var page = 1; page <= max; page++)
+            {
+                var result = await Run(page == 1 ? details ? ["steamworkshops", "search", "失能机关2", "--details"] : ["steamworkshops", "search", "失能机关2"] : ["steamworkshops", "search", "next"]);
+                Check(result.GetProperty("page").GetInt32() == page && result.GetProperty("returnedCount").GetInt32() == size, "Live pagination retains page/count");
+                foreach (var item in result.GetProperty("items").EnumerateArray())
+                {
+                    all.Add(item.GetProperty("publishedFileId").GetString()!);
+                    if (details)
+                    {
+                        var description = item.GetProperty("description").GetString()!;
+                        Check(!description.Contains("https://") && !description.Contains("http://") && !description.Contains("[url") && !description.Contains("[img"), "Detailed result contains only cleaned official summary");
+                    }
+                    else Check(item.EnumerateObject().Count() == 3, "Simple search still returns exactly three fields");
+                }
+            }
+            Check(all.Count == all.Distinct().Count(), "No duplicate IDs across pages");
+        }
+        var cachePath = Path.Combine(Project, ".tools", "ProjectData", "steamworkshops-search-cache.json");
+        var cache = JsonSerializer.Deserialize<WorkshopSearchCache>(File.ReadAllText(cachePath), JsonDefaults.Storage)!;
+        Check(cache.Pages.Values.SelectMany(x => x.Items).Any(x => x.Description.Contains("https://")), "Official raw descriptions remain unchanged in search cache");
+        await Run(["steamworkshops", "upload", "--dry-run"]);
+        Check(Hash(receipt) == receiptHash && Hash(modsConfig!) == modsHash, "Read-only queries leave receipt and active-mod configuration unchanged");
+    }
     private static void Check(bool condition, string message)
     {
         if (!condition) throw new Exception(message);
         checks++; Console.Error.WriteLine("PASS LIVE: " + message);
     }
-    private static async Task<WorkshopItemInfo> Inspect(string language)
+    private static async Task<WorkshopItemInfo> Inspect(string? language)
     {
         var invocation = await Invoke(["--steamworkshops-helper"], JsonSerializer.Serialize(new SteamworksRequest(Path.Combine(Game, "steam_api64.dll"), "detail", 30, Id: Id, Language: language), JsonDefaults.Storage));
         var line = invocation.Output.Split('\n').Last(x => x.StartsWith("RIMDEVTOOLS_STEAMWORKSHOPS="));

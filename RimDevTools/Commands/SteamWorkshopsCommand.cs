@@ -153,24 +153,27 @@ public static class SteamWorkshopsCommand
         if (!explicitId.HasValue && selected is not null) idSource = localId is not null ? "project_About/PublishedFileId.txt" : known is not null ? "known_binding_missing_project_file" : receiptId is not null ? "receipt_missing_project_file" : "deployed_binding_missing_project_file";
         SteamworksResponse? detail = null;
         if (selected is not null && health.WorkshopAvailability == "available")
-            detail = await SteamworksSessionProbe.RunAsync(context, CliArgs.Has(args, "--wait") ? "observe" : "detail", id: ulong.Parse(selected, CultureInfo.InvariantCulture),
+            detail = await SteamworksSessionProbe.RunAsync(context, CliArgs.Has(args, "--wait") ? "observe" : "status", id: ulong.Parse(selected, CultureInfo.InvariantCulture),
                 seconds: CliArgs.Has(args, "--wait") || CliArgs.Has(args, "--timeout-seconds") ? DownloadTimeout(args) : 15, cancellationToken: token, wait: CliArgs.Has(args, "--wait"));
         var item = detail?.Page?.Items.SingleOrDefault();
         var result = Json(new
         {
-            health.SteamRunning, health.RimWorldInLibrary, health.WorkshopAvailability, health.CheckedAt, health.Source,
+            health.SteamRunning, health.RimWorldInLibrary, health.WorkshopAvailability, checkedAt = detail?.CheckedAt ?? health.CheckedAt, health.Source,
             environmentReason = health.Reason, modName, packageId = package, publishedFileId = selected, idSource,
             bindingConsistent = consistent, bindingSources = new { project = localId, deployed = deployedId, deployedPackageId, known, receipt = receiptId },
             publicationState = selected is null ? "unpublished" : item is null ? "unknown" : "published",
-            title = item?.Title, description = item?.Description, descriptionMode = "full", visibility = item?.Visibility,
+            title = item?.Title, description = WorkshopText.Plain(item?.Description), descriptionMode = "full", visibility = item?.Visibility,
+            author = detail?.Author ?? (item is null ? null : new WorkshopAuthor(item.OwnerSteamId, null, "未取得发布者昵称")),
+            dependencies = WorkshopStatusView.Dependencies(detail?.Dependencies, true),
             subscriptionCount = item?.SubscriptionCount, subscriptionCountReason = item?.SubscriptionCountReason ?? (item is null ? "条目不可得" : null),
             lastUpdatedAtUnix = item?.LastUpdatedAtUnix, lastUpdatedAt = item?.LastUpdatedAt, lastUpdatedAtLocal = item?.LastUpdatedAtLocal,
             lastUpdatedAtReason = item?.LastUpdatedAtUnix is null ? detail?.Reason ?? "未发布或 Steam 未提供有效时间" : null,
             permissions = WorkshopPermissionEvaluator.Evaluate(item?.OwnerSteamId, detail?.CurrentUserSteamId ?? health.CurrentUserSteamId),
             download = detail?.Download, item?.FileBytes, item?.PreviewUrl, item?.Tags, item?.AdditionalPreviews,
-            partial = selected is not null && (item is null || item.SubscriptionCount is null || item.LastUpdatedAtUnix is null),
+            partial = selected is not null && (item is null || item.SubscriptionCount is null || item.LastUpdatedAtUnix is null || detail?.Dependencies?.Status is null or "partial"),
             queryReason = detail?.Reason, waitObservation = detail?.Subscription
         });
+        result = WorkshopStatusView.Format(result, detail?.Download, detail?.Dependencies, CliArgs.Has(args, "--verbose"));
         if (health.ErrorCode is not null || detail?.ErrorCode is not null)
             return CliResult.WriteFailure(command, detail?.ErrorCode is "STEAMWORKS_TIMEOUT" or "WORKSHOP_DOWNLOAD_TIMEOUT" ? ExitCodes.Timeout : detail?.ErrorCode == "CANCELLED" ? ExitCodes.Cancelled : ExitCodes.TaskFailed,
                 detail?.ErrorCode ?? health.ErrorCode!, detail?.Reason ?? health.Reason!, context?.Root, result);

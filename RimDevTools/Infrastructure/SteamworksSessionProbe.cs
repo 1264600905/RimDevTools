@@ -17,6 +17,8 @@ internal sealed record SteamworksResponse
     public WorkshopQueryPage? Page { get; init; }
     public WorkshopDownloadState? Download { get; init; }
     public WorkshopSubscriptionResult? Subscription { get; init; }
+    public WorkshopDependencies? Dependencies { get; init; }
+    public WorkshopAuthor? Author { get; init; }
     public string? ErrorCode { get; init; }
     public string? Reason { get; init; }
     public bool IsFinal { get; init; }
@@ -94,9 +96,10 @@ internal static class SteamworksSessionProbe
             response = response with { RimWorldInLibrary = client.InLibrary, CurrentUserSteamId = client.SteamId, Source = "native_session" };
             // Probe independently of the selected (possibly private or deleted) item.
             var page = client.Query(request.Operation == "search" ? request.Keyword : null, request.Page,
-                request.Operation is "detail" or "subscribe" or "observe" or "subscribe-verify-download" ? request.Id : null, request.Language);
+                request.Operation is "status" or "detail" or "subscribe" or "observe" or "subscribe-verify-download" ? request.Id : null, request.Language,
+                children: request.Operation is "status" or "observe");
             response = response with { WorkshopAvailability = "available", Source = "native_live_query", Page = request.Operation == "probe" ? null : page,
-                Download = request.Operation == "detail" && request.Id.HasValue ? client.DownloadState(request.Id.Value) : null };
+                Download = request.Operation is "status" or "detail" && request.Id.HasValue ? client.DownloadState(request.Id.Value) : null };
             if (request.Operation is "subscribe" or "observe" or "subscribe-verify-download" && request.Id.HasValue)
             {
                 (uint, bool, bool, bool)? previous = null;
@@ -109,6 +112,8 @@ internal static class SteamworksSessionProbe
                 }, forceDownload: request.Operation == "subscribe-verify-download");
                 response = response with { Subscription = subscription, Download = subscription.Current, ErrorCode = subscription.ErrorCode, Reason = subscription.Reason };
             }
+            if (request.Operation is "status" or "observe" && page.Items.SingleOrDefault() is { } item)
+                response = response with { Dependencies = client.Dependencies(item), Author = client.Author(item.OwnerSteamId) };
         }
         catch (Exception ex)
         {
