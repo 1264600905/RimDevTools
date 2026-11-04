@@ -193,6 +193,33 @@ internal static class DeploymentReceiptStore
             ?? throw new InvalidDataException("绑定记录无效");
         return bindings.FirstOrDefault(x => x.Key.Equals(context.Config.CurrentPackageId(context.Root), StringComparison.OrdinalIgnoreCase)).Value;
     }
+
+    internal static DeploymentFingerprint SaveCreatedIdentity(ProjectContext context, string target, string id)
+    {
+        if (SteamWorkshopsCommand.ParseId(id)?.ToString() != id) throw new InvalidDataException("Steam 返回的新 ID 无效");
+        // This real id survives an ID-file/receipt write failure and prevents duplicate creation.
+        RememberBinding(context, id);
+        var receipt = Read(context) ?? throw new InvalidDataException("新建后部署收据缺失");
+        if (receipt.PublishedFileId is not null || receipt.PackageId != context.Config.CurrentPackageId(context.Root)
+            || !receipt.TargetRoot.Equals(target, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("新建后收据身份冲突");
+        var sourcePath = Path.Combine(context.Root, "About", "PublishedFileId.txt");
+        var targetPath = Path.Combine(target, "About", "PublishedFileId.txt");
+        foreach (var path in new[] { sourcePath, targetPath })
+        {
+            var existing = WorkshopUploadCommand.ReadId(path)?.ToString();
+            if (existing is not null && existing != id) throw new InvalidDataException("发布文件出现不同绑定，拒绝覆盖: " + path);
+            AtomicFile.WriteAllText(path, id);
+        }
+        var sourceIdentity = HashFile(sourcePath, "About/PublishedFileId.txt", "identity");
+        var targetIdentity = HashFile(targetPath, "About/PublishedFileId.txt", "identity");
+        Save(context, receipt with
+        {
+            PublishedFileId = id,
+            Inputs = receipt.Inputs.Append(sourceIdentity).OrderBy(x => x.Path, StringComparer.Ordinal).ToArray(),
+            Files = receipt.Files.Append(targetIdentity).OrderBy(x => x.Path, StringComparer.Ordinal).ToArray()
+        });
+        return targetIdentity;
+    }
 }
 
 internal static class DeploymentVerifier

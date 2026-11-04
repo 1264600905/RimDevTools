@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>AutoTestRunner</AssemblyName>
+    <RootNamespace>LogSyncMod.AutoTest</RootNamespace>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <GenerateDependencyFile>false</GenerateDependencyFile>
+    <DebugSymbols>false</DebugSymbols>
+    <DebugType>none</DebugType>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <OutputPath>../../1.7/Assemblies/</OutputPath>
+    <RimWorldAssemblyDir Condition="'$(RimWorldAssemblyDir)' == ''">H:/SteamLibrary/steamapps/common/RimWorld</RimWorldAssemblyDir>
+    <HarmonyDllPath Condition="'$(HarmonyDllPath)' == ''">H:/SteamLibrary/steamapps/workshop/content/294100/2009463077/1.7/Assemblies/0Harmony.dll</HarmonyDllPath>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="Assembly-CSharp" HintPath="$(RimWorldAssemblyDir)/Assembly-CSharp.dll" Private="false" />
+    <Reference Include="UnityStubs" HintPath="$(RimWorldAssemblyDir)/UnityStubs.dll" Private="false" />
+    <Reference Include="Waylith" HintPath="$(RimWorldAssemblyDir)/Waylith.dll" Private="false" />
+    <Reference Include="0Harmony" HintPath="$(HarmonyDllPath)" Private="false" />
+    <ProjectReference Include="../LogSyncMod/LogSyncMod.csproj" Private="false" />
+  </ItemGroup>
+</Project>

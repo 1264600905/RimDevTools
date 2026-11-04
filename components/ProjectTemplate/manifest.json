@@ -53,6 +53,7 @@
     "参考文档"
   ],
   "forbiddenPaths": [
+    ".tools/ProjectData",
     ".codex/config.toml",
     ".tools/components/ProjectTemplate",
     ".tools/Data/LogSyncMod/source",

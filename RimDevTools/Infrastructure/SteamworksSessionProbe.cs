@@ -5,7 +5,7 @@ using System.Text.Json;
 namespace RimDevTools;
 
 internal sealed record SteamworksRequest(string NativePath, string Operation, int TimeoutSeconds = 15,
-    string? Keyword = null, int Page = 1, ulong? Id = null);
+    string? Keyword = null, int Page = 1, ulong? Id = null, bool Wait = false);
 internal sealed record SteamworksResponse
 {
     public bool SteamRunning { get; init; }
@@ -16,8 +16,10 @@ internal sealed record SteamworksResponse
     public string? CurrentUserSteamId { get; init; }
     public WorkshopQueryPage? Page { get; init; }
     public WorkshopDownloadState? Download { get; init; }
+    public WorkshopSubscriptionResult? Subscription { get; init; }
     public string? ErrorCode { get; init; }
     public string? Reason { get; init; }
+    public bool IsFinal { get; init; }
 }
 
 internal static class SteamworksSessionProbe
@@ -28,7 +30,7 @@ internal static class SteamworksSessionProbe
         => SteamInstallationResolver.Resolve(context?.Config.RimWorldDir, context?.Config.WorkshopPaths ?? [], expectedGameVersion: context?.Config.GameVersion).RimWorldDirectory;
 
     internal static async Task<SteamworksResponse> RunAsync(ProjectContext? context, string operation = "probe", string? keyword = null,
-        int page = 1, ulong? id = null, int seconds = 15, CancellationToken cancellationToken = default)
+        int page = 1, ulong? id = null, int seconds = 15, CancellationToken cancellationToken = default, bool wait = false)
     {
         if (ProbeOverride is not null) return await ProbeOverride(context);
         var running = SteamSessionGuard.CheckForLaunch().IsRunning;
@@ -53,7 +55,7 @@ internal static class SteamworksSessionProbe
             using var helper = Process.Start(start) ?? throw new IOException("无法启动 Steamworks helper");
             var stdout = helper.StandardOutput.ReadToEndAsync();
             var stderr = helper.StandardError.ReadToEndAsync();
-            await helper.StandardInput.WriteLineAsync(JsonSerializer.Serialize(new SteamworksRequest(native, operation, seconds, keyword, page, id), JsonDefaults.Storage));
+            await helper.StandardInput.WriteLineAsync(JsonSerializer.Serialize(new SteamworksRequest(native, operation, Math.Max(1, seconds - 1), keyword, page, id, wait), JsonDefaults.Storage));
             helper.StandardInput.Close();
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeout.CancelAfter(TimeSpan.FromSeconds(seconds));
@@ -62,15 +64,18 @@ internal static class SteamworksSessionProbe
             {
                 if (!helper.HasExited) helper.Kill(true);
                 await helper.WaitForExitAsync(CancellationToken.None);
-                await stdout; await stderr;
-                cancellationToken.ThrowIfCancellationRequested();
+                var partial = await stdout; await stderr;
+                var last = partial.Split('\n').LastOrDefault(x => x.StartsWith(Prefix, StringComparison.Ordinal));
+                if (last is not null && JsonSerializer.Deserialize<SteamworksResponse>(last[Prefix.Length..], JsonDefaults.Storage) is { } latest)
+                    return latest with { ErrorCode = cancellationToken.IsCancellationRequested ? "CANCELLED" : "STEAMWORKS_TIMEOUT", Reason = "本地等待已停止；保留最后观察到的状态，订阅未撤销", CheckedAt = DateTimeOffset.UtcNow };
+                if (cancellationToken.IsCancellationRequested) return Failed("CANCELLED", "本地等待已取消；远端动作可能已经发出，请使用 status 复核");
                 return Failed("STEAMWORKS_TIMEOUT", "Steamworks helper 超时并已退出");
             }
             var output = await stdout;
             var diagnostic = await stderr;
             var line = output.Split('\n').LastOrDefault(x => x.StartsWith(Prefix, StringComparison.Ordinal));
-            return line is null ? Failed("STEAMWORKS_HELPER_FAILED", $"helper exit={helper.ExitCode}: {diagnostic.Trim()}")
-                : JsonSerializer.Deserialize<SteamworksResponse>(line[Prefix.Length..], JsonDefaults.Storage) ?? Failed("STEAMWORKS_HELPER_FAILED", "helper 返回空响应");
+            var response = line is null ? null : JsonSerializer.Deserialize<SteamworksResponse>(line[Prefix.Length..], JsonDefaults.Storage);
+            return ValidateHelperResponse(response, helper.ExitCode, diagnostic, running);
         }
         catch (OperationCanceledException) { throw; }
         catch (Exception ex) { return Failed("STEAMWORKS_PROBE_FAILED", ex.Message); }
@@ -89,16 +94,34 @@ internal static class SteamworksSessionProbe
             response = response with { RimWorldInLibrary = client.InLibrary, CurrentUserSteamId = client.SteamId, Source = "native_session" };
             // Probe independently of the selected (possibly private or deleted) item.
             var page = client.Query(request.Operation == "search" ? request.Keyword : null, request.Page,
-                request.Operation == "detail" ? request.Id : null);
+                request.Operation is "detail" or "subscribe" or "observe" or "subscribe-verify-download" ? request.Id : null);
             response = response with { WorkshopAvailability = "available", Source = "native_live_query", Page = request.Operation == "probe" ? null : page,
                 Download = request.Operation == "detail" && request.Id.HasValue ? client.DownloadState(request.Id.Value) : null };
+            if (request.Operation is "subscribe" or "observe" or "subscribe-verify-download" && request.Id.HasValue)
+            {
+                (uint, bool, bool, bool)? previous = null;
+                var subscription = WorkshopSubscriptionService.Run(client, request.Id.Value, request.Operation != "observe", request.Wait, value =>
+                {
+                    var state = (value.Current.Flags, value.SubscribeConfirmed, value.DownloadRequested, value.DownloadCallbackMatched);
+                    if (previous == state) return;
+                    previous = state;
+                    Console.WriteLine(Prefix + JsonSerializer.Serialize(response with { Subscription = value, Download = value.Current, CheckedAt = DateTimeOffset.UtcNow }, JsonDefaults.Storage));
+                }, forceDownload: request.Operation == "subscribe-verify-download");
+                response = response with { Subscription = subscription, Download = subscription.Current, ErrorCode = subscription.ErrorCode, Reason = subscription.Reason };
+            }
         }
         catch (Exception ex)
         {
             response = response with { ErrorCode = ex is TimeoutException ? "STEAMWORKS_TIMEOUT" : "STEAMWORKS_QUERY_FAILED", Reason = ex.Message };
         }
-        Console.WriteLine(Prefix + JsonSerializer.Serialize(response with { CheckedAt = DateTimeOffset.UtcNow }, JsonDefaults.Storage));
+        Console.WriteLine(Prefix + JsonSerializer.Serialize(response with { CheckedAt = DateTimeOffset.UtcNow, IsFinal = true }, JsonDefaults.Storage));
         return 0;
+    }
+
+    internal static SteamworksResponse ValidateHelperResponse(SteamworksResponse? response, int exitCode, string diagnostic, bool running)
+    {
+        if (response is null) return new() { SteamRunning = running, ErrorCode = "STEAMWORKS_HELPER_FAILED", Reason = $"helper exit={exitCode}，没有最终响应: {diagnostic.Trim()}" };
+        return exitCode == 0 && response.IsFinal ? response : response with { ErrorCode = "STEAMWORKS_HELPER_FAILED", Reason = $"helper exit={exitCode} 或缺少最终响应；保留已观察状态，不把进度当成成功" };
     }
 
     internal static void WriteSummary(SteamworksResponse value)

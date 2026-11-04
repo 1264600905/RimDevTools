@@ -56,6 +56,7 @@ public static class SteamWorkshopsCommand
                 "upload" => context is null ? CliResult.WriteFailure(command, ExitCodes.MissingDependency, "PROJECT_NOT_FOUND", "上传需要项目上下文")
                     : WorkshopPublishingService.Write(command, context, await WorkshopPublishingService.UploadAsync(context, args, token)),
                 "edit" => WorkshopPublishingService.Write(command, context, await WorkshopPublishingService.EditAsync(context, args, token)),
+                "subscribe" => await SubscribeAsync(args, context, token),
                 _ => CliResult.WriteFailure(command, ExitCodes.TaskFailed, "WORKSHOP_FEATURE_NOT_IMPLEMENTED", "此写入功能将在后续批次交付；未执行远端操作", context?.Root)
             };
         }
@@ -152,7 +153,8 @@ public static class SteamWorkshopsCommand
         if (!explicitId.HasValue && selected is not null) idSource = localId is not null ? "project_About/PublishedFileId.txt" : known is not null ? "known_binding_missing_project_file" : receiptId is not null ? "receipt_missing_project_file" : "deployed_binding_missing_project_file";
         SteamworksResponse? detail = null;
         if (selected is not null && health.WorkshopAvailability == "available")
-            detail = await SteamworksSessionProbe.RunAsync(context, "detail", id: ulong.Parse(selected, CultureInfo.InvariantCulture), cancellationToken: token);
+            detail = await SteamworksSessionProbe.RunAsync(context, CliArgs.Has(args, "--wait") ? "observe" : "detail", id: ulong.Parse(selected, CultureInfo.InvariantCulture),
+                seconds: CliArgs.Has(args, "--wait") || CliArgs.Has(args, "--timeout-seconds") ? DownloadTimeout(args) : 15, cancellationToken: token, wait: CliArgs.Has(args, "--wait"));
         var item = detail?.Page?.Items.SingleOrDefault();
         var result = Json(new
         {
@@ -167,16 +169,34 @@ public static class SteamWorkshopsCommand
             permissions = WorkshopPermissionEvaluator.Evaluate(item?.OwnerSteamId, detail?.CurrentUserSteamId ?? health.CurrentUserSteamId),
             download = detail?.Download, item?.FileBytes, item?.PreviewUrl, item?.Tags,
             partial = selected is not null && (item is null || item.SubscriptionCount is null || item.LastUpdatedAtUnix is null),
-            queryReason = detail?.Reason
+            queryReason = detail?.Reason, waitObservation = detail?.Subscription
         });
         if (health.ErrorCode is not null || detail?.ErrorCode is not null)
-            return CliResult.WriteFailure(command, ExitCodes.TaskFailed, detail?.ErrorCode ?? health.ErrorCode!, detail?.Reason ?? health.Reason!, context?.Root, result);
-        if (CliArgs.Has(args, "--wait")) return CliResult.WriteFailure(command, ExitCodes.TaskFailed, "WORKSHOP_FEATURE_NOT_IMPLEMENTED", "下载等待将在第三批交付；当前状态已查询，未触发订阅或下载", context?.Root, result);
+            return CliResult.WriteFailure(command, detail?.ErrorCode is "STEAMWORKS_TIMEOUT" or "WORKSHOP_DOWNLOAD_TIMEOUT" ? ExitCodes.Timeout : detail?.ErrorCode == "CANCELLED" ? ExitCodes.Cancelled : ExitCodes.TaskFailed,
+                detail?.ErrorCode ?? health.ErrorCode!, detail?.Reason ?? health.Reason!, context?.Root, result);
         return CliResult.WriteSuccess(command, context?.Root, result);
     }
 
+    private static int DownloadTimeout(string[] args)
+    {
+        if (!CliArgs.TryPositiveInt(args, "--timeout-seconds", 600, out var seconds, out var error) || seconds > 86400)
+            throw new ArgumentException(error ?? "下载等待超时不能超过 86400 秒");
+        return seconds;
+    }
+
+    private static async Task<int> SubscribeAsync(string[] args, ProjectContext? context, CancellationToken token)
+    {
+        const string command = "steamworkshops subscribe";
+        var id = ParseId(CliArgs.Positionals(command, args).Single()) ?? throw new ArgumentException("订阅需要精确 ID/链接，不能按模糊名称订阅");
+        var configDirectory = context is null ? GameEnvironment.ConfigDirectory() : GameEnvironment.ConfigDirectory(context)!;
+        using var gate = EnvironmentLock.TryAcquire(configDirectory, command, context?.Root ?? "", Guid.NewGuid().ToString("N"), out var busy);
+        if (gate is null) return CliResult.WriteFailure(command, ExitCodes.Busy, "ENVIRONMENT_BUSY", "环境被其他操作占用", context?.Root, busy);
+        var response = await SteamworksSessionProbe.RunAsync(context, "subscribe", id: id, seconds: DownloadTimeout(args), cancellationToken: token, wait: CliArgs.Has(args, "--wait"));
+        return response.ErrorCode is not null ? QueryFailure(command, context, response) : CliResult.WriteSuccess(command, context?.Root, Json(response));
+    }
+
     internal static int QueryFailure(string command, ProjectContext? context, SteamworksResponse response)
-        => CliResult.WriteFailure(command, response.ErrorCode == "STEAMWORKS_TIMEOUT" ? ExitCodes.Timeout : ExitCodes.TaskFailed,
+        => CliResult.WriteFailure(command, response.ErrorCode is "STEAMWORKS_TIMEOUT" or "WORKSHOP_DOWNLOAD_TIMEOUT" ? ExitCodes.Timeout : response.ErrorCode == "CANCELLED" ? ExitCodes.Cancelled : ExitCodes.TaskFailed,
             response.ErrorCode!, response.Reason ?? "Steamworks 查询失败", context?.Root, Json(response));
 
 }

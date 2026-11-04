@@ -104,7 +104,7 @@ public static class CliHelp
 
         Commands:
           probe               Check Steam login, app id, and optional Workshop item query.
-          upload              Upload the deployed mod; explicit private creation or expected id required.
+          upload              Disabled prototype; use steamworkshops upload with a deployment receipt.
         """;
 
     private const string SteamWorkshops = """
@@ -173,7 +173,9 @@ public static class CliHelp
           --timeout-seconds <seconds>  Wait budget.
           --verbose                    Include diagnostics.
           -h, --help                   Show help.
-        This capability arrives in batch 3; until then no remote action is taken.
+        --wait requires this helper's matching App ID/item download callback before disk access.
+        Without --wait, a queued download can continue in Steam after this helper exits.
+        No recursive dependencies, mod activation/reordering, or automatic unsubscription.
         """;
 
     private const string SteamWorkshopsStatus = """
@@ -188,33 +190,19 @@ public static class CliHelp
           -h, --help                   Show help.
         Default identity is About/PublishedFileId.txt; packageId is separate.
         Contributor identification is deferred; only verified owners may write.
-        Download waiting arrives in batch 3. Unknown statistics/time stay null.
+        --wait observes current flags/installation in this invocation; never requests a download.
+        Unknown statistics/time stay null. Installed with NeedsUpdate is not complete.
         """;
 
     private const string WorkshopUpload = """
-        Upload the current project's deployed mod without launching RimWorld.
+        This prototype upload entry is disabled.
 
         Usage:
-          RimDevTools.exe workshop upload --create-private [options]
-          RimDevTools.exe workshop upload --expected-published-file-id <id> [options]
+          RimDevTools.exe steamworkshops upload [--dry-run]
+          RimDevTools.exe steamworkshops upload --help
 
-        Options:
-          --create-private          Create one new private test item; requires no existing local ids.
-          --expected-published-file-id <id>  Update only when project and deployed ids both match.
-          --update-description      Replace the Workshop description with deployed About.xml description.
-          --visibility <value>      public, friends-only, private, or unlisted; omitted preserves it.
-          --timeout-seconds <seconds>  Helper timeout, 10 to 1800; default 180.
-          --dry-run                 Inspect deployed content and metadata without contacting Steam.
-          --verbose                 Include native diagnostics on stderr.
-          -h, --help                Show this help.
-
-        Behavior:
-          Deploy first. Uses RimWorld/Mods/<mod_name> and verifies its About.xml against this project.
-          New ids are written to project and deployed About/PublishedFileId.txt immediately after creation.
-          Existing item ownership and consumer app id are checked before mutation. Existing visibility
-          and description are preserved unless explicitly requested. New items are private. The primary
-          preview is read from deployed About/Preview.png. No automatic retry or game fallback.
-          Does not bake assets. SubmitItemUpdate success and post-upload item details are returned as JSON.
+        The current entry always checks the full deployment receipt and project inputs,
+        automatically creates a private item or updates its binding, and preserves metadata.
         """;
 
     private const string WorkshopProbe = """

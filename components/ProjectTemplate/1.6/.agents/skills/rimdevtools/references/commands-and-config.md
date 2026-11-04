@@ -124,3 +124,31 @@ quick 是启动冒烟测试。manual 是用户手动的。auto 验证结构化�
 - 冒烟：`test run --deploy --mode quick`。
 - 自动化：`test run --deploy --mode auto --target-package-id <id>`。
 - 第三方证据：`mod search` -> `mod copy --dry-run` -> 精确 `mod copy` -> 检查本地 XML 和 ILSpy 源码。
+
+## Steam 创意工坊
+
+```powershell
+.\.tools\RimDevTools.exe steamworkshops status
+.\.tools\RimDevTools.exe steamworkshops search "Harmony"
+.\.tools\RimDevTools.exe steamworkshops search next
+.\.tools\RimDevTools.exe steamworkshops search "Harmony" --details --page 5
+.\.tools\RimDevTools.exe deploy
+.\.tools\RimDevTools.exe steamworkshops upload --dry-run
+.\.tools\RimDevTools.exe steamworkshops upload
+.\.tools\RimDevTools.exe deploy --upload
+.\.tools\RimDevTools.exe steamworkshops edit
+.\.tools\RimDevTools.exe steamworkshops edit --visibility private
+.\.tools\RimDevTools.exe steamworkshops subscribe <精确ID或工坊链接> --wait
+.\.tools\RimDevTools.exe steamworkshops status <精确ID或工坊链接> --wait
+```
+
+- 五个子命令为 upload、edit、search、subscribe、status。当前身份优先使用项目 About/PublishedFileId.txt；它保存数字工坊 ID，packageId 另读 About.xml。所有写入只对已获用户授权的具体条目执行；已有会话授权可以沿用。
+- upload 只使用成功普通 deploy 的目录，逐项复核新增/缺失/修改文件及未部署项目输入；不自动构建，不提供 --create 或哈希绕过。首次自动新建 private，更新保留远端人工元数据。deploy --upload 在同一锁下串联两阶段；--dry-run 只显示计划，与 --xml-hot 互斥。
+- 1.7 普通部署调用本机官方库生成加载目录内的 Assets.zip，默认保留源资源；1.6 跳过烘焙。正常部署、烘焙和发布不启动游戏。官方库不随工具分发。
+- edit 不上传内容：无字段参数时同步项目 About 简介；--description-file、--preview-file、--visibility 只改指定字段。可见性为 private/public/friends-only/unlisted；本版仅放行已核验 owner，贡献者检测延期。
+- 简易搜索只显示名称、ID、订阅人数，每页 25 条，最多 3 页；--details 额外返回官方 255 字节摘要，每页 10 条，最多 5 页。--page 从 1 开始；基于官方 50 条页依序切片，超限要求更准确的关键词。精确 ID/链接和 status 返回完整描述。
+- search next 沿用本项目最近成功关键词、模式和页码，不与 --page/--details 混用。缓存从首次搜索起有效 10 分钟；缓存命中标记 source=cache 和原查询时间，不能作为当前在线、权限或发布成功证据。无项目时单次搜索可用，next 需进入项目或 --project。
+- subscribe 只订阅指定 ID，并按需请求下载；--wait 核对匹配 App ID/条目的完成回调和最新安装状态。status --wait 只观察已有下载，不订阅、不请求下载。不启用/排序模组、不递归依赖、不自动退订。Installed 与 NeedsUpdate 并存时不能判定完成；进度不可得为 null。
+- 收据 deployment-receipt.json、分页 steamworkshops-search-cache.json、绑定及新增运行暂存文件统一在项目 .tools/ProjectData，必须忽略于 Git，并排除部署和发行。不能把清理缓存变成删除收据或绑定。部署/上传的 artifacts 返回实际收据路径；测试日志仍按 test run 的 artifacts 对象定位，不另存 stdout 或复制证据。
+- 发布超时返回非零、timedOut=true、remoteOutcome=unknown、当前时间、目标 Steam 最近更新时间（或 null 与原因）、operationId 和提交阶段。超时不等于远端取消；不自动重试，不保存跨调用超时阻塞，不使用 --recover。由 AI 根据证据决定是否再次显式提交；已知 ID 保存失败和真实绑定冲突仍须修复。
+- doctor 每次在 stderr 显示 Steam 运行、RimWorld 库可用性、Workshop 在线摘要，stdout 仍只有最终 JSON。Steam 时间来自条目 m_rtimeUpdated，可能不随元数据编辑改变；不提供历史更新次数。

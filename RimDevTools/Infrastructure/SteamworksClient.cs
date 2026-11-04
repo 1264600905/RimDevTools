@@ -29,6 +29,13 @@ internal sealed class SteamworksClient : IDisposable
     internal bool InLibrary { get; private set; }
     private readonly Stopwatch elapsed = Stopwatch.StartNew();
     private readonly TimeSpan budget;
+    private bool manualDispatch;
+    private int steamPipe;
+    private readonly List<WorkshopDownloadCallback> downloadCallbacks = [];
+    private readonly Dictionary<ulong, PendingCall> pendingCalls = [];
+    private readonly Dictionary<int, int> callbackSizes = [];
+    internal string CallbackDiagnostics => string.Join(",", callbackSizes.Select(x => x.Key + ":" + x.Value));
+    internal bool HasTimeRemaining => elapsed.Elapsed < budget;
 
     internal SteamworksClient(string nativePath, int seconds)
     {
@@ -53,6 +60,7 @@ internal sealed class SteamworksClient : IDisposable
             SteamId = Bind<SteamIdCall>("SteamAPI_ISteamUser_GetSteamID")(user).ToString(CultureInfo.InvariantCulture);
             LoggedOn = Bind<SelfBool>("SteamAPI_ISteamUser_BLoggedOn")(user);
             InLibrary = Bind<SelfBool>("SteamAPI_ISteamApps_BIsSubscribed")(apps);
+            EnableDownloadCallbacks();
         }
         catch { Dispose(); throw; }
     }
@@ -60,7 +68,51 @@ internal sealed class SteamworksClient : IDisposable
     internal T Bind<T>(string name) where T : Delegate
         => Marshal.GetDelegateForFunctionPointer<T>(NativeLibrary.GetExport(library, name));
 
-    internal void Pump() => Bind<VoidCall>("SteamAPI_RunCallbacks")();
+    internal void Pump()
+    {
+        if (!manualDispatch) { Bind<VoidCall>("SteamAPI_RunCallbacks")(); return; }
+        Bind<ManualFrame>("SteamAPI_ManualDispatch_RunFrame")(steamPipe);
+        var next = Bind<ManualNext>("SteamAPI_ManualDispatch_GetNextCallback");
+        while (next(steamPipe, out var message))
+        {
+            callbackSizes[message.Callback] = message.Size;
+            try
+            {
+                if (message.Callback == 703 && message.Size >= Marshal.SizeOf<ApiCallCompleted>())
+                {
+                    var completed = Marshal.PtrToStructure<ApiCallCompleted>(message.Data);
+                    if (pendingCalls.TryGetValue(completed.Call, out var pending))
+                    {
+                        pending.Failed = completed.Callback != pending.Callback || completed.Size != pending.Size
+                            || !Bind<ManualResult>("SteamAPI_ManualDispatch_GetAPICallResult")(steamPipe, completed.Call,
+                                pending.Buffer, pending.Size, pending.Callback, out var failed) || failed;
+                        pending.Completed = true;
+                    }
+                }
+                if (message.Callback == 3406 && message.Size >= Marshal.SizeOf<DownloadCompleted>())
+                {
+                    var downloaded = Marshal.PtrToStructure<DownloadCompleted>(message.Data);
+                    downloadCallbacks.Add(new(downloaded.AppId, downloaded.Id, downloaded.Result));
+                }
+            }
+            finally { Bind<ManualFrame>("SteamAPI_ManualDispatch_FreeLastCallback")(steamPipe); }
+        }
+    }
+
+    internal void EnableDownloadCallbacks()
+    {
+        if (manualDispatch) return;
+        if (Marshal.SizeOf<CallbackMessage>() != 24 || Marshal.SizeOf<DownloadCompleted>() != 24)
+            throw new InvalidDataException("下载回调 Windows x64 ABI 不匹配");
+        Bind<VoidCall>("SteamAPI_ManualDispatch_Init")();
+        steamPipe = Bind<GetPipe>("SteamAPI_GetHSteamPipe")();
+        if (steamPipe == 0) throw new IOException("Steam pipe 无效");
+        manualDispatch = true;
+    }
+    internal WorkshopDownloadCallback[] DrainDownloadCallbacks()
+    {
+        var items = downloadCallbacks.ToArray(); downloadCallbacks.Clear(); return items;
+    }
 
     internal T Wait<T>(ulong call, int callback) where T : struct
     {
@@ -68,11 +120,19 @@ internal sealed class SteamworksClient : IDisposable
         var complete = Bind<CompletedCall>("SteamAPI_ISteamUtils_IsAPICallCompleted");
         var read = Bind<ResultCall>("SteamAPI_ISteamUtils_GetAPICallResult");
         var buffer = Marshal.AllocHGlobal(Marshal.SizeOf<T>());
+        var pending = new PendingCall(buffer, callback, Marshal.SizeOf<T>());
+        if (manualDispatch) pendingCalls.Add(call, pending);
         try
         {
             while (elapsed.Elapsed < budget)
             {
                 Pump();
+                if (manualDispatch && pending.Completed)
+                {
+                    if (pending.Failed) throw new IOException("Steam manual dispatch 异步结果读取失败: " + callback);
+                    return Marshal.PtrToStructure<T>(buffer);
+                }
+                if (manualDispatch) { Thread.Sleep(50); continue; }
                 if (complete(utils, call, out var failed))
                 {
                     if (failed || !read(utils, call, buffer, Marshal.SizeOf<T>(), callback, out var ioFailed) || ioFailed)
@@ -83,7 +143,7 @@ internal sealed class SteamworksClient : IDisposable
             }
             throw new TimeoutException("等待 Steam 回调超时: " + callback);
         }
-        finally { Marshal.FreeHGlobal(buffer); }
+        finally { pendingCalls.Remove(call); Marshal.FreeHGlobal(buffer); }
     }
 
     internal WorkshopQueryPage Query(string? keyword = null, int page = 1, ulong? id = null)
@@ -125,11 +185,12 @@ internal sealed class SteamworksClient : IDisposable
         finally { Bind<ReleaseQuery>("SteamAPI_ISteamUGC_ReleaseQueryUGCRequest")(Ugc, handle); }
     }
 
-    internal WorkshopDownloadState DownloadState(ulong id)
+    internal WorkshopDownloadState DownloadState(ulong id, bool allowInstallInfo = true)
     {
         var flags = Bind<ItemState>("SteamAPI_ISteamUGC_GetItemState")(Ugc, id);
         var folder = new byte[32768];
-        var info = (flags & 4) != 0 && Bind<InstallInfo>("SteamAPI_ISteamUGC_GetItemInstallInfo")(Ugc, id, out _, folder, (uint)folder.Length, out _);
+        var info = allowInstallInfo && (flags & 4) != 0 && (flags & (8 | 16 | 32)) == 0
+            && Bind<InstallInfo>("SteamAPI_ISteamUGC_GetItemInstallInfo")(Ugc, id, out _, folder, (uint)folder.Length, out _);
         var path = info ? Utf8(folder) : null;
         var progressOk = Bind<DownloadInfo>("SteamAPI_ISteamUGC_GetItemDownloadInfo")(Ugc, id, out var downloaded, out var total);
         return EvaluateDownload(flags, info, path, progressOk ? downloaded : null, progressOk ? total : null);
@@ -158,6 +219,17 @@ internal sealed class SteamworksClient : IDisposable
         public ulong Handle; public int Result; public uint ReturnedResults; public uint TotalResults; public byte Cached;
         [MarshalAs(UnmanagedType.ByValArray, SizeConst = 256)] public byte[] Cursor;
     }
+    [StructLayout(LayoutKind.Sequential, Pack = 8)] private struct CallbackMessage { public int User; public int Callback; public IntPtr Data; public int Size; }
+    [StructLayout(LayoutKind.Sequential, Pack = 8)] private struct ApiCallCompleted { public ulong Call; public int Callback; public uint Size; }
+    [StructLayout(LayoutKind.Sequential, Pack = 8)] private struct DownloadCompleted { public uint AppId; public ulong Id; public int Result; }
+    private sealed class PendingCall(IntPtr buffer, int callback, int size)
+    {
+        internal IntPtr Buffer { get; } = buffer;
+        internal int Callback { get; } = callback;
+        internal int Size { get; } = size;
+        internal bool Completed { get; set; }
+        internal bool Failed { get; set; }
+    }
     [StructLayout(LayoutKind.Sequential, Pack = 8)] internal struct ItemDetails
     {
         public ulong Id; public int Result; public int FileType; public uint CreatorAppId; public uint ConsumerAppId;
@@ -173,6 +245,10 @@ internal sealed class SteamworksClient : IDisposable
         public uint VotesUp; public uint VotesDown; public float Score; public uint Children;
     }
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] [return: MarshalAs(UnmanagedType.I1)] internal delegate bool NativeBool();
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetPipe();
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate void ManualFrame(int pipe);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] [return: MarshalAs(UnmanagedType.I1)] private delegate bool ManualNext(int pipe, out CallbackMessage message);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] [return: MarshalAs(UnmanagedType.I1)] private delegate bool ManualResult(int pipe, ulong call, IntPtr buffer, int size, int expectedCallback, [MarshalAs(UnmanagedType.I1)] out bool failed);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] internal delegate void VoidCall();
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] internal delegate IntPtr InterfaceCall();
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] [return: MarshalAs(UnmanagedType.I1)] internal delegate bool SelfBool(IntPtr self);

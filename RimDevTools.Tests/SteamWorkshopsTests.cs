@@ -17,6 +17,14 @@ internal static class SteamWorkshopsTests
             catch (WorkshopSearchException ex) { Check(ex.Code == code, code); }
         }
         Check(!OfficialAssetBakeAdapter.RequiresBaking("1.6") && OfficialAssetBakeAdapter.RequiresBaking("1.7"), "only 1.7 invokes official resource baking");
+        Check(WorkshopSubscriptionService.Matches(new(294100, 123, 1), 123)
+            && !WorkshopSubscriptionService.Matches(new(999, 123, 1), 123)
+            && !WorkshopSubscriptionService.Matches(new(294100, 456, 1), 123), "download callbacks must match both app and exact item");
+        var progressOnly = new SteamworksResponse { SteamRunning = true, Subscription = null, IsFinal = false };
+        Check(SteamworksSessionProbe.ValidateHelperResponse(progressOnly, 0, "", true).ErrorCode == "STEAMWORKS_HELPER_FAILED"
+            && SteamworksSessionProbe.ValidateHelperResponse(progressOnly with { IsFinal = true }, 99, "", true).ErrorCode == "STEAMWORKS_HELPER_FAILED",
+            "partial progress or abnormal helper exit cannot become success");
+        Check(SteamworksSessionProbe.ValidateHelperResponse(progressOnly with { IsFinal = true }, 0, "", true).ErrorCode is null, "only clean final response can succeed");
         var skipped = await OfficialAssetBakeAdapter.BakeAsync(new ProjectContext("missing", "missing", new ProjectConfig { GameVersion = "1.6" }), "missing", CancellationToken.None);
         Check(skipped.Succeeded && skipped.State == "not_required" && skipped.Libraries.Length == 0, "1.6 skips before game/library/staging discovery");
         foreach (var name in new[] { "upload", "edit", "search", "subscribe", "status" })

@@ -113,9 +113,16 @@ var logSyncAssembly = AssemblyName.GetAssemblyName(Path.Combine(data, "LogSyncMo
 var autoTestAssembly = AssemblyName.GetAssemblyName(Path.Combine(data, "LogSyncMod", "1.6", "Assemblies", "AutoTestRunner.dll")).Version;
 Assert(logSyncAssembly is not null && autoTestAssembly is not null && logSyncAssembly.Major == autoTestAssembly.Major && logSyncAssembly.Minor == autoTestAssembly.Minor && logSyncAssembly.Build == autoTestAssembly.Build, "packaged LogSync assemblies share a product version");
 var logSyncAssembly17 = AssemblyName.GetAssemblyName(Path.Combine(data, "LogSyncMod", "1.7", "Assemblies", "LogSyncMod.dll")).Version;
-Assert(logSyncAssembly17 is not null && logSyncAssembly17.Major == 1 && logSyncAssembly17.Minor == 2 && logSyncAssembly17.Build == 6, "packaged LogSyncMod preserves the tracked RimWorld 1.7 assembly");
+Assert(logSyncAssembly17 is not null && logSyncAssembly17.Major == 1 && logSyncAssembly17.Minor == 2 && logSyncAssembly17.Build == 7, "packaged LogSyncMod includes the current RimWorld 1.7 build");
 var logSyncAssembly17Path = Path.Combine(data, "LogSyncMod", "1.7", "Assemblies", "LogSyncMod.dll");
-Assert(Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(logSyncAssembly17Path))) == "616FC2F4D1470827C0AF897BD3BA6D4EEC0F3954D45E6AB62DBD3BC7E640FBC6", "packaged RimWorld 1.7 assembly matches the preserved build");
+Assert(File.ReadAllBytes(logSyncAssembly17Path).SequenceEqual(File.ReadAllBytes(Path.Combine(Environment.CurrentDirectory, "1.7", "Assemblies", "LogSyncMod.dll"))), "packaged RimWorld 1.7 assembly matches the current source build");
+foreach (var version in new[] { "1.6", "1.7" })
+foreach (var name in new[] { "LogSyncMod.dll", "AutoTestRunner.dll" })
+    Assert(File.ReadAllBytes(Path.Combine(data, "LogSyncMod", version, "Assemblies", name)).SequenceEqual(File.ReadAllBytes(Path.Combine(Environment.CurrentDirectory, version, "Assemblies", name))), $"packaged {version} {name} equals the selected source artifact");
+Assert(!Directory.Exists(Path.Combine(tools, "ProjectData")) && File.ReadAllText(Path.Combine(release, ".gitignore")).Contains("/.tools/ProjectData/", StringComparison.Ordinal), "release excludes and ignores project runtime data");
+var officialLibraries = new HashSet<string>(["Assembly-CSharp.dll", "UnityStubs.dll", "Waylith.dll", "Waylith.AssetBake.dll", "steam_api64.dll"], StringComparer.OrdinalIgnoreCase);
+Assert(!Directory.GetFiles(release, "*", SearchOption.AllDirectories).Any(path => officialLibraries.Contains(Path.GetFileName(path))), "release contains no official library copies");
+Assert(!Directory.GetFiles(release, "*", SearchOption.AllDirectories).Any(path => Path.GetFileName(path) is "deployment-receipt.json" or "steamworkshops-search-cache.json" or "steamworkshops-bindings.json"), "release contains no receipts, search caches or bindings");
 
 var templateAbout = XDocument.Load(Path.Combine(release, "About", "About.xml"));
 Assert(templateAbout.Root?.Element("name")?.Value == ProjectTemplatePreflight.TemplateDisplayName && templateAbout.Root?.Element("packageId")?.Value == ProjectTemplatePreflight.TemplatePackageId, "release uses the branded template name and packageId");
@@ -152,6 +159,13 @@ using (var document = JsonDocument.Parse(versionOutput))
 }
 
 var help = Run(Path.Combine(tools, "RimDevTools.exe"), release, "mods", "install-tools", "--help");
+foreach (var subcommand in new[] { "upload", "edit", "search", "subscribe", "status" })
+{
+    var workshopHelp = Run(Path.Combine(tools, "RimDevTools.exe"), release, "steamworkshops", subcommand, "--help");
+    Assert(workshopHelp.Contains("Usage:", StringComparison.Ordinal), $"packaged Workshop {subcommand} help is present");
+    if (subcommand == "search") Assert(workshopHelp.Contains("search next", StringComparison.Ordinal) && workshopHelp.Contains("pages 1-3", StringComparison.Ordinal) && workshopHelp.Contains("pages 1-5", StringComparison.Ordinal), "packaged custom pagination and next help");
+}
+Assert(Run(Path.Combine(tools, "RimDevTools.exe"), release, "deploy", "--help").Contains("--upload", StringComparison.Ordinal), "packaged combined deployment/upload help");
 Assert(help.Contains("--mods-path", StringComparison.Ordinal) && help.Contains("--dry-run", StringComparison.Ordinal), "packaged tool Mod command exposes path and dry-run options");
 var cleanupHelp = Run(Path.Combine(tools, "RimDevTools.exe"), release, "test", "cleanup", "--help");
 Assert(cleanupHelp.Contains("--dry-run", StringComparison.Ordinal) && cleanupHelp.Contains("--status", StringComparison.Ordinal) && cleanupHelp.Contains("activeMods", StringComparison.Ordinal), "packaged CLI exposes safe transaction cleanup and status help");
@@ -182,7 +196,8 @@ try
     File.WriteAllText(Path.Combine(gameRoot, "RimWorldWin64.exe"), "test game");
     foreach (var assembly in RimWorldGameLayout.LegacyRequiredAssemblies)
         File.WriteAllText(Path.Combine(managed, assembly), "test assembly");
-    var dryRun = Run(Path.Combine(tools, "RimDevTools.exe"), release, "mods", "install-tools", "--mods-path", temporaryMods, "--dry-run");
+    File.WriteAllText(Path.Combine(gameRoot, "mod_config.jsonc"), "{\"config_version\":2,\"game_version\":\"1.6\"}");
+    var dryRun = Run(Path.Combine(tools, "RimDevTools.exe"), gameRoot, "mods", "install-tools", "--mods-path", temporaryMods, "--dry-run");
     using var dryJson = JsonDocument.Parse(dryRun);
     Assert(dryJson.RootElement.GetProperty("ok").GetBoolean() && dryJson.RootElement.GetProperty("result").GetProperty("components").GetArrayLength() == 1, "packaged tool Mod dry-run plans one component in an explicit Mods directory");
 }

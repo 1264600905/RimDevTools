@@ -60,6 +60,20 @@ if (-not ($archive.StartsWith($artifactsRoot + [System.IO.Path]::DirectorySepara
 }
 
 $temporary = Join-Path $artifactsRoot ".rimdevtools-package-build"
+foreach ($ownedDirectory in @($output, $temporary)) {
+    $ownedFullPath = [System.IO.Path]::GetFullPath($ownedDirectory)
+    if (-not $ownedFullPath.StartsWith($artifactsRoot + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "发布清理目标越出 artifacts: $ownedFullPath"
+    }
+    $ownedAncestor = $ownedFullPath
+    while ($ownedAncestor.Length -ge $artifactsRoot.Length) {
+        if ((Test-Path -LiteralPath $ownedAncestor) -and ((Get-Item -LiteralPath $ownedAncestor -Force).Attributes -band [System.IO.FileAttributes]::ReparsePoint)) {
+            throw "发布路径不能包含 Reparse Point: $ownedAncestor"
+        }
+        if ($ownedAncestor -eq $artifactsRoot) { break }
+        $ownedAncestor = Split-Path -Parent $ownedAncestor
+    }
+}
 $templateVersionRoot = Join-Path $templateRoot $TemplateGameVersion
 $templateConfigName = if ($TemplateGameVersion -eq "1.6") { "mod_config.jsonc" } else { "mod_config.$TemplateGameVersion.jsonc" }
 $templateConfig = Join-Path $templateRoot $templateConfigName
@@ -157,10 +171,11 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "RimDevTools publish 失败" }
     Copy-Item -LiteralPath (Join-Path $rimDevToolsPublish "RimDevTools.exe") -Destination (Join-Path $toolRoot "RimDevTools.exe") -Force
 
-    dotnet build (Join-Path $projectRoot "source\LogSyncMod\LogSyncMod.csproj") -c Release -t:Rebuild
-    if ($LASTEXITCODE -ne 0) { throw "LogSyncMod build 失败" }
-    dotnet build (Join-Path $projectRoot "source\AutoTestRunner\AutoTestRunner.csproj") -c Release -t:Rebuild
-    if ($LASTEXITCODE -ne 0) { throw "LogSyncMod AutoTest build 失败" }
+    if ($TemplateGameVersion -eq "1.7") {
+        dotnet build (Join-Path $projectRoot "source\AutoTestRunner\AutoTestRunner.1.7.csproj") -c Release -t:Rebuild
+        if ($LASTEXITCODE -ne 0) { throw "RimWorld 1.7 LogSyncMod / AutoTest build 失败" }
+    }
+    # Other game versions retain their tracked binaries; never compile legacy references into 1.7.
 
     Copy-Item -LiteralPath (Join-Path $projectRoot "About") -Destination (Join-Path $logSyncComponent "About") -Recurse -Force
     Copy-Item -LiteralPath (Join-Path $projectRoot "Languages") -Destination (Join-Path $logSyncComponent "Languages") -Recurse -Force
@@ -224,6 +239,16 @@ try {
         (Join-Path $dataRoot "project-template.manifest.json"),
         ($templateMetadata | ConvertTo-Json -Depth 4),
         [System.Text.UTF8Encoding]::new($false))
+    # IDE project discovery can restore the freshly copied template while the tools build.
+    # Remove only this package's known generated directories before validating the payload.
+    foreach ($generatedRelative in @("source\MyCustomMod\obj", "source\MyCustomMod\bin")) {
+        $generatedPath = [System.IO.Path]::GetFullPath((Join-Path $output $generatedRelative))
+        if (-not $generatedPath.StartsWith($output + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase)) { throw "生成目录越出发布包: $generatedPath" }
+        if (Test-Path -LiteralPath $generatedPath) {
+            if ((Get-Item -LiteralPath $generatedPath -Force).Attributes -band [System.IO.FileAttributes]::ReparsePoint) { throw "生成目录不能是 Reparse Point: $generatedPath" }
+            Remove-Item -LiteralPath $generatedPath -Recurse -Force
+        }
+    }
     foreach ($relative in $layoutManifest.requiredFiles) {
         if (-not (Test-Path -LiteralPath (Join-Path $output $relative) -PathType Leaf)) { throw "发布包缺少必需文件: $relative" }
     }
@@ -232,6 +257,12 @@ try {
     }
     foreach ($relative in $layoutManifest.forbiddenPaths) {
         if (Test-Path -LiteralPath (Join-Path $output $relative)) { throw "发布包包含禁止路径: $relative" }
+    }
+    if (Test-Path -LiteralPath (Join-Path $toolRoot "ProjectData")) { throw "发行包不得包含项目运行数据" }
+    $officialLibraryNames = @("Assembly-CSharp.dll", "UnityStubs.dll", "Waylith.dll", "Waylith.AssetBake.dll", "steam_api64.dll")
+    foreach ($file in Get-ChildItem -LiteralPath $output -Recurse -File) {
+        if ($file.Name -in $officialLibraryNames) { throw "发行包不得携带官方库: $($file.FullName)" }
+        if ($file.Name -in @("deployment-receipt.json", "steamworkshops-search-cache.json", "steamworkshops-bindings.json")) { throw "发行包不得携带运行历史: $($file.FullName)" }
     }
 
     $versionJson = (& (Join-Path $toolRoot "RimDevTools.exe") --version | Out-String)

@@ -113,6 +113,17 @@ internal static class WorkshopPublishingTests
             }
             Check(Directory.GetFiles(ProjectDataPaths.DirectoryPath(project)).All(path => !Path.GetFileName(path).Contains("pending", StringComparison.OrdinalIgnoreCase)
                 && !Path.GetFileName(path).Contains("unconfirmed", StringComparison.OrdinalIgnoreCase)), "no persistent timeout blocker");
+            var sourceIdPath = Path.Combine(project, "About", "PublishedFileId.txt");
+            File.Delete(sourceIdPath); Directory.CreateDirectory(sourceIdPath);
+            File.Delete(Path.Combine(target, "About", "PublishedFileId.txt"));
+            var unbound = DeploymentReceiptStore.Read(context)!;
+            DeploymentReceiptStore.Save(context, unbound with { PublishedFileId = null,
+                Inputs = unbound.Inputs.Where(f => f.Source != "identity").ToArray(), Files = unbound.Files.Where(f => f.Source != "identity").ToArray() });
+            try { DeploymentReceiptStore.SaveCreatedIdentity(context, target, "456"); throw new Exception("Expected identity write failure"); }
+            catch (IOException) { Check(DeploymentReceiptStore.KnownBinding(context) == "456", "genuine created id is retained before an id-file write failure"); }
+            var afterIdWriteFailure = await WorkshopPublishingService.UploadAsync(context, ["steamworkshops", "upload", "--dry-run"], CancellationToken.None);
+            Check(!afterIdWriteFailure.Ok && calls == 3 && SteamWorkshopsCommand.Json(afterIdWriteFailure.Details).GetProperty("submitCallCount").GetInt32() == 0,
+                "missing id files with a known creation fact cannot fall back to duplicate creation");
         }
         finally
         {

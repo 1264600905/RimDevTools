@@ -18,7 +18,7 @@ internal static class SteamWorkshopsLiveTests
         {
             tool = Path.GetFullPath(CliArgs.RequiredValue(args, "--tool"));
             var batch = CliArgs.RequiredValue(args, "--batch");
-            Check(batch is "1" or "2", "Supported live batches: 1, 2");
+            Check(batch is "1" or "2" or "3", "Supported live batches: 1, 2, 3");
             Check(Environment.GetEnvironmentVariable("RIMDEVTOOLS_FAKE_MODE") is null && SteamworksSessionProbe.ProbeOverride is null
                 && SteamSessionGuard.ProbeOverride is null && ProcessUtil.RimWorldRunningOverride is null && WorkshopPublishingService.PublishOverride is null, "Live driver refuses fake mode and injected probes");
             Check(File.Exists(tool) && Path.GetFileName(tool).Equals("RimDevTools.exe", StringComparison.OrdinalIgnoreCase), "Use actual release CLI executable");
@@ -34,11 +34,13 @@ internal static class SteamWorkshopsLiveTests
             var help = await Invoke(["steamworkshops", "search", "--help"], parse: false);
             Check(help.Output.Contains("search next") && help.Output.Contains("pages 1-3"), "New CLI search capabilities");
             if (batch == "1") await Batch1(context);
+            else if (batch == "3" && args.Contains("--native-download-check")) await NativeDownloadCheck();
+            else if (batch == "3") await Batch3(context);
             else if (args.Contains("--prepare-inputs")) PrepareBatch2Inputs();
             else if (args.Contains("--reference-bake")) await ReferenceBake(context);
             else if (args.Contains("--bake-probe")) await SampleBakeProbe();
             else await Batch2(context);
-            Console.WriteLine(JsonSerializer.Serialize(new { ok = true, mode = "live-steamworkshops", batch = int.Parse(batch), partialBatch = args.Any(x => x is "--prepare-inputs" or "--reference-bake" or "--bake-probe"), tool, project = Project, target = Target, evidence }));
+            Console.WriteLine(JsonSerializer.Serialize(new { ok = true, mode = "live-steamworkshops", batch = int.Parse(batch), partialBatch = args.Any(x => x is "--prepare-inputs" or "--reference-bake" or "--bake-probe" or "--native-download-check"), tool, project = Project, target = Target, evidence }));
             return 0;
         }
         catch (Exception ex)
@@ -46,6 +48,78 @@ internal static class SteamWorkshopsLiveTests
             Console.WriteLine(JsonSerializer.Serialize(new { ok = false, mode = "live-steamworkshops", tool, error = ex.Message, evidence }));
             return 1;
         }
+    }
+
+    private static async Task NativeDownloadCheck()
+    {
+        var context = ProjectDiscovery.Find(Project, out _)!;
+        using var gate = EnvironmentLock.TryAcquire(GameEnvironment.ConfigDirectory(context)!, "native download callback verification", Project, Guid.NewGuid().ToString("N"), out _)
+            ?? throw new Exception("Environment busy");
+        var response = await Invoke(["--steamworkshops-helper"], parse: false, input: JsonSerializer.Serialize(
+            new SteamworksRequest(Path.Combine(Game, "steam_api64.dll"), "subscribe-verify-download", TimeoutSeconds: 30, Id: 3833398574, Wait: true), JsonDefaults.Storage));
+        var line = response.Output.Split('\n').LastOrDefault(x => x.StartsWith("RIMDEVTOOLS_STEAMWORKSHOPS=")) ?? throw new Exception(response.Output);
+        var result = JsonSerializer.Deserialize<SteamworksResponse>(line["RIMDEVTOOLS_STEAMWORKSHOPS=".Length..], JsonDefaults.Storage)!;
+        Check(result.ErrorCode is null && result.Subscription is { DownloadRequested: true, DownloadCallbackMatched: true, DownloadCallbackResult: 1, Current.Ready: true },
+            "Native download callback verification failed: " + JsonSerializer.Serialize(result, JsonDefaults.Storage));
+        evidence.Add(new { check = "native-download-callback", result.Subscription });
+    }
+
+    private static async Task Batch3(ProjectContext context)
+    {
+        var before = await Run(["steamworkshops", "status"]);
+        evidence.Add(new { check = "subscription-initial-state", download = before.GetProperty("download").Clone(), lastUpdatedAtUnix = before.GetProperty("lastUpdatedAtUnix").GetUInt32() });
+        await Run(["steamworkshops", "subscribe", "3833398574"]);
+        await Run(["steamworkshops", "status", "3833398574"]);
+        var subscription = await Run(["steamworkshops", "subscribe", "3833398574", "--wait"]);
+        Check(subscription.GetProperty("download").GetProperty("ready").GetBoolean(), "Real subscription reaches latest installed state");
+        await NativeDownloadCheck();
+        var installed = await Run(["steamworkshops", "status", "3833398574", "--wait"]);
+        VerifyInstalled(context, installed, "before-update");
+        var versionPath = Path.Combine(Project, "About", "About.xml");
+        var about = System.Xml.Linq.XDocument.Load(versionPath);
+        var currentVersion = about.Root!.Element("modVersion")!.Value;
+        Check(currentVersion is "0.1.2" or "0.1.3", "Only expected source version is updated");
+        about.Root.SetElementValue("modVersion", "0.1.3");
+        about.Root.SetElementValue("description", about.Root.Element("description")!.Value.Replace("0.1.2", "0.1.3", StringComparison.Ordinal));
+        about.Save(versionPath);
+        var assemblyInfo = Path.Combine(Project, "source", "CowGun", "Properties", "AssemblyInfo.cs");
+        File.WriteAllText(assemblyInfo, File.ReadAllText(assemblyInfo).Replace("1.0.2.0", "1.0.3.0", StringComparison.Ordinal));
+        WriteTone(Path.Combine(Project, "1.7", "Sounds", "WorkshopTestAssets", "CowGunTone.wav"), frequency: 660);
+        var combined = await Run(["deploy", "--upload"]);
+        var upload = combined.GetProperty("upload");
+        Check(combined.GetProperty("deploymentSucceeded").GetBoolean() && combined.GetProperty("uploadSucceeded").GetBoolean()
+            && upload.GetProperty("publishedFileId").GetString() == "3833398574" && !upload.GetProperty("created").GetBoolean()
+            && upload.GetProperty("gameProcessIdsBefore").GetArrayLength() == 0 && upload.GetProperty("gameProcessIdsAfter").GetArrayLength() == 0, "Real 0.1.3 same-id update without game");
+        await Run(["steamworkshops", "edit"]);
+        var after = await Run(["steamworkshops", "status"]);
+        Check(after.GetProperty("lastUpdatedAtUnix").GetUInt32() >= before.GetProperty("lastUpdatedAtUnix").GetUInt32(), "Steam item time is nondecreasing across the real content change");
+        await Run(["steamworkshops", "subscribe", "3833398574", "--wait"]);
+        await NativeDownloadCheck();
+        var latest = await Run(["steamworkshops", "status", "3833398574", "--wait"]);
+        VerifyInstalled(context, latest, "after-0.1.3-update");
+        evidence.Add(new { check = "real-content-version-update", operationId = upload.GetProperty("operationId").GetString(),
+            deployRunId = combined.GetProperty("deployment").GetProperty("runId").GetString(), previousUpdatedAtUnix = before.GetProperty("lastUpdatedAtUnix").GetUInt32(),
+            lastUpdatedAtUnix = after.GetProperty("lastUpdatedAtUnix").GetUInt32(), sourceVersion = "0.1.3", subscriptionRetained = true });
+        var other = await Run(["steamworkshops", "status", "2009463077"]);
+        Check(other.GetProperty("permissions").GetProperty("userRole").GetString() == "not_owner", "Other item remains read-only nonowner control");
+        await Run(["steamworkshops", "search", "Harmony"]);
+        await Run(["steamworkshops", "search", "next"]);
+        await Run(["steamworkshops", "search", "Harmony", "--details", "--page", "5"]);
+        await Run(["doctor"]);
+    }
+
+    private static void VerifyInstalled(ProjectContext context, JsonElement status, string stage)
+    {
+        var download = status.GetProperty("download");
+        Check(download.GetProperty("ready").GetBoolean(), "Installed content ready: " + stage);
+        var directory = download.GetProperty("installPath").GetString() ?? throw new Exception("Steam did not return install path");
+        var receipt = DeploymentReceiptStore.Read(context)!;
+        var actual = DeploymentReceiptStore.ScanTarget(directory);
+        var differences = DeploymentReceiptStore.Compare("installed", receipt.Files, actual);
+        Check(differences.Length == 0, "Downloaded files differ from submitted baseline: " + JsonSerializer.Serialize(differences));
+        evidence.Add(new { check = "downloaded-file-sha256", stage, installPath = directory, fileCount = actual.Length,
+            pngCount = actual.Count(f => f.Path.EndsWith(".png", StringComparison.OrdinalIgnoreCase) && f.Path.StartsWith("1.7/Textures/", StringComparison.Ordinal)),
+            wavPresent = actual.Any(f => f.Path.EndsWith("CowGunTone.wav", StringComparison.Ordinal)), assetPackPresent = actual.Any(f => f.Path == "1.7/Assets.zip"), receipt.DeployRunId });
     }
 
     private static async Task Batch2(ProjectContext context)
@@ -257,7 +331,7 @@ internal static class SteamWorkshopsLiveTests
         finally { if (Directory.Exists(staging)) DeploymentFileTransaction.Remove(staging); }
     }
 
-    internal static void WriteTone(string path)
+    internal static void WriteTone(string path, int frequency = 440)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         using var file = new BinaryWriter(File.Create(path));
@@ -266,7 +340,7 @@ internal static class SteamWorkshopsLiveTests
         file.Write(System.Text.Encoding.ASCII.GetBytes("WAVEfmt ")); file.Write(16); file.Write((short)1); file.Write((short)1);
         file.Write(rate); file.Write(rate * 2); file.Write((short)2); file.Write((short)16);
         file.Write(System.Text.Encoding.ASCII.GetBytes("data")); file.Write(samples * 2);
-        for (var i = 0; i < samples; i++) file.Write((short)(Math.Sin(i * Math.Tau * 440 / rate) * 5000));
+        for (var i = 0; i < samples; i++) file.Write((short)(Math.Sin(i * Math.Tau * frequency / rate) * 5000));
     }
 
     private static async Task Batch1(ProjectContext context)
@@ -282,7 +356,8 @@ internal static class SteamWorkshopsLiveTests
         var deploy = await Run(["deploy"]);
         var receipt = DeploymentReceiptStore.Read(context)!;
         Check(receipt.DeployRunId == deploy.GetProperty("runId").GetString() && receipt.State == "completed"
-            && !receipt.PublishReady && receipt.AssetPackState == "required_unverified", "This deployment's real transitional receipt");
+            && (receipt.AssetBake is null ? !receipt.PublishReady && receipt.AssetPackState == "required_unverified"
+                : receipt.PublishReady && receipt.AssetPackState == "verified"), "This deployment's real receipt, including final-version baking when available");
         var textures = Path.Combine(Project, "1.7", "Textures", "WorkshopTestAssets", "ShezhangOC");
         var pngs = Directory.GetFiles(textures, "*.png", SearchOption.AllDirectories);
         Check(pngs.Length == 180, "All 180 authorized PNGs are present");
@@ -325,7 +400,8 @@ internal static class SteamWorkshopsLiveTests
             && detail5.GetProperty("items").EnumerateArray().All(x => x.EnumerateObject().Count() == 4), "Actual compact output fields");
         evidence.Add(new { check = "search-mapping", simplePage1 = Ids(simple1).Length, simplePage2 = Ids(simple2).Length,
             simplePage3 = Ids(simple3).Length, detailsPage5 = Ids(detail5).Length, sourceNext = "cache", artifacts = new[] { ProjectDataPaths.File(Project, "steamworkshops-search-cache.json") } });
-        await ExpectError(["steamworkshops", "upload", "--dry-run"], "ASSET_PACK_UNVERIFIED");
+        if (receipt.PublishReady) await Run(["steamworkshops", "upload", "--dry-run"]);
+        else await ExpectError(["steamworkshops", "upload", "--dry-run"], "ASSET_PACK_UNVERIFIED");
         var sourceCs = Directory.GetFiles(Path.Combine(Project, "source"), "*.cs", SearchOption.AllDirectories).First(p => !p.Contains("\\obj\\"));
         var sample = Path.Combine(Target, "LoadFolders.xml");
         await Fault(context, "target", "added", Path.Combine(Target, "RimDevToolsIntegrityProbe.txt"), [1, 2, 3]);
@@ -335,7 +411,8 @@ internal static class SteamWorkshopsLiveTests
         await Fault(context, "project", "added", Path.Combine(Project, "1.7", "Textures", "RimDevToolsIntegrityProbe.txt"), [1, 2, 3]);
         var source = File.ReadAllBytes(sourceCs); var sourceChanged = source.Concat(new byte[] { 32 }).ToArray();
         await Fault(context, "project", "modified", sourceCs, sourceChanged);
-        await ExpectError(["steamworkshops", "upload", "--dry-run"], "ASSET_PACK_UNVERIFIED");
+        if (DeploymentReceiptStore.Read(context)!.PublishReady) await Run(["steamworkshops", "upload", "--dry-run"]);
+        else await ExpectError(["steamworkshops", "upload", "--dry-run"], "ASSET_PACK_UNVERIFIED");
         evidence.Add(new { check = "final-restored-baseline", deployRunId = DeploymentReceiptStore.Read(context)!.DeployRunId,
             targetFiles = DeploymentReceiptStore.ScanTarget(Target).Length, publishedFileId = "3833398574", remoteWrites = 0 });
     }
@@ -383,7 +460,7 @@ internal static class SteamWorkshopsLiveTests
     }
     private static async Task<(int Exit, string Output)> Invoke(string[] args, bool parse = true, string? input = null)
     {
-        if (args.Length >= 2 && (args[0] == "steamworkshops" && args[1] is "upload" or "edit" || args[0] == "deploy" && args.Contains("--upload")))
+        if (args.Length >= 2 && (args[0] == "steamworkshops" && args[1] is "upload" or "edit" or "subscribe" || args[0] == "deploy" && args.Contains("--upload")))
         {
             var context = ProjectDiscovery.Find(Project, out _)!;
             var package = context.Config.CurrentPackageId(Project);
@@ -391,9 +468,19 @@ internal static class SteamWorkshopsLiveTests
             Check(package == "trigger.cowgun" && id == "3833398574" || activeIdentity is not null && package == activeIdentity.PackageId
                 && id == activeIdentity.PublishedFileId, "Write is restricted to the main identity or the exact active test identity");
             if (CliArgs.Value(args, "--id") is { } explicitId) Check(explicitId == "3833398574" || explicitId == activeIdentity?.PublishedFileId, "Explicit writes restricted to authorized exact IDs");
+            if (args[1] == "subscribe")
+            {
+                var subscribedId = SteamWorkshopsCommand.ParseId(CliArgs.Positionals("steamworkshops subscribe", args).Single())?.ToString();
+                Check(subscribedId == "3833398574" || subscribedId == activeIdentity?.PublishedFileId, "Subscriptions limited to authorized exact IDs");
+            }
         }
         Console.Error.WriteLine("LIVE " + string.Join(' ', args));
         var start = new ProcessStartInfo(tool) { WorkingDirectory = Project, UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true, RedirectStandardInput = input is not null };
+        if (args.FirstOrDefault() == "--steamworkshops-helper")
+        {
+            start.WorkingDirectory = Game;
+            start.Environment["SteamAppId"] = "294100"; start.Environment["SteamGameId"] = "294100";
+        }
         foreach (var arg in args) start.ArgumentList.Add(arg);
         using var process = Process.Start(start) ?? throw new Exception("Unable to start CLI");
         if (input is not null) { await process.StandardInput.WriteLineAsync(input); process.StandardInput.Close(); }

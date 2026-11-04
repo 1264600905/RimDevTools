@@ -85,20 +85,8 @@ internal static class WorkshopPublisher
                 id = created.Id;
                 result = result with { Created = true, PublishedFileId = id.ToString(CultureInfo.InvariantCulture) }; Stage("created_saving_binding");
                 // Retain the genuine known id before any further operation; never keep timeout tombstones.
-                DeploymentReceiptStore.RememberBinding(context, result.PublishedFileId);
-                var receipt = DeploymentReceiptStore.Read(context) ?? throw new InvalidDataException("新建后部署收据缺失");
-                if (receipt.PublishedFileId is not null) throw new InvalidDataException("新建后收据身份冲突");
-                AtomicFile.WriteAllText(IdPath(context.Root), result.PublishedFileId!);
-                AtomicFile.WriteAllText(IdPath(request.ContentPath), result.PublishedFileId!);
+                var targetIdentity = DeploymentReceiptStore.SaveCreatedIdentity(context, request.ContentPath, result.PublishedFileId!);
                 held.Add(File.Open(IdPath(request.ContentPath), FileMode.Open, FileAccess.Read, FileShare.Read));
-                var sourceIdentity = DeploymentReceiptStore.HashFile(IdPath(context.Root), "About/PublishedFileId.txt", "identity");
-                var targetIdentity = DeploymentReceiptStore.HashFile(IdPath(request.ContentPath), "About/PublishedFileId.txt", "identity");
-                DeploymentReceiptStore.Save(context, receipt with
-                {
-                    PublishedFileId = result.PublishedFileId,
-                    Inputs = receipt.Inputs.Append(sourceIdentity).OrderBy(x => x.Path, StringComparer.Ordinal).ToArray(),
-                    Files = receipt.Files.Append(targetIdentity).OrderBy(x => x.Path, StringComparer.Ordinal).ToArray()
-                });
                 expectedFiles = expectedFiles.Append(new("About/PublishedFileId.txt", targetIdentity.Bytes, targetIdentity.Sha256)).OrderBy(x => x.Path, StringComparer.Ordinal).ToArray();
             }
             Stage("checking_owner");
@@ -132,6 +120,14 @@ internal static class WorkshopPublisher
                 finally { Marshal.FreeHGlobal(array); foreach (var p in pointers) Marshal.FreeCoTaskMem(p); }
             }
             CheckFiles();
+            if (request.ContentPath is not null && request.ProjectRoot is not null)
+            {
+                var context = ProjectDiscovery.Find(request.ProjectRoot, out _) ?? throw new InvalidDataException("提交前项目配置不可读取");
+                var verification = DeploymentVerifier.VerifyAsync(context).GetAwaiter().GetResult();
+                if (!verification.Valid || !verification.PublishReady || verification.PublishedFileId != result.PublishedFileId)
+                    throw new InvalidDataException("提交前项目输入/收据/绑定复核失败: " + JsonSerializer.Serialize(verification.Differences, JsonDefaults.Storage));
+            }
+            if (!client.HasTimeRemaining) throw new TimeoutException("提交前等待预算已用尽；尚未发出 SubmitItemUpdate");
             Stage("submitting");
             result = result with { SubmissionStarted = true, SubmittedAt = DateTimeOffset.UtcNow, RemoteOutcome = "unknown", SubmitCallCount = 1 };
             report(result);
@@ -163,6 +159,10 @@ internal static class WorkshopPublisher
             {
                 if (request.ContentPath is not null && !WorkshopUploadCommand.InspectContent(request.ContentPath).SequenceEqual(expectedFiles))
                     throw new InvalidDataException("发布目录文件集合或哈希变化，拒绝接受为已验证内容");
+                if (request.ContentPath is not null && result.PublishedFileId is { } knownId
+                    && (WorkshopUploadCommand.ReadId(IdPath(request.ContentPath))?.ToString() != knownId
+                        || request.ProjectRoot is not null && WorkshopUploadCommand.ReadId(IdPath(request.ProjectRoot))?.ToString() != knownId))
+                    throw new InvalidDataException("提交前工坊发布 ID 发生变化");
             }
         }
         catch (TimeoutException ex)
