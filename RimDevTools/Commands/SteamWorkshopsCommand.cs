@@ -53,7 +53,9 @@ public static class SteamWorkshopsCommand
             {
                 "search" => await SearchAsync(args, context, token),
                 "status" => await StatusAsync(args, context, token),
-                "upload" => await UploadPreflightAsync(args, context, token),
+                "upload" => context is null ? CliResult.WriteFailure(command, ExitCodes.MissingDependency, "PROJECT_NOT_FOUND", "上传需要项目上下文")
+                    : WorkshopPublishingService.Write(command, context, await WorkshopPublishingService.UploadAsync(context, args, token)),
+                "edit" => WorkshopPublishingService.Write(command, context, await WorkshopPublishingService.EditAsync(context, args, token)),
                 _ => CliResult.WriteFailure(command, ExitCodes.TaskFailed, "WORKSHOP_FEATURE_NOT_IMPLEMENTED", "此写入功能将在后续批次交付；未执行远端操作", context?.Root)
             };
         }
@@ -177,16 +179,4 @@ public static class SteamWorkshopsCommand
         => CliResult.WriteFailure(command, response.ErrorCode == "STEAMWORKS_TIMEOUT" ? ExitCodes.Timeout : ExitCodes.TaskFailed,
             response.ErrorCode!, response.Reason ?? "Steamworks 查询失败", context?.Root, Json(response));
 
-    private static async Task<int> UploadPreflightAsync(string[] args, ProjectContext? context, CancellationToken token)
-    {
-        const string command = "steamworkshops upload";
-        if (context is null) return CliResult.WriteFailure(command, ExitCodes.MissingDependency, "PROJECT_NOT_FOUND", "上传需要项目上下文");
-        var verification = await DeploymentVerifier.VerifyAsync(context, token);
-        if (!verification.Valid) return CliResult.WriteFailure(command, ExitCodes.TaskFailed,
-            verification.Differences.Any(x => x.Scope == "project") ? "PROJECT_NOT_DEPLOYED" : "DEPLOYMENT_VERIFICATION_FAILED",
-            "部署基线校验失败，请重新普通 deploy", context.Root, Json(verification));
-        if (!verification.PublishReady) return CliResult.WriteFailure(command, ExitCodes.TaskFailed, "ASSET_PACK_UNVERIFIED", "本次原始文件部署基线有效；官方资源包尚未验证，不能上传", context.Root, Json(verification));
-        if (CliArgs.Has(args, "--dry-run")) return CliResult.WriteSuccess(command, context.Root, Json(verification));
-        return CliResult.WriteFailure(command, ExitCodes.TaskFailed, "WORKSHOP_FEATURE_NOT_IMPLEMENTED", "本批仅实现上传预检；未执行远端提交", context.Root, Json(verification));
-    }
 }

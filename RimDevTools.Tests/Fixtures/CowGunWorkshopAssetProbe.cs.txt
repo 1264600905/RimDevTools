@@ -1,0 +1,65 @@
+using System;
+using System.IO;
+using System.Linq;
+using System.Text.Json;
+using UnityEngine;
+using Verse;
+
+namespace CowGun;
+
+// Test fixture: inert unless RimDevTools explicitly passes this run's request path.
+public sealed class WorkshopAssetProbeMod : Mod
+{
+    public WorkshopAssetProbeMod(ModContentPack content) : base(content)
+    {
+        const string prefix = "--rimdevtools-verify-workshop-assets=";
+        var argument = Environment.GetCommandLineArgs().FirstOrDefault(x => x.StartsWith(prefix, StringComparison.Ordinal));
+        if (argument is null) return;
+        var requestPath = argument.Substring(prefix.Length);
+        LongEventHandler.ExecuteWhenFinished(() => Verify(content, requestPath));
+    }
+
+    private static void Verify(ModContentPack content, string requestPath)
+    {
+        var runId = "unknown";
+        try
+        {
+            using var document = JsonDocument.Parse(File.ReadAllText(requestPath));
+            var request = document.RootElement;
+            runId = request.GetProperty("runId").GetString();
+            var expectedRoot = Path.GetFullPath(request.GetProperty("targetRoot").GetString());
+            var actualRoot = Path.GetFullPath(content.RootDir);
+            if (!actualRoot.Equals(expectedRoot, StringComparison.OrdinalIgnoreCase)) throw new Exception("Loaded mod root differs: " + actualRoot);
+            if (content.PackageIdPlayerFacing != request.GetProperty("packageId").GetString()) throw new Exception("Loaded package identity differs");
+            var sources = request.GetProperty("sourceFilesMustBeAbsent").EnumerateArray().Select(x => x.GetString()).ToArray();
+            if (sources.Length != 5 || sources.Any(relative => File.Exists(Path.Combine(actualRoot, relative)))) throw new Exception("The five source files must be absent");
+            var zip = Path.Combine(actualRoot, "1.7", "Assets.zip");
+            if (!File.Exists(zip)) throw new Exception("Assets.zip is missing");
+            var texturePaths = new[]
+            {
+                "WorkshopTestAssets/ShezhangOC/CEO/Weapon/PresidentSpear",
+                "WorkshopTestAssets/ShezhangOC/CEO/Icon/President",
+                "WorkshopTestAssets/ShezhangOC/CEO/Effects/ReflectShield/ForceField",
+                "WorkshopTestAssets/ShezhangOC/Wolfein/Heads/WolfeinHead11_south"
+            };
+            var widths = request.GetProperty("expectedWidths").EnumerateArray().Select(x => x.GetInt32()).ToArray();
+            var heights = request.GetProperty("expectedHeights").EnumerateArray().Select(x => x.GetInt32()).ToArray();
+            var textures = texturePaths.Select((path, index) =>
+            {
+                var texture = ContentFinder<Texture2D>.Get(path, true);
+                if (texture is null || texture.width != widths[index] || texture.height != heights[index])
+                    throw new Exception("Texture dimensions differ: " + path + " = " + texture?.width + "x" + texture?.height);
+                return new { path, texture.width, texture.height };
+            }).ToArray();
+            var audio = ContentFinder<AudioClip>.Get("WorkshopTestAssets/CowGunTone", true);
+            if (audio is null || audio.channels != 1 || audio.frequency != 22050 || audio.samples != 4410 || Math.Abs(audio.length - 0.2f) > 0.02f)
+                throw new Exception("Package audio is absent or has unexpected sample metadata");
+            Log.Message("[CowGun] WORKSHOP_ASSETS_VERIFIED runId=" + runId + " " + JsonSerializer.Serialize(new
+            {
+                actualRoot, packageId = content.PackageIdPlayerFacing, sourceFilesAbsent = true, packPath = zip,
+                textures, audio = new { audio.channels, audio.frequency, audio.samples, audio.length }
+            }));
+        }
+        catch (Exception ex) { Log.Error("[CowGun] WORKSHOP_ASSETS_FAILED runId=" + runId + " " + ex); }
+    }
+}

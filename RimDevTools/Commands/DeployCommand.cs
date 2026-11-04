@@ -10,6 +10,7 @@ public static class DeployCommand
     public static async Task<int> RunAsync(string[] args, CancellationToken cancellationToken = default)
     {
         var verbose = CliArgs.Has(args, "--verbose");
+        if (CliArgs.Has(args, "--upload")) return await RunWithUploadAsync(args, cancellationToken, verbose);
         var execution = await ExecuteAsync(args, cancellationToken, verbose: verbose);
         if (!execution.Ok)
             return CliResult.WriteFailure("deploy", execution.ExitCode, execution.Error!.Code, execution.Error.Message, execution.Result is DeployContextDetails details ? details.ProjectRoot : null, execution.Error.Details);
@@ -18,7 +19,37 @@ public static class DeployCommand
         return CliResult.WriteSuccess("deploy", projectRoot, verbose ? execution.Result : SummarizeResult(execution.Result), execution.Warnings);
     }
 
-    public static async Task<DeployExecution> ExecuteAsync(string[] args, CancellationToken cancellationToken = default, bool environmentPrepared = false, bool verbose = false)
+    private static async Task<int> RunWithUploadAsync(string[] args, CancellationToken token, bool verbose)
+    {
+        if (CliArgs.Has(args, "--xml-hot")) return CliResult.WriteFailure("deploy", ExitCodes.InvalidArguments, "INVALID_ARGUMENT", "--upload 与 --xml-hot 互斥");
+        var context = CliApplication.RequireProject("deploy", out var error);
+        if (context is null) return error;
+        if (CliArgs.Has(args, "--dry-run"))
+        {
+            var plan = await ExecuteAsync(args, token, verbose: verbose);
+            if (!plan.Ok) return CliResult.WriteFailure("deploy", plan.ExitCode, plan.Error!.Code, plan.Error.Message, context.Root, plan.Error.Details);
+            return CliResult.WriteSuccess("deploy", context.Root, new { dryRun = true, deployment = SummarizeResult(plan.Result), upload = new { planned = true, verification = "pending_after_deploy", action = "automatic_create_or_update" } });
+        }
+        var configDirectory = GameEnvironment.ConfigDirectory(context);
+        if (configDirectory is null) return CliResult.WriteFailure("deploy", ExitCodes.InvalidArguments, "CONFIG_INVALID", "无法解析游戏 Config 目录", context.Root);
+        using var gate = EnvironmentLock.TryAcquire(configDirectory, "deploy --upload", context.Root, Guid.NewGuid().ToString("N"), out var busy);
+        if (gate is null) return CliResult.WriteFailure("deploy", ExitCodes.Busy, "ENVIRONMENT_BUSY", "环境被其他操作占用", context.Root, busy);
+        // A held lock only skips reacquisition. ExecuteAsync still waits and recovers the environment.
+        var deployment = await ExecuteAsync(args, token, verbose: verbose, heldLock: gate);
+        if (!deployment.Ok) return CliResult.WriteFailure("deploy", deployment.ExitCode, deployment.Error!.Code, deployment.Error.Message, context.Root,
+            new { deploymentSucceeded = false, uploadStarted = false, deployment.Error.Details });
+        var result = (DeployResult)deployment.Result!;
+        var upload = await WorkshopPublishingService.UploadAsync(context, args, token, heldLock: gate, expectedDeployRunId: result.RunId);
+        var details = SteamWorkshopsCommand.Json(new
+        {
+            deploymentSucceeded = true, uploadSucceeded = upload.Ok ? (bool?)true : upload.ExitCode is ExitCodes.Timeout or ExitCodes.Cancelled ? null : false,
+            deployment = SummarizeResult(result), upload = upload.Details, artifacts = result.Artifacts
+        });
+        return upload.Ok ? CliResult.WriteSuccess("deploy", context.Root, details, deployment.Warnings)
+            : CliResult.WriteFailure("deploy", upload.ExitCode, upload.ErrorCode!, upload.Message!, context.Root, details, deployment.Warnings);
+    }
+
+    public static async Task<DeployExecution> ExecuteAsync(string[] args, CancellationToken cancellationToken = default, bool environmentPrepared = false, bool verbose = false, EnvironmentLock? heldLock = null)
     {
         verbose |= CliArgs.Has(args, "--verbose");
         var context = ProjectDiscovery.Find(Environment.CurrentDirectory, out var discoveryError);
@@ -36,6 +67,8 @@ public static class DeployCommand
         if (!modsConfigValidation.Ok)
             return Failure(ExitCodes.MissingDependency, new CliError(modsConfigValidation.Code!, modsConfigValidation.Message!, modsConfigValidation.Details), context.Root);
         var configDirectory = GameEnvironment.ConfigDirectory(context)!;
+        if (heldLock is not null && !heldLock.Owns(configDirectory))
+            return Failure(ExitCodes.InvalidArguments, new CliError("ENVIRONMENT_LOCK_MISMATCH", "调用方未持有目标环境锁"), context.Root);
         if (config.ConfigVersion != 2)
             return Failure(ExitCodes.InvalidArguments, new CliError("CONFIG_VERSION_UNSUPPORTED", $"需要 config_version=2，当前为 {config.ConfigVersion}"), context.Root);
         if (string.IsNullOrWhiteSpace(config.ModName))
@@ -167,8 +200,8 @@ public static class DeployCommand
         var runId = Guid.NewGuid().ToString("N");
         Directory.CreateDirectory(targetRoot);
         object? busyInfo = null;
-        using var gate = environmentPrepared ? null : EnvironmentLock.TryAcquire(configDirectory, "deploy", context.Root, runId, out busyInfo);
-        if (!environmentPrepared && gate is null)
+        using var gate = environmentPrepared || heldLock is not null ? null : EnvironmentLock.TryAcquire(configDirectory, "deploy", context.Root, runId, out busyInfo);
+        if (!environmentPrepared && heldLock is null && gate is null)
             return Failure(ExitCodes.Busy, new CliError("ENVIRONMENT_BUSY", "RimWorld 环境正被另一个 RimDevTools 进程占用", new { busyInfo }), context.Root);
         var recovery = new TransactionRecoveryResult(true, false);
         if (!xmlHot && !environmentPrepared)
@@ -194,6 +227,7 @@ public static class DeployCommand
         DeploymentFingerprint[] inputsBefore;
         try
         {
+            if (!xmlHot) WorkshopAssetVerificationScope.RestorePending(context, target);
             DeploymentReceiptStore.Invalidate(context, runId, target, xmlHot, receiptSyncSource);
             inputsBefore = xmlHot ? [] : await DeploymentReceiptStore.CaptureInputsAsync(context, receiptSyncSource, cancellationToken, buildOutputs);
         }
@@ -294,6 +328,10 @@ public static class DeployCommand
             Directory.CreateDirectory(staging);
             foreach (var item in plan.Where(x => x.Exists)) CopySyncItem(context.Root, staging, item.Item);
             ValidateStaging(staging, plan, target, protectedRegex);
+            var assetBake = await OfficialAssetBakeAdapter.BakeAsync(context, staging, cancellationToken);
+            if (!assetBake.Succeeded)
+                return Failure(ExitCodes.TaskFailed, new CliError("OFFICIAL_ASSET_BAKE_FAILED", "官方资源包生成失败；未替换部署目录，也未签发成功收据",
+                    new { assetBake.Errors, artifacts = new[] { DeploymentReceiptStore.PathFor(context) } }), context.Root);
             var stagedFiles = DeploymentReceiptStore.Files(staging).Select(path => Path.GetRelativePath(staging, path).Replace('\\', '/')).ToHashSet(StringComparer.OrdinalIgnoreCase);
             var backup = Path.Combine(targetRoot, $".rimdev-backup-{runId}");
             var fileCommit = DeploymentFileTransaction.Commit(target, staging, backup, packageId, protectedRegex);
@@ -304,21 +342,20 @@ public static class DeployCommand
                 return Failure(ExitCodes.TaskFailed, new CliError("PROJECT_CHANGED_DURING_DEPLOY", "部署期间项目输入变化，未签发成功收据", new { differences = inputChanges, artifacts = new[] { DeploymentReceiptStore.PathFor(context) } }), context.Root);
             var files = DeploymentReceiptStore.ScanTarget(target).Select(file => file with
             {
-                Source = file.Source == "identity" ? "identity" : !stagedFiles.Contains(file.Path) ? "retained"
+                Source = file.Source == "identity" ? "identity" : assetBake.Packs.Any(pack => pack.PackPath.Replace('\\', '/') == file.Path) ? "official_asset_pack" : !stagedFiles.Contains(file.Path) ? "retained"
                     : buildOutputs.Contains(Path.GetFullPath(file.Path, context.Root)) ? "build_output" : "copied"
             }).ToArray();
             var publishedId = WorkshopUploadCommand.ReadId(Path.Combine(context.Root, "About", "PublishedFileId.txt"))?.ToString();
             var deployedId = WorkshopUploadCommand.ReadId(Path.Combine(target, "About", "PublishedFileId.txt"))?.ToString();
             if (publishedId != deployedId) throw new InvalidDataException("部署后工坊绑定不一致");
             DeploymentReceiptStore.RememberBinding(context, publishedId);
-            var requiresPack = config.GameVersion == "1.7" && files.Any(file => file.Path.Split('/').Any(part => part is "Textures" or "Sounds"));
-            var assetPackState = requiresPack ? "required_unverified" : "not_required";
+            var assetPackState = assetBake.State;
             DeploymentReceiptStore.Save(context, new(1, typeof(CliApplication).Assembly.GetName().Version!.ToString(), runId,
                 "completed", "full", context.Root, target, packageId, config.GameVersion,
                 DeploymentReceiptStore.ConfigurationFingerprint(context, receiptSyncSource), DateTimeOffset.UtcNow,
-                inputsAfter, files, publishedId, assetPackState, !requiresPack, receiptSyncSource));
+                inputsAfter, files, publishedId, assetPackState, true, receiptSyncSource, assetBake));
             return new DeployExecution(true, ExitCodes.Success, new DeployResult(context.Root, false, runId, target, projectFiles, preview, recovery.Found, artifactResults, FileCommit: fileCommit,
-                Artifacts: [DeploymentReceiptStore.PathFor(context)], PublishReady: !requiresPack, AssetPackState: assetPackState), null, warnings);
+                Artifacts: [DeploymentReceiptStore.PathFor(context)], PublishReady: true, AssetPackState: assetPackState), null, warnings);
         }
         catch (OperationCanceledException) { throw; }
         catch (DeploymentTargetBusyException ex)

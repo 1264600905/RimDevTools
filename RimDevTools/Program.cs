@@ -9,6 +9,10 @@ if (args.Length == 2 && args[0] == "--official-asset-library-probe")
 }
 if (args.Length == 1 && args[0] == "--steamworkshops-helper")
     return RimDevTools.SteamworksSessionProbe.RunHelper();
+if (args.Length == 1 && args[0] == "--official-bake-helper")
+    return RimDevTools.OfficialAssetBakeAdapter.RunHelper();
+if (args.Length == 1 && args[0] == "--workshop-publish-helper")
+    return RimDevTools.WorkshopPublisher.RunHelper();
 if (args.Length > 0 && args[0] == "--steamworks-probe-helper")
     return RimDevTools.WorkshopCommand.RunProbeHelper(args);
 return await RimDevTools.CliApplication.RunAsync(args);

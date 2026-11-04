@@ -11,6 +11,9 @@ public sealed class EnvironmentLock : IDisposable
     private readonly string _infoPath;
     private bool _disposed;
 
+    internal bool Owns(string configDirectory)
+        => !_disposed && _infoPath.Equals(Path.Combine(Path.GetFullPath(configDirectory), "RimDevTools.lock.json"), StringComparison.OrdinalIgnoreCase);
+
     private EnvironmentLock(Thread ownerThread, ManualResetEventSlim release, string infoPath)
     {
         _ownerThread = ownerThread;

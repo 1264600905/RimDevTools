@@ -9,7 +9,7 @@ internal sealed record DeploymentFingerprint(string Path, long Bytes, string Sha
 internal sealed record DeploymentReceipt(int SchemaVersion, string ToolVersion, string DeployRunId, string State,
     string Mode, string ProjectRoot, string TargetRoot, string? PackageId, string? GameVersion, string ConfigFingerprint,
     DateTimeOffset CompletedAt, DeploymentFingerprint[] Inputs, DeploymentFingerprint[] Files,
-    string? PublishedFileId, string AssetPackState, bool PublishReady, bool SyncSource);
+    string? PublishedFileId, string AssetPackState, bool PublishReady, bool SyncSource, OfficialBakeResult? AssetBake = null);
 internal sealed record DeploymentDifference(string Scope, string Kind, string Path);
 internal sealed record DeploymentVerification(bool Valid, bool PublishReady, string? DeployRunId, string Target,
     string? Action, string? PublishedFileId, string? AssetPackState, DeploymentDifference[] Differences, string[] Artifacts);
@@ -218,6 +218,15 @@ internal static class DeploymentVerifier
         PathSafety.EnsureNoReparsePoints(game, target);
         differences.AddRange(DeploymentReceiptStore.Compare("target", receipt.Files, DeploymentReceiptStore.ScanTarget(target)));
         differences.AddRange(DeploymentReceiptStore.Compare("project", receipt.Inputs, await DeploymentReceiptStore.CaptureInputsAsync(context, receipt.SyncSource, token)));
+        if (receipt.AssetBake is { } bake)
+        {
+            foreach (var library in bake.Libraries)
+            {
+                if (!File.Exists(library.Path)) differences.Add(new("assetLibrary", "missing", library.Path));
+                else if (DeploymentReceiptStore.HashFile(library.Path, library.Path).Sha256 != library.Sha256)
+                    differences.Add(new("assetLibrary", "modified", library.Path));
+            }
+        }
         var id = WorkshopUploadCommand.ReadId(Path.Combine(context.Root, "About", "PublishedFileId.txt"))?.ToString();
         var deployed = WorkshopUploadCommand.ReadId(Path.Combine(target, "About", "PublishedFileId.txt"))?.ToString();
         var known = DeploymentReceiptStore.KnownBinding(context);

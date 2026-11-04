@@ -192,6 +192,7 @@ internal sealed class TestSuite
         {
             SteamworksSessionProbe.ProbeOverride = _ => Task.FromResult(new SteamworksResponse { Reason = "unit test: native session not invoked" });
             _passed += await SteamWorkshopsTests.RunAsync(_temp);
+            _passed += await WorkshopPublishingTests.RunAsync(_temp);
             TestJsoncAndDiscovery();
             TestEnvironmentDiscovery();
             await TestTemplatePreflightAsync();

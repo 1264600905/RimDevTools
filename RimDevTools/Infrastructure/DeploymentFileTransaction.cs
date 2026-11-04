@@ -207,7 +207,7 @@ internal static class DeploymentFileTransaction
                     if (File.Exists(destination))
                     {
                         ClearReadOnly(destination);
-                        File.Replace(source, destination, null, true);
+                        ReplacePayload(source, destination);
                     }
                     else File.Move(source, destination);
                 }
@@ -304,7 +304,7 @@ internal static class DeploymentFileTransaction
                 if (File.Exists(destination))
                 {
                     ClearReadOnly(destination);
-                    File.Replace(temporary, destination, null, true);
+                    ReplacePayload(temporary, destination);
                 }
                 else File.Move(temporary, destination);
             }
@@ -346,6 +346,21 @@ internal static class DeploymentFileTransaction
         }
 
         throw new InvalidOperationException("部署事务清单写入重试结束，但未能写入或返回结果");
+    }
+
+    internal static void ReplacePayload(string source, string destination, Action<string, string>? replace = null)
+    {
+        try
+        {
+            if (replace is null) File.Replace(source, destination, null, true);
+            else replace(source, destination);
+        }
+        catch (IOException ex) when (GetWin32ErrorCode(ex) == ErrorUnableToRemoveReplaced)
+        {
+            // ReplaceFile can transiently report 1175 on large packs. Same-volume rename
+            // retains atomic replacement; the caller's original-file backup still governs rollback.
+            File.Move(source, destination, overwrite: true);
+        }
     }
 
     private static int? GetWin32ErrorCode(Exception exception)

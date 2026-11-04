@@ -16,6 +16,9 @@ internal static class SteamWorkshopsTests
             try { action(); throw new Exception("Expected " + code); }
             catch (WorkshopSearchException ex) { Check(ex.Code == code, code); }
         }
+        Check(!OfficialAssetBakeAdapter.RequiresBaking("1.6") && OfficialAssetBakeAdapter.RequiresBaking("1.7"), "only 1.7 invokes official resource baking");
+        var skipped = await OfficialAssetBakeAdapter.BakeAsync(new ProjectContext("missing", "missing", new ProjectConfig { GameVersion = "1.6" }), "missing", CancellationToken.None);
+        Check(skipped.Succeeded && skipped.State == "not_required" && skipped.Libraries.Length == 0, "1.6 skips before game/library/staging discovery");
         foreach (var name in new[] { "upload", "edit", "search", "subscribe", "status" })
         {
             var command = "steamworkshops " + name;
@@ -106,6 +109,13 @@ internal static class SteamWorkshopsTests
         File.WriteAllText(Path.Combine(buildRoot, "custom.props"), "<Project><PropertyGroup><ExampleValue>2</ExampleValue></PropertyGroup></Project>");
         var buildDifferences = DeploymentReceiptStore.Compare("project", buildBefore, await DeploymentReceiptStore.CaptureInputsAsync(buildContext, false));
         Check(buildDifferences.Any(x => x.Kind == "added" && x.Path == "Second.cs") && buildDifferences.Any(x => x.Kind == "modified" && x.Path == "custom.props"), "new Compile glob and changed imported props require deploy");
+        var replacement = Path.Combine(root, "new-pack.bin"); var destination = Path.Combine(root, "pack.bin");
+        File.WriteAllText(replacement, "new"); File.WriteAllText(destination, "old");
+        DeploymentFileTransaction.ReplacePayload(replacement, destination, (_, _) => throw new IOException("injected ReplaceFile 1175", unchecked((int)0x80070497)));
+        Check(File.ReadAllText(destination) == "new" && !File.Exists(replacement), "1175 falls back to atomic same-volume replacement");
+        File.WriteAllText(replacement, "next");
+        try { DeploymentFileTransaction.ReplacePayload(replacement, destination, (_, _) => throw new IOException("sharing violation", unchecked((int)0x80070020))); throw new Exception("Expected sharing violation"); }
+        catch (IOException) { Check(File.ReadAllText(destination) == "new" && File.ReadAllText(replacement) == "next", "real sharing violations are not bypassed"); }
         return passed;
     }
 }

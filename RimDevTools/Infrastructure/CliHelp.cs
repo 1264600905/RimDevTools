@@ -127,7 +127,7 @@ public static class CliHelp
           -h, --help                   Show help.
         Requires .tools/ProjectData/deployment-receipt.json from a full deploy.
         Assets required but not verified block publication. No hash bypass or --create.
-        Batch 1 implements preflight only; remote writes arrive in batch 2.
+        Timeouts return current/Steam update times and unknown outcome; no persistent retry block.
         """;
 
     private const string SteamWorkshopsEdit = """
@@ -144,7 +144,7 @@ public static class CliHelp
           --timeout-seconds <seconds>  Submit wait budget; default 1800.
           --verbose                    Include diagnostics.
           -h, --help                   Show help.
-        Never builds, deploys or sends content. Remote writes arrive in batch 2.
+        Never builds, deploys or sends content. Only verified owners can write.
         """;
 
     private const string SteamWorkshopsSearch = """
@@ -271,10 +271,12 @@ public static class CliHelp
         Build and transactionally update the current mod in RimWorld/Mods.
 
         Usage:
-          RimDevTools.exe deploy [--sync-source] [--xml-hot] [--dry-run] [--verbose]
+          RimDevTools.exe deploy [--sync-source] [--xml-hot | --upload] [--dry-run] [--verbose]
 
         Options:
           --sync-source       Include source/ in this deployment.
+          --upload            After a full deploy, verify its receipt and upload under the same lock.
+                              Mutually exclusive with --xml-hot; --dry-run only prints both stages.
           --xml-hot           If RimWorld is running, transactionally update configured non-DLL files in place,
                               wait at least 3 seconds, then request a Def reload. If it is not
                               running, perform the normal build and file-by-file deployment.
@@ -292,6 +294,8 @@ public static class CliHelp
           mod_name, rimworld_dir, csproj_paths, sync_items, sync_source, protected_files_regex,
           timeouts, and shader_bundle. Shader settings are required only when enabled.
           Pure XML mods may set csproj_paths to an empty array; deploy then skips C# builds.
+          RimWorld 1.7 uses installed official libraries to bake load-folder Assets.zip files.
+          RimWorld 1.6 skips baking and does not require modern asset libraries.
 
         Example:
           RimDevTools.exe deploy --dry-run
@@ -444,6 +448,8 @@ public static class CliHelp
         Options:
           --deploy                    Build and transactionally update before testing.
           --sync-source               Include source/; requires --deploy.
+          --verify-workshop-assets    1.7 quick test: temporarily remove the five known sample sources,
+                                      require this run's package-reading signal, and restore sources.
           --mode <value>              quick (default), manual, or auto.
           --active-mods-file <path>   External ModsConfig XML activeMods list.
           --timeout-seconds <n>       Positive wait limit; defaults to timeouts.max_wait.

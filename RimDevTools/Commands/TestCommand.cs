@@ -233,6 +233,9 @@ public static class TestCommand
         var mode = CliArgs.Value(args, "--mode")?.ToLowerInvariant() ?? "quick";
         if (mode is not ("quick" or "manual" or "auto"))
             return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "MODE_INVALID", $"不支持的测试模式: {mode}", context.Root);
+        var verifyWorkshopAssets = CliArgs.Has(args, "--verify-workshop-assets");
+        if (verifyWorkshopAssets && (mode != "quick" || context.Config.GameVersion != "1.7"))
+            return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "INVALID_ARGUMENT", "--verify-workshop-assets 仅支持 1.7 的 quick 测试", context.Root);
         if (!AutoTestSelectionParser.TryParse(args, mode, out var selection, out var selectionError))
             return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "INVALID_ARGUMENT", selectionError!, context.Root);
         if (CliArgs.Has(args, "--batch-size") && mode != "auto")
@@ -289,6 +292,8 @@ public static class TestCommand
         var recovery = await TransactionRecovery.RecoverAsync(configDirectory);
         if (!recovery.Ok)
             return CliResult.WriteFailure(command, ExitCodes.TaskFailed, recovery.Error!.Code, recovery.Error.Message, context.Root, recovery.Error.Details);
+        var assetTestTarget = Path.Combine(environment.References.RimWorldDirectory!, "Mods", context.Config.ModName!);
+        WorkshopAssetVerificationScope.RestorePending(context, assetTestTarget);
 
         if (CliArgs.Has(args, "--deploy"))
         {
@@ -304,6 +309,7 @@ public static class TestCommand
         var outputPath = artifacts.AutoTestOutputPath;
         ConfigTransaction? transaction = null;
         GameProcessSession? gameSession = null;
+        WorkshopAssetVerificationScope? assetScope = null;
         TestOutcome outcome;
         var gameExited = true;
         var resultSnapshot = AutoResultValidator.Snapshot(outputPath);
@@ -321,8 +327,16 @@ public static class TestCommand
 
             var gameArguments = new List<string> { "-popupwindow" };
             if (mode == "auto") gameArguments.Add("quicktest");
+            if (verifyWorkshopAssets)
+            {
+                assetScope = await WorkshopAssetVerificationScope.BeginAsync(context, runId, cancellationToken);
+                gameArguments.Add("--rimdevtools-verify-workshop-assets=" + assetScope.RequestPath);
+            }
+            var deadline = DateTimeOffset.UtcNow.AddSeconds(timeout);
             gameSession = GameProcessLauncher.Start(gamePath, environment.References.RimWorldDirectory, gameArguments, isolation.Enabled, runId);
             outcome = await WaitForModeAsync(mode, gameSession.Process, timeout, syncLogPath, logOffset, outputPath, targetPackageId, runId, resultSnapshot, cancellationToken, verbose);
+            if (verifyWorkshopAssets && outcome.Ok && !await WorkshopAssetVerificationScope.WaitForSignalAsync(syncLogPath, runId, deadline, cancellationToken))
+                outcome = TestOutcome.Failure(ExitCodes.GameFailed, "WORKSHOP_ASSET_VERIFICATION_FAILED", "未取得本轮游戏资源包读取成功信号");
         }
         catch (OperationCanceledException)
         {
@@ -382,6 +396,11 @@ public static class TestCommand
             try { await transaction.RestoreAsync(force: true); }
             catch (Exception ex) { outcome = TestOutcome.Failure(ExitCodes.TaskFailed, "TRANSACTION_RESTORE_FAILED", ex.Message); }
         }
+        if (verifyWorkshopAssets)
+        {
+            try { WorkshopAssetVerificationScope.RestorePending(context, assetTestTarget); }
+            catch (Exception ex) { outcome = TestOutcome.Failure(ExitCodes.TaskFailed, "WORKSHOP_ASSET_RESTORE_FAILED", ex.Message); }
+        }
 
         if (mode == "auto")
         {
@@ -439,7 +458,8 @@ public static class TestCommand
             additions = verbose ? modList.Additions : null,
             signal = outcome.Message,
             result = outcome.Details,
-            recoveredTransaction = recovery.Found
+            recoveredTransaction = recovery.Found,
+            workshopAssetsVerified = verifyWorkshopAssets
         }, dependencyWarnings);
     }
 
