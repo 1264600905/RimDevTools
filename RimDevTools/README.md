@@ -85,6 +85,17 @@ RimDevTools 的 Unity Shader Bundle 构建仅适用于 1.6。1.7+ 项目使用�
 
 先运行 `doctor`，再运行 `deploy --dry-run` 检查部署摘要；需要查看完整计划时添加 `--verbose`。项目必须位于独立工作目录，不能位于 RimWorld `Mods` 或 Steam Workshop 内容目录；部署会自动同步到 `RimWorld/Mods`。普通部署会构建配置中的项目并准备暂存目录，然后在目标目录保持原位的情况下逐文件替换和清理；提交前会检查将要修改的文件是否被占用，失败时报告路径及可识别的占用进程，并通过事务备份回滚。空目录可能留在目标中，不影响模组文件。`protected_files_regex` 匹配的顶层文件或目录会保留。`--xml-hot` 会先检查 RimWorld 是否正在运行：运行中时将非 DLL 文件暂存后逐文件事务更新，若更新 Def/Patches XML 则至少等待 3 秒并向 LogSyncMod 本机 HTTP endpoint 请求重载；未运行时回退到普通构建和逐文件事务部署。`--xml-hot` 只适用于独立 `deploy`，`test run --deploy` 始终使用普通部署。纯 XML 模组可以将 `csproj_paths` 配置为空数组，此时 deploy 跳过 C# 构建但仍同步 `sync_items`。配置 `sync_source: true` 可让每次部署默认包含 `source/`，`--sync-source` 仍可单次启用。
 
+### Steam 创意工坊编辑
+
+`steamworkshops upload` 上传上次完整部署，`deploy --upload` 在一条命令中部署并上传，两者都保留已有条目的页面元数据。
+三个提交入口（上述两者及 `steamworkshops edit`）支持 `--change-note <文本>` 或 `--change-note-file <UTF-8文件>`；两者互斥。支持中文和多行，未提供、空文本或空文件均不附改动说明，不再发送固定说明。
+
+`steamworkshops edit --title "标题" --description-file <UTF-8文件> --text-language schinese` 编辑目标语言的页面文本，默认语言是 `english`。使用 Steamworks API 语言代码，如 `tchinese`、`japanese`、`koreana`，不接受 `zh-CN`。每次提交写入一种语言，保留其他语言；只提供标题或描述时，先读取目标语言并补传另一个字段，避免 Steam 清空未指定的译文。首次创建也可指定 `--text-language`；已有内容上传不改写任何语言的文本。查询入口不增加语言参数。
+
+主封面继续使用 `edit --preview-file <图片>`。附图使用可重复的 `--add-preview <图片>`、`--update-preview <从零开始的索引>=<图片路径>`、`--remove-preview <索引>`；索引来自 `status` 的 `additionalPreviews`，同一提交按操作前的索引解释，不接受重复或冲突索引。图片须为小于 1 MiB 的 PNG/JPG/GIF。附图增改删不改变主封面。
+
+所有 `edit` 操作均校验 owner、沿用非阻塞超时约定，且不构建、部署或传输模组内容。只改标题、附图等显式字段时保留未指定字段；不带字段选项的 `edit` 仍只同步本地 About 描述。
+
 ### 第三方参考
 
 `mod search` 消除名称歧义；`mod copy` 将目标复制到 `mod_config.jsonc` 的 `project_paths.reference_docs`（默认 `参考文档`）并调用 ILSpy。`--deps`、`--include-ignored` 和 `--overwrite-existing` 均保持显式语义，不会自动启用；官方本体、DLC 和 Harmony 作为共享依赖不会被闭包复制。`--dry-run` 预览依赖闭包、跳过的共享依赖、目标、冲突和待反编译程序集，不修改文件。

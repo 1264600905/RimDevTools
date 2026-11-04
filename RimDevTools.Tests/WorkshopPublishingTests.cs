@@ -62,7 +62,11 @@ internal static class WorkshopPublishingTests
                 result = result with { Succeeded = true, Stage = "succeeded", RemoteOutcome = "accepted", SubmitResult = 1 };
                 return Task.FromResult(new WorkshopPublishExecution(true, 0, null, null, SteamWorkshopsCommand.Json(result)));
             };
-            var timeout = await WorkshopPublishingService.UploadAsync(context, ["steamworkshops", "upload"], CancellationToken.None);
+            var noteFile = Path.Combine(project, "change-note.txt");
+            const string note = "测试内容更新：预热缩短。\n第二行：保留中文与换行。";
+            File.WriteAllText(noteFile, note, new System.Text.UTF8Encoding(true));
+            var timeout = await WorkshopPublishingService.UploadAsync(context, ["steamworkshops", "upload", "--change-note-file", noteFile], CancellationToken.None);
+            Check(lastRequest?.ChangeNote == note, "UTF-8 BOM multiline note reaches the single content submission request");
             var timeoutJson = SteamWorkshopsCommand.Json(timeout.Details);
             Check(timeout.ExitCode == ExitCodes.Timeout && timeoutJson.GetProperty("timedOut").GetBoolean() && timeoutJson.GetProperty("remoteOutcome").GetString() == "unknown", "timeout remains unknown and nonzero");
             Check(timeoutJson.GetProperty("lastUpdatedAtUnix").GetUInt32() == 123 && timeoutJson.GetProperty("currentTimeUnix").GetInt64() > 123
@@ -71,6 +75,7 @@ internal static class WorkshopPublishingTests
             var retry = await WorkshopPublishingService.UploadAsync(context, ["steamworkshops", "upload"], CancellationToken.None);
             Check(retry.Ok && calls == 2, "next explicit call is not blocked by timeout history");
             Check(lastRequest is { Name: null, Description: null, PreviewPath: null, Visibility: null, Tags: null, ContentPath: not null }, "existing upload sets content only");
+            Check(lastRequest!.ChangeNote is null, "absent note does not send legacy fixed text");
             var metadata = await WorkshopPublishingService.EditAsync(context, ["steamworkshops", "edit"], CancellationToken.None);
             Check(metadata.Ok && calls == 3 && lastRequest is { ContentPath: null, Files: null, Description: "Unit description", Name: null, Tags: null }, "metadata path cannot set content");
             var added = Path.Combine(project, "About", "new.xml"); File.WriteAllText(added, "<new/>");
@@ -124,6 +129,41 @@ internal static class WorkshopPublishingTests
             var afterIdWriteFailure = await WorkshopPublishingService.UploadAsync(context, ["steamworkshops", "upload", "--dry-run"], CancellationToken.None);
             Check(!afterIdWriteFailure.Ok && calls == 3 && SteamWorkshopsCommand.Json(afterIdWriteFailure.Details).GetProperty("submitCallCount").GetInt32() == 0,
                 "missing id files with a known creation fact cannot fall back to duplicate creation");
+            var image = Path.Combine(project, "additional.png");
+            File.WriteAllBytes(image, [137, 80, 78, 71, 13, 10, 26, 10, 0, 0]);
+            var previews = new[] { new WorkshopPreview(0, "original", "old.png", 0), new WorkshopPreview(1, "keep", "keep.png", 0) };
+            health = health with { Page = new(1, 1, false, DateTimeOffset.UtcNow, [item with { AdditionalPreviews = previews }]) };
+            var edited = await WorkshopPublishingService.EditAsync(context, ["steamworkshops", "edit", "--id", "123", "--title", "中文标题", "--text-language", "schinese",
+                "--add-preview", image, "--update-preview", "0=" + image, "--remove-preview", "1", "--change-note", note], CancellationToken.None);
+            Check(edited.Ok && lastRequest is { Name: "中文标题", TextLanguage: "schinese", Description: null, ContentPath: null, Files: null, PreviewPath: null }
+                && lastRequest.ChangeNote == note && lastRequest.AddPreviews!.Single() == image && lastRequest.ReplacePreviews!.Single().Index == 0 && lastRequest.RemovePreviews!.Single() == 1,
+                "explicit title/language/preview edits preserve omitted description, primary cover and all content");
+            var expectedPreviews = WorkshopMetadata.ExpectedPreviews(previews, [image], [new(0, image)], [1]);
+            Check(expectedPreviews.Length == 2 && expectedPreviews.All(x => x.OriginalFileName == "additional.png") && expectedPreviews[1].Index == 1,
+                "preview edits use original indexes, remove then append and reindex");
+            Check(WorkshopPublisher.PreviewsMatch(expectedPreviews, expectedPreviews.Select(x => x with { Url = "new" }).ToArray())
+                && !WorkshopPublisher.PreviewsMatch(previews, previews.Reverse().ToArray()), "remote preview verification checks order/count/type/name and unchanged URLs");
+            foreach (var bad in new[] { "", " ", new string('中', 43), "bad\0title" })
+                Reject(() => WorkshopMetadata.Title(bad), "invalid title rejected before native submission");
+            Check(WorkshopMetadata.Title(new string('中', 42)).Length == 42, "title limit is measured in UTF-8 bytes");
+            Reject(() => WorkshopMetadata.Language(["--text-language", "zh-CN"]), "Web API language code rejected");
+            Check(WorkshopMetadata.Language([]) == "english" && WorkshopMetadata.Language(["--text-language", "tchinese"]) == "tchinese", "official language codes and default");
+            Reject(() => WorkshopMetadata.ChangeNote(["--change-note", "a", "--change-note-file", noteFile]), "ambiguous change notes rejected");
+            Reject(() => WorkshopMetadata.ChangeNote(["--change-note", "bad\0note"]), "NUL note rejected");
+            Check(WorkshopMetadata.ChangeNote(["--change-note", ""]) is null, "explicit empty note sends NULL");
+            File.WriteAllText(noteFile, "");
+            Check(WorkshopMetadata.ChangeNote(["--change-note-file", noteFile]) is null, "empty UTF-8 note file sends NULL");
+            Reject(() => WorkshopMetadata.ExpectedPreviews(previews, [], [new(0, image)], [0]), "overlapping preview operations rejected");
+            Reject(() => WorkshopMetadata.ExpectedPreviews(previews, [], [], [2]), "out-of-range preview rejected");
+            Reject(() => WorkshopMetadata.ExpectedPreviews(previews, [], [], [0, 0]), "duplicate removals rejected");
+            Reject(() => WorkshopMetadata.ExpectedPreviews([new(0, "video", "", 1)], [], [new(0, image)], []), "image replacement cannot overwrite a video");
+            var dryEdit = await WorkshopPublishingService.EditAsync(context, ["steamworkshops", "edit", "--id", "123", "--title", "Dry title", "--dry-run"], CancellationToken.None);
+            Check(dryEdit.Ok && SteamWorkshopsCommand.Json(dryEdit.Details).GetProperty("fields").GetProperty("description").GetBoolean() == false, "title-only dry-run does not sync description");
+            void Reject(Action action, string message)
+            {
+                try { action(); } catch (ArgumentException) { Check(true, message); return; }
+                throw new Exception("Expected rejection: " + message);
+            }
         }
         finally
         {

@@ -122,6 +122,9 @@ public static class CliHelp
         Options:
           --project <path>             Project root (otherwise current directory/direct parent).
           --dry-run                    Verify receipt, complete target hashes and project inputs.
+          --change-note <text>         Optional change note; absent/empty sends no note.
+          --change-note-file <path>    UTF-8, multiline note; mutually exclusive with --change-note.
+          --text-language <code>       Initial page text language, default english; existing content uploads preserve all text.
           --timeout-seconds <seconds>  Upload wait budget; default 1800.
           --verbose                    Include diagnostics.
           -h, --help                   Show help.
@@ -137,9 +140,16 @@ public static class CliHelp
         Options:
           --project <path>             Project root.
           --id <id-or-link>            Explicit item; otherwise project's PublishedFileId.txt.
+          --title <text>               Change only the specified language's page title.
+          --text-language <code>       Steamworks API code, default english (e.g. schinese).
+          --change-note <text>         Optional note; absent/empty sends no note.
+          --change-note-file <path>    UTF-8 note, mutually exclusive with --change-note.
           --description-file <path>    UTF-8 description (BBCode preserved).
           --visibility <value>         private, public, friends-only, unlisted.
           --preview-file <path>        Primary preview image.
+          --add-preview <path>         Add an additional image; repeatable, JPG/PNG/GIF under 1 MiB.
+          --update-preview <n=path>    Replace an additional image at its zero-based status index; repeatable.
+          --remove-preview <n>         Remove an additional preview by zero-based status index; repeatable.
           --dry-run                    Inspect requested fields and owner permissions.
           --timeout-seconds <seconds>  Submit wait budget; default 1800.
           --verbose                    Include diagnostics.
@@ -265,6 +275,10 @@ public static class CliHelp
           --sync-source       Include source/ in this deployment.
           --upload            After a full deploy, verify its receipt and upload under the same lock.
                               Mutually exclusive with --xml-hot; --dry-run only prints both stages.
+          --change-note <text>          With --upload, send an optional note; absent/empty sends none.
+          --change-note-file <path>     With --upload, UTF-8 note; exclusive with --change-note.
+          --text-language <code>        With --upload, initial page language (default english).
+          --timeout-seconds <seconds>   With --upload, submit wait budget (default 1800).
           --xml-hot           If RimWorld is running, transactionally update configured non-DLL files in place,
                               wait at least 3 seconds, then request a Def reload. If it is not
                               running, perform the normal build and file-by-file deployment.

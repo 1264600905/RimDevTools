@@ -37,6 +37,12 @@ if (args.Contains("--live-steamworkshops"))
     return;
 }
 
+if (args.Contains("--live-workshop-improvements"))
+{
+    Environment.ExitCode = await WorkshopImprovementsLiveTests.RunAsync(args);
+    return;
+}
+
 var suite = new TestSuite();
 await suite.RunAsync();
 

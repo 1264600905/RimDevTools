@@ -5,7 +5,7 @@ using System.Text.Json;
 namespace RimDevTools;
 
 internal sealed record SteamworksRequest(string NativePath, string Operation, int TimeoutSeconds = 15,
-    string? Keyword = null, int Page = 1, ulong? Id = null, bool Wait = false);
+    string? Keyword = null, int Page = 1, ulong? Id = null, bool Wait = false, string? Language = null);
 internal sealed record SteamworksResponse
 {
     public bool SteamRunning { get; init; }
@@ -94,7 +94,7 @@ internal static class SteamworksSessionProbe
             response = response with { RimWorldInLibrary = client.InLibrary, CurrentUserSteamId = client.SteamId, Source = "native_session" };
             // Probe independently of the selected (possibly private or deleted) item.
             var page = client.Query(request.Operation == "search" ? request.Keyword : null, request.Page,
-                request.Operation is "detail" or "subscribe" or "observe" or "subscribe-verify-download" ? request.Id : null);
+                request.Operation is "detail" or "subscribe" or "observe" or "subscribe-verify-download" ? request.Id : null, request.Language);
             response = response with { WorkshopAvailability = "available", Source = "native_live_query", Page = request.Operation == "probe" ? null : page,
                 Download = request.Operation == "detail" && request.Id.HasValue ? client.DownloadState(request.Id.Value) : null };
             if (request.Operation is "subscribe" or "observe" or "subscribe-verify-download" && request.Id.HasValue)

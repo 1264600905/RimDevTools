@@ -6,7 +6,9 @@ namespace RimDevTools;
 
 internal sealed record WorkshopPublishRequest(string OperationId, string NativeLibraryPath, string? ProjectRoot,
     string? ContentPath, ulong? PublishedFileId, string? Name, string? Description, string? PreviewPath,
-    int? Visibility, string[]? Tags, int TimeoutSeconds, WorkshopContentFile[]? Files);
+    int? Visibility, string[]? Tags, int TimeoutSeconds, WorkshopContentFile[]? Files,
+    string TextLanguage = "english", string? ChangeNote = null, string[]? AddPreviews = null,
+    WorkshopPreviewReplacement[]? ReplacePreviews = null, uint[]? RemovePreviews = null);
 internal sealed record WorkshopPublishResult
 {
     public string OperationId { get; init; } = "";
@@ -39,6 +41,8 @@ internal sealed record WorkshopPublishResult
     public WorkshopItemInfo? VerifiedItem { get; init; }
     public string? ErrorCode { get; init; }
     public string? Message { get; init; }
+    public string? ChangeNote { get; init; }
+    public string? TextLanguage { get; init; }
 }
 
 internal static class WorkshopPublisher
@@ -56,7 +60,8 @@ internal static class WorkshopPublisher
 
     internal static WorkshopPublishResult Publish(WorkshopPublishRequest request, Action<WorkshopPublishResult> report)
     {
-        var result = new WorkshopPublishResult { OperationId = request.OperationId, PublishedFileId = request.PublishedFileId?.ToString(CultureInfo.InvariantCulture) };
+        var result = new WorkshopPublishResult { OperationId = request.OperationId, PublishedFileId = request.PublishedFileId?.ToString(CultureInfo.InvariantCulture),
+            ChangeNote = request.ChangeNote, TextLanguage = request.Name is not null || request.Description is not null ? request.TextLanguage : null };
         var held = new List<FileStream>();
         try
         {
@@ -69,6 +74,8 @@ internal static class WorkshopPublisher
             }
             if (request.PreviewPath is not null && request.ContentPath is null)
                 held.Add(File.Open(request.PreviewPath, FileMode.Open, FileAccess.Read, FileShare.Read));
+            foreach (var path in (request.AddPreviews ?? []).Concat((request.ReplacePreviews ?? []).Select(x => x.Path)).Distinct())
+                held.Add(File.Open(path, FileMode.Open, FileAccess.Read, FileShare.Read));
             using var client = new SteamworksClient(request.NativeLibraryPath, request.TimeoutSeconds);
             if (!client.InLibrary || !client.LoggedOn) throw new InvalidDataException("Steam 账号未在线，或库中不可用 RimWorld");
             var id = request.PublishedFileId ?? 0;
@@ -90,10 +97,11 @@ internal static class WorkshopPublisher
                 expectedFiles = expectedFiles.Append(new("About/PublishedFileId.txt", targetIdentity.Bytes, targetIdentity.Sha256)).OrderBy(x => x.Path, StringComparer.Ordinal).ToArray();
             }
             Stage("checking_owner");
-            var before = client.Query(id: id).Items.Single();
+            var before = client.Query(id: id, language: request.TextLanguage).Items.Single();
             if (before.OwnerSteamId != client.SteamId || before.ConsumerAppId != SteamworksClient.AppId)
                 throw new InvalidDataException("条目不属于 RimWorld 或当前 Steam owner；不检测贡献者写权限");
             result = result with { PreviousUpdatedAtUnix = before.LastUpdatedAtUnix };
+            var expectedPreviews = WorkshopMetadata.ExpectedPreviews(before.AdditionalPreviews ?? [], request.AddPreviews ?? [], request.ReplacePreviews ?? [], request.RemovePreviews ?? []);
             CheckFiles();
             var update = client.Bind<StartUpdateCall>("SteamAPI_ISteamUGC_StartItemUpdate")(client.Ugc, SteamworksClient.AppId, id);
             if (update is 0 or ulong.MaxValue) throw new IOException("StartItemUpdate 句柄无效");
@@ -102,11 +110,23 @@ internal static class WorkshopPublisher
                 SteamworksClient.Require(client.Bind<SetStringCall>("SteamAPI_ISteamUGC_SetItemContent")(client.Ugc, update, request.ContentPath), "SetItemContent");
                 result = result with { SetItemContentCalled = true, ContentBytes = expectedFiles.Sum(x => x.Bytes) };
             }
+            // Steam replaces a localized text pair: omitted localized fields can otherwise become empty.
+            // Seed the other field from this language's live query (Steam fallback for a new translation).
+            if (request.Name is not null || request.Description is not null)
+            {
+                Set("SetItemUpdateLanguage", request.TextLanguage);
+                Set("SetItemTitle", request.Name ?? before.Title);
+                Set("SetItemDescription", request.Description ?? before.Description);
+            }
             // Existing content uploads never set metadata; creation initializes it once.
-            if (request.Name is not null) Set("SetItemTitle", request.Name);
-            if (request.Description is not null) Set("SetItemDescription", request.Description);
             if (request.PreviewPath is not null) Set("SetItemPreview", request.PreviewPath);
             if (request.Visibility.HasValue) SteamworksClient.Require(client.Bind<VisibilityCall>("SteamAPI_ISteamUGC_SetItemVisibility")(client.Ugc, update, request.Visibility.Value), "SetItemVisibility");
+            foreach (var replacement in request.ReplacePreviews ?? [])
+                SteamworksClient.Require(client.Bind<UpdatePreviewCall>("SteamAPI_ISteamUGC_UpdateItemPreviewFile")(client.Ugc, update, replacement.Index, replacement.Path), "UpdateItemPreviewFile");
+            foreach (var index in (request.RemovePreviews ?? []).OrderDescending())
+                SteamworksClient.Require(client.Bind<RemovePreviewCall>("SteamAPI_ISteamUGC_RemoveItemPreview")(client.Ugc, update, index), "RemoveItemPreview");
+            foreach (var path in request.AddPreviews ?? [])
+                SteamworksClient.Require(client.Bind<AddPreviewCall>("SteamAPI_ISteamUGC_AddItemPreviewFile")(client.Ugc, update, path, 0), "AddItemPreviewFile");
             if (request.Tags is not null)
             {
                 var pointers = request.Tags.Select(Marshal.StringToCoTaskMemUTF8).ToArray();
@@ -131,14 +151,14 @@ internal static class WorkshopPublisher
             Stage("submitting");
             result = result with { SubmissionStarted = true, SubmittedAt = DateTimeOffset.UtcNow, RemoteOutcome = "unknown", SubmitCallCount = 1 };
             report(result);
-            var call = client.Bind<SubmitCall>("SteamAPI_ISteamUGC_SubmitItemUpdate")(client.Ugc, update, "RimDevTools project deployment.");
+            var call = client.Bind<SubmitCall>("SteamAPI_ISteamUGC_SubmitItemUpdate")(client.Ugc, update, request.ChangeNote);
             if (call == 0) throw new IOException("SubmitItemUpdate 返回无效句柄");
             var submitted = client.Wait<SubmittedItem>(call, 3404);
             result = result with { SubmitResult = submitted.Result, NeedsWorkshopAgreement = result.NeedsWorkshopAgreement || submitted.NeedsAgreement != 0,
                 RemoteOutcome = submitted.Result == 1 ? "accepted" : "rejected" };
             if (submitted.Result != 1 || submitted.Id != id) throw new IOException("SubmitItemUpdate 未成功: EResult=" + submitted.Result);
             Stage("verifying");
-            var page = client.Query(id: id);
+            var page = client.Query(id: id, language: request.TextLanguage);
             var verified = page.Items.Single();
             result = result with { VerifiedItem = verified, LastUpdatedAtUnix = verified.LastUpdatedAtUnix,
                 RemoteQuery = new { page.FetchedAt, source = "native_live_query", cachedData = false } };
@@ -148,6 +168,7 @@ internal static class WorkshopPublisher
                 || verified.Title != (request.Name ?? before.Title) || verified.Description != (request.Description ?? before.Description)
                 || verified.Visibility != (request.Visibility.HasValue ? SteamworksClient.VisibilityName(request.Visibility.Value) : before.Visibility)
                 || request.PreviewPath is null && verified.PreviewUrl != before.PreviewUrl
+                || !PreviewsMatch(expectedPreviews, verified.AdditionalPreviews ?? [])
                 || request.Tags is null && verified.Tags != before.Tags)
                 throw new InvalidDataException("Steam 已接受提交，但远端身份/内容大小/元数据回读不一致；不要自动重试");
             CheckFiles();
@@ -183,6 +204,11 @@ internal static class WorkshopPublisher
         finally { foreach (var stream in held) stream.Dispose(); }
     }
 
+    internal static bool PreviewsMatch(WorkshopPreview[] expected, WorkshopPreview[] actual)
+        => expected.Length == actual.Length && expected.Zip(actual).All(pair => pair.First.Index == pair.Second.Index
+            && pair.First.Type == pair.Second.Type && pair.First.OriginalFileName == pair.Second.OriginalFileName
+            && (pair.First.Url.Length == 0 ? pair.Second.Url.Length > 0 : pair.First.Url == pair.Second.Url));
+
     private static string IdPath(string root) => Path.Combine(root, "About", "PublishedFileId.txt");
     internal static WorkshopPublishResult MarkTimedOut(WorkshopPublishResult result, string message)
         => result with { Succeeded = false, TimedOut = true, RemoteOutcome = "unknown", ErrorCode = "WORKSHOP_UPLOAD_TIMEOUT", Message = message,
@@ -209,5 +235,8 @@ internal static class WorkshopPublisher
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] [return: MarshalAs(UnmanagedType.I1)] private delegate bool SetStringCall(IntPtr self, ulong update, [MarshalAs(UnmanagedType.LPUTF8Str)] string value);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] [return: MarshalAs(UnmanagedType.I1)] private delegate bool VisibilityCall(IntPtr self, ulong update, int value);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] [return: MarshalAs(UnmanagedType.I1)] private delegate bool TagsCall(IntPtr self, ulong update, ref TagArray tags);
-    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate ulong SubmitCall(IntPtr self, ulong update, [MarshalAs(UnmanagedType.LPUTF8Str)] string note);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate ulong SubmitCall(IntPtr self, ulong update, [MarshalAs(UnmanagedType.LPUTF8Str)] string? note);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] [return: MarshalAs(UnmanagedType.I1)] private delegate bool AddPreviewCall(IntPtr self, ulong update, [MarshalAs(UnmanagedType.LPUTF8Str)] string path, int type);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] [return: MarshalAs(UnmanagedType.I1)] private delegate bool UpdatePreviewCall(IntPtr self, ulong update, uint index, [MarshalAs(UnmanagedType.LPUTF8Str)] string path);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] [return: MarshalAs(UnmanagedType.I1)] private delegate bool RemovePreviewCall(IntPtr self, ulong update, uint index);
 }

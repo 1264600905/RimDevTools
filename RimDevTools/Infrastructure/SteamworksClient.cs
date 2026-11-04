@@ -8,7 +8,10 @@ namespace RimDevTools;
 internal sealed record WorkshopItemInfo(string PublishedFileId, string OwnerSteamId, uint ConsumerAppId,
     string Title, string Description, string DescriptionMode, string Visibility, ulong? SubscriptionCount,
     string? SubscriptionCountReason, uint? LastUpdatedAtUnix, string? LastUpdatedAt, string? LastUpdatedAtLocal,
-    int FileBytes, string? PreviewUrl, string Tags);
+    int FileBytes, string? PreviewUrl, string Tags)
+{
+    public WorkshopPreview[]? AdditionalPreviews { get; init; }
+}
 internal sealed record WorkshopQueryPage(int NativePage, uint TotalMatchingResults, bool CachedData,
     DateTimeOffset FetchedAt, WorkshopItemInfo[] Items);
 internal sealed record WorkshopDownloadState(uint Flags, bool Subscribed, bool Installed, bool NeedsUpdate,
@@ -146,7 +149,7 @@ internal sealed class SteamworksClient : IDisposable
         finally { pendingCalls.Remove(call); Marshal.FreeHGlobal(buffer); }
     }
 
-    internal WorkshopQueryPage Query(string? keyword = null, int page = 1, ulong? id = null)
+    internal WorkshopQueryPage Query(string? keyword = null, int page = 1, ulong? id = null, string? language = null)
     {
         if (!LoggedOn) throw new IOException("Steam 当前账号未在线登录");
         var handle = id.HasValue
@@ -157,6 +160,8 @@ internal sealed class SteamworksClient : IDisposable
         {
             Require(Bind<QueryUInt>("SteamAPI_ISteamUGC_SetAllowCachedResponse")(Ugc, handle, 0), "SetAllowCachedResponse");
             Require(Bind<QueryBool>("SteamAPI_ISteamUGC_SetReturnLongDescription")(Ugc, handle, id.HasValue), "SetReturnLongDescription");
+            if (language is not null) Require(Bind<QueryString>("SteamAPI_ISteamUGC_SetLanguage")(Ugc, handle, language), "SetLanguage");
+            if (id.HasValue) Require(Bind<QueryBool>("SteamAPI_ISteamUGC_SetReturnAdditionalPreviews")(Ugc, handle, true), "SetReturnAdditionalPreviews");
             if (keyword is not null) Require(Bind<QueryString>("SteamAPI_ISteamUGC_SetSearchText")(Ugc, handle, keyword), "SetSearchText");
             var done = Wait<QueryCompleted>(Bind<SendQuery>("SteamAPI_ISteamUGC_SendQueryUGCRequest")(Ugc, handle), 3401);
             if (done.Handle != handle || done.Result != 1 || done.Cached != 0)
@@ -177,13 +182,30 @@ internal sealed class SteamworksClient : IDisposable
                     d.ConsumerAppId, Utf8(d.Title), Utf8(d.Description), id.HasValue ? "full" : "official_summary_255_bytes",
                     VisibilityName(d.Visibility), countOk ? count : null, countOk ? null : "GetQueryUGCStatistic 返回 false",
                     d.UpdatedAt == 0 ? null : d.UpdatedAt, updated?.ToString("O"), updated?.ToOffset(TimeSpan.FromHours(8)).ToString("O"),
-                    d.FileBytes, previewOk ? Utf8(url) : null, Utf8(d.Tags)));
+                    d.FileBytes, previewOk ? Utf8(url) : null, Utf8(d.Tags))
+                { AdditionalPreviews = id.HasValue ? ReadPreviews(handle, i) : null });
             }
             if (id.HasValue && items.Count != 1) throw new IOException("未取得目标条目；可能不存在或当前账号无权访问");
             return new(page, done.TotalResults, false, DateTimeOffset.UtcNow, items.ToArray());
         }
         finally { Bind<ReleaseQuery>("SteamAPI_ISteamUGC_ReleaseQueryUGCRequest")(Ugc, handle); }
     }
+
+    private WorkshopPreview[] ReadPreviews(ulong handle, uint item)
+    {
+        var count = Bind<PreviewCount>("SteamAPI_ISteamUGC_GetQueryUGCNumAdditionalPreviews")(Ugc, handle, item);
+        var result = new List<WorkshopPreview>();
+        for (uint i = 0; i < count; i++)
+        {
+            var url = new byte[32768]; var name = new byte[32768];
+            Require(Bind<AdditionalPreview>("SteamAPI_ISteamUGC_GetQueryUGCAdditionalPreview")(Ugc, handle, item, i, url, (uint)url.Length, name, (uint)name.Length, out var type), "GetQueryUGCAdditionalPreview");
+            result.Add(new(i, Utf8(url), Utf8(name), type));
+        }
+        return result.ToArray();
+    }
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate uint PreviewCount(IntPtr self, ulong query, uint item);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] [return: MarshalAs(UnmanagedType.I1)] private delegate bool AdditionalPreview(IntPtr self, ulong query, uint item, uint index, [Out] byte[] url, uint urlSize, [Out] byte[] name, uint nameSize, out int type);
 
     internal WorkshopDownloadState DownloadState(ulong id, bool allowInstallInfo = true)
     {

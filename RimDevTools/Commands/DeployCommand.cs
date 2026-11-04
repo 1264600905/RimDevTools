@@ -10,6 +10,8 @@ public static class DeployCommand
     public static async Task<int> RunAsync(string[] args, CancellationToken cancellationToken = default)
     {
         var verbose = CliArgs.Has(args, "--verbose");
+        if (!CliArgs.Has(args, "--upload") && new[] { "--change-note", "--change-note-file", "--text-language", "--timeout-seconds" }.Any(x => CliArgs.Has(args, x)))
+            throw new ArgumentException("发布选项需要 deploy --upload");
         if (CliArgs.Has(args, "--upload")) return await RunWithUploadAsync(args, cancellationToken, verbose);
         var execution = await ExecuteAsync(args, cancellationToken, verbose: verbose);
         if (!execution.Ok)
@@ -22,6 +24,9 @@ public static class DeployCommand
     private static async Task<int> RunWithUploadAsync(string[] args, CancellationToken token, bool verbose)
     {
         if (CliArgs.Has(args, "--xml-hot")) return CliResult.WriteFailure("deploy", ExitCodes.InvalidArguments, "INVALID_ARGUMENT", "--upload 与 --xml-hot 互斥");
+        _ = WorkshopMetadata.ChangeNote(args);
+        _ = WorkshopMetadata.Language(args);
+        _ = WorkshopPublishingService.Timeout(args);
         var context = CliApplication.RequireProject("deploy", out var error);
         if (context is null) return error;
         if (CliArgs.Has(args, "--dry-run"))

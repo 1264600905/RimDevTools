@@ -167,7 +167,7 @@ public static class SteamWorkshopsCommand
             lastUpdatedAtUnix = item?.LastUpdatedAtUnix, lastUpdatedAt = item?.LastUpdatedAt, lastUpdatedAtLocal = item?.LastUpdatedAtLocal,
             lastUpdatedAtReason = item?.LastUpdatedAtUnix is null ? detail?.Reason ?? "未发布或 Steam 未提供有效时间" : null,
             permissions = WorkshopPermissionEvaluator.Evaluate(item?.OwnerSteamId, detail?.CurrentUserSteamId ?? health.CurrentUserSteamId),
-            download = detail?.Download, item?.FileBytes, item?.PreviewUrl, item?.Tags,
+            download = detail?.Download, item?.FileBytes, item?.PreviewUrl, item?.Tags, item?.AdditionalPreviews,
             partial = selected is not null && (item is null || item.SubscriptionCount is null || item.LastUpdatedAtUnix is null),
             queryReason = detail?.Reason, waitObservation = detail?.Subscription
         });

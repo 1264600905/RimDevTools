@@ -113,7 +113,7 @@ public static class CliArgs
         = new Dictionary<string, (int, int, Option[])>(StringComparer.OrdinalIgnoreCase)
         {
             ["doctor"] = (1, 0, [new("--verbose", false)]),
-            ["deploy"] = (1, 0, [new("--sync-source", false), new("--xml-hot", false), new("--upload", false), new("--dry-run", false), new("--verbose", false)]),
+            ["deploy"] = (1, 0, [new("--sync-source", false), new("--xml-hot", false), new("--upload", false), new("--change-note", true), new("--change-note-file", true), new("--text-language", true), new("--timeout-seconds", true), new("--dry-run", false), new("--verbose", false)]),
             ["mod search"] = (2, 1, [new("--fuzzy", false), new("--verbose", false)]),
             ["mod copy"] = (2, 1, [new("--version", true), new("--deps", false), new("--include-ignored", false), new("--fuzzy", false), new("--overwrite-existing", false), new("--dry-run", false), new("--verbose", false)]),
             ["mod dependencies"] = (2, 1, [new("--version", true), new("--fuzzy", false), new("--verbose", false)]),
@@ -123,8 +123,8 @@ public static class CliArgs
             ["test cleanup"] = (2, 0, [new("--dry-run", false), new("--status", false), new("--verbose", false)]),
             ["mods install-tools"] = (2, 0, [new("--mods-path", true), new("--dry-run", false), new("--verbose", false)]),
             ["workshop probe"] = (2, 0, [new("--published-file-id", true), new("--timeout-seconds", true), new("--verbose", false)]),
-            ["steamworkshops upload"] = (2, 0, [new("--project", true), new("--timeout-seconds", true), new("--dry-run", false), new("--verbose", false)]),
-            ["steamworkshops edit"] = (2, 0, [new("--project", true), new("--id", true), new("--description-file", true), new("--visibility", true), new("--preview-file", true), new("--timeout-seconds", true), new("--dry-run", false), new("--verbose", false)]),
+            ["steamworkshops upload"] = (2, 0, [new("--project", true), new("--change-note", true), new("--change-note-file", true), new("--text-language", true), new("--timeout-seconds", true), new("--dry-run", false), new("--verbose", false)]),
+            ["steamworkshops edit"] = (2, 0, [new("--project", true), new("--id", true), new("--title", true), new("--text-language", true), new("--change-note", true), new("--change-note-file", true), new("--description-file", true), new("--visibility", true), new("--preview-file", true), new("--add-preview", true, true), new("--update-preview", true, true), new("--remove-preview", true, true), new("--timeout-seconds", true), new("--dry-run", false), new("--verbose", false)]),
             ["steamworkshops search"] = (2, 1, [new("--project", true), new("--page", true), new("--details", false), new("--verbose", false)]),
             ["steamworkshops subscribe"] = (2, 1, [new("--project", true), new("--wait", false), new("--timeout-seconds", true), new("--verbose", false)]),
             ["steamworkshops status"] = (2, -1, [new("--project", true), new("--wait", false), new("--timeout-seconds", true), new("--verbose", false)]),

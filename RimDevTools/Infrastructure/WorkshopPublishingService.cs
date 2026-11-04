@@ -14,6 +14,8 @@ internal static class WorkshopPublishingService
     internal static async Task<WorkshopPublishExecution> UploadAsync(ProjectContext context, string[] args, CancellationToken token,
         EnvironmentLock? heldLock = null, string? expectedDeployRunId = null)
     {
+        var changeNote = WorkshopMetadata.ChangeNote(args);
+        var language = WorkshopMetadata.Language(args);
         var configDirectory = GameEnvironment.ConfigDirectory(context) ?? throw new InvalidDataException("无法解析游戏 Config 目录");
         if (heldLock is not null && !heldLock.Owns(configDirectory)) throw new InvalidDataException("组合操作没有持有目标环境锁");
         var dryRun = CliArgs.Has(args, "--dry-run");
@@ -40,15 +42,13 @@ internal static class WorkshopPublishingService
         var files = WorkshopUploadCommand.InspectContent(verification.Target);
         var description = create ? ValidateDescription(about.Element("description")?.Value.Trim() ?? "") : null;
         var preview = create ? ValidatePreview(Path.Combine(verification.Target, "About", "Preview.png")) : null;
-        var title = create ? about.Element("name")?.Value.Trim() : null;
-        if (create && (string.IsNullOrWhiteSpace(title) || Encoding.UTF8.GetByteCount(title) >= 129 || title.Contains('\0')))
-            throw new ArgumentException("首次上传需要小于 129 UTF-8 字节的有效模组名称");
-        if (CliArgs.Has(args, "--dry-run")) return new(true, 0, null, null, SteamWorkshopsCommand.Json(new { dryRun = true, verification, action = create ? "create_private" : "update_content_only", verification.Artifacts }));
+        var title = create ? WorkshopMetadata.Title(about.Element("name")?.Value.Trim() ?? "") : null;
+        if (CliArgs.Has(args, "--dry-run")) return new(true, 0, null, null, SteamWorkshopsCommand.Json(new { dryRun = true, verification, action = create ? "create_private" : "update_content_only", changeNote, textLanguage = create ? language : null, verification.Artifacts }));
         if (ProcessUtil.IsRimWorldRunning()) return Fail("RIMWORLD_RUNNING", "请先关闭 RimWorld 再上传", verification, ExitCodes.Busy);
         var request = new WorkshopPublishRequest(Guid.NewGuid().ToString("N"), native, context.Root, verification.Target,
             create ? null : ulong.Parse(verification.PublishedFileId!), title, description, preview, create ? 2 : null,
             create ? new[] { "Mod" }.Concat(about.Element("supportedVersions")?.Elements("li").Select(x => x.Value.Trim()) ?? []).Distinct().ToArray() : null,
-            Timeout(args), files);
+            Timeout(args), files, language, changeNote);
         var execution = await RunHelperAsync(context, request, token);
         var publishedDetails = JsonSerializer.SerializeToNode(execution.Details)!.AsObject();
         publishedDetails["deployRunId"] = verification.DeployRunId;
@@ -68,10 +68,16 @@ internal static class WorkshopPublishingService
         var id = raw is not null ? SteamWorkshopsCommand.ParseId(raw) ?? throw new ArgumentException("无效的 --id")
             : context is not null ? WorkshopUploadCommand.ReadId(Path.Combine(context.Root, "About", "PublishedFileId.txt")) : null;
         if (id is null) return Fail("WORKSHOP_ID_REQUIRED", "edit 需要项目发布文件或明确 --id", new { });
-        var explicitFields = new[] { "--description-file", "--preview-file", "--visibility" }.Any(option => CliArgs.Has(args, option));
+        var language = WorkshopMetadata.Language(args);
+        var changeNote = WorkshopMetadata.ChangeNote(args);
+        var title = CliArgs.Value(args, "--title") is { } name ? WorkshopMetadata.Title(name) : null;
+        var additions = CliArgs.Values(args, "--add-preview").Select(path => ValidatePreview(Path.GetFullPath(path))).ToArray();
+        var replacements = WorkshopMetadata.Replacements(args);
+        var removals = CliArgs.Values(args, "--remove-preview").Select(WorkshopMetadata.Index).ToArray();
+        var explicitFields = new[] { "--title", "--description-file", "--preview-file", "--visibility", "--add-preview", "--update-preview", "--remove-preview" }.Any(option => CliArgs.Has(args, option));
         string? description = null;
         if (CliArgs.Value(args, "--description-file") is { } descriptionFile)
-            description = ValidateDescription(File.ReadAllText(Path.GetFullPath(descriptionFile), new UTF8Encoding(false, true)));
+            description = ValidateDescription(WorkshopMetadata.ReadText(descriptionFile));
         else if (!explicitFields)
         {
             if (context is null) throw new ArgumentException("无项目时更新描述需使用 --description-file");
@@ -91,14 +97,16 @@ internal static class WorkshopPublishingService
         if (detail.ErrorCode is not null) return Fail(detail.ErrorCode, detail.Reason!, detail);
         if (detail.RimWorldInLibrary != true || detail.Page!.Items.Single().OwnerSteamId != detail.CurrentUserSteamId)
             return Fail("WORKSHOP_OWNER_REQUIRED", "当前账号没有 owner 写权限或 RimWorld 库中不可用", detail);
+        _ = WorkshopMetadata.ExpectedPreviews(detail.Page.Items.Single().AdditionalPreviews ?? [], additions, replacements, removals);
         if (CliArgs.Has(args, "--dry-run")) return new(true, 0, null, null, SteamWorkshopsCommand.Json(new
         {
-            dryRun = true, publishedFileId = id.ToString(), fields = new { description = description is not null, preview = preview is not null, visibility },
+            dryRun = true, publishedFileId = id.ToString(), fields = new { title = title is not null, description = description is not null, preview = preview is not null, visibility, additions, replacements, removals },
+            changeNote, textLanguage = title is not null || description is not null ? language : null,
             setItemContentCalled = false, permissions = WorkshopPermissionEvaluator.Evaluate(detail.Page.Items.Single().OwnerSteamId, detail.CurrentUserSteamId)
         }));
         if (ProcessUtil.IsRimWorldRunning()) return Fail("RIMWORLD_RUNNING", "请先关闭 RimWorld 再编辑工坊", new { }, ExitCodes.Busy);
         return await RunHelperAsync(context, new(Guid.NewGuid().ToString("N"), NativePath(context), context?.Root, null, id,
-            null, description, preview, visibility, null, Timeout(args), null), token);
+            title, description, preview, visibility, null, Timeout(args), null, language, changeNote, additions, replacements, removals), token);
     }
 
     internal static int Write(string command, ProjectContext? context, WorkshopPublishExecution execution)
@@ -180,7 +188,8 @@ internal static class WorkshopPublishingService
         await output; var errors = await stderr;
         if (interrupted)
         {
-            latest ??= new() { OperationId = request.OperationId, PublishedFileId = request.PublishedFileId?.ToString() };
+            latest ??= new() { OperationId = request.OperationId, PublishedFileId = request.PublishedFileId?.ToString(), ChangeNote = request.ChangeNote,
+                TextLanguage = request.Name is not null || request.Description is not null ? request.TextLanguage : null };
             var detail = latest.PublishedFileId is null || latest.PostTimeoutQueryAttempted ? null : await SteamworksSessionProbe.RunAsync(context, "detail", id: ulong.Parse(latest.PublishedFileId), seconds: 10);
             latest = latest with
             {
