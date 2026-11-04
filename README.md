@@ -128,10 +128,10 @@ powershell -ExecutionPolicy Bypass -File .tools\publish-rimdevtools.ps1 -CreateZ
 输出为：
 
 ```text
-artifacts/RimDevTools-1.1.0.0-Template-RimWorld-1.6/
-artifacts/RimDevTools-1.1.0.0-Template-RimWorld-1.6.zip
-artifacts/RimDevTools-1.1.0.0-Template-RimWorld-1.7/
-artifacts/RimDevTools-1.1.0.0-Template-RimWorld-1.7.zip
+artifacts/RimDevTools-1.2.2.0-Template-RimWorld-1.6/
+artifacts/RimDevTools-1.2.2.0-Template-RimWorld-1.6.zip
+artifacts/RimDevTools-1.2.2.0-Template-RimWorld-1.7/
+artifacts/RimDevTools-1.2.2.0-Template-RimWorld-1.7.zip
 ```
 
 验证发布布局：
@@ -139,7 +139,7 @@ artifacts/RimDevTools-1.1.0.0-Template-RimWorld-1.7.zip
 ```powershell
 dotnet build RimDevTools.ReleaseTests\RimDevTools.ReleaseTests.csproj
 dotnet RimDevTools.ReleaseTests\bin\Debug\net10.0\RimDevTools.ReleaseTests.dll `
-  artifacts\RimDevTools-1.1.0.0-Template-RimWorld-1.7
+  artifacts\RimDevTools-1.2.2.0-Template-RimWorld-1.7
 ```
 
 ## 目录结构
