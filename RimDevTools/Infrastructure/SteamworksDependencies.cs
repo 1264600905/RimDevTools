@@ -5,7 +5,7 @@ namespace RimDevTools;
 
 internal sealed record WorkshopModDependency(string PublishedFileId, string? Name, WorkshopDownloadState? Download, string? Reason);
 internal sealed record WorkshopDlcDependency(uint AppId, string? Name, string? Reason);
-internal sealed record WorkshopDependencies(string Status, WorkshopModDependency[]? Mods, WorkshopDlcDependency[]? Dlc, string? Reason)
+internal sealed record WorkshopDependencies(string Status, WorkshopModDependency[]? ModDependencies, WorkshopDlcDependency[]? Dlc, string? Reason)
 {
     public string Source => "steam_declared_direct";
 }

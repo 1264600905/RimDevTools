@@ -92,7 +92,7 @@ RimDevTools 的 Unity Shader Bundle 构建仅适用于 1.6。1.7+ 项目使用�
 
 `steamworkshops edit --title "标题" --description-file <UTF-8文件> --text-language schinese` 编辑目标语言的页面文本，默认语言是 `english`。使用 Steamworks API 语言代码，如 `tchinese`、`japanese`、`koreana`，不接受 `zh-CN`。每次提交写入一种语言，保留其他语言；只提供标题或描述时，先读取目标语言并补传另一个字段，避免 Steam 清空未指定的译文。首次创建也可指定 `--text-language`；已有内容上传不改写任何语言的文本。查询入口不增加语言参数。
 
-主封面继续使用 `edit --preview-file <图片>`。附图使用可重复的 `--add-preview <图片>`、`--update-preview <从零开始的索引>=<图片路径>`、`--remove-preview <索引>`；索引来自 `status` 的 `additionalPreviews`，同一提交按操作前的索引解释，不接受重复或冲突索引。图片须为小于 1 MiB 的 PNG/JPG/GIF。附图增改删不改变主封面。
+主封面继续使用 `edit --preview-file <图片>`。附图使用可重复的 `--add-preview <图片>`、`--update-preview <从零开始的索引>=<图片路径>`、`--remove-preview <索引>`；索引来自 `status --verbose` 的 `additionalPreviews`，同一提交按操作前的索引解释，不接受重复或冲突索引。普通 status 不再输出附图列表。图片须为小于 1 MiB 的 PNG/JPG/GIF。附图增改删不改变主封面。
 
 所有 `edit` 操作均校验 owner、沿用非阻塞超时约定，且不构建、部署或传输模组内容。只改标题、附图等显式字段时保留未指定字段；不带字段选项的 `edit` 仍只同步本地 About 描述。
 

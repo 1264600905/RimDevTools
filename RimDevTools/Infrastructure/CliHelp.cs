@@ -196,14 +196,14 @@ public static class CliHelp
           --project <path>             Optional project root.
           --wait                       Observe existing download; never subscribes/requests download.
           --timeout-seconds <seconds>  Wait budget.
-          --verbose                    Include flags, permission/binding evidence, preview URLs and raw time formats.
+          --verbose                    Include flags, permission/binding evidence, preview URLs, gallery indexes and raw time formats.
           -h, --help                   Show help.
         Default identity is About/PublishedFileId.txt; packageId is separate.
         Contributor identification is deferred; only verified owners may write.
         --wait observes current flags/installation in this invocation; never requests a download.
         Unknown statistics/time stay null. Installed with NeedsUpdate is not complete.
         Default output contains full plain-text description, publisher name/SteamID, concise permission/download
-        conclusions and direct Steam-declared required mods (ID/name/local state) and DLC (App ID/name).
+        conclusions and direct Steam-declared modDependencies (ID/name/local state) and DLC (App ID/name).
         Does not recursively resolve dependencies, subscribe, download or enable them. Collection children are not required mods.
         Missing dependency data remains unknown with reasons; an API failure is never reported as no dependencies.
         """;

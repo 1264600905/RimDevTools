@@ -29,12 +29,12 @@ internal static class WorkshopStatusView
 
     internal static object Dependencies(WorkshopDependencies? value, bool verbose)
     {
-        if (value is null) return new { status = "unknown", reason = "未取得工坊声明的直接依赖", mods = (object?)null, dlc = (object?)null };
+        if (value is null) return new { status = "unknown", reason = "未取得工坊声明的直接依赖", modDependencies = (object?)null, dlc = (object?)null };
         if (verbose) return value;
         return new JsonObject
         {
             ["source"] = value.Source, ["status"] = value.Status,
-            ["mods"] = value.Mods is null ? null : new JsonArray(value.Mods.Select(mod =>
+            ["modDependencies"] = value.ModDependencies is null ? null : new JsonArray(value.ModDependencies.Select(mod =>
             {
                 var entry = JsonSerializer.SerializeToNode(Download(mod.Download, mod.Reason), JsonDefaults.Storage)!.AsObject();
                 entry.Remove("installPath"); entry.Remove("ready");
@@ -64,9 +64,6 @@ internal static class WorkshopStatusView
         if (permissions["canUpdateContent"] is null) compact["permissions"]!["reason"] = permissions["permissionEvidence"]?.DeepClone();
         compact["download"] = JsonSerializer.SerializeToNode(Download(download, value["queryReason"]?.GetValue<string>() ?? value["environmentReason"]?.GetValue<string>()), JsonDefaults.Storage);
         compact["dependencies"] = JsonSerializer.SerializeToNode(Dependencies(dependencies, false), JsonDefaults.Storage);
-        if (value["additionalPreviews"] is JsonArray previews)
-            compact["additionalPreviews"] = new JsonArray(previews.Select(preview => (JsonNode)new JsonObject
-            { ["index"] = preview!["index"]?.DeepClone(), ["originalFileName"] = preview["originalFileName"]?.DeepClone(), ["type"] = preview["type"]?.DeepClone() }).ToArray());
         if (value["idSource"]?.GetValue<string>() != "explicit")
         {
             compact["modName"] = value["modName"]?.DeepClone(); compact["packageId"] = value["packageId"]?.DeepClone();

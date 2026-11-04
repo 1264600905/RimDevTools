@@ -56,26 +56,26 @@ internal static class WorkshopQueryPresentationTests
             => SteamworksClient.ResolveDependencies(target, names ?? (_ => [item with { PublishedFileId = "456", Title = "Required" }]), states ?? (_ => ready),
                 apps ?? (() => (new uint[] { 3022790 }, null)), dlcNames ?? (() => new Dictionary<uint, string> { [3022790] = "RimWorld - Odyssey" }));
         var complete = Resolve(item);
-        Check(complete.Status == "complete" && complete.Mods!.Single() is { PublishedFileId: "456", Name: "Required", Download.Ready: true }
+        Check(complete.Status == "complete" && complete.ModDependencies!.Single() is { PublishedFileId: "456", Name: "Required", Download.Ready: true }
             && complete.Dlc!.Single() is { AppId: 3022790, Name: "RimWorld - Odyssey" }, "direct dependencies resolve independently of subject installation");
         var partial = Resolve(item, names: _ => throw new IOException("offline"));
-        Check(partial.Status == "partial" && partial.Mods!.Single() is { PublishedFileId: "456", Name: null, Download.Ready: true }
+        Check(partial.Status == "partial" && partial.ModDependencies!.Single() is { PublishedFileId: "456", Name: null, Download.Ready: true }
             && partial.Reason!.Contains("offline"), "failed name query retains IDs and independently known installation state");
         partial = Resolve(item, states: _ => throw new IOException("unavailable"));
-        Check(partial.Mods!.Single() is { Name: "Required", Download: null, Reason: not null }, "unknown installation cannot become not installed");
+        Check(partial.ModDependencies!.Single() is { Name: "Required", Download: null, Reason: not null }, "unknown installation cannot become not installed");
         partial = Resolve(item, apps: () => throw new IOException("offline"));
-        Check(partial.Status == "partial" && partial.Dlc is null && partial.Mods!.Length == 1, "failed DLC query is unknown, not empty");
+        Check(partial.Status == "partial" && partial.Dlc is null && partial.ModDependencies!.Length == 1, "failed DLC query is unknown, not empty");
         partial = Resolve(item, dlcNames: () => throw new IOException("unavailable"));
         Check(partial.Dlc!.Single() is { AppId: 3022790, Name: null, Reason: not null }, "known DLC ID survives name enumeration failure");
         partial = Resolve(item, apps: () => ([3022790], "partial packet"));
         Check(partial.Status == "partial" && partial.Dlc!.Length == 1 && partial.Reason!.Contains("partial packet"), "partial native packets retain known dependencies");
         partial = Resolve(item with { Children = null, ChildrenReason = "children failed" });
-        Check(partial.Mods is null && partial.Dlc!.Length == 1 && partial.Reason!.Contains("children failed"), "failed children query cannot claim no required mods");
+        Check(partial.ModDependencies is null && partial.Dlc!.Length == 1 && partial.Reason!.Contains("children failed"), "failed children query cannot claim no required mods");
         var empty = Resolve(item with { Children = [] }, apps: () => ([], null));
-        Check(empty.Status == "complete" && empty.Mods!.Length == 0 && empty.Dlc!.Length == 0, "genuine empty dependency response");
+        Check(empty.Status == "complete" && empty.ModDependencies!.Length == 0 && empty.Dlc!.Length == 0, "genuine empty dependency response");
         var collection = Resolve(item with { FileType = 2 }, names: _ => throw new Exception("must not query"), states: _ => throw new Exception("must not query"),
             apps: () => throw new Exception("must not query"));
-        Check(collection.Status == "not_applicable" && collection.Mods!.Length == 0, "collections never become required mod lists");
+        Check(collection.Status == "not_applicable" && collection.ModDependencies!.Length == 0, "collections never become required mod lists");
 
         File.WriteAllText(Path.Combine(root, "mod_config.jsonc"), JsonSerializer.Serialize(new ProjectConfig { ConfigVersion = 2, ModName = "Fixture", CsprojPaths = [], SyncItems = [] }, JsonDefaults.Storage));
         var previous = SteamworksSessionProbe.ProbeOverride;
@@ -91,6 +91,10 @@ internal static class WorkshopQueryPresentationTests
                 && verbose.GetProperty("description").GetString() == compact.GetProperty("description").GetString(), "status/exact search/verbose all show full clean text");
             Check(!compact.TryGetProperty("packageId", out _) && !compact.TryGetProperty("bindingSources", out _) && !compact.TryGetProperty("idSource", out _)
                 && !compact.TryGetProperty("previewUrl", out _) && !compact.TryGetProperty("lastUpdatedAtUnix", out _), "explicit status omits inapplicable project and diagnostic fields");
+            Check(compact.GetProperty("dependencies").TryGetProperty("modDependencies", out _) && !compact.GetProperty("dependencies").TryGetProperty("mods", out _)
+                && !compact.TryGetProperty("additionalPreviews", out _), "concise status uses a clear dependency key and omits the gallery list");
+            Check(verbose.GetProperty("dependencies").TryGetProperty("modDependencies", out _) && !verbose.GetProperty("dependencies").TryGetProperty("mods", out _)
+                && verbose.TryGetProperty("additionalPreviews", out _), "verbose status keeps gallery indexes for preview editing");
             Check(verbose.GetProperty("download").GetProperty("flags").GetUInt32() == 5 && verbose.TryGetProperty("bindingSources", out _)
                 && verbose.TryGetProperty("lastUpdatedAtUnix", out _) && verbose.TryGetProperty("previewUrl", out _), "verbose retains diagnostic evidence");
             Check(compact.GetProperty("permissions").GetProperty("canUpdateContent").GetBoolean() == verbose.GetProperty("permissions").GetProperty("canUpdateContent").GetBoolean()
