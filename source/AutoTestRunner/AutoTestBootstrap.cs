@@ -153,6 +153,11 @@ namespace LogSyncMod.AutoTest
             readinessClock = null;
         }
 
+        public static void PollPocketMapCleanupWatchdog()
+        {
+            runner?.PollPocketMapCleanupWatchdog();
+        }
+
         public static void OnGui()
         {
             global::LogSyncMod.TestAudioController.MaintainMuted("autotest_gui");
@@ -518,6 +523,17 @@ namespace LogSyncMod.AutoTest
             lastObservedPausedState = paused;
             lastObservedForcePausedState = forcePaused;
             lastObservedGuardSpeed = currentSpeed;
+        }
+    }
+
+    [HarmonyPatch(typeof(Root_Play), nameof(Root_Play.Update))]
+    internal static class Root_Play_Update_AutoTestCleanupWatchdogPatch
+    {
+        [HarmonyPrefix]
+        private static void Prefix()
+        {
+            // The real-time recovery must run even when simulation ticks are paused.
+            AutoTestBootstrap.PollPocketMapCleanupWatchdog();
         }
     }
 

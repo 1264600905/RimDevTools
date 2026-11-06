@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using RimWorld;
 using RimWorld.Planet;
 using Verse;
@@ -23,6 +24,9 @@ namespace LogSyncMod.AutoTest
 
     internal sealed class AutoTestPocketMapService
     {
+        private readonly AutoTestPocketMapCleanupWatchdog cleanupWatchdog = new AutoTestPocketMapCleanupWatchdog(new AutoTestGameClock());
+        public int PendingCleanupCount { get { return cleanupWatchdog.PendingCount; } }
+
         public AutoTestPocketMapHandle Create(AutoTestPocketMapRequest request, out string errorMessage)
         {
             errorMessage = null;
@@ -64,6 +68,13 @@ namespace LogSyncMod.AutoTest
                     return null;
                 }
 
+                // Synthetic arenas must be visible without player-owned pawns.
+                // The generator's Fog step runs before this point; keep factions unchanged.
+                foreach (IntVec3 cell in generatedMap.AllCells)
+                {
+                    generatedMap.fogGrid.Unfog(cell);
+                }
+
                 Find.World.pocketMaps.Add(pocketMapParent);
                 return new AutoTestPocketMapHandle
                 {
@@ -97,17 +108,48 @@ namespace LogSyncMod.AutoTest
 
         public void Destroy(Map map, MapParent parent)
         {
+            if (map == null && parent == null) return;
+            Map sourceMap = ((parent ?? map?.Parent) as PocketMapParent)?.sourceMap;
+            string id = map != null ? "map:" + map.uniqueID : "parent:" + parent.ID;
+            AutoTestPocketMapCleanupAttempt attempt = cleanupWatchdog.Request(id,
+                () => map != null ? !Find.Maps.Contains(map) : parent == null || parent.Destroyed,
+                force => RestoreSourceView(map, sourceMap, force),
+                () => DestroyNow(map, parent));
+            if (attempt != null && !attempt.Removed)
+                Log.Warning("[LogSyncAutoTest] Pocket map cleanup deferred; a 10-second realtime source-view recovery is armed. " + id + " " + attempt.Error?.Message);
+        }
+
+        public void PollCleanupWatchdog()
+        {
+            foreach (AutoTestPocketMapCleanupAttempt attempt in cleanupWatchdog.Poll())
+                Log.Warning("[LogSyncAutoTest] Pocket map cleanup watchdog: forced source map/camera after 10 realtime seconds. " +
+                    attempt.MapId + " removed=" + attempt.Removed + " error=" + attempt.Error?.Message);
+        }
+
+        private static void RestoreSourceView(Map map, Map sourceMap, bool force)
+        {
+            if (Current.Game == null) return;
+            if (!force && Current.Game.CurrentMap != map) return;
+            Map destination = sourceMap != null && Find.Maps.Contains(sourceMap) && !(sourceMap.Parent is PocketMapParent) ? sourceMap :
+                Find.Maps.FirstOrDefault(candidate => candidate != null && candidate != map && !(candidate.Parent is PocketMapParent));
+            if (destination == null) throw new InvalidOperationException("No surviving source map is available for pocket map cleanup recovery.");
+            Current.Game.CurrentMap = destination;
+            if (Find.World?.renderer != null) Find.World.renderer.wantedMode = WorldRenderMode.None;
+            Find.CameraDriver?.JumpToCurrentMapLoc(destination.Center);
+        }
+
+        private static void DestroyNow(Map map, MapParent parent)
+        {
+            Exception failure = null;
             try
             {
-                if (map != null)
+                if (map != null && Find.Maps.Contains(map))
                 {
                     PocketMapUtility.DestroyPocketMap(map);
-                    return;
+                    if (!Find.Maps.Contains(map)) return;
                 }
             }
-            catch
-            {
-            }
+            catch (Exception ex) { failure = ex; }
 
             try
             {
@@ -116,9 +158,9 @@ namespace LogSyncMod.AutoTest
                     parent.Destroy();
                 }
             }
-            catch
-            {
-            }
+            catch (Exception ex) { if (failure == null) failure = ex; }
+            if (map != null && Find.Maps.Contains(map) || map == null && parent != null && !parent.Destroyed)
+                throw new InvalidOperationException("Pocket map remains registered after cleanup.", failure);
         }
     }
 }

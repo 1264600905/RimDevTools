@@ -83,6 +83,8 @@ namespace LogSyncMod.AutoTest
         private static string BuildMarkdown(AutoTestRunArtifacts artifacts, string packageId, string modName, List<AutoTestResult> results, AutoTestRunSummary runSummary, AutoTestEvidenceManifest evidence)
         {
             StringBuilder builder = new StringBuilder();
+            List<AutoTestResult> failedResults = results.Where(result => AutoTestResultStatus.IsFailure(result.Status)).ToList();
+            List<ReportLogGroup> reportLogs = BuildReportLogs(failedResults, evidence);
             int passed = results.Count(result => AutoTestResultStatus.IsPassed(result.Status));
             int passedAfterRetry = results.Count(result => string.Equals(result.Status, AutoTestResultStatus.PassedAfterRetry, StringComparison.OrdinalIgnoreCase));
             int skipped = results.Count(result => string.Equals(result.Status, AutoTestResultStatus.Skipped, StringComparison.OrdinalIgnoreCase));
@@ -119,17 +121,23 @@ namespace LogSyncMod.AutoTest
                 builder.AppendLine("- BatchLimitApplied: " + runSummary.BatchLimitApplied);
                 builder.AppendLine("- MissingDefNames: " + (runSummary.MissingDefNames.Count == 0 ? "<none>" : string.Join(", ", runSummary.MissingDefNames.Select(value => "`" + value + "`"))));
             }
+            builder.AppendLine("- ReportScope: failed cases only; full results: " + BuildMarkdownLink(artifacts, artifacts.ResultPath));
             builder.AppendLine();
             builder.AppendLine("## Results");
             builder.AppendLine();
             builder.AppendLine("| CaseType | Category | DefName | Status | Stage | Screenshot | Notes |");
             builder.AppendLine("| --- | --- | --- | --- | --- | --- | --- |");
 
-            foreach (AutoTestResult result in results)
+            if (failedResults.Count == 0)
             {
-                string screenshotValue = result.ScreenshotPaths != null && result.ScreenshotPaths.Count > 0
-                    ? string.Join("<br>", result.ScreenshotPaths.Select(path => BuildMarkdownLink(artifacts, path)).ToArray())
-                    : BuildMarkdownLink(artifacts, result.ScreenshotPath);
+                builder.AppendLine();
+                builder.AppendLine("No failed cases.");
+            }
+            foreach (AutoTestResult result in failedResults)
+            {
+                string screenshotValue = ResultScreenshotPaths(result).Count > 0
+                    ? string.Join("<br>", ResultScreenshotPaths(result).Select(path => BuildMarkdownLink(artifacts, path)).ToArray())
+                    : string.Empty;
                 builder.AppendLine(string.Format(
                     "| {0} | {1} | `{2}` | {3} | {4} | {5} | {6} |",
                     EscapePipe(result.CaseType),
@@ -140,11 +148,6 @@ namespace LogSyncMod.AutoTest
                     screenshotValue,
                     EscapePipe(string.IsNullOrWhiteSpace(result.ErrorMessage) ? result.Notes : Trim(result.ErrorMessage, 160))));
             }
-
-            AppendStatusGroup(builder, "Unsupported", results.Where(result =>
-                string.Equals(result.Status, AutoTestResultStatus.Unsupported, StringComparison.OrdinalIgnoreCase)));
-            AppendStatusGroup(builder, "Compatibility Warnings", results.Where(result =>
-                string.Equals(result.Status, AutoTestResultStatus.CompatibilityWarning, StringComparison.OrdinalIgnoreCase)));
 
             if (runSummary != null && runSummary.MissingCaseIds.Count > 0)
             {
@@ -161,7 +164,7 @@ namespace LogSyncMod.AutoTest
             builder.AppendLine("## Screenshot Gallery");
             builder.AppendLine();
 
-            foreach (IGrouping<string, AutoTestResult> group in results
+            foreach (IGrouping<string, AutoTestResult> group in failedResults
                 .Where(HasMainGalleryScreenshots)
                 .GroupBy(result => result.CaseType ?? string.Empty)
                 .OrderBy(group => group.Key))
@@ -177,7 +180,7 @@ namespace LogSyncMod.AutoTest
                     builder.AppendLine("- Status: " + result.Status);
                     builder.AppendLine();
 
-                    foreach (string screenshotPath in result.ScreenshotPaths.Where(IsMainGalleryScreenshotPath))
+                    foreach (string screenshotPath in ResultScreenshotPaths(result).Where(IsMainGalleryScreenshotPath))
                     {
                         string relativePath = BuildRelativeImagePath(artifacts, screenshotPath);
                         builder.AppendLine("![" + EscapeImageAltText(result.DefName) + "](" + relativePath + ")");
@@ -186,8 +189,8 @@ namespace LogSyncMod.AutoTest
                 }
             }
 
-            List<(AutoTestResult Result, string ScreenshotPath)> failureScreenshots = results
-                .SelectMany(result => (result.ScreenshotPaths ?? new List<string>())
+            List<(AutoTestResult Result, string ScreenshotPath)> failureScreenshots = failedResults
+                .SelectMany(result => ResultScreenshotPaths(result)
                     .Where(IsFailureScreenshotPath)
                     .Select(path => (Result: result, ScreenshotPath: path)))
                 .ToList();
@@ -212,13 +215,13 @@ namespace LogSyncMod.AutoTest
                 }
             }
 
-            List<AutoTestResult> failedResults = results.Where(result => AutoTestResultStatus.IsFailure(result.Status)).ToList();
             foreach (AutoTestResult failedResult in failedResults)
             {
                 List<AutoTestAssertionEvidence> assertions = evidence?.Assertions?.Where(item => item.CaseId == failedResult.CaseId && !item.Success).ToList() ?? new List<AutoTestAssertionEvidence>();
                 AutoTestCaseEvidence caseEvidence = evidence?.Cases?.FirstOrDefault(item => item.CaseId == failedResult.CaseId);
                 List<AutoTestOperationEnvelope> operations = caseEvidence?.Operations?.ToList() ?? new List<AutoTestOperationEnvelope>();
-                List<AutoTestLogEvidence> logs = caseEvidence?.Logs?.ToList() ?? new List<AutoTestLogEvidence>();
+                string caseKey = ReportCaseKey(failedResult);
+                List<ReportLogGroup> logs = reportLogs.Where(log => log.CaseOccurrences.ContainsKey(caseKey)).ToList();
                 builder.AppendLine();
                 builder.AppendLine("## Failure Details: " + failedResult.DefName);
                 builder.AppendLine();
@@ -230,15 +233,17 @@ namespace LogSyncMod.AutoTest
                     builder.AppendLine("- " + assertion.Name + " (`" + assertion.AssertionId + "`)");
                     builder.AppendLine("  - Expected: " + EscapePipe(assertion.Expected));
                     builder.AppendLine("  - Actual: " + EscapePipe(assertion.Actual));
-                    builder.AppendLine("  - Details: " + EscapePipe(assertion.Details));
+                    builder.AppendLine("  - Details: " + (string.Equals(assertion.Name, "logs.no_unexpected_severe", StringComparison.OrdinalIgnoreCase) && logs.Count > 0
+                        ? "See Related Logs below; full messages are listed once in Deduplicated Logs."
+                        : EscapePipe(assertion.Details)));
                 }
                 builder.AppendLine("  - LastSnapshot: " + EscapePipe(failedResult.LastSnapshot));
                 builder.AppendLine();
                 builder.AppendLine("### Related Logs");
                 builder.AppendLine();
-                foreach (AutoTestLogEvidence log in logs.Where(item => item.Level == "warning" || item.Level == "error" || item.Level == "fatal").Take(50))
-                    builder.AppendLine("- [" + log.Level + "] " + EscapePipe(log.Message));
-                if (!logs.Any(item => item.Level == "warning" || item.Level == "error" || item.Level == "fatal")) builder.AppendLine("- <none>");
+                foreach (ReportLogGroup log in logs)
+                    builder.AppendLine("- [Log " + log.Id + "](#log-" + log.Id + ") [" + log.Level + "] — " + log.CaseOccurrences[caseKey].Values.Sum() + " occurrence(s)");
+                if (logs.Count == 0) builder.AppendLine("- <none>");
                 builder.AppendLine();
                 builder.AppendLine("### Operation Timeline");
                 builder.AppendLine();
@@ -248,7 +253,88 @@ namespace LogSyncMod.AutoTest
                     builder.AppendLine("| " + EscapePipe(operation.StepId) + " | " + operation.Status + " | " + operation.DurationMs + " | " + EscapePipe(operation.ResultSummary) + " |");
             }
 
+            if (reportLogs.Count > 0)
+            {
+                builder.AppendLine();
+                builder.AppendLine("## Deduplicated Logs");
+                builder.AppendLine();
+                foreach (ReportLogGroup log in reportLogs)
+                {
+                    builder.AppendLine("### Log " + log.Id);
+                    builder.AppendLine();
+                    builder.AppendLine("- Level: " + log.Level);
+                    builder.AppendLine("- SourcePackageId: " + (string.IsNullOrEmpty(log.SourcePackageId) ? "<unknown>" : log.SourcePackageId));
+                    builder.AppendLine("- Occurrences: " + log.Occurrences.Values.Sum());
+                    builder.AppendLine("- AffectedCases: " + string.Join(", ", log.CaseOccurrences.Keys.Select(key => "`" + EscapePipe(key) + "`").ToArray()));
+                    builder.AppendLine();
+                    foreach (string line in log.Message.Split('\n')) builder.AppendLine("    " + line);
+                    builder.AppendLine();
+                }
+            }
+
             return builder.ToString();
+        }
+
+        private sealed class ReportLogGroup
+        {
+            public int Id;
+            public string Level;
+            public string Message;
+            public string SourcePackageId;
+            public readonly Dictionary<string, int> Occurrences = new Dictionary<string, int>(StringComparer.Ordinal);
+            public readonly Dictionary<string, Dictionary<string, int>> CaseOccurrences = new Dictionary<string, Dictionary<string, int>>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        private static string ReportCaseKey(AutoTestResult result)
+        {
+            return result.CaseId ?? (result.CaseType + ":" + result.DefName);
+        }
+
+        private static List<ReportLogGroup> BuildReportLogs(List<AutoTestResult> failedResults, AutoTestEvidenceManifest evidence)
+        {
+            List<ReportLogGroup> groups = new List<ReportLogGroup>();
+            Dictionary<Tuple<string, string, string>, ReportLogGroup> index = new Dictionary<Tuple<string, string, string>, ReportLogGroup>();
+            foreach (AutoTestResult result in failedResults)
+            {
+                string caseKey = ReportCaseKey(result);
+                AutoTestCaseEvidence retained = evidence?.Cases?.FirstOrDefault(item => string.Equals(item.CaseId, result.CaseId, StringComparison.OrdinalIgnoreCase));
+                IEnumerable<AutoTestLogEvidence> logs = retained?.Logs ?? evidence?.Logs?.Where(item => item != null && !string.IsNullOrEmpty(result.CaseId) && string.Equals(item.CaseId, result.CaseId, StringComparison.OrdinalIgnoreCase)) ?? Enumerable.Empty<AutoTestLogEvidence>();
+                int position = 0;
+                foreach (AutoTestLogEvidence log in logs)
+                {
+                    position++;
+                    if (log == null) continue;
+                    string level = AutoTestLogJournal.NormalizeLevel(log.Level);
+                    if (level != "warning" && level != "error" && level != "fatal") continue;
+                    string message = (log.Message ?? string.Empty).Replace("\r\n", "\n").Replace("\r", "\n").Trim();
+                    string source = log.SourcePackageId ?? string.Empty;
+                    Tuple<string, string, string> key = Tuple.Create(level, source.ToLowerInvariant(), message);
+                    if (!index.TryGetValue(key, out ReportLogGroup group))
+                    {
+                        group = new ReportLogGroup { Id = groups.Count + 1, Level = level, Message = message, SourcePackageId = source };
+                        index.Add(key, group);
+                        groups.Add(group);
+                    }
+                    if (!group.CaseOccurrences.TryGetValue(caseKey, out Dictionary<string, int> caseOccurrences))
+                    {
+                        caseOccurrences = new Dictionary<string, int>(StringComparer.Ordinal);
+                        group.CaseOccurrences.Add(caseKey, caseOccurrences);
+                    }
+                    // A run-scoped asynchronous log can be retained by multiple cases.
+                    // Count its physical sequence once globally while retaining each case association.
+                    string occurrence = log.Sequence > 0 ? (log.RunId ?? string.Empty) + ":" + log.Sequence : "unsequenced:" + caseKey + ":" + position;
+                    int count = Math.Max(1, log.RepeatCount);
+                    group.Occurrences[occurrence] = Math.Max(group.Occurrences.TryGetValue(occurrence, out int globalCount) ? globalCount : 0, count);
+                    caseOccurrences[occurrence] = Math.Max(caseOccurrences.TryGetValue(occurrence, out int caseCount) ? caseCount : 0, count);
+                }
+            }
+            return groups;
+        }
+
+        private static List<string> ResultScreenshotPaths(AutoTestResult result)
+        {
+            return (result.ScreenshotPaths ?? new List<string>()).Concat(new[] { result.ScreenshotPath })
+                .Where(path => !string.IsNullOrWhiteSpace(path)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         }
 
         private static string BuildJson(AutoTestRunArtifacts artifacts, string packageId, string runId, string modName, List<AutoTestResult> results, AutoTestRunSummary runSummary, AutoTestEvidenceManifest evidence)
@@ -325,21 +411,6 @@ namespace LogSyncMod.AutoTest
             builder.AppendLine("  ]");
             builder.AppendLine("}");
             return builder.ToString();
-        }
-
-        private static void AppendStatusGroup(StringBuilder builder, string heading, IEnumerable<AutoTestResult> groupedResults)
-        {
-            List<AutoTestResult> items = groupedResults?.ToList() ?? new List<AutoTestResult>();
-            if (items.Count == 0) return;
-            builder.AppendLine();
-            builder.AppendLine("## " + heading);
-            builder.AppendLine();
-            foreach (AutoTestResult result in items)
-            {
-                builder.AppendLine("- `" + (result.CaseId ?? result.DefName ?? "unknown") + "`: " +
-                    (string.IsNullOrWhiteSpace(result.ResultReasonCode) ? result.Status : result.ResultReasonCode) +
-                    (string.IsNullOrWhiteSpace(result.Notes) ? string.Empty : " — " + Trim(result.Notes, 240)));
-            }
         }
 
         private static string BuildManifestJson(
@@ -473,7 +544,7 @@ namespace LogSyncMod.AutoTest
                 return false;
             }
 
-            return result.ScreenshotPaths != null && result.ScreenshotPaths.Any(IsMainGalleryScreenshotPath);
+            return ResultScreenshotPaths(result).Any(IsMainGalleryScreenshotPath);
         }
 
         private static bool IsMainGalleryScreenshotPath(string path)

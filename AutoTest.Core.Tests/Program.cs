@@ -10,6 +10,8 @@ internal sealed class CoreTestSuite
     public void Run()
     {
         TestOperationRunner();
+        TestCleanupOperationIsolation();
+        TestPocketMapCleanupWatchdog();
         TestOperationContext();
         TestJournal();
         TestWaitHandle();
@@ -27,6 +29,7 @@ internal sealed class CoreTestSuite
         TestReadiness();
         TestSemanticValueGraph();
         TestErrorPolicy();
+        AutoTestReportTests.Run(Assert);
         TestRuntimeQueue();
         TestRuntimeHistory();
         TestCaseEvidenceRetention();
@@ -35,6 +38,68 @@ internal sealed class CoreTestSuite
         TestCombatDistancePolicy();
         TestBatchSelector();
         Console.WriteLine($"AutoTest.Core.Tests passed: {passed}");
+    }
+
+    private void TestPocketMapCleanupWatchdog()
+    {
+        var clock = new FakeClock();
+        var watchdog = new AutoTestPocketMapCleanupWatchdog(clock);
+        var events = new List<string>();
+        var removed = false;
+        var forced = false;
+        Action<bool> restore = force => { forced = force; events.Add(force ? "force-main-camera" : "restore-before-close"); };
+        Action remove = () => { events.Add("remove"); if (forced) removed = true; };
+        var initial = watchdog.Request("map", () => removed, restore, remove);
+        Assert(!initial.Removed && watchdog.PendingCount == 1 && events.SequenceEqual(new[] { "restore-before-close", "remove" }),
+            "pocket cleanup switches away before attempting removal and tracks a protected map");
+        clock.Advance(9999);
+        Assert(watchdog.Poll().Count == 0 && !forced, "pocket cleanup watchdog does not fire before ten real-time seconds");
+        Assert(watchdog.Request("map", () => removed, restore, remove) == null, "repeated pocket cleanup does not reset the recovery deadline");
+        clock.Advance(1);
+        var recovered = watchdog.Poll();
+        Assert(recovered.Count == 1 && recovered[0].ForcedViewRecovery && recovered[0].Removed && watchdog.PendingCount == 0
+            && events.Skip(2).SequenceEqual(new[] { "force-main-camera", "remove" }),
+            "ten-second watchdog forces the main camera before retrying removal while game ticks are paused");
+        Assert(watchdog.Poll().Count == 0, "successful pocket recovery is removed from the pending queue");
+
+        var immediate = watchdog.Request("immediate", () => removed, _ => { }, () => { });
+        Assert(immediate.Removed && watchdog.PendingCount == 0, "ordinary successful cleanup does not arm a watchdog");
+        removed = false;
+        var retry = watchdog.Request("blocked", () => removed, _ => throw new InvalidOperationException("camera busy"), () => { removed = true; });
+        Assert(retry.Error?.Message == "camera busy" && !removed, "camera restoration failures remain pending without deleting a viewed map");
+        clock.Advance(10000);
+        Assert(watchdog.Poll().Single().Error?.Message == "camera busy" && watchdog.PendingCount == 1, "failed watchdog recovery remains queued for a bounded retry");
+        Assert(watchdog.Poll().Count == 0, "failed cleanup is not retried on every render frame");
+        removed = true;
+        Assert(watchdog.Poll().Count == 0 && watchdog.PendingCount == 0, "externally completed cleanup cancels its pending watchdog");
+        clock.Advance(30000);
+        Assert(watchdog.Poll().Count == 0, "healthy active test maps are never timed out unless cleanup was requested");
+    }
+
+    private void TestCleanupOperationIsolation()
+    {
+        var journal = new AutoTestOperationJournal();
+        var runner = new AutoTestOperationRunner("run", new FakeClock(), journal);
+        var stages = new List<string>();
+        var probe = runner.Run("skill.cleanup", "case", "semantic_probe", () =>
+        {
+            stages.Add("probe");
+            foreach (var item in BrokenGizmos()) _ = item;
+        });
+        var destroy = runner.Run("skill.cleanup", "case", "destroy_map", () => stages.Add("destroy"));
+        var restore = runner.Run("skill.cleanup", "case", "restore_source_map", () => stages.Add("restore"));
+        Assert(!probe.Success && probe.Error?.ExceptionType == typeof(NullReferenceException).FullName
+            && probe.Error.StackTrace.Contains("BrokenGizmos"), "lazy third-party Gizmo exception is retained as a failed cleanup operation");
+        Assert(destroy.Success && restore.Success && stages.SequenceEqual(new[] { "probe", "destroy", "restore" }),
+            "failed cleanup probing does not prevent map destruction and source-map restoration");
+        Assert(journal.GetRecentOperations(10, true).Count(operation => !operation.Success) == 1,
+            "cleanup isolation retains the failure rather than converting the case to a pass");
+    }
+
+    private static IEnumerable<object> BrokenGizmos()
+    {
+        yield return new object();
+        throw new NullReferenceException("third-party GetGizmos iterator failed");
     }
 
     private void TestBatchSelector()

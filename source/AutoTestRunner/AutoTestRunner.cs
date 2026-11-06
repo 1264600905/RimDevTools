@@ -352,6 +352,7 @@ namespace LogSyncMod.AutoTest
         public void Tick()
         {
             if (completed) return;
+            PollPocketMapCleanupWatchdog();
 
             if (cancelRequested)
             {
@@ -529,7 +530,8 @@ namespace LogSyncMod.AutoTest
                 activeSkillPocketMapSessions.Count == 0 &&
                 activeStaticViewSessions.Count == 0 &&
                 activeThreeViewSessions.Count == 0 &&
-                activeCombatPawnSessions.Count == 0)
+                activeCombatPawnSessions.Count == 0 &&
+                pocketMapService.PendingCleanupCount == 0)
             {
                 Finish();
             }
@@ -537,6 +539,7 @@ namespace LogSyncMod.AutoTest
 
         private bool TryStartNextPocketMapSession()
         {
+            if (pocketMapService.PendingCleanupCount > 0) return false;
             int maxConcurrentPocketMaps = settings.GetPocketMapMaxConcurrent();
             int activePocketMaps = GetActivePocketMapSessionCount();
             if (activePocketMaps >= maxConcurrentPocketMaps)
@@ -654,13 +657,19 @@ namespace LogSyncMod.AutoTest
             return Find.TickManager != null && Find.TickManager.TicksGame <= threeViewCooldownUntilTick;
         }
 
+        internal void PollPocketMapCleanupWatchdog()
+        {
+            pocketMapService.PollCleanupWatchdog();
+        }
+
         private int GetActivePocketMapSessionCount()
         {
             return activeTurretSessions.Count +
                    activeRangedWeaponSessions.Count +
                    activeMeleeWeaponSessions.Count +
                    activeSkillPocketMapSessions.Count +
-                   activeCombatPawnSessions.Count;
+                   activeCombatPawnSessions.Count +
+                   pocketMapService.PendingCleanupCount;
         }
 
         private bool HasPendingOrActivePreThreeViewPocketMapWork()
@@ -673,7 +682,8 @@ namespace LogSyncMod.AutoTest
                    activeRangedWeaponSessions.Count > 0 ||
                    activeMeleeWeaponSessions.Count > 0 ||
                    activeSkillPocketMapSessions.Count > 0 ||
-                   activeCombatPawnSessions.Count > 0;
+                   activeCombatPawnSessions.Count > 0 ||
+                   pocketMapService.PendingCleanupCount > 0;
         }
 
         private void RefreshPocketMapCooldown(string reason)

@@ -1095,12 +1095,40 @@ namespace LogSyncMod.AutoTest
 
             private void CleanupAndClose()
             {
-                owner.RecordSkillSemanticBeforeCleanup(this);
-                if (TestMap != null && Find.Maps.Contains(TestMap)) owner.DestroyPocketMap(TestMap, Parent);
-                else if (Parent != null && !Parent.Destroyed) owner.DestroyPocketMap(null, Parent);
-                if (Current.Game != null && owner.map != null && Find.Maps.Contains(owner.map)) Current.Game.CurrentMap = owner.map;
-                owner.RecordSkillCleanupSemantic(this);
-                Phase = SkillPocketMapTestPhase.Done;
+                try
+                {
+                    RunCleanupStep("semantic_probe", () => owner.RecordSkillSemanticBeforeCleanup(this));
+                    RunCleanupStep("destroy_map", () =>
+                    {
+                        if (TestMap != null && Find.Maps.Contains(TestMap)) owner.DestroyPocketMap(TestMap, Parent);
+                        else if (Parent != null && !Parent.Destroyed) owner.DestroyPocketMap(null, Parent);
+                    });
+                    RunCleanupStep("restore_source_map", () =>
+                    {
+                        if (Current.Game == null) return;
+                        Map sourceMap = owner.map != null && Find.Maps.Contains(owner.map) ? owner.map :
+                            Find.Maps.FirstOrDefault(candidate => candidate != TestMap && !(candidate.Parent is PocketMapParent));
+                        if (sourceMap == null) throw new InvalidOperationException("No surviving source map is available after skill pocket map cleanup.");
+                        Current.Game.CurrentMap = sourceMap;
+                    });
+                    RunCleanupStep("verify_cleanup", () => owner.RecordSkillCleanupSemantic(this));
+                }
+                finally
+                {
+                    Phase = SkillPocketMapTestPhase.Done;
+                }
+            }
+
+            private void RunCleanupStep(string step, Action action)
+            {
+                AutoTestOperationEnvelope operation = owner.operationRunner.Run("skill.cleanup", Result.CaseId, step, action);
+                if (operation.Success) return;
+                Result.Status = AutoTestResultStatus.Failed;
+                Result.Stage = "cleanup";
+                string error = operation.Error?.ExceptionType + ": " + operation.Error?.Message;
+                Result.ErrorMessage = AutoTestRunner.AppendNote(Result.ErrorMessage, step + " failed: " + error);
+                owner.SemanticAssert(Result, "skill.cleanup_" + step, false, "cleanup step completes", error,
+                    "Operation " + operation.OperationId + ": full exception retained in evidence.");
             }
 
             private bool CanTargetAnyEnemy()
