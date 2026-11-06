@@ -1,17 +1,20 @@
 # RimDevTools
 
-RimDevTools 是一套面向 RimWorld 1.6/1.7+ 模组开发的 Windows 工具链。LogSyncMod 随包提供 RimWorld 1.6 与 1.7 两套兼容文件；项目发布模板提供可分别选择的 RimWorld 1.6 与 1.7 版本。
+**简体中文** | [English](README.en.md)
 
-它的目标是把模组开发中反复出现的环境检查、部署、依赖定位、日志采集、自动测试和发布打包流程统一起来，让开发者能够用可重复、可诊断的命令完成日常工作。
+RimDevTools 是面向 RimWorld 模组开发的 Windows 工具链，将环境检查、构建部署、依赖定位、日志采集、游戏测试与工坊发布组织为可重复的 CLI 操作。随包模板和工具 Mod 提供 RimWorld **1.6、1.7** 对应内容；CLI 也识别 1.7+ 现代布局，实际工具组件及更新支持范围以发行清单为准。
+
+当前源码版本为 **1.3.0.0**，包含旧项目模式、Tools 简化包与自动更新。2026-11-06 核对的[公开发行版 v1.2.2.0](https://github.com/1264600905/RimDevTools/releases/tag/v1.2.2.0)仍只有两个模板包；本次 1.3.0.0 实现及三包已在本地验证，尚未上传。需要立即使用新增功能时，可按下文从源码构建发行包。
 
 ## 仓库包含什么
 
 | 组件 | 作用 |
 | --- | --- |
-| RimDevTools CLI | 检查 1.6/1.7+ 开发环境、部署模组、复制参考模组、管理测试配置并启动测试 |
+| RimDevTools CLI | 检查开发环境、构建部署、复制参考模组、管理测试、操作工坊及更新本项目工具 |
 | LogSyncMod | 兼容 RimWorld 1.6/1.7；按 PackageId、关键词和日志级别筛选日志并同步到独立文件 |
 | AutoTestRunner | 在游戏内执行 UI、战斗、视图、配方、技能等自动测试并生成结构化结果与证据 |
-| Project Template | 提供 RimWorld 1.6 与 1.7 项目结构、三语翻译目录和构建配置 |
+| Project Template | 为新项目提供 1.6 或 1.7 工程结构、三语翻译目录和构建配置 |
+| Tools Package | 为已有项目和工具更新提供正式工具载荷、两套核心 skill 与人工配置参考 |
 
 ## 主要能力
 
@@ -21,19 +24,34 @@ RimDevTools 是一套面向 RimWorld 1.6/1.7+ 模组开发的 Windows 工具链�
 - 事务化修改并恢复 `ModsConfig.xml` 和测试配置，避免测试中断后污染用户环境。
 - 运行 quick、manual、auto 自动测试，支持分类、精确 DefName、批量上限和截图。
 - 输出单一 JSON 结果、独立 Evidence 文件、关联日志和主线程心跳诊断。
-- 生成包含 CLI、工具 Mod、ILSpy、项目模板和技能配置的完整发布包。
+- 按配置开关放宽旧项目的模板专属检查，沿用现有工程和同步路径。
+- 从官方正式 Release 检查和安装工具更新，保留配置与本地修改，支持事务回滚和中断恢复。
+- 生成两个完整模板包和一个共用 Tools 简化包，并提供文件清单及 SHA-256 校验。
 
 ## 下载与快速开始
 
-从 [GitHub Releases](https://github.com/1264600905/RimDevTools/releases) 下载目标游戏版本对应的 `RimDevTools-<工具版本>-Template-RimWorld-<游戏版本>.zip`，解压到独立的开发目录。不要把开发项目放在 RimWorld 的 `Mods` 或 Steam Workshop 目录内。
+从 [GitHub Releases](https://github.com/1264600905/RimDevTools/releases) 选择已实际提供的附件，或从源码生成下列三种包：
+
+| 包名 | 用途 |
+| --- | --- |
+| `RimDevTools-<version>-Template-RimWorld-1.6.zip` | 新建 RimWorld 1.6 模组项目，包含完整模板和工具 |
+| `RimDevTools-<version>-Template-RimWorld-1.7.zip` | 新建 RimWorld 1.7 模组项目，包含完整模板和工具 |
+| `RimDevTools-<version>-Tools.zip` | 已有项目所需工具，以及模板项目与旧项目共同使用的更新来源 |
+
+Tools 包提供 `.tools`、`.agents/skills/rimdevtools`、`.claude/skills/rimdevtools`、配置参考及发行清单，包含必要的两版工具 Mod、ILSpy 和许可证；它精简的是示例模组内容。包内 `mod_config.jsonc` 供人工填写，已有项目应保留自己的配置。Tools 包不按游戏版本再拆分。
+
+新模板解压到独立开发目录。项目应位于 RimWorld `Mods` 和 Steam Workshop 内容目录之外，以满足部署位置保护。
 
 首次使用需要编辑 `mod_config.jsonc`，至少确认：
 
 - `mod_name`：当前模组的英文目录名。
+- `game_version`：实际目标游戏版本；当前两种模板分别为 `1.6`、`1.7`。
 - `rimworld_dir`：RimWorld 安装根目录。
-- `mods_config_path`：游戏实际使用的 `ModsConfig.xml`。
+- `mods_config_path`：游戏实际使用且已存在的 `ModsConfig.xml`。
 - `workshop_paths`：本机 Steam Workshop 路径。
 - `csproj_paths`、`sync_items` 和 `log_keywords`：当前项目的构建、部署与日志设置。
+
+模板项目还需将 About 中的名称、packageId、默认程序集名等占位信息改成实际模组信息。
 
 然后运行：
 
@@ -44,6 +62,55 @@ RimDevTools 是一套面向 RimWorld 1.6/1.7+ 模组开发的 Windows 工具链�
 
 `doctor` 会给出环境和项目配置诊断；`deploy --dry-run` 会显示部署计划但不修改游戏目录。
 
+## 旧项目模式
+
+已有项目在现有 `mod_config.jsonc` 中补充一个开关即可使用旧项目模式。下面只展示相关字段，应合并到原配置中：
+
+```jsonc
+{
+    "config_version": 2,
+    "existing_project_mode": true
+}
+```
+
+缺失或 `false` 保持模板模式；`true` 让部署、doctor 和测试预检放宽模板名称、工程路径、程序集名及模板日志关键词等专属限制。实际构建与同步继续使用已有的 `csproj_paths`、`sync_items` 和 `game_version`，读取和部署不会自动重写配置。
+
+必要元数据、游戏版本、构建失败、路径安全及 Mods/Workshop 位置保护仍会检查。纯 XML 模组可设 `csproj_paths: []`。C# 工程需通过当前 `dotnet build` 入口构建，并将 DLL 输出到项目配置中可部署、游戏可加载的位置；当前同步按相同相对路径复制，特殊输出映射、独立内容根和特殊构建链仍可能需要人工适配。
+
+## 工具更新与恢复
+
+以下命令需要正式解压安装的 1.3.0.0 或更新版本；旧 EXE 需要先手动安装一次具备更新能力的版本。
+
+```powershell
+.\.tools\RimDevTools.exe update --check
+.\.tools\RimDevTools.exe update --dry-run
+.\.tools\RimDevTools.exe update
+.\.tools\RimDevTools.exe update status
+```
+
+普通业务命令启动时检查新版，使用 24 小时缓存，单次联网总预算最多 2 秒；失败后退避 1 小时，并保留原业务结果。帮助、版本、状态查询和内部助手不触发启动联网检查。显式检查区分有新版、已是最新和无法确认。
+
+更新器固定官方正式 Release，下载唯一的 Tools 包，核对大小、SHA-256、平台、Runtime、项目游戏版本及配置兼容性。同版本不重复安装，较低版本不自动降级。`--dry-run` 可下载并验证暂存内容，列出文件变化和冲突，但不提交工具、配置或安装状态变更。
+
+`update` 返回 `scheduled` 表示独立助手已确认交接。助手等原进程退出后才替换文件并验证新 EXE，因此需要继续查询 `update status`：
+
+| 状态 | 含义 |
+| --- | --- |
+| `none` | 尚无更新事务 |
+| `scheduled` / `applying` | 已安排 / 正在提交，尚未完成 |
+| `succeeded` | 替换及安装后验证完成 |
+| `failed` | 提交前失败，安装未发生部分替换 |
+| `rolledBack` | 失败后已恢复完整旧安装 |
+| `recoveryRequired` | 需要恢复，普通业务命令会被阻止 |
+
+本地受管理文件被修改、删除、缺少可信基线或新路径被用户文件占用时，整次更新停止并列出冲突。配置迁移保留注释、未知字段、用户值、项目模式和游戏目标；首版支持 `config_version=2`，只为缺失的模式字段补充 `false`。
+
+源码、模组资源、工坊身份、项目 README、其他 skill、MCP/编辑器设置、`.gitignore` 和原模板身份不属于更新替换范围。更新项目私有工具 Mod 后，游戏中的组件仍由 `mods install-tools` 管理。工具磁盘更新成功后，请让 AI 重新读取完整的 `rimdevtools` skill。
+
+`update status` 是本地只读查询。需要恢复时，等待已有更新进程退出，然后使用返回的 `recoveryCommand`；保留的助手即使在主 EXE 不能启动时也可运行，原始入口记录在 `.tools/ProjectData/tool-update-state.json`。遇到未知并发修改时会保留备份并报告冲突。工具管理缓存、暂存和回滚数据，保留最近三份已完成事务及所有未完成恢复所需的数据。
+
+检查和安装更新不要求 Steam 登录或游戏环境健康，也不会自动重跑原业务命令。源码运行和缺少可信发行清单的旧安装需要先手动取得新版。
+
 ## 环境要求
 
 - Windows x64。
@@ -52,6 +119,8 @@ RimDevTools 是一套面向 RimWorld 1.6/1.7+ 模组开发的 Windows 工具链�
 - 编译 RimDevTools：.NET 10 SDK。
 - 编译 RimWorld 1.6 模组：dotnet SDK 与 .NET Framework 4.8 Developer/Targeting Pack；4.7.2 可作为兼容替代。1.7+ 模组使用 .NET 10 SDK 与对应版本游戏程序集。
 - 运行游戏测试：目标 RimWorld 1.6 或 1.7+、Steam 客户端及有效登录会话。
+
+当前发行清单和随包工具 Mod 声明支持 1.6、1.7；识别更高版本的现代布局不等于配套组件已经验证兼容。LogSyncMod、AutoTestRunner 和测试模组列表是测试能力的前提，普通部署不要求先安装全部测试工具。
 
 RimWorld、Harmony 和其他第三方模组程序集不随本仓库分发。
 
@@ -88,6 +157,12 @@ RimDevTools 默认返回关键摘要，并隐藏大段构建、Unity 和 ILSpy �
 
 ## 自动测试模型
 
+| 模式 | 用途 |
+| --- | --- |
+| `quick` | 默认模式，启动游戏并等待本轮就绪信号与主线程心跳 |
+| `manual` | 用户手动游玩与观察，默认使用当前桌面 |
+| `auto` | 在游戏内执行生成的自动测试，默认启用截图 |
+
 `auto` 模式支持重复传入 `--scope`。正式分类为 `ui`、`combat`、`view` 和 `misc`；未指定时使用 Standard 测试集。
 
 `auto` 还支持：
@@ -97,11 +172,15 @@ RimDevTools 默认返回关键摘要，并隐藏大段构建、Unity 和 ILSpy �
 - `--active-mods-file <path>`：使用外部 ModsConfig XML。
 - `--isolated-desktop`：在隔离桌面运行游戏。
 
+包括 Standard 在内的枚举运行会从全部候选中均匀、无放回抽样；显式 `--defname` 运行忽略批量上限。
+
 `auto` 模式默认启用截图，不需要额外参数。
 
 quick/auto `test run` 完成后，成功 JSON 的 `result.artifacts` 或失败 JSON 的 `error.details.artifacts` 包含日志目录、精选日志和 AutoTest 输出路径；`result.logSummary` 或 `error.details.logSummary` 始终带有 `errorCount` 和 `warningCount`。计数对应本轮精选日志中的记录，并提供日志可用、计数完整和行数截断状态。
 
-测试结果写入 `.tools/log/AutoTestOutput`。自动测试会生成 `*_Result.json` 和独立的 `*_Evidence.json`；连续 60 秒没有当前 runId 的主线程心跳时，工具会以 `GAME_HUNG` 结束并尝试恢复环境。
+自动测试生成 `*_Result.json`，并按实际运行输出 Evidence、报告、清单和截图。以返回的 `autoTestOutputPath` 及结果引用的原始文件为准，运行目录由工具生成，不假定固定归档路径；quick 等模式可能没有 AutoTest 文件。连续 60 秒没有当前 runId 的主线程心跳时，工具会以 `GAME_HUNG` 结束并尝试恢复环境。
+
+直接读取成功结果的 `result.artifacts` 或失败详情的 `error.details.artifacts`，在聊天中报告结论。除明确要求导出外，不另存 stdout/stderr，不复制日志、截图或测试存档，也不新建任务/日期证据归档；保留与清理由工具负责。
 
 ## 从源码构建和测试
 
@@ -119,7 +198,7 @@ dotnet RimDevTools.Tests\bin\Debug\net10.0\RimDevTools.Tests.dll
 powershell -ExecutionPolicy Bypass -File .tools\publish-rimdevtools.ps1
 ```
 
-一次生成 RimWorld 1.6 与 1.7 两个模板包；程序版本和模板游戏版本都会出现在包名与 `--version` 输出中：
+一次生成两个模板包和一个 Tools 包，共用载荷来自同一次构建。`--version` 报告工具版本与原模板元数据，Tools 包的模板版本为 `unpackaged`。生成 ZIP 及校验文件：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .tools\publish-rimdevtools.ps1 -CreateZip
@@ -128,19 +207,26 @@ powershell -ExecutionPolicy Bypass -File .tools\publish-rimdevtools.ps1 -CreateZ
 输出为：
 
 ```text
-artifacts/RimDevTools-1.2.2.0-Template-RimWorld-1.6/
-artifacts/RimDevTools-1.2.2.0-Template-RimWorld-1.6.zip
-artifacts/RimDevTools-1.2.2.0-Template-RimWorld-1.7/
-artifacts/RimDevTools-1.2.2.0-Template-RimWorld-1.7.zip
+artifacts/RimDevTools-1.3.0.0-Template-RimWorld-1.6/
+artifacts/RimDevTools-1.3.0.0-Template-RimWorld-1.7/
+artifacts/RimDevTools-1.3.0.0-Tools/
 ```
 
-验证发布布局：
+每个目录同时对应 `.zip` 和 `.zip.sha256`。验证三种发布布局，再执行 Windows 更新实测：
 
 ```powershell
 dotnet build RimDevTools.ReleaseTests\RimDevTools.ReleaseTests.csproj
 dotnet RimDevTools.ReleaseTests\bin\Debug\net10.0\RimDevTools.ReleaseTests.dll `
-  artifacts\RimDevTools-1.2.2.0-Template-RimWorld-1.7
+  artifacts\RimDevTools-1.3.0.0-Template-RimWorld-1.6
+dotnet RimDevTools.ReleaseTests\bin\Debug\net10.0\RimDevTools.ReleaseTests.dll `
+  artifacts\RimDevTools-1.3.0.0-Template-RimWorld-1.7
+dotnet RimDevTools.ReleaseTests\bin\Debug\net10.0\RimDevTools.ReleaseTests.dll `
+  artifacts\RimDevTools-1.3.0.0-Tools
+dotnet RimDevTools.Tests\bin\Debug\net10.0\RimDevTools.Tests.dll --tool-update
+dotnet RimDevTools.Tests\bin\Debug\net10.0\RimDevTools.Tests.dll --tool-update-live
 ```
+
+Windows 更新实测在套件自行管理的临时环境中构建目标版本，验证真实 EXE 交接、替换及恢复。更多命令契约见 [CLI 说明](RimDevTools/README.md)。
 
 ## 目录结构
 
@@ -159,16 +245,6 @@ components/ProjectTemplate/  发布模板源文件
 参考文档/                    本地第三方参考资料，默认由 Git 忽略
 ```
 
-## 开源与第三方许可
-
-本仓库以 [MIT License](LICENSE) 开源。
-
-发布包中包含的 ILSpy 等第三方组件保留各自许可证，具体见 `RimDevTools/Packaging/licenses` 和发布包中的 `.tools/Data/licenses`。RimWorld 是 Ludeon Studios 的商标和产品；本项目与 Ludeon Studios 无隶属或官方合作关系。
-
-## 致谢
-
-感谢骸鸾、可爱猫猫喵和 biobattery 协助测试本项目。
-
 ## Steam 创意工坊
 
 ```powershell
@@ -182,8 +258,8 @@ components/ProjectTemplate/  发布模板源文件
 .\.tools\RimDevTools.exe deploy --upload
 .\.tools\RimDevTools.exe steamworkshops edit
 .\.tools\RimDevTools.exe steamworkshops edit --visibility private
-.\.tools\RimDevTools.exe steamworkshops subscribe <精确ID或工坊链接> --wait
-.\.tools\RimDevTools.exe steamworkshops status <精确ID或工坊链接> --wait
+.\.tools\RimDevTools.exe steamworkshops subscribe "<id-or-workshop-url>" --wait
+.\.tools\RimDevTools.exe steamworkshops status "<id-or-workshop-url>" --wait
 ```
 
 - 五个子命令为 upload、edit、search、subscribe、status。当前身份优先使用项目 About/PublishedFileId.txt；它保存数字工坊 ID，packageId 另读 About.xml。所有写入只对已获用户授权的具体条目执行；已有会话授权可以沿用。
@@ -196,3 +272,15 @@ components/ProjectTemplate/  发布模板源文件
 - 收据 deployment-receipt.json、分页 steamworkshops-search-cache.json、绑定及新增运行暂存文件统一在项目 .tools/ProjectData，必须忽略于 Git，并排除部署和发行。不能把清理缓存变成删除收据或绑定。部署/上传的 artifacts 返回实际收据路径；测试日志仍按 test run 的 artifacts 对象定位，不另存 stdout 或复制证据。
 - 发布超时返回非零、timedOut=true、remoteOutcome=unknown、当前时间、目标 Steam 最近更新时间（或 null 与原因）、operationId 和提交阶段。超时不等于远端取消；不自动重试，不保存跨调用超时阻塞，不使用 --recover。由 AI 根据证据决定是否再次显式提交；已知 ID 保存失败和真实绑定冲突仍须修复。
 - doctor 每次在 stderr 显示 Steam 运行、RimWorld 库可用性、Workshop 在线摘要，stdout 仍只有最终 JSON。Steam 时间来自条目 m_rtimeUpdated，可能不随元数据编辑改变；不提供历史更新次数。
+
+标题、说明和改动说明可按 `--text-language` 选择语言；`edit` 还支持 `--add-preview`、`--update-preview`、`--remove-preview` 管理附图，具体参数见对应命令的 `--help`。
+
+## 开源与第三方许可
+
+本仓库以 [MIT License](LICENSE) 开源。随包 ILSpy 等第三方组件保留各自许可证，见 [第三方许可说明](RimDevTools/Packaging/licenses/third-party-notices.txt)、[ILSpy 许可证](RimDevTools/Packaging/licenses/ILSpy-LICENSE.txt)和发布包中的 `.tools/Data/licenses`。
+
+RimWorld 是 Ludeon Studios 的商标和产品；本项目与 Ludeon Studios 无隶属或官方合作关系。RimWorld、Harmony 和其他第三方模组程序集不随本仓库分发。
+
+## 致谢
+
+感谢骸鸾、可爱猫猫喵和 biobattery 协助测试本项目。
