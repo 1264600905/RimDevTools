@@ -184,7 +184,7 @@ internal static class FakeRimWorld
 
 }
 
-internal sealed class TestSuite
+internal sealed partial class TestSuite
 {
     private readonly string _temp = Path.Combine(Path.GetTempPath(), "RimDevToolsTests", Guid.NewGuid().ToString("N"));
     private int _passed;
@@ -203,6 +203,7 @@ internal sealed class TestSuite
             TestJsoncAndDiscovery();
             TestEnvironmentDiscovery();
             await TestTemplatePreflightAsync();
+            await TestExistingProjectModeAsync();
             await TestHelpAsync();
             TestCliSelectionParsing();
             await TestToolModDeploymentAsync();

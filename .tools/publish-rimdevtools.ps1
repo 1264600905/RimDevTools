@@ -1,9 +1,10 @@
-param(
+﻿param(
     [string]$OutputPath = "",
-    [ValidateSet("All", "1.6", "1.7")]
+    [ValidateSet("All", "1.6", "1.7", "Tools")]
     [string]$TemplateGameVersion = "All",
     [string]$VersionSuffix = "",
-    [switch]$CreateZip
+    [switch]$CreateZip,
+    [Parameter(DontShow = $true)][string]$SharedToolPath = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -16,7 +17,8 @@ $toolVersionValue = [System.Version]::Parse($projectVersion)
 $toolVersion = "{0}.{1}.{2}.{3}" -f $toolVersionValue.Major, [Math]::Max(0, $toolVersionValue.Minor), [Math]::Max(0, $toolVersionValue.Build), [Math]::Max(0, $toolVersionValue.Revision)
 
 if ($TemplateGameVersion -eq "All") {
-    foreach ($gameVersion in @("1.6", "1.7")) {
+    $commonTools = ""
+    foreach ($gameVersion in @("1.7", "1.6", "Tools")) {
         $childParameters = @{ TemplateGameVersion = $gameVersion }
         if (-not [string]::IsNullOrWhiteSpace($OutputPath)) {
             $outputParent = Split-Path -Parent $OutputPath
@@ -25,16 +27,22 @@ if ($TemplateGameVersion -eq "All") {
         }
         if (-not [string]::IsNullOrWhiteSpace($VersionSuffix)) { $childParameters.VersionSuffix = $VersionSuffix }
         if ($CreateZip) { $childParameters.CreateZip = $true }
+        if ($commonTools) { $childParameters.SharedToolPath = $commonTools }
 
         try { & $PSCommandPath @childParameters }
         catch { throw "RimWorld $gameVersion 模板打包失败: $($_.Exception.Message)" }
-        if (-not $?) { throw "RimWorld $gameVersion 模板打包失败" }
+        if (-not $?) { throw "RimWorld $gameVersion 打包失败" }
+        if (-not $commonTools) {
+            $firstOutput = if ($childParameters.ContainsKey("OutputPath")) { $childParameters.OutputPath } else { "artifacts\RimDevTools-$toolVersion-Template-RimWorld-$gameVersion" }
+            if ($VersionSuffix) { $firstOutput += "-$($VersionSuffix.Trim())" }
+            $commonTools = Join-Path ([System.IO.Path]::GetFullPath((Join-Path $projectRoot $firstOutput))) ".tools"
+        }
     }
     return
 }
 
 if ([string]::IsNullOrWhiteSpace($OutputPath)) {
-    $packageName = "RimDevTools-$toolVersion-Template-RimWorld-$TemplateGameVersion"
+    $packageName = if ($TemplateGameVersion -eq "Tools") { "RimDevTools-$toolVersion-Tools" } else { "RimDevTools-$toolVersion-Template-RimWorld-$TemplateGameVersion" }
     $OutputPath = Join-Path "artifacts" $packageName
 }
 $output = [System.IO.Path]::GetFullPath((Join-Path $projectRoot $OutputPath))
@@ -74,8 +82,9 @@ foreach ($ownedDirectory in @($output, $temporary)) {
         $ownedAncestor = Split-Path -Parent $ownedAncestor
     }
 }
+$isToolsPackage = $TemplateGameVersion -eq "Tools"
 $templateVersionRoot = Join-Path $templateRoot $TemplateGameVersion
-$templateConfigName = if ($TemplateGameVersion -eq "1.6") { "mod_config.jsonc" } else { "mod_config.$TemplateGameVersion.jsonc" }
+$templateConfigName = if ($isToolsPackage) { "mod_config.tools.jsonc" } elseif ($TemplateGameVersion -eq "1.6") { "mod_config.jsonc" } else { "mod_config.$TemplateGameVersion.jsonc" }
 $templateConfig = Join-Path $templateRoot $templateConfigName
 $templateManifestName = if ($TemplateGameVersion -eq "1.6") { "manifest.json" } else { "manifest.$TemplateGameVersion.json" }
 $templateManifestPath = Join-Path $templateRoot $templateManifestName
@@ -149,11 +158,17 @@ if (Test-Path -LiteralPath $temporary) { Remove-Item -LiteralPath $temporary -Re
 
 try {
     if (-not (Test-Path -LiteralPath $templateConfig -PathType Leaf)) { throw "缺少通用项目配置: $templateConfig" }
-    if (-not (Test-Path -LiteralPath $templateVersionRoot -PathType Container)) { throw "缺少 RimWorld $TemplateGameVersion 模板目录: $templateVersionRoot" }
-    if (-not (Test-Path -LiteralPath $templateManifestPath -PathType Leaf)) { throw "缺少 RimWorld $TemplateGameVersion 模板清单: $templateManifestPath" }
+    if (-not $isToolsPackage -and -not (Test-Path -LiteralPath $templateVersionRoot -PathType Container)) { throw "缺少 RimWorld $TemplateGameVersion 模板目录: $templateVersionRoot" }
+    if (-not $isToolsPackage -and -not (Test-Path -LiteralPath $templateManifestPath -PathType Leaf)) { throw "缺少 RimWorld $TemplateGameVersion 模板清单: $templateManifestPath" }
     if (Test-Path -LiteralPath (Join-Path $templateVersionRoot "mod_config.jsonc")) { throw "$TemplateGameVersion 模板目录内不得重复包含 mod_config.jsonc" }
 
-    Copy-DirectoryContents $templateVersionRoot $output
+    if ($isToolsPackage) {
+        New-Item -ItemType Directory -Path $output -Force | Out-Null
+        foreach ($client in @(".agents", ".claude")) {
+            Copy-DirectoryContents (Join-Path $templateRoot "1.6\$client\skills\rimdevtools") (Join-Path $output "$client\skills\rimdevtools")
+        }
+    }
+    else { Copy-DirectoryContents $templateVersionRoot $output }
     Copy-Item -LiteralPath $templateConfig -Destination (Join-Path $output "mod_config.jsonc") -Force
     $claudeLocalSettings = Join-Path $output ".claude\settings.local.json"
     if (Test-Path -LiteralPath $claudeLocalSettings) { Remove-Item -LiteralPath $claudeLocalSettings -Force }
@@ -164,91 +179,134 @@ try {
     $logRoot = Join-Path $toolRoot "log"
     $autoTestOutput = Join-Path $logRoot "AutoTestOutput"
     $modListRoot = Join-Path $toolRoot "modlist"
-    New-Item -ItemType Directory -Path $toolRoot, $dataRoot, $logSyncComponent, $autoTestOutput, $modListRoot -Force | Out-Null
-
-    $rimDevToolsPublish = Join-Path $temporary "RimDevTools"
-    dotnet publish (Join-Path $projectRoot "RimDevTools\RimDevTools.csproj") -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -o $rimDevToolsPublish
-    if ($LASTEXITCODE -ne 0) { throw "RimDevTools publish 失败" }
-    Copy-Item -LiteralPath (Join-Path $rimDevToolsPublish "RimDevTools.exe") -Destination (Join-Path $toolRoot "RimDevTools.exe") -Force
-
-    if ($TemplateGameVersion -eq "1.7") {
-        dotnet build (Join-Path $projectRoot "source\AutoTestRunner\AutoTestRunner.1.7.csproj") -c Release -t:Rebuild
-        if ($LASTEXITCODE -ne 0) { throw "RimWorld 1.7 LogSyncMod / AutoTest build 失败" }
+    New-Item -ItemType Directory -Path $toolRoot, $dataRoot -Force | Out-Null
+    if (-not $isToolsPackage) { New-Item -ItemType Directory -Path $autoTestOutput -Force | Out-Null }
+    if ($SharedToolPath) {
+        $sharedFull = [System.IO.Path]::GetFullPath($SharedToolPath)
+        if (-not $sharedFull.StartsWith($artifactsRoot + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase)) { throw "共用工具路径必须位于 artifacts" }
+        Copy-Item -LiteralPath (Join-Path $sharedFull "RimDevTools.exe") -Destination $toolRoot -Force
+        foreach ($part in @("Data", "Ilspy", "modlist")) { Copy-DirectoryContents (Join-Path $sharedFull $part) (Join-Path $toolRoot $part) }
+        $copiedTemplateMetadata = Join-Path $dataRoot "project-template.manifest.json"
+        if (Test-Path -LiteralPath $copiedTemplateMetadata) { Remove-Item -LiteralPath $copiedTemplateMetadata -Force }
     }
-    # Other game versions retain their tracked binaries; never compile legacy references into 1.7.
+    else {
+        New-Item -ItemType Directory -Path $logSyncComponent, $modListRoot -Force | Out-Null
 
-    Copy-Item -LiteralPath (Join-Path $projectRoot "About") -Destination (Join-Path $logSyncComponent "About") -Recurse -Force
-    Copy-Item -LiteralPath (Join-Path $projectRoot "Languages") -Destination (Join-Path $logSyncComponent "Languages") -Recurse -Force
-    Copy-Item -LiteralPath (Join-Path $projectRoot "LoadFolders.xml") -Destination $logSyncComponent -Force
-    foreach ($gameVersion in @("1.6", "1.7")) {
-        $sourceAssemblies = Join-Path $projectRoot "$gameVersion\Assemblies"
-        if (-not (Test-Path -LiteralPath $sourceAssemblies -PathType Container)) { throw "缺少 $gameVersion LogSyncMod 程序集目录: $sourceAssemblies" }
-        $destinationAssemblies = Join-Path $logSyncComponent "$gameVersion\Assemblies"
-        New-Item -ItemType Directory -Path $destinationAssemblies -Force | Out-Null
-        foreach ($assembly in @("LogSyncMod.dll", "AutoTestRunner.dll")) {
-            $sourceAssembly = Join-Path $sourceAssemblies $assembly
-            if (-not (Test-Path -LiteralPath $sourceAssembly -PathType Leaf)) { throw "缺少 $gameVersion 程序集: $sourceAssembly" }
-            Copy-Item -LiteralPath $sourceAssembly -Destination $destinationAssemblies -Force
-        }
-        $sourceDefs = Join-Path $projectRoot "$gameVersion\Defs"
-        if (Test-Path -LiteralPath $sourceDefs -PathType Container) {
-            Copy-Item -LiteralPath $sourceDefs -Destination (Join-Path $logSyncComponent "$gameVersion\Defs") -Recurse -Force
-        }
-    }
+        $rimDevToolsPublish = Join-Path $temporary "RimDevTools"
+        dotnet publish (Join-Path $projectRoot "RimDevTools\RimDevTools.csproj") -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -o $rimDevToolsPublish
+        if ($LASTEXITCODE -ne 0) { throw "RimDevTools publish 失败" }
+        Copy-Item -LiteralPath (Join-Path $rimDevToolsPublish "RimDevTools.exe") -Destination (Join-Path $toolRoot "RimDevTools.exe") -Force
 
-    $logSyncVersion = Get-ModVersion $logSyncComponent "1.6\Assemblies\LogSyncMod.dll"
-    $autoTestVersion = [System.Reflection.AssemblyName]::GetAssemblyName((Join-Path $logSyncComponent "1.6\Assemblies\AutoTestRunner.dll")).Version.ToString()
-    $logSyncVersionParsed = [System.Version]$logSyncVersion
-    $autoTestVersionParsed = [System.Version]$autoTestVersion
-    if ($logSyncVersionParsed.Major -ne $autoTestVersionParsed.Major -or $logSyncVersionParsed.Minor -ne $autoTestVersionParsed.Minor -or $logSyncVersionParsed.Build -ne $autoTestVersionParsed.Build) { throw "LogSyncMod 与 AutoTest 程序集版本不一致" }
-    $manifest = [ordered]@{
-        schemaVersion = 1
-        components = @(
-            [ordered]@{
-                folder = "LogSyncMod"
-                packageId = "trigger.logsyncmod"
-                version = $logSyncVersion
-                primaryAssembly = "1.6/Assemblies/LogSyncMod.dll"
-                contentHash = Get-DirectoryContentHash $logSyncComponent
+        if (-not $SharedToolPath) {
+            dotnet build (Join-Path $projectRoot "source\AutoTestRunner\AutoTestRunner.1.7.csproj") -c Release -t:Rebuild
+            if ($LASTEXITCODE -ne 0) { throw "RimWorld 1.7 LogSyncMod / AutoTest build 失败" }
+        }
+        # Other game versions retain their tracked binaries; never compile legacy references into 1.7.
+
+        Copy-Item -LiteralPath (Join-Path $projectRoot "About") -Destination (Join-Path $logSyncComponent "About") -Recurse -Force
+        Copy-Item -LiteralPath (Join-Path $projectRoot "Languages") -Destination (Join-Path $logSyncComponent "Languages") -Recurse -Force
+        Copy-Item -LiteralPath (Join-Path $projectRoot "LoadFolders.xml") -Destination $logSyncComponent -Force
+        foreach ($gameVersion in @("1.6", "1.7")) {
+            $sourceAssemblies = Join-Path $projectRoot "$gameVersion\Assemblies"
+            if (-not (Test-Path -LiteralPath $sourceAssemblies -PathType Container)) { throw "缺少 $gameVersion LogSyncMod 程序集目录: $sourceAssemblies" }
+            $destinationAssemblies = Join-Path $logSyncComponent "$gameVersion\Assemblies"
+            New-Item -ItemType Directory -Path $destinationAssemblies -Force | Out-Null
+            foreach ($assembly in @("LogSyncMod.dll", "AutoTestRunner.dll")) {
+                $sourceAssembly = Join-Path $sourceAssemblies $assembly
+                if (-not (Test-Path -LiteralPath $sourceAssembly -PathType Leaf)) { throw "缺少 $gameVersion 程序集: $sourceAssembly" }
+                Copy-Item -LiteralPath $sourceAssembly -Destination $destinationAssemblies -Force
             }
-        )
-    }
-    [System.IO.File]::WriteAllText((Join-Path $dataRoot "tool-mods.manifest.json"), ($manifest | ConvertTo-Json -Depth 5), [System.Text.UTF8Encoding]::new($false))
-
-    $ilspySource = Join-Path $projectRoot ".tools\ilspy"
-    if (-not (Test-Path -LiteralPath (Join-Path $ilspySource "ilspycmd.exe"))) { throw "缺少 ILSpy 发布组件: $ilspySource" }
-    Copy-Item -LiteralPath $ilspySource -Destination (Join-Path $toolRoot "Ilspy") -Recurse -Force
-
-    $licenses = Join-Path $dataRoot "licenses"
-    New-Item -ItemType Directory -Path $licenses -Force | Out-Null
-    Copy-Item -LiteralPath (Join-Path $projectRoot "RimDevTools\Packaging\licenses\ILSpy-LICENSE.txt") -Destination $licenses -Force
-    Copy-Item -LiteralPath (Join-Path $projectRoot "RimDevTools\Packaging\licenses\third-party-notices.txt") -Destination $licenses -Force
-
-    Copy-Item -Path (Join-Path $projectRoot ".tools\test\modlist\*.xml") -Destination $modListRoot -Force
-    [System.IO.File]::WriteAllText((Join-Path $logRoot "精选日志.log"), "", [System.Text.UTF8Encoding]::new($false))
-
-    $layoutManifest = Get-Content -Raw -LiteralPath $templateManifestPath | ConvertFrom-Json
-    if ($layoutManifest.schemaVersion -ne 2) { throw "发布布局清单 schemaVersion 必须为 2" }
-    if ($layoutManifest.supportedVersions -notcontains $TemplateGameVersion) { throw "模板清单不声明支持 RimWorld $TemplateGameVersion" }
-    $templateMetadata = [ordered]@{
-        schemaVersion = 1
-        templateGameVersion = $TemplateGameVersion
-        templateSchemaVersion = [int]$layoutManifest.schemaVersion
-    }
-    [System.IO.File]::WriteAllText(
-        (Join-Path $dataRoot "project-template.manifest.json"),
-        ($templateMetadata | ConvertTo-Json -Depth 4),
-        [System.Text.UTF8Encoding]::new($false))
-    # IDE project discovery can restore the freshly copied template while the tools build.
-    # Remove only this package's known generated directories before validating the payload.
-    foreach ($generatedRelative in @("source\MyCustomMod\obj", "source\MyCustomMod\bin")) {
-        $generatedPath = [System.IO.Path]::GetFullPath((Join-Path $output $generatedRelative))
-        if (-not $generatedPath.StartsWith($output + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase)) { throw "生成目录越出发布包: $generatedPath" }
-        if (Test-Path -LiteralPath $generatedPath) {
-            if ((Get-Item -LiteralPath $generatedPath -Force).Attributes -band [System.IO.FileAttributes]::ReparsePoint) { throw "生成目录不能是 Reparse Point: $generatedPath" }
-            Remove-Item -LiteralPath $generatedPath -Recurse -Force
+            $sourceDefs = Join-Path $projectRoot "$gameVersion\Defs"
+            if (Test-Path -LiteralPath $sourceDefs -PathType Container) {
+                Copy-Item -LiteralPath $sourceDefs -Destination (Join-Path $logSyncComponent "$gameVersion\Defs") -Recurse -Force
+            }
         }
+
+        $logSyncVersion = Get-ModVersion $logSyncComponent "1.6\Assemblies\LogSyncMod.dll"
+        $autoTestVersion = [System.Reflection.AssemblyName]::GetAssemblyName((Join-Path $logSyncComponent "1.6\Assemblies\AutoTestRunner.dll")).Version.ToString()
+        $logSyncVersionParsed = [System.Version]$logSyncVersion
+        $autoTestVersionParsed = [System.Version]$autoTestVersion
+        if ($logSyncVersionParsed.Major -ne $autoTestVersionParsed.Major -or $logSyncVersionParsed.Minor -ne $autoTestVersionParsed.Minor -or $logSyncVersionParsed.Build -ne $autoTestVersionParsed.Build) { throw "LogSyncMod 与 AutoTest 程序集版本不一致" }
+        $manifest = [ordered]@{
+            schemaVersion = 1
+            components = @(
+                [ordered]@{
+                    folder = "LogSyncMod"
+                    packageId = "trigger.logsyncmod"
+                    version = $logSyncVersion
+                    primaryAssembly = "1.6/Assemblies/LogSyncMod.dll"
+                    contentHash = Get-DirectoryContentHash $logSyncComponent
+                }
+            )
+        }
+        [System.IO.File]::WriteAllText((Join-Path $dataRoot "tool-mods.manifest.json"), ($manifest | ConvertTo-Json -Depth 5), [System.Text.UTF8Encoding]::new($false))
+
+        $ilspySource = Join-Path $projectRoot ".tools\ilspy"
+        if (-not (Test-Path -LiteralPath (Join-Path $ilspySource "ilspycmd.exe"))) { throw "缺少 ILSpy 发布组件: $ilspySource" }
+        Copy-Item -LiteralPath $ilspySource -Destination (Join-Path $toolRoot "Ilspy") -Recurse -Force
+
+        $licenses = Join-Path $dataRoot "licenses"
+        New-Item -ItemType Directory -Path $licenses -Force | Out-Null
+        Copy-Item -LiteralPath (Join-Path $projectRoot "RimDevTools\Packaging\licenses\ILSpy-LICENSE.txt") -Destination $licenses -Force
+        Copy-Item -LiteralPath (Join-Path $projectRoot "RimDevTools\Packaging\licenses\third-party-notices.txt") -Destination $licenses -Force
+
+        Copy-Item -Path (Join-Path $projectRoot ".tools\test\modlist\*.xml") -Destination $modListRoot -Force
     }
+    if (-not $isToolsPackage) {
+        [System.IO.File]::WriteAllText((Join-Path $logRoot "精选日志.log"), "", [System.Text.UTF8Encoding]::new($false))
+
+        $layoutManifest = Get-Content -Raw -LiteralPath $templateManifestPath | ConvertFrom-Json
+        if ($layoutManifest.schemaVersion -ne 2) { throw "发布布局清单 schemaVersion 必须为 2" }
+        if ($layoutManifest.supportedVersions -notcontains $TemplateGameVersion) { throw "模板清单不声明支持 RimWorld $TemplateGameVersion" }
+        $templateMetadata = [ordered]@{
+            schemaVersion = 1
+            templateGameVersion = $TemplateGameVersion
+            templateSchemaVersion = [int]$layoutManifest.schemaVersion
+        }
+        [System.IO.File]::WriteAllText(
+            (Join-Path $dataRoot "project-template.manifest.json"),
+            ($templateMetadata | ConvertTo-Json -Depth 4),
+            [System.Text.UTF8Encoding]::new($false))
+        # IDE project discovery can restore the freshly copied template while the tools build.
+        # Remove only this package's known generated directories before validating the payload.
+        foreach ($generatedRelative in @("source\MyCustomMod\obj", "source\MyCustomMod\bin")) {
+            $generatedPath = [System.IO.Path]::GetFullPath((Join-Path $output $generatedRelative))
+            if (-not $generatedPath.StartsWith($output + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase)) { throw "生成目录越出发布包: $generatedPath" }
+            if (Test-Path -LiteralPath $generatedPath) {
+                if ((Get-Item -LiteralPath $generatedPath -Force).Attributes -band [System.IO.FileAttributes]::ReparsePoint) { throw "生成目录不能是 Reparse Point: $generatedPath" }
+                Remove-Item -LiteralPath $generatedPath -Recurse -Force
+            }
+        }
+
+    }
+
+    # Only tool-owned files belong to the update baseline. Config is a reference,
+    # and template identity must retain its original meaning after tool updates.
+    $managedFiles = @()
+    $managedFiles += Get-Item -LiteralPath (Join-Path $toolRoot "RimDevTools.exe")
+    foreach ($part in @("Data", "Ilspy", "modlist")) {
+        $managedFiles += Get-ChildItem -LiteralPath (Join-Path $toolRoot $part) -Recurse -File -Force | Where-Object { $_.Name -notin @("project-template.manifest.json", "tool-package.manifest.json") }
+    }
+    foreach ($client in @(".agents", ".claude")) {
+        $managedFiles += Get-ChildItem -LiteralPath (Join-Path $output "$client\skills\rimdevtools") -Recurse -File -Force
+    }
+    $fileRecords = @($managedFiles | Sort-Object { Get-RelativePath $output $_.FullName } | ForEach-Object {
+        $relative = (Get-RelativePath $output $_.FullName).Replace('\', '/')
+        $role = if ($relative -like "*/skills/*") { "skill" } elseif ($relative -eq ".tools/RimDevTools.exe") { "executable" } elseif ($relative -like ".tools/Data/licenses/*") { "license" } elseif ($relative -like ".tools/modlist/*") { "preset" } else { "component" }
+        [ordered]@{ path = $relative; size = $_.Length; sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant(); role = $role; updatePolicy = "replace" }
+    })
+    $packageManifest = [ordered]@{
+        schemaVersion = 1; toolVersion = $toolVersion; platform = "win-x64"; runtimeMajor = 10
+        supportedGameVersions = @("1.6", "1.7"); configVersion = 2
+        configDefaults = [ordered]@{ existing_project_mode = $false }
+        files = $fileRecords
+    }
+    [System.IO.File]::WriteAllText((Join-Path $dataRoot "tool-package.manifest.json"), ($packageManifest | ConvertTo-Json -Depth 8), [System.Text.UTF8Encoding]::new($false))
+    if ($SharedToolPath) {
+        $originalManifest = Get-Content -Raw -LiteralPath (Join-Path $SharedToolPath "Data\tool-package.manifest.json")
+        if ($originalManifest -cne (Get-Content -Raw -LiteralPath (Join-Path $dataRoot "tool-package.manifest.json"))) { throw "三包的共用工具内容不一致" }
+    }
+    if ($isToolsPackage) { $layoutManifest = Get-Content -Raw -LiteralPath (Join-Path $templateRoot "manifest.tools.json") | ConvertFrom-Json }
     foreach ($relative in $layoutManifest.requiredFiles) {
         if (-not (Test-Path -LiteralPath (Join-Path $output $relative) -PathType Leaf)) { throw "发布包缺少必需文件: $relative" }
     }
@@ -269,7 +327,9 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "发布后的 RimDevTools --version 验证失败" }
     $version = $versionJson | ConvertFrom-Json
     if (-not $version.ok -or [string]::IsNullOrWhiteSpace([string]$version.rimDevToolsVersion)) { throw "发布后的 RimDevTools 版本输出无效: $versionJson" }
-    if ($version.templateGameVersion -ne $TemplateGameVersion -or $version.templateSchemaVersion -ne $layoutManifest.schemaVersion) { throw "发布后的模板版本信息不匹配（期望 RimWorld $TemplateGameVersion / schema $($layoutManifest.schemaVersion)）: $versionJson" }
+    $expectedGame = if ($isToolsPackage) { "unpackaged" } else { $TemplateGameVersion }
+    $expectedSchema = if ($isToolsPackage) { 0 } else { $layoutManifest.schemaVersion }
+    if ($version.templateGameVersion -ne $expectedGame -or $version.templateSchemaVersion -ne $expectedSchema) { throw "发布后的模板版本信息不匹配（期望 RimWorld $TemplateGameVersion / schema $($layoutManifest.schemaVersion)）: $versionJson" }
     Write-Host $versionJson.Trim()
 }
 finally {
@@ -287,4 +347,7 @@ if ($CreateZip) {
         [System.IO.Compression.CompressionLevel]::Optimal,
         $false)
     Write-Host "压缩包已生成: $archive"
+    $archiveHash = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+    [System.IO.File]::WriteAllText($archive + ".sha256", "$archiveHash  $([System.IO.Path]::GetFileName($archive))`n", [System.Text.UTF8Encoding]::new($false))
+    Write-Host "校验文件已生成: $archive.sha256"
 }

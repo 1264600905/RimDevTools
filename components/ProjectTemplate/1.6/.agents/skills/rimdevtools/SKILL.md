@@ -13,6 +13,10 @@ description: 操作项目本地的 RimDevTools CLI，处理 RimWorld 模组配�
 
 将 `mod_config.jsonc` 视为项目契约。应在其所在目录或直属子目录运行命令。修改配置，或使用参数、变更行为或错误契约重要的命令前，阅读 [references/commands-and-config.md](references/commands-and-config.md)。
 
+## 旧项目模式
+
+在现有 `mod_config.jsonc` 中设置 `existing_project_mode: true`，继续使用原来的 `csproj_paths`、`sync_items` 和 `game_version`。缺失或 `false` 沿用模板模式。旧项目模式只放宽模板名称、程序集名和日志关键词等专属门禁；必要元数据、构建、路径安全及测试依赖仍按对应命令校验。无需首次接入命令，不会自动识别工程、生成配置或修改 `.gitignore`。简化 Tools 包仅提供工具及配置参考，已有配置应保留。
+
 ## 测试产物与归档
 
 - 日志、结果、截图和测试存档只读取工具生成的原始产物。除用户明确要求导出外，禁止自建 evidence、任务或日期归档目录，包括 `.tools` 和 `.tools/log` 下的额外目录，也不得换到其他目录绕过。

@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "supportedVersions": ["1.6", "1.7"],
+  "requiredFiles": [
+    "mod_config.jsonc",
+    ".tools/RimDevTools.exe",
+    ".tools/Data/tool-package.manifest.json",
+    ".tools/Data/tool-mods.manifest.json",
+    ".tools/Ilspy/ilspycmd.exe",
+    ".agents/skills/rimdevtools/SKILL.md",
+    ".claude/skills/rimdevtools/SKILL.md"
+  ],
+  "requiredDirectories": [],
+  "forbiddenPaths": [
+    ".gitignore", "About", "source", "Defs", "Languages", "README.md",
+    ".mcp.json", "opencode.jsonc", ".tools/ProjectData", ".tools/log",
+    ".tools/Data/project-template.manifest.json"
+  ]
+}

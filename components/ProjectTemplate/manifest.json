@@ -36,6 +36,7 @@
     ".claude/skills/rimsage/references/tool-reference.md",
     ".tools/RimDevTools.exe",
     ".tools/Data/tool-mods.manifest.json",
+    ".tools/Data/tool-package.manifest.json",
     ".tools/Data/project-template.manifest.json",
     ".tools/Data/LogSyncMod/About/About.xml",
     ".tools/Data/LogSyncMod/1.6/Assemblies/LogSyncMod.dll",

@@ -16,7 +16,9 @@ public static class ProjectTemplatePreflight
         var issues = Inspect(context);
         return issues.Count == 0
             ? null
-            : new CliError("PROJECT_TEMPLATE_NOT_CONFIGURED", "部署或测试被拒绝：项目仍包含模板占位符。请让 AI 按 details 中的字段逐项改为当前模组信息后重试。", new { issues });
+            : context.Config.ExistingProjectMode
+                ? new CliError("PROJECT_INVALID", "部署或测试被拒绝：项目缺少必要信息，请按 details 修复。", new { issues })
+                : new CliError("PROJECT_TEMPLATE_NOT_CONFIGURED", "部署或测试被拒绝：项目仍包含模板占位符。请让 AI 按 details 中的字段逐项改为当前模组信息后重试。", new { issues });
     }
 
     public static IReadOnlyList<ProjectTemplateIssue> Inspect(ProjectContext context)
@@ -24,11 +26,15 @@ public static class ProjectTemplatePreflight
         var issues = new List<ProjectTemplateIssue>();
         var config = context.Config;
 
-        if (IsTemplateValue(config.ModName)) issues.Add(new ProjectTemplateIssue("mod_config.mod_name", "仍为模板默认模组名称。它决定部署目录和项目身份，必须替换为实际模组名称。"));
-        // 纯 XML 模组没有 C# 工程是合法配置；只有非空列表中的模板工程才应被门禁拦截。
-        if (config.CsprojPaths.Count > 0 && config.CsprojPaths.Any(IsTemplateValue)) issues.Add(new ProjectTemplateIssue("mod_config.csproj_paths", "工程路径仍指向模板源码目录。必须改为实际源码目录和 DLL 工程路径；纯 XML 模组可以配置为空数组。"));
-        if (config.LogKeywords.Count == 0 || config.LogKeywords.Any(value => IsTemplateValue(value) || value.Equals("LogSyncAutoTest", StringComparison.OrdinalIgnoreCase))) issues.Add(new ProjectTemplateIssue("mod_config.log_keywords", "仍使用模板或 LogSyncAutoTest 关键字。必须改为当前模组的专用日志关键词。"));
-        AddTemplateAssemblyIssues(issues, context);
+        if (string.IsNullOrWhiteSpace(config.ModName)) issues.Add(new ProjectTemplateIssue("mod_config.mod_name", "缺少部署目录名称。"));
+        if (!config.ExistingProjectMode)
+        {
+            if (IsTemplateValue(config.ModName)) issues.Add(new ProjectTemplateIssue("mod_config.mod_name", "仍为模板默认模组名称。它决定部署目录和项目身份，必须替换为实际模组名称。"));
+            // 纯 XML 模组没有 C# 工程是合法配置；只有非空列表中的模板工程才应被门禁拦截。
+            if (config.CsprojPaths.Count > 0 && config.CsprojPaths.Any(IsTemplateValue)) issues.Add(new ProjectTemplateIssue("mod_config.csproj_paths", "工程路径仍指向模板源码目录。必须改为实际源码目录和 DLL 工程路径；纯 XML 模组可以配置为空数组。"));
+            if (config.LogKeywords.Count == 0 || config.LogKeywords.Any(value => IsTemplateValue(value) || value.Equals("LogSyncAutoTest", StringComparison.OrdinalIgnoreCase))) issues.Add(new ProjectTemplateIssue("mod_config.log_keywords", "仍使用模板或 LogSyncAutoTest 关键字。必须改为当前模组的专用日志关键词。"));
+            AddTemplateAssemblyIssues(issues, context);
+        }
 
         var aboutPath = Path.Combine(context.Root, "About", "About.xml");
         if (!File.Exists(aboutPath)) issues.Add(new ProjectTemplateIssue("About/About.xml", "缺少模组元数据文件，无法确认实际模组名称和 packageId。"));
@@ -37,8 +43,17 @@ public static class ProjectTemplatePreflight
             try
             {
                 var root = XDocument.Load(aboutPath).Root;
-                if (IsTemplateValue(root?.Element("name")?.Value)) issues.Add(new ProjectTemplateIssue("About/About.xml:name", "仍为模板默认显示名称。必须填写面向玩家显示的实际模组名称。"));
-                if (IsTemplateValue(root?.Element("packageId")?.Value)) issues.Add(new ProjectTemplateIssue("About/About.xml:packageId", "仍为模板默认 packageId。必须使用唯一的实际 packageId。"));
+                if (config.ExistingProjectMode)
+                {
+                    if (root?.Name.LocalName != "ModMetaData") issues.Add(new ProjectTemplateIssue("About/About.xml", "根元素必须为 ModMetaData。"));
+                    if (string.IsNullOrWhiteSpace(root?.Element("name")?.Value)) issues.Add(new ProjectTemplateIssue("About/About.xml:name", "缺少模组显示名称。"));
+                    if (string.IsNullOrWhiteSpace(root?.Element("packageId")?.Value)) issues.Add(new ProjectTemplateIssue("About/About.xml:packageId", "缺少模组 packageId。"));
+                }
+                else
+                {
+                    if (IsTemplateValue(root?.Element("name")?.Value)) issues.Add(new ProjectTemplateIssue("About/About.xml:name", "仍为模板默认显示名称。必须填写面向玩家显示的实际模组名称。"));
+                    if (IsTemplateValue(root?.Element("packageId")?.Value)) issues.Add(new ProjectTemplateIssue("About/About.xml:packageId", "仍为模板默认 packageId。必须使用唯一的实际 packageId。"));
+                }
             }
             catch (Exception ex) { issues.Add(new ProjectTemplateIssue("About/About.xml", "无法读取元数据: " + ex.Message)); }
         }

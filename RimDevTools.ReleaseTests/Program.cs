@@ -13,6 +13,38 @@ var defaultRelease = Path.Combine(Environment.CurrentDirectory, "artifacts", $"R
 var release = Path.GetFullPath(args.Length > 0 ? args[0] : defaultRelease);
 var tools = Path.Combine(release, ".tools");
 var data = Path.Combine(tools, "Data");
+
+var passed = 0;
+var package = ToolPackageManifest.Load(release);
+package.VerifyFiles(release);
+Assert(package.ToolVersion == releaseToolVersion, "tool manifest matches built CLI version");
+Assert(package.SupportedGameVersions.SequenceEqual(["1.6", "1.7"]), "tool manifest supports both game versions");
+var actualManaged = Directory.EnumerateFiles(release, "*", SearchOption.AllDirectories)
+    .Select(path => Path.GetRelativePath(release, path).Replace('\\', '/')).Where(ToolPackageManifest.IsManagedPath).ToHashSet(StringComparer.OrdinalIgnoreCase);
+Assert(actualManaged.SetEquals(package.Files.Select(file => file.Path)), "tool manifest covers exactly all managed files");
+foreach (var version in package.SupportedGameVersions)
+foreach (var name in new[] { "LogSyncMod.dll", "AutoTestRunner.dll" })
+    Assert(File.ReadAllBytes(Path.Combine(data, "LogSyncMod", version, "Assemblies", name)).SequenceEqual(File.ReadAllBytes(Path.Combine(Environment.CurrentDirectory, version, "Assemblies", name))), $"common payload {version}/{name} matches source artifact");
+if (!File.Exists(Path.Combine(data, "project-template.manifest.json")))
+{
+    var expected = package.Files.Select(file => file.Path).Append(ToolPackageManifest.RelativePath).Append("mod_config.jsonc").ToHashSet(StringComparer.OrdinalIgnoreCase);
+    var actual = Directory.EnumerateFiles(release, "*", SearchOption.AllDirectories).Select(path => Path.GetRelativePath(release, path).Replace('\\', '/')).ToHashSet(StringComparer.OrdinalIgnoreCase);
+    Assert(actual.SetEquals(expected), "Tools package contains only managed payload, manifest and config reference");
+    foreach (var forbidden in new[] { ".gitignore", "source", "About", "Defs", "Languages", "README.md", ".mcp.json", ".tools/ProjectData", ".tools/log" })
+        Assert(!File.Exists(Path.Combine(release, forbidden)) && !Directory.Exists(Path.Combine(release, forbidden)), $"Tools excludes {forbidden}");
+    var reference = ProjectConfig.Load(Path.Combine(release, "mod_config.jsonc"));
+    Assert(reference.ExistingProjectMode && reference.ConfigVersion == 2 && string.IsNullOrEmpty(reference.GameVersion) && string.IsNullOrEmpty(reference.RimWorldDir)
+        && reference.CsprojPaths.Count == 0 && reference.SyncItems.Count == 0, "Tools config is a manual reference without machine or template defaults");
+    using var versionJson = JsonDocument.Parse(Run(Path.Combine(tools, "RimDevTools.exe"), release, "--version"));
+    Assert(versionJson.RootElement.GetProperty("templateGameVersion").GetString() == "unpackaged", "Tools has no template identity");
+    foreach (var client in new[] { ".agents", ".claude" })
+        Assert(Directory.EnumerateDirectories(Path.Combine(release, client, "skills")).Select(Path.GetFileName).SequenceEqual(["rimdevtools"]), "Tools includes only core skill for " + client);
+    var removed = RunResult(Path.Combine(tools, "RimDevTools.exe"), release, "init", "--existing");
+    Assert(removed.ExitCode == 2 && removed.Stdout.Contains("UNKNOWN_COMMAND"), "Tools has no first-time integration command");
+    Console.WriteLine($"PASS {passed} Tools release tests");
+    return;
+}
+
 var templateMetadataPath = Path.Combine(data, "project-template.manifest.json");
 using var templateMetadataDocument = JsonDocument.Parse(File.ReadAllText(templateMetadataPath));
 var templateMetadata = templateMetadataDocument.RootElement;
@@ -22,8 +54,6 @@ var templateRoot = Path.Combine(Environment.CurrentDirectory, "components", "Pro
 var template = Path.GetFullPath(Path.Combine(templateRoot, templateGameVersion));
 var templateConfigName = templateGameVersion == "1.6" ? "mod_config.jsonc" : $"mod_config.{templateGameVersion}.jsonc";
 var templateConfig = Path.GetFullPath(Path.Combine(templateRoot, templateConfigName));
-var passed = 0;
-
 RequireFile("mod_config.jsonc");
 RequireFile("LICENSE");
 Assert(!File.Exists(Path.Combine(release, ".codex", "config.toml")), "release does not contain the obsolete Codex config");
@@ -137,6 +167,7 @@ Assert(releaseOutputPath == $@"..\..\{templateGameVersion}\Assemblies\", "templa
 using (var config = JsonDocument.Parse(File.ReadAllText(Path.Combine(release, "mod_config.jsonc")), new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true }))
 {
     var root = config.RootElement;
+    Assert(!root.GetProperty("existing_project_mode").GetBoolean(), "new templates explicitly use template mode");
     Assert(root.GetProperty("mod_name").GetString() == ProjectTemplatePreflight.TemplateModName, "packaged configuration uses the template deployment name");
     Assert(root.GetProperty("game_version").GetString() == templateGameVersion, "packaged configuration matches the template game version");
     Assert(root.GetProperty("ilspycmd_path").GetString() == "Ilspy\\ilspycmd.exe", "packaged configuration points at the packaged ILSpy directory");
@@ -203,7 +234,7 @@ try
 }
 finally
 {
-    var root = Directory.GetParent(temporaryMods)?.Parent?.FullName;
+    var root = Path.GetDirectoryName(temporaryMods);
     if (root is not null && Directory.Exists(root)) Directory.Delete(root, true);
 }
 

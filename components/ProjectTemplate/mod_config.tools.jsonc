@@ -1,0 +1,18 @@
+{
+    "config_version": 2,
+    // 手工配置参考：已有项目请保留原配置，仅按需要补充模式字段。
+    "existing_project_mode": true,
+    // 填写部署目录名、目标版本（1.6 或 1.7）和实际游戏路径。
+    "mod_name": "",
+    "game_version": "",
+    "rimworld_dir": "",
+    "mods_config_path": "",
+    "workshop_paths": [],
+    // 使用已有项目的工程、同步路径；纯 XML 模组可保留空工程列表。
+    "csproj_paths": [],
+    "sync_items": [],
+    "sync_source": false,
+    "ilspycmd_path": "Ilspy\\ilspycmd.exe",
+    "log_keywords": [],
+    "min_active_mods": []
+}

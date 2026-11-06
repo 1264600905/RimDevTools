@@ -1,5 +1,9 @@
 # RimDevTools 命令与配置参考
 
+## 旧项目模式
+
+在现有 `mod_config.jsonc` 中设置 `existing_project_mode: true`，继续使用原来的 `csproj_paths`、`sync_items` 和 `game_version`。缺失或 `false` 沿用模板模式。旧项目模式只放宽模板名称、程序集名和日志关键词等专属门禁；必要元数据、构建、路径安全及测试依赖仍按对应命令校验。无需首次接入命令，不会自动识别工程、生成配置或修改 `.gitignore`。简化 Tools 包仅提供工具及配置参考，已有配置应保留。
+
 ## 调用与输出
 
 从项目根目录或其直属子目录运行 `.\.tools\RimDevTools.exe`。项目命令仅在这些层级发现 `mod_config.jsonc`。`help`、`--version` 和 `mods install-tools --mods-path` 不需要项目。
@@ -104,7 +108,7 @@ quick 是启动冒烟测试。manual 是用户手动的。auto 验证结构化�
 
 - `config_version`：必须为 `2`。
 - `mod_name`：部署的文件夹名称。
-- `game_version`：目标版本，当前为 `1.7`。
+- `game_version`：目标版本，必须明确为 `1.6` 或 `1.7`。
 - `rimworld_dir`：RimWorld 安装根目录。
 - `workshop_paths`：参考命令搜索的创意工坊根目录。
 - `csproj_paths`：由部署构建的 C# 项目。

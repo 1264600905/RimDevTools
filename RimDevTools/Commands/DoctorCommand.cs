@@ -15,6 +15,7 @@ public static class DoctorCommand
     };
     private static readonly HashSet<string> AlwaysVisibleChecks = new(StringComparer.OrdinalIgnoreCase)
     {
+        "project.mode",
         "config.game_version",
         "build.netfx_targeting_pack",
         "build.game_assembly.Assembly-CSharp",
@@ -39,6 +40,7 @@ public static class DoctorCommand
         var checks = new List<DoctorCheck>
         {
             new("project.discovery", "available", true, context.ConfigPath),
+            new("project.mode", "available", false, context.ConfigPath, config.ExistingProjectMode ? "旧项目模式：按现有配置部署，不检查模板占位符。" : "模板项目模式", new { existingProjectMode = config.ExistingProjectMode }),
             new("project.config_version", config.ConfigVersion == 2 ? "available" : "invalid", true, context.ConfigPath, config.ConfigVersion == 2 ? null : $"需要 config_version=2，当前为 {config.ConfigVersion}")
         };
         checks.AddRange(SteamworksSessionProbe.Checks(steamStatus));
@@ -57,7 +59,7 @@ public static class DoctorCommand
             templateIssues.Count == 0 ? "available" : "invalid",
             true,
             context.Root,
-            templateIssues.Count == 0 ? null : "检测到模板默认值；在替换名称、packageId、日志关键词和程序集名称前，项目不能部署或测试。",
+            templateIssues.Count == 0 ? null : config.ExistingProjectMode ? "项目缺少部署或测试所需的必要信息。" : "检测到模板默认值；在替换名称、packageId、日志关键词和程序集名称前，项目不能部署或测试。",
             templateIssues.Count == 0 ? null : new { issues = templateIssues }));
         AddAboutChecks(checks, context.Root);
 
