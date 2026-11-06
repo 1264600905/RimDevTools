@@ -146,6 +146,7 @@ namespace LogSyncMod.AutoTest
 
     internal sealed class AutoTestResult
     {
+        public Scenarios.ScenarioOutcome Scenario;
         public string PackageId;
         public string CaseId;
         public string CaseType;

@@ -10,6 +10,7 @@
   <ItemGroup>
     <Compile Include="..\source\AutoTestRunner\Contracts\**\*.cs" Link="Contracts\%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="..\source\AutoTestRunner\Core\**\*.cs" Link="Core\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\source\AutoTestRunner\Scenarios\**\*.cs" Link="Scenarios\%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="..\source\AutoTestRunner\AutoTestModels.cs" Link="Reporting\AutoTestModels.cs" />
     <Compile Include="..\source\AutoTestRunner\AutoTestReportWriter.cs" Link="Reporting\AutoTestReportWriter.cs" />
   </ItemGroup>

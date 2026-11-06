@@ -814,6 +814,21 @@ internal sealed partial class TestSuite
         document = XDocument.Load(environment.SettingsPath);
         settings = document.Descendants("ModSettings").First();
         Assert(settings.Element("autoTestScope")?.Value == "Standard" && settings.Element("autoTestScopes") is null && settings.Element("autoTestTargetDefNames") is null, "default settings clear prior multi-scope and target filters");
+        var frozen = new LogSyncMod.AutoTest.Scenarios.ScenarioPlan { Inputs = [new() { Path = "中文/测试.xml", Sha256 = "hash", Xml = "<TestSuite>\n  <text>\\n 中文</text>\n</TestSuite>" }] };
+        await SettingsEditor.UpdateAsync(context, "auto", runId: "xml-envelope", scenarioPlan: frozen);
+        settings = XDocument.Load(environment.SettingsPath).Descendants("ModSettings").First();
+        var decoded = JsonSerializer.Deserialize<LogSyncMod.AutoTest.Scenarios.ScenarioPlan>(System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(settings.Element("autoTestScenarioPlan")!.Value)))!;
+        Assert(decoded.Inputs[0].Xml == frozen.Inputs[0].Xml && decoded.Inputs[0].Path == frozen.Inputs[0].Path, "frozen scenario envelope preserves XML newlines, literal escapes and Chinese paths through settings");
+        Assert(settings.Element("testSessionActive")?.Value == "True" && settings.Element("autoTestProjectRoot")?.Value == Path.GetFullPath(context.Root), "CLI test session arms the shared log-window guard and carries the actual project root");
+        var transaction = await ConfigTransaction.CreateAsync(environment.ConfigDirectory, "last-auto-context", [environment.SettingsPath]);
+        LastAutoTestProject.Record(context, environment.ConfigDirectory, "started-auto-run");
+        await SettingsEditor.UpdateAsync(context, "manual", transaction, runId: "manual-run");
+        await transaction.RestoreAsync(force: true);
+        using (var latest = JsonDocument.Parse(File.ReadAllText(Path.Combine(environment.ConfigDirectory, "RimDevTools.LastAutoTestProject.json"))))
+            Assert(latest.RootElement.GetProperty("projectRoot").GetString() == context.Root && latest.RootElement.GetProperty("runId").GetString() == "started-auto-run", "last started auto project survives configuration restoration and manual settings");
+        await SettingsEditor.UpdateAsync(context, "auto");
+        settings = XDocument.Load(environment.SettingsPath).Descendants("ModSettings").First();
+        Assert(settings.Element("autoTestScenarioPlan")?.Value == "" && settings.Element("testSessionActive")?.Value == "False", "ordinary settings clear prior XML and do not arm a test session without a run id");
     }
 
     private async Task TestTransactionsAsync()

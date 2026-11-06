@@ -38,6 +38,7 @@ namespace LogSyncMod.AutoTest
                     }
                 }
             }
+            MapGenerator.PlayerStartSpot = map.Center;
         }
     }
 }

@@ -36,10 +36,11 @@ namespace LogSyncMod.AutoTest
                 return null;
             }
 
+            PocketMapParent pocketMapParent = null;
             try
             {
                 MapGeneratorDef generatorDef = DefDatabase<MapGeneratorDef>.GetNamed(request.MapGeneratorDefName ?? "LogSync_AutoTestPocketMap");
-                PocketMapParent pocketMapParent = WorldObjectMaker.MakeWorldObject(WorldObjectDefOf.PocketMap) as PocketMapParent;
+                pocketMapParent = WorldObjectMaker.MakeWorldObject(WorldObjectDefOf.PocketMap) as PocketMapParent;
                 if (pocketMapParent == null)
                 {
                     errorMessage = "Failed to create PocketMapParent.";
@@ -87,6 +88,11 @@ namespace LogSyncMod.AutoTest
             catch (Exception ex)
             {
                 errorMessage = ex.ToString();
+                if (pocketMapParent != null)
+                {
+                    try { Destroy(pocketMapParent.Map, pocketMapParent); }
+                    catch (Exception cleanup) { errorMessage += "\nGeneration cleanup: " + cleanup; }
+                }
                 return null;
             }
         }

@@ -337,6 +337,15 @@ namespace LogSyncMod.AutoTest
                 .Where(path => !string.IsNullOrWhiteSpace(path)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         }
 
+        private static string SerializeScenario(Scenarios.ScenarioOutcome scenario)
+        {
+            using (var stream = new MemoryStream())
+            {
+                new System.Runtime.Serialization.Json.DataContractJsonSerializer(typeof(Scenarios.ScenarioOutcome)).WriteObject(stream, scenario);
+                return Encoding.UTF8.GetString(stream.ToArray());
+            }
+        }
+
         private static string BuildJson(AutoTestRunArtifacts artifacts, string packageId, string runId, string modName, List<AutoTestResult> results, AutoTestRunSummary runSummary, AutoTestEvidenceManifest evidence)
         {
             StringBuilder builder = new StringBuilder();
@@ -384,6 +393,7 @@ namespace LogSyncMod.AutoTest
                 AutoTestResult result = results[i];
                 builder.AppendLine("    {");
                 builder.AppendLine("      \"caseId\": \"" + EscapeJson(result.CaseId) + "\",");
+                if (result.Scenario != null) builder.AppendLine("      \"scenario\": " + SerializeScenario(result.Scenario) + ",");
                 builder.AppendLine("      \"caseType\": \"" + EscapeJson(result.CaseType) + "\",");
                 builder.AppendLine("      \"scope\": \"" + EscapeJson(result.Scope) + "\",");
                 builder.AppendLine("      \"category\": \"" + EscapeJson(result.Category) + "\",");

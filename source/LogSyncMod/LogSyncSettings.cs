@@ -38,9 +38,12 @@ namespace LogSyncMod
         public bool enableVerboseDebug = false;
         public bool enableSmokeTest = false;
         public bool testMuteAudio = false;
+        public bool testSessionActive = false;
         public bool autoTestEnabled = false;
         public string autoTestTargetPackageId = "";
         public string autoTestRunId = "";
+        public string autoTestScenarioPlan = "";
+        public string autoTestProjectRoot = "";
         public string autoTestOutputPath = "D:/RimWorldAutoTest";
         public AutoTestScope autoTestScope = AutoTestScope.Standard;
         public List<AutoTestScope> autoTestScopes = new List<AutoTestScope>();
@@ -77,9 +80,12 @@ namespace LogSyncMod
             Scribe_Values.Look(ref enableVerboseDebug, "enableVerboseDebug", false);
             Scribe_Values.Look(ref enableSmokeTest, "enableSmokeTest", false);
             Scribe_Values.Look(ref testMuteAudio, "testMuteAudio", false);
+            Scribe_Values.Look(ref testSessionActive, "testSessionActive", false);
             Scribe_Values.Look(ref autoTestEnabled, "autoTestEnabled", false);
             Scribe_Values.Look(ref autoTestTargetPackageId, "autoTestTargetPackageId", "");
             Scribe_Values.Look(ref autoTestRunId, "autoTestRunId", "");
+            Scribe_Values.Look(ref autoTestScenarioPlan, "autoTestScenarioPlan", "");
+            Scribe_Values.Look(ref autoTestProjectRoot, "autoTestProjectRoot", "");
             Scribe_Values.Look(ref autoTestOutputPath, "autoTestOutputPath", "D:/RimWorldAutoTest");
             Scribe_Values.Look(ref autoTestScope, "autoTestScope", AutoTestScope.Standard);
             Scribe_Collections.Look(ref autoTestScopes, "autoTestScopes", LookMode.Value);

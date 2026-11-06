@@ -2,7 +2,9 @@ using System.Diagnostics;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
+using System.Xml;
 using LogSyncMod.AutoTest;
+using LogSyncMod.AutoTest.Scenarios;
 
 namespace RimDevTools;
 
@@ -233,11 +235,25 @@ public static class TestCommand
         var mode = CliArgs.Value(args, "--mode")?.ToLowerInvariant() ?? "quick";
         if (mode is not ("quick" or "manual" or "auto"))
             return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "MODE_INVALID", $"不支持的测试模式: {mode}", context.Root);
+        ScenarioPlan? scenarioPlan = null;
+        var scenarioPath = CliArgs.Value(args, "--scenario-path");
+        if (scenarioPath is not null || CliArgs.Has(args, "--scenario-only"))
+        {
+            if (mode != "auto" || context.Config.GameVersion != "1.7")
+                return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "SCENARIO_BACKEND_UNSUPPORTED", "外部场景首版仅支持 1.7 的 auto 模式", context.Root);
+            if (string.IsNullOrWhiteSpace(scenarioPath) || !CliArgs.Has(args, "--scenario-only"))
+                return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "SCENARIO_ONLY_REQUIRED", "第一批独立运行外部场景，请同时提供 --scenario-path 和 --scenario-only；混合与替代在第二批接入", context.Root);
+            try { scenarioPlan = ScenarioLoader.Load(Path.GetFullPath(scenarioPath, context.Root)); }
+            catch (Exception ex) when (ex is IOException or XmlException or ScenarioConfigurationException or ArgumentException)
+            { return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "SCENARIO_INVALID", ex.Message, context.Root); }
+        }
         var verifyWorkshopAssets = CliArgs.Has(args, "--verify-workshop-assets");
         if (verifyWorkshopAssets && (mode != "quick" || context.Config.GameVersion != "1.7"))
             return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "INVALID_ARGUMENT", "--verify-workshop-assets 仅支持 1.7 的 quick 测试", context.Root);
         if (!AutoTestSelectionParser.TryParse(args, mode, out var selection, out var selectionError))
             return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "INVALID_ARGUMENT", selectionError!, context.Root);
+        if (scenarioPlan is not null && (selection.HasExplicitScopes || selection.DefNames.Count > 0 || CliArgs.Has(args, "--batch-size")))
+            return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "SCENARIO_FILTERS_UNSUPPORTED", "第一批外部场景执行完整独立计划，不接受普通测试的 --scope、--defname 或 --batch-size；混合筛选在第二批接入", context.Root);
         if (CliArgs.Has(args, "--batch-size") && mode != "auto")
             return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "INVALID_ARGUMENT", "--batch-size 仅适用于 --mode auto", context.Root);
         if (CliArgs.Has(args, "--sync-source") && !CliArgs.Has(args, "--deploy"))
@@ -323,7 +339,7 @@ public static class TestCommand
                 runId,
                 [modsConfigPath, logSyncSettingsPath]);
             await transaction.WriteAllTextAsync(modsConfigPath, ModListParser.Render(modsConfigPath, modList.Mods));
-            await SettingsEditor.UpdateAsync(context, mode, transaction, runId, targetPackageId, muteAudio: mode != "manual", scopes: selection.Scopes, hasExplicitScopes: selection.HasExplicitScopes, defNames: selection.DefNames, batchSize: batchSize, artifacts: artifacts);
+            await SettingsEditor.UpdateAsync(context, mode, transaction, runId, targetPackageId, muteAudio: mode != "manual", scopes: selection.Scopes, hasExplicitScopes: selection.HasExplicitScopes, defNames: selection.DefNames, batchSize: batchSize, artifacts: artifacts, scenarioPlan: scenarioPlan);
 
             var gameArguments = new List<string> { "-popupwindow" };
             if (mode == "auto") gameArguments.Add("quicktest");
@@ -334,6 +350,7 @@ public static class TestCommand
             }
             var deadline = DateTimeOffset.UtcNow.AddSeconds(timeout);
             gameSession = GameProcessLauncher.Start(gamePath, environment.References.RimWorldDirectory, gameArguments, isolation.Enabled, runId);
+            if (mode == "auto") LastAutoTestProject.Record(context, configDirectory, runId);
             outcome = await WaitForModeAsync(mode, gameSession.Process, timeout, syncLogPath, logOffset, outputPath, targetPackageId, runId, resultSnapshot, cancellationToken, verbose);
             if (verifyWorkshopAssets && outcome.Ok && !await WorkshopAssetVerificationScope.WaitForSignalAsync(syncLogPath, runId, deadline, cancellationToken))
                 outcome = TestOutcome.Failure(ExitCodes.GameFailed, "WORKSHOP_ASSET_VERIFICATION_FAILED", "未取得本轮游戏资源包读取成功信号");
@@ -896,7 +913,7 @@ public static class SettingsEditor
     public static string SyncLogPath(ProjectContext context) => Path.Combine(TestArtifactPaths.LogRoot(context), "精选日志.log");
     public static string AutoTestOutputPath(ProjectContext context) => Path.Combine(TestArtifactPaths.LogRoot(context), "AutoTestOutput");
 
-    public static async Task<bool> UpdateAsync(ProjectContext context, string mode, ConfigTransaction? transaction = null, string? runId = null, string? targetPackageId = null, bool? muteAudio = null, IReadOnlyList<string>? scopes = null, bool hasExplicitScopes = false, IReadOnlyList<string>? defNames = null, int? batchSize = null, TestArtifactPaths? artifacts = null)
+    public static async Task<bool> UpdateAsync(ProjectContext context, string mode, ConfigTransaction? transaction = null, string? runId = null, string? targetPackageId = null, bool? muteAudio = null, IReadOnlyList<string>? scopes = null, bool hasExplicitScopes = false, IReadOnlyList<string>? defNames = null, int? batchSize = null, TestArtifactPaths? artifacts = null, ScenarioPlan? scenarioPlan = null)
     {
         var path = GameEnvironment.LogSyncSettingsPath(context) ?? throw new InvalidOperationException("mods_config_path 未配置或无效");
         var document = File.Exists(path)
@@ -920,6 +937,9 @@ public static class SettingsEditor
         changed |= Set(settings, "autoTestEnabled", auto ? "True" : "False");
         changed |= Set(settings, "autoTestTargetPackageId", auto ? targetPackageId?.ToLowerInvariant() ?? context.Config.CurrentPackageId(context.Root)?.ToLowerInvariant() ?? "" : "");
         changed |= Set(settings, "autoTestRunId", runId ?? "");
+        // Scribe interprets string escape sequences; an opaque base64 envelope preserves XML/JSON bytes.
+        changed |= Set(settings, "autoTestScenarioPlan", scenarioPlan is null ? "" : Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(JsonSerializer.Serialize(scenarioPlan))));
+        changed |= Set(settings, "autoTestProjectRoot", auto ? Path.GetFullPath(context.Root) : "");
         changed |= Set(settings, "autoTestOutputPath", effectiveArtifacts?.AutoTestOutputPath ?? AutoTestOutputPath(context));
         var effectiveScopes = scopes is { Count: > 0 } ? DistinctValues(scopes) : ["Standard"];
         var effectiveDefNames = defNames is { Count: > 0 } ? DistinctValues(defNames) : [];
@@ -935,6 +955,7 @@ public static class SettingsEditor
         changed |= Set(settings, "autoTestPreventPause", "True");
         changed |= Set(settings, "autoTestUseFastSpeed", "True");
         changed |= Set(settings, "testMuteAudio", muteAudio == true ? "True" : "False");
+        changed |= Set(settings, "testSessionActive", string.IsNullOrWhiteSpace(runId) ? "False" : "True");
 
         if (!changed) return false;
         var content = document.ToString(SaveOptions.None);

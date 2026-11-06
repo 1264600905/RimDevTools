@@ -15,6 +15,7 @@ namespace LogSyncMod
 
         public static void Pulse()
         {
+            TestLogWindowGuard.Maintain();
             LogSyncSettings settings = LogSyncMod.settings;
             string runId = settings?.autoTestRunId;
             if (string.IsNullOrWhiteSpace(runId)) return;

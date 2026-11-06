@@ -77,6 +77,12 @@ namespace LogSyncMod.AutoTest
 
         public void ProcessUi()
         {
+            if (scenarioQueue != null)
+            {
+                try { if (Event.current != null) CaptureScenarioUi(); }
+                catch (Exception ex) { scenarioObservationError = ex; }
+                return;
+            }
             if (Event.current == null || Event.current.type != EventType.Repaint) return;
 
             if (activeThreeViewUiSession != null)

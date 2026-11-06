@@ -240,6 +240,12 @@ namespace LogSyncMod.AutoTest
                 return;
             }
 
+            if (!string.IsNullOrWhiteSpace(settings.autoTestScenarioPlan))
+            {
+                InitializeScenarios();
+                return;
+            }
+
             RebuildTurretMountedGunDefs();
 
             nextTerrainX = Math.Max(map.Size.x / 2, 10);
@@ -353,6 +359,7 @@ namespace LogSyncMod.AutoTest
         {
             if (completed) return;
             PollPocketMapCleanupWatchdog();
+            if (scenarioQueue != null) { TickScenarios(); return; }
 
             if (cancelRequested)
             {
@@ -660,6 +667,7 @@ namespace LogSyncMod.AutoTest
         internal void PollPocketMapCleanupWatchdog()
         {
             pocketMapService.PollCleanupWatchdog();
+            if (scenarioQueue != null && !completed) TickScenarios();
         }
 
         private int GetActivePocketMapSessionCount()
@@ -1325,7 +1333,7 @@ namespace LogSyncMod.AutoTest
         private AutoTestRunSummary BuildRunSummary()
         {
             AutoTestRunSummary summary = new AutoTestRunSummary();
-            summary.RunMode = ResolveRunMode();
+            summary.RunMode = scenarioQueue != null ? "ExternalScenario" : ResolveRunMode();
             summary.DiscoveredCount = discoveredManifest.Count;
             summary.PlannedCount = plannedManifest.Count;
             summary.ExecutedCount = results.Count;

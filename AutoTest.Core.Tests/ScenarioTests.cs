@@ -1,0 +1,102 @@
+using System.Xml.Linq;
+using LogSyncMod.AutoTest;
+using LogSyncMod.AutoTest.Scenarios;
+
+internal static class ScenarioTests
+{
+    internal static void Run(Action<bool, string> check)
+    {
+        const string body = "<Scene type='pocketMap'/><Actors><Pawn id='p'><basePawnKind>SpaceRefugee</basePawnKind></Pawn></Actors><Steps><Require id='ready'><ActorState actor='p' state='alive'/></Require></Steps><Success><StepSucceeded ref='ready'/></Success>";
+        string Suite(string name = "Rule_A", string extra = "", string caseBody = body) => "<TestSuite schemaVersion='1' id='suite'><Case id='a'><testDefName>" + name + "</testDefName>" + caseBody + "</Case>" + extra + "</TestSuite>";
+        ScenarioInput Input(string xml, string path = "中文路径/测试.autotest.xml") => new() { Path = path, Sha256 = "frozen-hash", Xml = xml };
+        ScenarioPlan Compile(string xml) => ScenarioLoader.Compile(new[] { Input(xml) });
+        void Reject(string xml, string reason)
+        {
+            try { Compile(xml); check(false, reason); }
+            catch (ScenarioConfigurationException ex) { check(ex.Message.Contains("测试.autotest.xml"), reason); }
+        }
+        var plan = Compile(Suite());
+        check(plan.Cases.Single().TestDefName == "Rule_A" && plan.Cases.Single().CaseId == "Rule_A/default/1", "scenario stable rule and instance identities");
+        check(plan.Cases[0].InputHash == "frozen-hash" && plan.Cases[0].Source.Contains("中文路径"), "scenario keeps source and frozen hash");
+        var relocated = ScenarioLoader.Compile(new[] { Input(Suite(), "new/location.xml") });
+        check(relocated.Cases[0].CaseId == plan.Cases[0].CaseId, "moving a rule does not change its identity");
+        Reject(Suite(""), "empty testDefName is rejected");
+        Reject(Suite().Replace("<testDefName>Rule_A</testDefName>", ""), "missing testDefName is rejected");
+        Reject(Suite(extra: "<Case id='b'><testDefName>rule_a</testDefName>" + body + "</Case>"), "case-insensitive rule collision is rejected");
+        try { ScenarioLoader.Compile(new[] { Input(Suite()), Input(Suite(), "second.xml") }); check(false, "cross-file collision"); }
+        catch (ScenarioConfigurationException ex) { check(ex.Message.Contains("second.xml") && ex.Message.Contains("中文路径"), "cross-file collision locates both definitions"); }
+        Reject(Suite().Replace("<Scene", "<Scene unsupported='1'"), "unknown attributes are rejected");
+        Reject(Suite().Replace("<Actors>", "<Actors><Thing id='x' def='Steel' Class='Anything'/>"), "Class injection is rejected");
+        Reject(Suite().Replace("<Scene type='pocketMap'/>", "<Scene type='mainMap'/>"), "future main map backend is explicitly unsupported");
+        Reject(Suite().Replace("actor='p'", "actor='missing'"), "static missing actor reference rejected");
+        Reject(Suite().Replace("<Actors>", "<Actors><Thing id='p' def='Steel'/>"), "duplicate actor id rejected");
+        Reject(Suite().Replace("<Steps>", "<Steps><Checkpoint id='ready'/>"), "duplicate step id rejected");
+        Reject(Suite().Replace("<Require id='ready'>", "<Wait id='ready' stableTicks='NaN'>").Replace("</Require>", "</Wait>"), "invalid numeric attribute rejected");
+        Reject(Suite().Replace("<Scene", "<Scene sizeX='3'"), "map dimension bounds validated");
+        Reject(Suite().Replace("<Pawn id='p'", "<Pawn count='5' id='p'"), "single pawn cannot silently ignore a group count");
+        Reject(Suite().Replace("<Pawn id='p'>", "<Pawn id='p'><Abilities><Ensure def='MetalbloodInjection' severity='1'/></Abilities>"), "ability patches reject ignored health attributes");
+        Reject(Suite().Replace("<Scene type='pocketMap'/>", "<Scene/><Scene/>"), "duplicate singleton fields are rejected");
+        Reject(Suite().Replace("<Case", "<Templates><PawnTemplate id='t'/><PawnTemplate id='t'/></Templates><Case"), "duplicate template IDs are rejected with a source location");
+        Reject("<!DOCTYPE TestSuite [<!ENTITY x SYSTEM 'file:///C:/windows/win.ini'>]>" + Suite().Replace("Rule_A", "&x;"), "DTD and external entities rejected");
+        var cycles = Suite().Replace("<Case", "<Templates><PawnTemplate id='a' extends='b'/><PawnTemplate id='b' extends='a'/></Templates><Case");
+        Reject(cycles, "template cycles rejected");
+        var inherited = Suite().Replace("<Case", "<Templates><PawnTemplate id='a'><basePawnKind>SpaceRefugee</basePawnKind></PawnTemplate><PawnTemplate id='b' extends='a'><gender>Female</gender></PawnTemplate></Templates><Case")
+            .Replace("<Pawn id='p'><basePawnKind>SpaceRefugee</basePawnKind></Pawn>", "<Pawn id='p' template='b'/><Pawn id='q' template='a'/>");
+        var actors = XElement.Parse(Compile(inherited).Cases[0].Xml).Element("Actors").Elements().ToList();
+        check(actors.Count == 2 && actors.All(e => e.Element("basePawnKind")?.Value == "SpaceRefugee") && actors[0].Element("gender")?.Value == "Female", "all actor templates expand without skipping replacement siblings");
+        check(ScenarioTypes.NonUi.Length == 29 && ScenarioTypes.NonUi.Distinct().Count() == 29, "shared inventory covers all planned non-UI types");
+
+        var clock = new TestClock(); var backend = new Backend();
+        var engine = new ScenarioExecution(plan.Cases[0], backend, clock);
+        engine.Poll(1); engine.Poll(2);
+        check(engine.Completed && engine.Outcome.Status == "passed" && backend.Cleaned == 1, "scenario executes precondition, success and cleanup");
+        var waitXml = Suite(caseBody: body.Replace("<Require id='ready'>", "<Wait id='ready' stableTicks='3' timeoutRealSeconds='2'>").Replace("</Require>", "</Wait>"));
+        clock = new TestClock(); backend = new Backend(); engine = new ScenarioExecution(Compile(waitXml).Cases[0], backend, clock);
+        engine.Poll(10); engine.Poll(10); engine.Poll(10);
+        check(!engine.Completed, "repeated frame polls do not count as stable ticks");
+        engine.Poll(11); engine.Poll(12); engine.Poll(13);
+        check(engine.Completed && engine.Outcome.Status == "passed", "distinct simulation ticks satisfy stability");
+        clock = new TestClock(); backend = new Backend { Match = false }; engine = new ScenarioExecution(Compile(waitXml).Cases[0], backend, clock);
+        engine.Poll(10); clock.Ms = 2000; engine.Poll(10);
+        check(engine.Completed && engine.Outcome.ErrorCode == "scenario.timeout" && backend.Cleaned == 1, "wait times out with paused simulation and cleans up");
+        clock = new TestClock(); backend = new Backend { Match = false }; engine = new ScenarioExecution(Compile(waitXml).Cases[0], backend, clock);
+        engine.Poll(10); clock.Ms = 2000; backend.Match = true; engine.Poll(11);
+        check(engine.Completed && engine.Outcome.ErrorCode == "scenario.timeout", "late success cannot bypass the step deadline");
+        clock = new TestClock(); backend = new Backend { ProbeThrows = true }; engine = new ScenarioExecution(plan.Cases[0], backend, clock);
+        engine.Poll(1);
+        check(engine.Completed && engine.Outcome.ErrorCode == "scenario.probe" && engine.Outcome.Error.Contains("probe fault") && backend.Cleaned == 1, "probe exception retains diagnostics and cleans up");
+        clock = new TestClock(); backend = new Backend { PrepareThrows = true }; engine = new ScenarioExecution(plan.Cases[0], backend, clock); engine.Poll(1);
+        check(engine.Outcome.ErrorCode == "scenario.prepare" && backend.Cleaned == 1, "partial preparation failure cleans ownership");
+        backend = new Backend(); engine = new ScenarioExecution(plan.Cases[0], backend, clock); engine.Poll(1, true);
+        check(engine.Outcome.Status == "cancelled" && backend.Cleaned == 1, "explicit cancellation is distinct and cleans up");
+        backend = new Backend { CleanupThrows = true }; engine = new ScenarioExecution(plan.Cases[0], backend, clock); engine.Poll(1); engine.Poll(2);
+        check(engine.Outcome.ErrorCode == "scenario.cleanup" && engine.Outcome.Status == "failed", "cleanup error cannot turn green");
+        var condition = XElement.Parse("<HasHediff quantifier='all'/>");
+        check(!ScenarioExecution.Match(condition, new ScenarioSample(), new ScenarioSample()), "all on zero targets does not pass vacuously");
+        var old = new ScenarioSample { TargetCount = 1, Matches = new HashSet<string> { "old-item" } };
+        check(!ScenarioExecution.Match(XElement.Parse("<ThingExists transition='added'/>"), old, old), "old item movement is not new creation");
+        var belowThreshold = new ScenarioSample { TargetCount = 1, Existing = new HashSet<string> { "old-item" } };
+        check(!ScenarioExecution.Match(XElement.Parse("<HasHediff transition='added'/>"), old, belowThreshold), "severity change on an existing hediff is not an added hediff");
+        var now = new ScenarioSample { TargetCount = 1, Matches = new HashSet<string> { "new-item" } };
+        check(ScenarioExecution.Match(XElement.Parse("<ThingExists transition='added'/>"), now, old), "new object identity is an added transition");
+        var transientXml = Suite(caseBody: body.Replace("<Require id='ready'><ActorState actor='p' state='alive'/></Require>", "<Checkpoint id='before'/><Wait id='ready' timeoutRealSeconds='2'><HasHediff actor='p' def='Metalblood' transition='added' since='before' observation='eventually'/></Wait>"));
+        clock = new TestClock(); backend = new Backend { Match = false }; engine = new ScenarioExecution(Compile(transientXml).Cases[0], backend, clock); engine.Poll(1);
+        backend.Match = true; engine.Observe(2); backend.Match = false; engine.Observe(2); engine.Poll(2); engine.Poll(3);
+        check(engine.Completed && engine.Outcome.Status == "passed", "event observation retains a same-tick transient effect");
+        var basePath = Path.Combine("AutoTest.Core.Tests", "Fixtures", "Scenarios");
+        if (Directory.Exists(basePath))
+        {
+            var fixture = ScenarioLoader.Load(basePath);
+            check(fixture.Inputs.Count == 1 && fixture.Cases.Count == 2 && fixture.Inputs[0].Sha256.Length == 64, "nonrecursive Chinese-path fixture directory freezes file list and byte hashes");
+        }
+    }
+    private sealed class TestClock : IAutoTestClock { public long Ms; public DateTime UtcNow => DateTime.UnixEpoch.AddMilliseconds(Ms); public long RealtimeMilliseconds => Ms; }
+    private sealed class Backend : IScenarioBackend
+    {
+        public bool Match = true, ProbeThrows, PrepareThrows, CleanupThrows; public int Cleaned;
+        public void Prepare(ScenarioCase c) { if (PrepareThrows) throw new Exception("prepare fault"); }
+        public ScenarioSample Sample(XElement c) { if (ProbeThrows) throw new Exception("probe fault"); return new ScenarioSample { TargetCount = 1, Matches = Match ? new HashSet<string> { "p" } : new HashSet<string>() }; }
+        public bool Execute(XElement step, bool first) => true;
+        public void Cleanup() { Cleaned++; if (CleanupThrows) throw new Exception("cleanup fault"); }
+    }
+}

@@ -393,6 +393,8 @@ namespace LogSyncMod.AutoTest
                 if (Enum.TryParse(scopeText, true, out AutoTestScope scope) && !scopes.Contains(scope)) scopes.Add(scope);
             if (scopes.Count == 0) scopes.Add(AutoTestScope.Standard);
             settings.autoTestTargetPackageId = packageId;
+            settings.autoTestScenarioPlan = "";
+            settings.autoTestProjectRoot = "";
             settings.autoTestRunId = string.IsNullOrWhiteSpace(request.RunId) ? Guid.NewGuid().ToString("N") : request.RunId.Trim();
             settings.autoTestScopes = scopes;
             settings.autoTestScope = scopes[0];

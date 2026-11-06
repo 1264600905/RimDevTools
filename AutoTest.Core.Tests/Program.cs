@@ -30,6 +30,7 @@ internal sealed class CoreTestSuite
         TestSemanticValueGraph();
         TestErrorPolicy();
         AutoTestReportTests.Run(Assert);
+        ScenarioTests.Run(Assert);
         TestRuntimeQueue();
         TestRuntimeHistory();
         TestCaseEvidenceRetention();

@@ -1,0 +1,26 @@
+<TestSuite schemaVersion="1" id="batch1.failures" packageId="ludeon.rimworld" gameVersion="1.7">
+  <Templates><PawnTemplate id="human"><basePawnKind>SpaceRefugee</basePawnKind></PawnTemplate></Templates>
+  <Case id="wrong-expectation" timeoutRealSeconds="30">
+    <testDefName>Batch1_ExpectedAssertionTimeout</testDefName>
+    <Scene type="pocketMap" /><Actors><Pawn id="pawn" template="human" /></Actors>
+    <Steps><Wait id="wrong" timeoutRealSeconds="2"><HasHediff actor="pawn" def="Metalblood" transition="added" /></Wait></Steps>
+    <Success><StepSucceeded ref="wrong" /></Success>
+  </Case>
+  <Case id="pause" timeoutRealSeconds="30">
+    <testDefName>Batch1_ExpectedPausedTimeout</testDefName>
+    <Scene type="pocketMap" /><Actors><Pawn id="pawn" template="human" /></Actors>
+    <Steps><Pause id="pause" /><Wait id="impossible" timeoutRealSeconds="2"><ActorState actor="pawn" state="dead" /></Wait></Steps>
+    <Success><StepSucceeded ref="impossible" /></Success>
+  </Case>
+  <Case id="missing-def">
+    <testDefName>Batch1_ExpectedMissingDef</testDefName>
+    <Scene type="pocketMap" /><Actors><Thing id="missing" def="Batch1_NoSuchThing" /></Actors>
+    <Steps><Checkpoint id="baseline" /></Steps><Success><StepSucceeded ref="baseline" /></Success>
+  </Case>
+  <Case id="continues">
+    <testDefName>Batch1_RecoveryAfterFailures</testDefName>
+    <Scene type="pocketMap" /><Actors><Pawn id="pawn" template="human" /></Actors>
+    <Steps><Require id="alive"><ActorState actor="pawn" state="alive" /></Require><Screenshot id="recovery" focus="pawn" /></Steps>
+    <Success><All><StepSucceeded ref="alive" /><StepSucceeded ref="recovery" /></All></Success>
+  </Case>
+</TestSuite>
