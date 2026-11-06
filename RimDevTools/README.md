@@ -133,3 +133,13 @@ dotnet RimDevTools.ReleaseTests\bin\Debug\net10.0\RimDevTools.ReleaseTests.dll a
 ```
 
 单元测试使用临时游戏目录。发布测试验证模板逐文件一致、三种 MCP 配置、两套 RimSage skill、单工具 Mod 清单、ILSpy 和干净日志/参考目录。
+
+## 工具自动更新
+
+正式解压安装支持 `update --check`、`update --dry-run`、`update` 和 `update status`。普通业务命令启动检查使用 24 小时缓存，联网总预算最多 2 秒；失败退避 1 小时，不影响业务结果。帮助、版本、状态查询及内部助手不联网检查。
+
+用户已要求更新时，先检查和预览，再执行 `update`，随后查询 `update status` 直到终态。`scheduled` 只说明助手接收了更新，不能报告已经成功；成功状态为 `succeeded`。不自动重跑原业务命令。首次获得更新能力需手动安装一次新版，源码仓库及缺少可信发行清单的旧安装不自动更新。
+
+`UPDATE_CONFLICT` 会列出本地受管理文件冲突，整次更新停止，保留本地修改。配置仅补充缺失字段，保留注释、未知字段、模式和游戏目标；不覆盖项目源码、资源、`.gitignore`、其他 skill 或工坊身份。`TOOL_UPDATE_BUSY` 表示安装仍在使用，`TOOL_UPDATE_RECOVERY_REQUIRED` 表示更新未完成或需要恢复。使用 `update status` 返回的原始状态、事务路径和 `recoveryCommand`；恢复前让已有更新进程退出。即使主 EXE 无法运行，保留的助手仍可恢复。未知并发修改会阻止恢复并保留备份，先处理对应冲突再重试。
+
+完成后重新读取磁盘上的完整 `rimdevtools` skill。项目私有的工具 Mod 载荷更新不等于游戏中已经安装或启用新版，游戏内组件仍由 `mods install-tools` 管理。缓存、暂存和回滚数据由工具维护；保留最近三份已完成事务，不删除未完成恢复所需的数据。

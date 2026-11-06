@@ -8,6 +8,8 @@ public static class CliHelp
         {
             "help" => TopLevel,
             "doctor" => Doctor,
+            "update" => Update,
+            "update status" => UpdateStatus,
             "deploy" => Deploy,
             "mod" => Mod,
             "mod search" => ModSearch,
@@ -39,10 +41,38 @@ public static class CliHelp
     public static string Path(string[] args)
     {
         if (args.Length == 0 || args[0] is "--help" or "-h") return "help";
-        if (args[0] is "mod" or "test" or "mods" or "workshop" or "steamworkshops" && args.Length > 1 && !args[1].StartsWith('-'))
+        if (args[0] is "mod" or "test" or "mods" or "workshop" or "steamworkshops" or "update" && args.Length > 1 && !args[1].StartsWith('-'))
             return $"{args[0]} {args[1]}";
         return args[0];
     }
+
+    private const string Update = """
+        Usage:
+          RimDevTools.exe update [--check | --dry-run] [--verbose]
+          RimDevTools.exe update status [--verbose]
+
+        --check queries the latest official stable Release without installing.
+        --dry-run verifies the Tools ZIP and previews changes without committing files or state.
+        With no flag, schedule a verified update; scheduled means the helper has accepted it,
+        not that installation has succeeded. Run update status for the final result.
+        Startup checks use a 24-hour cache and at most 2 seconds of network time.
+        Local managed-file changes block the entire update. JSONC comments and user values
+        are preserved. Project content, game_version, existing_project_mode, Workshop identity,
+        .gitignore and other skills are retained. No game or Steam login is needed.
+        Use a formally unpacked installation. Source builds and unknown legacy installations
+        require a manual installation of the first update-capable version.
+        """;
+
+    private const string UpdateStatus = """
+        Usage:
+          RimDevTools.exe update status [--verbose]
+
+        Read the last update locally, without network access or installing anything.
+        States: none, scheduled, applying, succeeded, failed, rolledBack, recoveryRequired.
+        If recovery is required, run the returned recoveryCommand after other update processes exit.
+        This retained helper can restore the original installation even if the main EXE cannot run.
+        After success, ask the AI to re-read rimdevtools skill. Game-installed tool Mods use mods install-tools.
+        """;
 
     private const string TopLevel = """
         RimDevTools - Windows RimWorld mod development automation CLI
@@ -53,6 +83,8 @@ public static class CliHelp
 
         Commands:
           doctor              Inspect project, game, tools, and transaction status.
+          update              Check, preview or schedule a tool update from official Releases.
+          update status       Read the last tool update result without network access.
           deploy              Build and transactionally update the current mod.
           mod search          Find local or Workshop reference mods.
           mod copy            Copy and decompile a reference mod.

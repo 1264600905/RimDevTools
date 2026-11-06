@@ -34,6 +34,8 @@ public static class CliApplication
         var argumentError = CliArgs.Validate(command, args);
         if (argumentError is not null)
             return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "INVALID_ARGUMENT", argumentError);
+        if (!CliArgs.IsKnownCommand(command))
+            return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "UNKNOWN_COMMAND", $"未知命令: {command}");
 
         using var cancellation = new CancellationTokenSource();
         ConsoleCancelEventHandler cancelHandler = (_, eventArgs) =>
@@ -44,8 +46,14 @@ public static class CliApplication
         Console.CancelKeyPress += cancelHandler;
         try
         {
+            using var installationLease = EnterInstallation(command, out var installation, out var installationError);
+            if (installationError is not null)
+                return CliResult.WriteFailure(command, ExitCodes.Busy, installationError.Code, installationError.Message, installation?.Root, installationError.Details);
+            if (installation is not null && command is not ("update" or "update status"))
+                await ToolStartupUpdateCheck.RunAsync(installation, cancellation.Token);
             return command switch
             {
+                "update" or "update status" => await UpdateCommand.RunAsync(args, cancellation.Token),
                 "doctor" => await DoctorCommand.RunAsync(args),
                 "deploy" => await DeployCommand.RunAsync(args, cancellation.Token),
                 "mod search" => await ModCommand.SearchAsync(args),
@@ -84,8 +92,15 @@ public static class CliApplication
     public static string CommandPath(string[] args)
     {
         if (args.Length == 0) return "help";
-        if (args[0] is "mod" or "test" or "mods" or "workshop" or "steamworkshops" && args.Length > 1 && !args[1].StartsWith('-')) return $"{args[0]} {args[1]}";
+        if (args[0] is "mod" or "test" or "mods" or "workshop" or "steamworkshops" or "update" && args.Length > 1 && !args[1].StartsWith('-')) return $"{args[0]} {args[1]}";
         return args[0];
+    }
+
+    private static IDisposable? EnterInstallation(string command, out UpdateInstallation? installation, out CliError? error)
+    {
+        installation = UpdateInstallation.Locate();
+        error = null;
+        return installation is null || command is "update" or "update status" ? null : installation.EnterBusiness(out error);
     }
 
     public static ProjectContext? RequireProject(string command, out int errorCode)
@@ -107,12 +122,15 @@ public static class CliApplication
 
 public static class CliArgs
 {
+    internal static bool IsKnownCommand(string command) => Contracts.ContainsKey(command);
     private sealed record Option(string Name, bool TakesValue, bool AllowMultiple = false);
 
     private static readonly IReadOnlyDictionary<string, (int PrefixLength, int Positionals, Option[] Options)> Contracts
         = new Dictionary<string, (int, int, Option[])>(StringComparer.OrdinalIgnoreCase)
         {
             ["doctor"] = (1, 0, [new("--verbose", false)]),
+            ["update"] = (1, 0, [new("--check", false), new("--dry-run", false), new("--verbose", false)]),
+            ["update status"] = (2, 0, [new("--verbose", false)]),
             ["deploy"] = (1, 0, [new("--sync-source", false), new("--xml-hot", false), new("--upload", false), new("--change-note", true), new("--change-note-file", true), new("--text-language", true), new("--timeout-seconds", true), new("--dry-run", false), new("--verbose", false)]),
             ["mod search"] = (2, 1, [new("--fuzzy", false), new("--verbose", false)]),
             ["mod copy"] = (2, 1, [new("--version", true), new("--deps", false), new("--include-ignored", false), new("--fuzzy", false), new("--overwrite-existing", false), new("--dry-run", false), new("--verbose", false)]),

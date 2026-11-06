@@ -43,6 +43,24 @@ if (args.Contains("--live-workshop-improvements"))
     return;
 }
 
+if (args.Length == 3 && args[0] == "--tool-update-crash")
+{
+    await ToolUpdateTests.RunCrashWorkerAsync(args[1], int.Parse(args[2]));
+    return;
+}
+if (args.Length == 1 && args[0] is "--tool-update" or "--tool-update-live")
+{
+    var updateTemporary = Path.Combine(Path.GetTempPath(), "RimDevToolsTests", Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(updateTemporary);
+    try
+    {
+        if (args[0] == "--tool-update-live") await ToolUpdateTests.RunLiveAsync(updateTemporary);
+        else await ToolUpdateTests.RunAsync(updateTemporary);
+    }
+    finally { Directory.Delete(updateTemporary, true); }
+    return;
+}
+
 var suite = new TestSuite();
 await suite.RunAsync();
 
@@ -201,6 +219,7 @@ internal sealed partial class TestSuite
             _passed += await WorkshopPublishingTests.RunAsync(_temp);
             _passed += await WorkshopQueryPresentationTests.RunAsync(_temp);
             TestJsoncAndDiscovery();
+            _passed += await ToolUpdateTests.RunAsync(_temp);
             TestEnvironmentDiscovery();
             await TestTemplatePreflightAsync();
             await TestExistingProjectModeAsync();

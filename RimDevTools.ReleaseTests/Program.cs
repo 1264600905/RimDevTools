@@ -228,7 +228,19 @@ try
     foreach (var assembly in RimWorldGameLayout.LegacyRequiredAssemblies)
         File.WriteAllText(Path.Combine(managed, assembly), "test assembly");
     File.WriteAllText(Path.Combine(gameRoot, "mod_config.jsonc"), "{\"config_version\":2,\"game_version\":\"1.6\"}");
-    var dryRun = Run(Path.Combine(tools, "RimDevTools.exe"), gameRoot, "mods", "install-tools", "--mods-path", temporaryMods, "--dry-run");
+    // Run the mutating-capable command from a fixture installation, keeping release inputs pristine.
+    var testTools = Path.Combine(gameRoot, ".tools");
+    Directory.CreateDirectory(testTools);
+    File.Copy(Path.Combine(tools, "RimDevTools.exe"), Path.Combine(testTools, "RimDevTools.exe"));
+    foreach (var input in Directory.EnumerateFiles(data, "*", SearchOption.AllDirectories))
+    {
+        var output = Path.Combine(testTools, "Data", Path.GetRelativePath(data, input));
+        Directory.CreateDirectory(Path.GetDirectoryName(output)!);
+        File.Copy(input, output);
+    }
+    Directory.CreateDirectory(Path.Combine(testTools, "ProjectData"));
+    File.WriteAllText(Path.Combine(testTools, "ProjectData", "tool-update-check.json"), JsonSerializer.Serialize(new { nextCheckUtc = DateTimeOffset.UtcNow.AddHours(24), latestVersion = releaseToolVersion }));
+    var dryRun = Run(Path.Combine(testTools, "RimDevTools.exe"), gameRoot, "mods", "install-tools", "--mods-path", temporaryMods, "--dry-run");
     using var dryJson = JsonDocument.Parse(dryRun);
     Assert(dryJson.RootElement.GetProperty("ok").GetBoolean() && dryJson.RootElement.GetProperty("result").GetProperty("components").GetArrayLength() == 1, "packaged tool Mod dry-run plans one component in an explicit Mods directory");
 }

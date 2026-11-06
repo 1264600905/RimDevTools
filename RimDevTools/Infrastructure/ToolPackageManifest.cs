@@ -72,7 +72,7 @@ public sealed class ToolPackageManifest
     public static bool IsManagedPath(string? path)
     {
         if (string.IsNullOrWhiteSpace(path) || path.Contains('\\') || path.Contains(':') || Path.IsPathRooted(path)) return false;
-        if (path.Split('/').Any(part => part is "" or "." or ".." || part.EndsWith('.') || part.EndsWith(' ') || part.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)) return false;
+        if (path.Split('/').Any(part => part is "" or "." or ".." || part.EndsWith('.') || part.EndsWith(' ') || part.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 || IsDeviceName(part))) return false;
         return path == ".tools/RimDevTools.exe" || path == ".tools/Data/tool-mods.manifest.json"
             || path.StartsWith(".tools/Data/LogSyncMod/", StringComparison.Ordinal)
             || path.StartsWith(".tools/Data/licenses/", StringComparison.Ordinal)
@@ -80,6 +80,12 @@ public sealed class ToolPackageManifest
             || path.StartsWith(".tools/modlist/", StringComparison.Ordinal)
             || path.StartsWith(".agents/skills/rimdevtools/", StringComparison.Ordinal)
             || path.StartsWith(".claude/skills/rimdevtools/", StringComparison.Ordinal);
+    }
+
+    private static bool IsDeviceName(string part)
+    {
+        var stem = part.Split('.')[0].ToUpperInvariant();
+        return stem is "CON" or "PRN" or "AUX" or "NUL" || stem.Length == 4 && (stem.StartsWith("COM") || stem.StartsWith("LPT")) && stem[3] is >= '1' and <= '9';
     }
 }
 
