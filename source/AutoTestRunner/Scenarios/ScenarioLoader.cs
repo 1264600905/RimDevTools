@@ -45,6 +45,7 @@ namespace LogSyncMod.AutoTest.Scenarios
                 catch (XmlException ex) { throw new ScenarioConfigurationException(input.Path + ":" + ex.LineNumber + ": " + ex.Message); }
                 if (root == null || root.Name != "TestSuite") Fail(root, input.Path, "expected TestSuite");
                 foreach (var e in root.DescendantsAndSelf()) e.AddAnnotation(new SourceLine { Line = ((IXmlLineInfo)e).LineNumber });
+                ExpandBattleCases(root, input.Path, groupCombat);
                 ValidateTree(root, input.Path, allowParameters: true);
                 if (A(root, "schemaVersion") != "1") Fail(root, input.Path, "schemaVersion must be 1");
                 if (A(root, "gameVersion", "1.7") != "1.7") Fail(root, input.Path, "only the 1.7 scenario backend is supported");
@@ -276,7 +277,7 @@ namespace LogSyncMod.AutoTest.Scenarios
         };
         private const string Conditions = "All Any Not HasHediff ThingExists ActorState CorpseState ActorCount Equipped Wearing HasTrait SkillLevel HasAbility StepSucceeded HealthPercent NeedLevel ResourceLevel ComponentState EnvironmentState ActorPosition ModResourceLevel ThingHeld ThingQuantity HasController PawnAppearance HasGene HasXenotype PlantGrowth TerrainState ThingStyle";
         private static readonly Dictionary<string, string> Attributes = new Dictionary<string, string> {
-            {"GroupCombat", "start aiPolicy durationSeconds timeSpeed"}, {"End", "condition onTimeLimit onTie"},
+            {"GroupCombat", "start aiPolicy durationSeconds timeSpeed"}, {"End", "condition onTimeLimit onTie confirmationTicks"},
             {"Metrics", "damageBasis dpsBasis teamDpsBasis population meanPopulation includeZeroValues distributions detailLimit requireCompleteAttribution"},
             {"Overlay", "enabled layout topUnitsPerMetric topTypesPerTeam humanPortrait refreshRealMilliseconds"}, {"Rankings", "damageDealt damageTaken"}, {"Summary", "dps damageTaken"},
             {"Experiments", "swapSides"}, {"Seed", "value"}, {"Output", "purpose showAllParticipants width height"},
@@ -344,9 +345,9 @@ namespace LogSyncMod.AutoTest.Scenarios
                 ValidateTree(e, path, allowParameters);
             }
             if (node.HasElements && node.Nodes().OfType<XText>().Any(t => !string.IsNullOrWhiteSpace(t.Value))) Fail(node, path, "mixed text is not supported");
-            foreach (var a in node.Attributes().Where(a => new[] { "x", "z", "count", "sizeX", "sizeZ", "seed", "originX", "originZ", "spacing", "columns", "stableTicks", "durationTicks", "stableFrames", "degree", "level", "equals", "width", "height", "minX", "minZ", "maxX", "maxZ", "fromX", "fromZ", "toX", "toZ", "targetX", "targetZ" }.Contains(a.Name.LocalName)))
+            foreach (var a in node.Attributes().Where(a => new[] { "x", "z", "count", "sizeX", "sizeZ", "seed", "originX", "originZ", "spacing", "columns", "stableTicks", "durationTicks", "stableFrames", "confirmationTicks", "degree", "level", "equals", "width", "height", "minX", "minZ", "maxX", "maxZ", "fromX", "fromZ", "toX", "toZ", "targetX", "targetZ" }.Contains(a.Name.LocalName)))
                 if (!(allowParameters && a.Value.Contains("${")) && !int.TryParse(a.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out _)) Fail(node, path, "invalid integer " + a.Name);
-            foreach (var a in node.Attributes().Where(a => new[] { "timeoutRealSeconds", "severity", "severityMin", "severityMax", "min", "max", "value", "temperature", "radius", "amount", "armorPenetration", "growth", "cameraSize", "biologicalYears", "chronologicalYears" }.Contains(a.Name.LocalName) && !(name == "Param" || name == "Relation" || name == "PawnAppearance")))
+            foreach (var a in node.Attributes().Where(a => new[] { "timeoutRealSeconds", "durationSeconds", "defendRadius", "severity", "severityMin", "severityMax", "min", "max", "value", "temperature", "radius", "amount", "armorPenetration", "growth", "cameraSize", "biologicalYears", "chronologicalYears" }.Contains(a.Name.LocalName) && !(name == "Param" || name == "Relation" || name == "PawnAppearance")))
                 if (!(allowParameters && a.Value.Contains("${")) && (!double.TryParse(a.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var d) || double.IsNaN(d) || double.IsInfinity(d))) Fail(node, path, "invalid finite number " + a.Name);
         }
     }

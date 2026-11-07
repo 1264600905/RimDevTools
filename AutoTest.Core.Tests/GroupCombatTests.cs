@@ -21,6 +21,10 @@ internal static class GroupCombatTests
 
     public static void Run(Action<bool, string> assert)
     {
+        GroupCombatInheritanceTests.Run(assert);
+        GroupCombatLifecycleTests.Run(assert);
+        var legacyPopulation = ScenarioLoader.Compile(new[] { new ScenarioInput { Path = "legacy.xml", Sha256 = "h", Xml = Xml.Replace("<GroupCombat>", "<GroupCombat><Metrics population='initialRoster'/>") } }, true);
+        assert(XElement.Parse(legacyPopulation.Cases[0].Xml).Element("GroupCombat")!.Element("Metrics")!.Attribute("population")!.Value == "registeredRoster", "legacy roster metadata normalizes to the complete dynamic participant population");
         ScenarioPlan Compile(string xml, bool group = true) => ScenarioLoader.Compile(new[] { new ScenarioInput { Path = "fixture.autotest.xml", Sha256 = "frozen", Xml = xml } }, group);
         void Reject(string xml, string message, bool group = true)
         {
@@ -82,7 +86,15 @@ internal static class GroupCombatTests
         Hit("a0", "b0", 10); Hit("a0", "b0", 10); Hit("a1", "b1", 10);
         ledger.SetState("a0", "dead", 60); Hit("b0", "a1", 6); Hit("a1", "a2", 2); Hit("a1", "a1", 3); Hit(null, "b1", 5); Hit("unidentified", "b1", 7); Hit("a1", "b1", 99, "shield"); Hit("a1", "b1", 4, "armor");
         var snapshot = ledger.Snapshot(120); var a = snapshot.Teams.Single(t => t.Id == "A"); var b = snapshot.Teams.Single(t => t.Id == "B");
+        var survivors = GroupCombatPresentation.SurvivorTotals(snapshot.Units.Where(u => u.Team == "A"));
+        assert(survivors.output == 10 && survivors.taken == 11 && a.EnemyDamage == 30, "settlement retains deceased output in whole-team totals but excludes it from survivor totals");
+        assert(GroupCombatPresentation.SurvivorTotals(new[] {
+            new GroupCombatUnit { State = "downed", EnemyDamage = 7, DamageTaken = 9 },
+            new GroupCombatUnit { State = "escaped", EnemyDamage = 100, DamageTaken = 100 }
+        }) == (7d, 9d), "settlement counts living downed members while excluding units that left the map");
+        assert(Compile(Xml.Replace("<GroupCombat>", "<GroupCombat aiPolicy='battle'>")).Cases.Count == 1, "benchmark assault policy is accepted without replacing pawn think trees");
         assert(a.EnemyDamage == 30 && a.Damage.Mean == 10 && a.Damage.Median == 10 && a.Dps == 15 && a.MeanDps == 2.5 && a.MeanDamageTaken == 5.5, "known sequence computes team window DPS, living lifetime means and all-roster distribution");
+        assert(a.MeanOutput == 10 && new GroupCombatTeamResult().MeanOutput == 0, "average output divides total damage including deceased contributions by the initial roster and handles empty teams");
         assert(a.Damage.Min == 0 && a.Damage.MinIds.Single() == "a2" && a.Damage.MaxIds.Single() == "a0" && a.Dead == 1, "distribution extrema identify units including zero values and dead top damage dealer");
         assert(b.Taken.Median == 21 && b.DamageTaken == 42 && a.FriendlyDamage == 2 && a.SelfDamage == 3, "even median and taken totals include explicit environment/unknown/friendly/self categories");
         assert(snapshot.Matrix.Where(c => c.Victim == "B" && c.Channel == "pawn").Sum(c => c.Amount) == b.DamageTaken && snapshot.Matrix.Single(c => c.Channel == "shield").Amount == 99, "shield and armor channels never inflate main damage and matrix reconciles with total taken");
@@ -104,6 +116,14 @@ internal static class GroupCombatTests
         assert(absent.Units[0].AliveTicks == 60 && absent.Teams[0].MeanDps == 0 && absent.Teams[0].MeanDamageTaken == 0, "downed time counts but removed units leave live means with a finite zero for an empty team");
         lifetime.SetState("a", "standing", 120);
         assert(lifetime.Snapshot(180).Units[0].AliveTicks == 120, "re-entered units resume alive time without counting time off the battlefield");
+        assert(!lifetime.IsCameraTarget("a") && lifetime.Snapshot(180).Units[0].WasDowned && lifetime.IsCameraTarget("b"), "recovered pawns stay excluded from the camera while undowned participants remain eligible");
+        lifetime.SetState("b", "dead", 180);
+        lifetime.SetState("b", "standing", 180);
+        assert(!lifetime.IsCameraTarget("b") && lifetime.Snapshot(180).Units[1].WasDead, "resurrected pawns stay excluded from camera tracking");
+        var quickRecovery = new GroupCombatLedger(new[] { new GroupCombatUnit { Id = "a", Team = "A" }, new GroupCombatUnit { Id = "b", Team = "B" } }, names);
+        quickRecovery.MarkDowned("a"); quickRecovery.MarkDead("b");
+        assert(!quickRecovery.IsCameraTarget("a") && !quickRecovery.IsCameraTarget("b") && quickRecovery.Snapshot(0).Units.All(u => u.State == "standing"), "native downing and death notifications retain exclusions even before a state sample observes the event");
+        assert(new GroupCombatLedger(new[] { new GroupCombatUnit { Id = "a", Team = "A" }, new GroupCombatUnit { Id = "b", Team = "B" } }, names).IsCameraTarget("a"), "camera exclusion history resets for a new battle");
         foreach (var resolution in new[] { (800f, 600f), (1280f, 720f), (1920f, 1080f) })
         {
             var positions = new[] { (3f, 4f), (97f, 90f), (50f, 50f) };
@@ -134,15 +154,15 @@ internal static class GroupCombatTests
         var before = motion.X; motion.Step(-100, -50, 60, 20);
         assert(motion.X < before && motion.X > 50 && motion.Size < 43, "long focus gaps preserve a gradual position and zoom transition");
 
-        GroupCombatRoundResult State(params (string id, int standing, int downed)[] counts) => new GroupCombatRoundResult { ElapsedTicks = 100, Teams = counts.Select(c => new GroupCombatTeamResult { Id = c.id, Standing = c.standing, Downed = c.downed, Alive = c.standing + c.downed }).ToList() };
-        var ends = new GroupCombatEndRule(); var both = State(("A", 2, 0), ("B", 2, 0));
+        GroupCombatRoundResult State(params (string id, int standing, int downed)[] counts) => new GroupCombatRoundResult { ElapsedTicks = 100, Teams = counts.Select(c => new GroupCombatTeamResult { Id = c.id, Initial = c.standing + c.downed, Standing = c.standing, Downed = c.downed, Alive = c.standing + c.downed }).ToList() };
+        var ends = new GroupCombatEndRule(0); var both = State(("A", 2, 0), ("B", 2, 0));
         assert(!ends.Evaluate(both, 10800), "default battle window lasts 10800 ticks without an all-down elimination");
         var down = State(("A", 0, 3), ("B", 1, 0));
-        assert(new GroupCombatEndRule().Evaluate(down, 10800) && down.Teams[0].Outcome == "loss", "all downed loses immediately even though downed combatants are alive");
+        assert(new GroupCombatEndRule(0).Evaluate(down, 10800) && down.Teams[0].Outcome == "loss", "all downed loses immediately even though downed combatants are alive");
         var draw = State(("A", 0, 1), ("B", 0, 2));
-        assert(new GroupCombatEndRule().Evaluate(draw, 10800) && draw.Teams.All(t => t.Outcome == "draw"), "same tick mutual all-down yields a draw");
+        assert(new GroupCombatEndRule(0).Evaluate(draw, 10800) && draw.Teams.All(t => t.Outcome == "draw"), "same tick mutual all-down yields a draw");
         var timeout = State(("A", 1, 3), ("B", 2, 1)); timeout.ElapsedTicks = 10800;
-        assert(new GroupCombatEndRule().Evaluate(timeout, 10800) && timeout.Teams[0].Outcome == "win", "time-limit alive counts include downed and can favor a side with fewer standing members");
+        assert(new GroupCombatEndRule(0).Evaluate(timeout, 10800) && timeout.Teams[0].Outcome == "win", "time-limit alive counts include downed and can favor a side with fewer standing members");
         Reject(Xml.Replace("<Team id=\"B\" name=\"乙\" />", "<Team id=\"B\"/><Team id=\"C\"/>"), "group compiler rejects a third team under the two-side product scope");
 
     }

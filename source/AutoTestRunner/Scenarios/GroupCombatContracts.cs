@@ -28,6 +28,12 @@ namespace LogSyncMod.AutoTest.Scenarios
         public string KindLabel { get; set; }
         public string Name { get; set; }
         public string State { get; set; } = "standing";
+        public bool JoinedDuringBattle { get; set; }
+        public int JoinedAtTick { get; set; }
+        public bool PendingRevival { get; set; }
+        public bool WasDowned { get; set; }
+        public bool WasDead { get; set; }
+        public bool CameraEligible => State == "standing" && !WasDowned && !WasDead;
         public int X { get; set; }
         public int Z { get; set; }
         public string InitialSnapshot { get; set; }
@@ -90,12 +96,15 @@ namespace LogSyncMod.AutoTest.Scenarios
         public string Outcome { get; set; } = "undetermined";
         public int? EliminatedAtTick { get; set; }
         public int Initial { get; set; }
+        public int Joined { get; set; }
+        public int Total => Initial + Joined;
         public int Standing { get; set; }
         public int Downed { get; set; }
         public int Dead { get; set; }
         public int Escaped { get; set; }
         public int Removed { get; set; }
         public int Alive { get; set; }
+        public int PendingRevival { get; set; }
         public double EnemyDamage { get; set; }
         public double UnrosteredEnemyDamage { get; set; }
         public double FriendlyDamage { get; set; }
@@ -103,6 +112,7 @@ namespace LogSyncMod.AutoTest.Scenarios
         public double DamageTaken { get; set; }
         public double Dps { get; set; }
         public double MeanDps { get; set; }
+        public double MeanOutput => Total > 0 ? EnemyDamage / Total : 0;
         public double MeanDamageTaken { get; set; }
         public GroupCombatDistribution Damage { get; set; }
         public GroupCombatDistribution DpsDistribution { get; set; }

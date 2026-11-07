@@ -23,6 +23,20 @@ internal static class GroupCombatResultTests
         round.Events.AddRange(new[] { new GroupCombatDamageEvent { Id = 1, Amount = 10 }, new GroupCombatDamageEvent { Id = 2, Amount = 10 } });
         var report = new GroupCombatRunReport { RunId = "run", Status = "completed", Rounds = new List<GroupCombatRoundResult> { round }, PlannedRounds = new List<GroupCombatRoundInput> { new GroupCombatRoundInput { CaseId = round.CaseId } } };
         check(GroupCombatResultValidator.ValidateIntegrity(report) == null, "group numeric result independently reconciles initial roster, tick clock, matrix, totals, DPS and distributions");
+        var dynamicReport = JsonSerializer.Deserialize<GroupCombatRunReport>(JsonSerializer.Serialize(report))!;
+        var dynamicRound = dynamicReport.Rounds[0];
+        dynamicRound.Units.Add(new GroupCombatUnit { Id = "summon", Team = "A", JoinedDuringBattle = true, JoinedAtTick = 300 });
+        var dynamicTeam = dynamicRound.Teams[0];
+        dynamicTeam.Joined = 1; dynamicTeam.Standing++; dynamicTeam.Alive++; dynamicTeam.MeanDps = 1; dynamicTeam.MeanDamageTaken = 3;
+        var dynamicUnits = dynamicRound.Units.Where(u => u.Team == "A").ToList();
+        dynamicTeam.Damage = GroupCombatDistribution.Calculate(dynamicUnits.Select(u => KeyValuePair.Create(u.Id, u.EnemyDamage)));
+        dynamicTeam.DpsDistribution = GroupCombatDistribution.Calculate(dynamicUnits.Select(u => KeyValuePair.Create(u.Id, u.Dps)));
+        dynamicTeam.Taken = GroupCombatDistribution.Calculate(dynamicUnits.Select(u => KeyValuePair.Create(u.Id, u.DamageTaken)));
+        check(GroupCombatResultValidator.ValidateIntegrity(dynamicReport) == null && dynamicTeam.Total == 3 && dynamicTeam.MeanOutput == 10d / 3, "group validator reconciles initial plus spawned participants including a same-tick zero-lifetime summon");
+        dynamicRound.Units.Last().JoinedAtTick = 301;
+        check(GroupCombatResultValidator.ValidateIntegrity(dynamicReport) != null, "group validator rejects summon arrival after battle completion");
+        dynamicRound.Units.Last().JoinedAtTick = 300; dynamicTeam.Joined = 0;
+        check(GroupCombatResultValidator.ValidateIntegrity(dynamicReport) != null, "group validator rejects missing reinforcement population");
         void Reject(Action<GroupCombatRunReport> mutation, string message)
         {
             var changed = JsonSerializer.Deserialize<GroupCombatRunReport>(JsonSerializer.Serialize(report))!; mutation(changed);

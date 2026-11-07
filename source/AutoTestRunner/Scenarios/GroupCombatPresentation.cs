@@ -9,6 +9,12 @@ namespace LogSyncMod.AutoTest.Scenarios
     {
         public const float PanelTop = 116;
         public const float IntroDuration = 3.8f;
+        public const float SettlementDuration = 3f;
+        public static (double output, double taken) SurvivorTotals(IEnumerable<GroupCombatUnit> units)
+        {
+            var living = units.Where(u => u.Alive).ToList();
+            return (living.Sum(u => u.EnemyDamage), living.Sum(u => u.DamageTaken));
+        }
         public static float PanelWidth(float width) => Math.Min(width * .3f, Math.Clamp(width * .22f, 172f, 330f) * 1.5f);
         public static float PanelHeight(float height) => Math.Min(height - PanelTop - 160, 975);
         public static float ContentScale(float width, float height) => Math.Clamp(Math.Min(width / 330, height / 500), .75f, 1.5f);

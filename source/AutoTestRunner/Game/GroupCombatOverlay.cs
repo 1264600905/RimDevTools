@@ -52,6 +52,7 @@ namespace LogSyncMod.AutoTest
                     DrawTeam(new Rect(x, GroupCombatPresentation.PanelTop, panelWidth, panelHeight), snapshot.Teams[i], i);
                 }
                 if (GroupCombatService.ShowingIntro) DrawIntro(width, height, panelWidth);
+                if (GroupCombatService.ShowingSettlement) DrawSettlement(width, height, panelWidth);
                 if (verifyInput && Event.current.type == EventType.Repaint)
                 {
                     verifyInput = false;
@@ -76,6 +77,17 @@ namespace LogSyncMod.AutoTest
         }
         private static Color TeamColor(int index) => index == 0 ? new Color(.3f, .72f, 1f) : new Color(1f, .57f, .3f);
         private static string TeamLabel(int index) => index == 0 ? "A队" : "B队";
+        internal static Color NameColor(string state) => state switch
+        {
+            "standing" => new Color(.4f, 1f, .45f),
+            "downed" or "dead" => new Color(1f, .32f, .32f),
+            _ => Color.gray
+        };
+        private static void DrawName(Rect rect, string value, float size, string state)
+        {
+            var previous = GUI.color; GUI.color = NameColor(state);
+            DrawText(rect, value, size); GUI.color = previous;
+        }
         private static void DrawText(Rect rect, string value, float size, TextAnchor anchor = TextAnchor.UpperLeft)
         {
             var fontSize = Mathf.RoundToInt(size);
@@ -104,13 +116,17 @@ namespace LogSyncMod.AutoTest
                 var width = rect.width - padding * 2; var height = rect.height - padding * 2;
                 GUI.color = TeamColor(index); DrawText(new Rect(0, 0, width, 23 * scale), TeamLabel(index), 18 * scale); GUI.color = previousColor;
                 DrawText(new Rect(0, 24 * scale, width, 20 * scale), team.Name, 12 * scale);
-                DrawText(new Rect(0, 44 * scale, width, 20 * scale), "存活 " + team.Alive + "/" + team.Initial + "   倒地 " + team.Downed + "   死亡 " + team.Dead, 12 * scale);
+                DrawText(new Rect(0, 44 * scale, width, 20 * scale), "存活 " + team.Alive + "/" + team.Total + "   倒地 " + team.Downed + "   死亡 " + team.Dead, 12 * scale);
                 var groups = members.Where(u => u.Alive).GroupBy(u => u.Kind + "|" + u.Group).OrderByDescending(g => g.Count()).ThenBy(g => g.Key, StringComparer.Ordinal).ToList();
                 var y = 66 * scale;
+                if (team.Joined > 0)
+                {
+                    DrawText(new Rect(0, y, width, 20 * scale), "初始 " + team.Initial + "   新增 " + team.Joined + "   待复活 " + team.PendingRevival, 12 * scale); y += 21 * scale;
+                }
                 foreach (var group in groups.Take(5))
                 {
                     var representative = group.First(); DrawPortrait(new Rect(0, y, 20 * scale, 20 * scale), representative);
-                    DrawText(new Rect(24 * scale, y, width - 24 * scale, 20 * scale), (representative.KindLabel ?? representative.Kind) + " ×" + group.Count(), 12 * scale); y += 21 * scale;
+                    DrawName(new Rect(24 * scale, y, width - 24 * scale, 20 * scale), (representative.KindLabel ?? representative.Kind) + " ×" + group.Count(), 12 * scale, representative.State); y += 21 * scale;
                 }
                 if (groups.Count > 5 || groups.Count == 0)
                 {
@@ -119,12 +135,12 @@ namespace LogSyncMod.AutoTest
                 y += 8 * scale;
                 var rankWidth = (width - 8 * scale) / 2;
                 var rowHeight = Mathf.Min(39 * scale, (height - y - 86 * scale) / 10);
-                Ranking(0, rankWidth, y, rowHeight, scale, "输出 Top10", members, u => u.EnemyDamage, new Color(.25f, .65f, .9f), snapshot.Units.Max(u => u.EnemyDamage));
+                Ranking(0, rankWidth, y, rowHeight, scale, "累计输出 Top10", members, u => u.EnemyDamage, new Color(.25f, .65f, .9f), snapshot.Units.Max(u => u.EnemyDamage));
                 Ranking(rankWidth + 8 * scale, rankWidth, y, rowHeight, scale, "承伤 Top10", members, u => u.DamageTaken, new Color(.9f, .45f, .25f), snapshot.Units.Max(u => u.DamageTaken));
                 var footer = height - 60 * scale;
-                DrawText(new Rect(0, footer, width, 20 * scale), "存活人均 DPS " + team.MeanDps.ToString("F2") + "   承伤 " + team.MeanDamageTaken.ToString("F1"), 12 * scale);
-                DrawText(new Rect(0, footer + 20 * scale, width, 20 * scale), "团队 DPS " + team.Dps.ToString("F2") + "   总承伤 " + team.DamageTaken.ToString("F1"), 12 * scale);
-                DrawText(new Rect(0, footer + 40 * scale, width, 20 * scale), Label(team.Outcome) + "  ·  个人 DPS 按存活时间", 11 * scale);
+                DrawText(new Rect(0, footer, width, 20 * scale), "平均输出 " + team.MeanOutput.ToString("F1") + "   存活人均承伤 " + team.MeanDamageTaken.ToString("F1"), 12 * scale);
+                DrawText(new Rect(0, footer + 20 * scale, width, 20 * scale), "累计输出 " + team.EnemyDamage.ToString("F1") + "   总承伤 " + team.DamageTaken.ToString("F1"), 12 * scale);
+                DrawText(new Rect(0, footer + 40 * scale, width, 20 * scale), Label(team.Outcome) + "  ·  排名按存活期间累计伤害", 11 * scale);
             }
             finally { GUI.EndGroup(); }
         }
@@ -142,13 +158,13 @@ namespace LogSyncMod.AutoTest
                 var name = (++rank) + "." + unit.Name;
                 if (rowHeight >= 32 * uiScale)
                 {
-                    DrawText(new Rect(bar.x, y, bar.width, 19 * uiScale), name, 12 * uiScale);
+                    DrawName(new Rect(bar.x, y, bar.width, 19 * uiScale), name, 12 * uiScale, unit.State);
                     DrawText(new Rect(bar.x, y + 17 * uiScale, bar.width, rowHeight - 17 * uiScale), value(unit).ToString("F1") + " " + Label(unit.State), 12 * uiScale);
                 }
                 else
                 {
                     // Compact screens keep every rank visible on one line.
-                    DrawText(new Rect(bar.x, y, bar.width, rowHeight), rank + "." + unit.Name.Substring(0, Math.Min(3, unit.Name.Length)) + " " + value(unit).ToString("F0"), Mathf.Min(12 * uiScale, rowHeight - 2));
+                    DrawName(new Rect(bar.x, y, bar.width, rowHeight), rank + "." + unit.Name.Substring(0, Math.Min(3, unit.Name.Length)) + " " + value(unit).ToString("F0"), Mathf.Min(12 * uiScale, rowHeight - 2), unit.State);
                 }
                 y += rowHeight;
             }
@@ -189,7 +205,38 @@ namespace LogSyncMod.AutoTest
                 var cell = new Rect(rect.x + 8 + i % columns * cellWidth, rect.y + 64 + i / columns * cellHeight, cellWidth, cellHeight);
                 var icon = Mathf.Min(56, Mathf.Min(cell.height - 4, cell.width * .3f));
                 DrawPortrait(new Rect(cell.x, cell.y + (cell.height - icon) / 2, icon, icon), groups[i].First());
-                DrawText(new Rect(cell.x + icon + 5, cell.y, cell.width - icon - 5, cell.height), (groups[i].First().KindLabel ?? groups[i].First().Kind) + " ×" + groups[i].Count(), Mathf.Clamp(cellWidth / 17, 10, 20), TextAnchor.MiddleLeft);
+                DrawName(new Rect(cell.x + icon + 5, cell.y + (cell.height - 24) / 2, cell.width - icon - 5, 24), (groups[i].First().KindLabel ?? groups[i].First().Kind) + " ×" + groups[i].Count(), Mathf.Clamp(cellWidth / 17, 10, 20), groups[i].First().State);
+            }
+        }
+        private static void DrawSettlement(float width, float height, float panelWidth)
+        {
+            var cardWidth = Mathf.Min(width - 32, Mathf.Min(900, Mathf.Max(600, width - panelWidth * 2 - 40)));
+            var cardHeight = Mathf.Min(370, height - 230);
+            var rect = new Rect((width - cardWidth) / 2, (height - cardHeight) / 2, cardWidth, cardHeight);
+            Widgets.DrawBoxSolid(rect, new Color(.025f, .035f, .05f, .94f));
+            var font = Mathf.Clamp(cardWidth / 39, 12, 21);
+            DrawText(new Rect(rect.x, rect.y + 10, rect.width, 42), "战斗结算", font * 1.6f, TextAnchor.MiddleCenter);
+            DrawText(new Rect(rect.x, rect.y + 54, rect.width, 26), snapshot.SimulatedSeconds.ToString("F1") + " 秒 · 3秒后结束", font * .8f, TextAnchor.MiddleCenter);
+            for (var i = 0; i < snapshot.Teams.Count; i++)
+            {
+                var team = snapshot.Teams[i];
+                var members = snapshot.Units.Where(u => u.Team == team.Id).ToList();
+                var living = GroupCombatPresentation.SurvivorTotals(members);
+                var x = rect.x + 14 + i * cardWidth / 2;
+                var w = cardWidth / 2 - 28;
+                var previous = GUI.color; GUI.color = team.Outcome == "win" ? NameColor("standing") : team.Outcome == "loss" ? NameColor("dead") : Color.white;
+                DrawText(new Rect(x, rect.y + 88, w, 32), TeamLabel(i) + " · " + Label(team.Outcome), font * 1.3f, TextAnchor.MiddleCenter); GUI.color = previous;
+                var representative = members.OrderByDescending(u => u.EnemyDamage).FirstOrDefault();
+                if (representative != null) DrawPortrait(new Rect(x + (w - 52) / 2, rect.y + 126, 52, 52), representative);
+                var lines = new[] {
+                    "存活 " + team.Alive + "/" + team.Total + " · 倒地 " + team.Downed + " · 死亡 " + team.Dead,
+                    "全队累计输出  " + team.EnemyDamage.ToString("F1"),
+                    "全队累计承伤  " + team.DamageTaken.ToString("F1"),
+                    "存活成员输出  " + living.output.ToString("F1"),
+                    "存活成员承伤  " + living.taken.ToString("F1")
+                };
+                for (var row = 0; row < lines.Length; row++)
+                    DrawText(new Rect(x, rect.y + 188 + row * 31, w, 28), lines[row], font, TextAnchor.MiddleCenter);
             }
         }
         private static string Label(string state) => state switch { "standing" => "存活", "downed" => "倒地", "dead" => "死亡", "escaped" => "离场", "removed" => "移除", "win" => "胜利", "loss" => "落败", "draw" => "平局", "undetermined" => "进行中", "prepared" or "preparing" => "准备", "countdown" => "即将开战", "running" => "战斗", "finishing" => "结算", _ => state };

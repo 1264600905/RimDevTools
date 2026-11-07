@@ -38,6 +38,7 @@ namespace LogSyncMod.AutoTest
         internal static void Clear() { stack?.Clear(); }
         internal static Invocation Begin(Thing victim, DamageInfo info)
         {
+            if (probe == null) { GroupCombatService.NotifySpawn(victim as Pawn); GroupCombatService.NotifySpawn(info.Instigator as Pawn); }
             var ledger = ActiveLedger;
             if (ledger == null || victim.MapHeld != (probe?.Map ?? GroupCombatService.Map) && Id(victim) == null) return null;
             stack ??= new Stack<Invocation>();
@@ -108,6 +109,41 @@ namespace LogSyncMod.AutoTest
         private static void Postfix(DamageWorker.DamageResult __result, GroupCombatDamageCapture.Invocation __state) => GroupCombatDamageCapture.Complete(__state, __result);
         [HarmonyFinalizer]
         private static void Finalizer(Exception __exception, GroupCombatDamageCapture.Invocation __state) => GroupCombatDamageCapture.End(__state, __exception);
+    }
+
+    [HarmonyPatch(typeof(Pawn), nameof(Pawn.SpawnSetup))]
+    internal static class GroupCombat_Spawn_Patch
+    {
+        [HarmonyPostfix]
+        private static void Postfix(Pawn __instance) => GroupCombatService.NotifySpawn(__instance);
+    }
+
+    [HarmonyPatch(typeof(Pawn), nameof(Pawn.SetFaction))]
+    internal static class GroupCombat_Faction_Patch
+    {
+        [HarmonyPostfix]
+        private static void Postfix(Pawn __instance) => GroupCombatService.NotifySpawn(__instance);
+    }
+
+    [HarmonyPatch(typeof(ResurrectionUtility), nameof(ResurrectionUtility.TryResurrect))]
+    internal static class GroupCombat_Resurrect_Patch
+    {
+        [HarmonyPostfix]
+        private static void Postfix(Pawn pawn, bool __result) { if (__result) GroupCombatService.NotifySpawn(pawn); }
+    }
+
+    [HarmonyPatch(typeof(Pawn_HealthTracker), "MakeDowned")]
+    internal static class GroupCombat_Downed_Patch
+    {
+        [HarmonyPostfix]
+        private static void Postfix(Pawn ___pawn) { if (___pawn.Downed) GroupCombatService.NotifyDowned(___pawn); }
+    }
+
+    [HarmonyPatch(typeof(Pawn), nameof(Pawn.Kill))]
+    internal static class GroupCombat_Dead_Patch
+    {
+        [HarmonyPostfix]
+        private static void Postfix(Pawn __instance) { if (__instance.Dead) GroupCombatService.NotifyDead(__instance); }
     }
 
     [HarmonyPatch(typeof(Pawn), "ExitMap")]

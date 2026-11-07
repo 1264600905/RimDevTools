@@ -29,6 +29,14 @@ namespace LogSyncMod.AutoTest.Scenarios
         }
 
         public long NextEventId() => ++sequence;
+        public bool AddUnit(GroupCombatUnit unit, int elapsedTicks)
+        {
+            if (elapsedTicks < snapshotTick || !teams.ContainsKey(unit.Team)) throw new ArgumentException("Invalid reinforcement team or arrival tick");
+            if (units.ContainsKey(unit.Id)) return false;
+            unit.JoinedDuringBattle = true; unit.JoinedAtTick = elapsedTicks; unit.AliveTicks = 0;
+            units.Add(unit.Id, unit); observedTicks[unit.Id] = elapsedTicks;
+            return true;
+        }
         public void Record(GroupCombatDamageEvent hit)
         {
             if (!double.IsFinite(hit.Amount) || hit.Amount < 0 || !double.IsFinite(hit.RawAmount) || hit.RawAmount < 0) { invalidEvents++; return; }
@@ -68,7 +76,15 @@ namespace LogSyncMod.AutoTest.Scenarios
             if (!new[] { "standing", "downed", "dead", "escaped", "removed" }.Contains(state)) throw new ArgumentException("Unknown roster state " + state);
             Advance(units[id], elapsedTicks ?? snapshotTick);
             units[id].State = state;
+            if (state == "downed") MarkDowned(id);
+            if (state == "dead") MarkDead(id);
         }
+
+        // Preserve history even if a native recovery/resurrection happens in the same tick.
+        public void MarkDowned(string id) { if (units.TryGetValue(id, out var unit)) unit.WasDowned = true; }
+        public void MarkDead(string id) { if (units.TryGetValue(id, out var unit)) unit.WasDead = true; }
+        public bool IsCameraTarget(string id) => units.TryGetValue(id, out var unit) && unit.CameraEligible;
+        public void SetPendingRevival(string id, bool pending) => units[id].PendingRevival = pending;
 
         private void Advance(GroupCombatUnit unit, int tick)
         {
@@ -91,8 +107,9 @@ namespace LogSyncMod.AutoTest.Scenarios
             foreach (var team in teams.Values)
             {
                 var members = units.Values.Where(u => u.Team == team.Id).ToList();
-                team.Initial = members.Count; team.Standing = members.Count(u => u.State == "standing"); team.Downed = members.Count(u => u.State == "downed"); team.Dead = members.Count(u => u.State == "dead"); team.Escaped = members.Count(u => u.State == "escaped"); team.Removed = members.Count(u => u.State == "removed"); team.Alive = team.Standing + team.Downed;
+                team.Initial = members.Count(u => !u.JoinedDuringBattle); team.Joined = members.Count(u => u.JoinedDuringBattle); team.Standing = members.Count(u => u.State == "standing"); team.Downed = members.Count(u => u.State == "downed"); team.Dead = members.Count(u => u.State == "dead"); team.Escaped = members.Count(u => u.State == "escaped"); team.Removed = members.Count(u => u.State == "removed"); team.Alive = team.Standing + team.Downed;
                 var living = members.Where(u => u.Alive).ToList();
+                team.PendingRevival = members.Count(u => u.PendingRevival);
                 team.Dps = seconds > 0 ? team.EnemyDamage / seconds : 0;
                 team.MeanDps = living.Count > 0 ? living.Average(u => u.Dps) : 0;
                 team.MeanDamageTaken = living.Count > 0 ? living.Average(u => u.DamageTaken) : 0;
@@ -113,26 +130,40 @@ namespace LogSyncMod.AutoTest.Scenarios
             return result;
         }
 
-        private static GroupCombatUnit CopyUnit(GroupCombatUnit u) => new GroupCombatUnit { Id = u.Id, NativeId = u.NativeId, Team = u.Team, Group = u.Group, GroupName = u.GroupName, Kind = u.Kind, KindLabel = u.KindLabel, Name = u.Name, State = u.State, X = u.X, Z = u.Z, InitialSnapshot = u.InitialSnapshot, EnemyDamage = u.EnemyDamage, FriendlyDamage = u.FriendlyDamage, SelfDamage = u.SelfDamage, DamageTaken = u.DamageTaken, AliveTicks = u.AliveTicks, Dps = u.Dps };
+        private static GroupCombatUnit CopyUnit(GroupCombatUnit u) => new GroupCombatUnit { Id = u.Id, NativeId = u.NativeId, Team = u.Team, Group = u.Group, GroupName = u.GroupName, Kind = u.Kind, KindLabel = u.KindLabel, Name = u.Name, State = u.State, JoinedDuringBattle = u.JoinedDuringBattle, JoinedAtTick = u.JoinedAtTick, PendingRevival = u.PendingRevival, WasDowned = u.WasDowned, WasDead = u.WasDead, X = u.X, Z = u.Z, InitialSnapshot = u.InitialSnapshot, EnemyDamage = u.EnemyDamage, FriendlyDamage = u.FriendlyDamage, SelfDamage = u.SelfDamage, DamageTaken = u.DamageTaken, AliveTicks = u.AliveTicks, Dps = u.Dps };
         private static GroupCombatDistribution CopyDistribution(GroupCombatDistribution d) => new GroupCombatDistribution { Count = d.Count, Min = d.Min, Max = d.Max, Mean = d.Mean, Median = d.Median, MinIds = d.MinIds.ToList(), MaxIds = d.MaxIds.ToList() };
-        private static GroupCombatTeamResult CopyTeam(GroupCombatTeamResult t) => new GroupCombatTeamResult { Id = t.Id, Name = t.Name, Outcome = t.Outcome, EliminatedAtTick = t.EliminatedAtTick, Initial = t.Initial, Standing = t.Standing, Downed = t.Downed, Dead = t.Dead, Escaped = t.Escaped, Removed = t.Removed, Alive = t.Alive, EnemyDamage = t.EnemyDamage, UnrosteredEnemyDamage = t.UnrosteredEnemyDamage, FriendlyDamage = t.FriendlyDamage, SelfDamage = t.SelfDamage, DamageTaken = t.DamageTaken, Dps = t.Dps, MeanDps = t.MeanDps, MeanDamageTaken = t.MeanDamageTaken, Damage = CopyDistribution(t.Damage), DpsDistribution = CopyDistribution(t.DpsDistribution), Taken = CopyDistribution(t.Taken) };
+        private static GroupCombatTeamResult CopyTeam(GroupCombatTeamResult t) => new GroupCombatTeamResult { Id = t.Id, Name = t.Name, Outcome = t.Outcome, EliminatedAtTick = t.EliminatedAtTick, Initial = t.Initial, Joined = t.Joined, Standing = t.Standing, Downed = t.Downed, Dead = t.Dead, Escaped = t.Escaped, Removed = t.Removed, Alive = t.Alive, PendingRevival = t.PendingRevival, EnemyDamage = t.EnemyDamage, UnrosteredEnemyDamage = t.UnrosteredEnemyDamage, FriendlyDamage = t.FriendlyDamage, SelfDamage = t.SelfDamage, DamageTaken = t.DamageTaken, Dps = t.Dps, MeanDps = t.MeanDps, MeanDamageTaken = t.MeanDamageTaken, Damage = CopyDistribution(t.Damage), DpsDistribution = CopyDistribution(t.DpsDistribution), Taken = CopyDistribution(t.Taken) };
         private static GroupCombatDamageEvent CopyEvent(GroupCombatDamageEvent e) => new GroupCombatDamageEvent { Id = e.Id, ParentId = e.ParentId, Tick = e.Tick, SourceId = e.SourceId, VictimId = e.VictimId, SourceTeam = e.SourceTeam, VictimTeam = e.VictimTeam, DamageDef = e.DamageDef, WeaponDef = e.WeaponDef, Channel = e.Channel, Attribution = e.Attribution, Amount = e.Amount, RawAmount = e.RawAmount, Absorbed = e.Absorbed, Note = e.Note };
     }
 
     public sealed class GroupCombatEndRule
     {
         private readonly Dictionary<string, int> eliminated = new Dictionary<string, int>();
+        private readonly Dictionary<string, int> totals = new Dictionary<string, int>();
+        private readonly int confirmationTicks;
+        public GroupCombatEndRule(int confirmationTicks = 300)
+        {
+            if (confirmationTicks < 0) throw new ArgumentOutOfRangeException(nameof(confirmationTicks));
+            this.confirmationTicks = confirmationTicks;
+        }
         public bool Evaluate(GroupCombatRoundResult current, int durationTicks)
         {
             foreach (var team in current.Teams)
             {
-                if (team.Standing == 0 && !eliminated.ContainsKey(team.Id)) eliminated.Add(team.Id, current.ElapsedTicks);
+                var defeated = team.Total > 0 && team.Downed + team.Dead == team.Total && team.PendingRevival == 0;
+                if (totals.TryGetValue(team.Id, out var previous) && previous != team.Total) eliminated.Remove(team.Id);
+                totals[team.Id] = team.Total;
+                if (defeated && !eliminated.ContainsKey(team.Id)) eliminated.Add(team.Id, current.ElapsedTicks);
+                if (!defeated) { eliminated.Remove(team.Id); team.EliminatedAtTick = null; }
                 if (eliminated.TryGetValue(team.Id, out var tick)) team.EliminatedAtTick = tick;
             }
-            var active = current.Teams.Where(t => !eliminated.ContainsKey(t.Id)).ToList();
+            var active = current.Teams.Where(t => !eliminated.TryGetValue(t.Id, out var since) || current.ElapsedTicks - since < confirmationTicks).ToList();
+            if (eliminated.Count == current.Teams.Count && active.Count > 0 && current.ElapsedTicks < durationTicks) return false;
             if (active.Count > 1 && current.ElapsedTicks < durationTicks) return false;
-            current.EndReason = active.Count <= 1 ? "allDowned" : "timeLimit";
-            var winners = active.Count == 0 ? current.Teams.Where(t => t.EliminatedAtTick == current.ElapsedTicks).ToList() : active.Where(t => t.Alive == active.Max(a => a.Alive)).ToList();
+            var timeLimit = current.ElapsedTicks >= durationTicks;
+            if (timeLimit) active = current.Teams.ToList();
+            current.EndReason = timeLimit ? "timeLimit" : "allDowned";
+            var winners = active.Count == 0 ? current.Teams.ToList() : active.Where(t => t.Alive == active.Max(a => a.Alive)).ToList();
             foreach (var team in current.Teams) team.Outcome = winners.Contains(team) ? winners.Count > 1 ? "draw" : "win" : "loss";
             return true;
         }

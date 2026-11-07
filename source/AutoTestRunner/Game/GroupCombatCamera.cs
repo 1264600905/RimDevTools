@@ -39,7 +39,7 @@ namespace LogSyncMod.AutoTest
         private static void Postfix()
         {
             if (!Active || GroupCombatService.Map == null || Find.CurrentMap != GroupCombatService.Map) return;
-            var pawns = GroupCombatService.Pawns.Values.Where(p => p.Spawned && p.Map == GroupCombatService.Map && !p.Dead).ToList();
+            var pawns = GroupCombatService.CameraPawns.ToList();
             if (pawns.Count == 0) return; // Hold the last view for mutual elimination/final capture.
             var frame = GroupCombatPresentation.Frame(pawns.Select(p => (p.DrawPos.x, p.DrawPos.z)), UI.screenWidth, UI.screenHeight, GroupCombatService.OverlayEnabled);
             var position = new Vector3(frame.x, 0, frame.z);
@@ -75,9 +75,9 @@ namespace LogSyncMod.AutoTest
             get
             {
                 var camera = Find.CameraDriver.MyCamera;
-                var points = GroupCombatService.Pawns.Values.Where(p => p.Spawned && p.Map == GroupCombatService.Map && !p.Dead).Select(p => camera.WorldToViewportPoint(p.DrawPos)).ToList();
+                var points = GroupCombatService.CameraPawns.Select(p => camera.WorldToViewportPoint(p.DrawPos)).ToList();
                 var inset = GroupCombatService.OverlayEnabled ? (GroupCombatPresentation.PanelWidth(UI.screenWidth) + 16) / UI.screenWidth : 0;
-                return new { active = Active, rootSize = Find.CameraDriver.RootSize, targetRootSize = rootSize, orthographicSize = camera.orthographicSize, x = camera.transform.position.x, z = camera.transform.position.z, living = points.Count, visible = points.Count(p => p.z > 0 && p.x >= 0 && p.x <= 1 && p.y >= 0 && p.y <= 1), betweenPanels = points.Count(p => p.z > 0 && p.x >= inset && p.x <= 1 - inset && p.y >= 90f / UI.screenHeight && p.y <= 1 - (GroupCombatPresentation.PanelTop + 6) / UI.screenHeight) };
+                return new { active = Active, rootSize = Find.CameraDriver.RootSize, targetRootSize = rootSize, orthographicSize = camera.orthographicSize, x = camera.transform.position.x, z = camera.transform.position.z, living = GroupCombatService.Pawns.Values.Count(p => p.Spawned && p.Map == GroupCombatService.Map && !p.Dead), tracked = points.Count, visible = points.Count(p => p.z > 0 && p.x >= 0 && p.x <= 1 && p.y >= 0 && p.y <= 1), betweenPanels = points.Count(p => p.z > 0 && p.x >= inset && p.x <= 1 - inset && p.y >= 90f / UI.screenHeight && p.y <= 1 - (GroupCombatPresentation.PanelTop + 6) / UI.screenHeight) };
             }
         }
     }

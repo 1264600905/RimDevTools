@@ -51,14 +51,17 @@ namespace LogSyncMod.AutoTest.Scenarios
             if (settings == null) Fail(c, path, "GroupCombat configuration is required");
             void Fixed(XElement e, string field, string value) { if (e?.Attribute(field) != null && A(e, field) != value) Fail(e, path, field + " must be " + value); }
             Fixed(c, "kind", "groupCombat"); Fixed(settings, "start", "simultaneous");
-            if (!new[] { "seekAndAttack", "assaultThings", "assaultColony", "defendPoint", "native" }.Contains(A(settings, "aiPolicy", "assaultThings"))) Fail(settings, path, "aiPolicy must be seekAndAttack/assaultThings/assaultColony/defendPoint");
+            if (!new[] { "battle", "seekAndAttack", "assaultThings", "assaultColony", "defendPoint", "native" }.Contains(A(settings, "aiPolicy", "battle"))) Fail(settings, path, "aiPolicy must be battle/seekAndAttack/assaultThings/assaultColony/defendPoint/native");
             if (!new[] { "normal", "fast", "superfast" }.Contains(A(settings, "timeSpeed", "normal"))) Fail(settings, path, "timeSpeed must be normal/fast/superfast");
             var duration = D(settings, "durationSeconds", 180);
             if (!double.IsFinite(duration) || duration <= 0 || duration > 86400) Fail(settings, path, "durationSeconds must be finite and in (0,86400]");
             if (D(c, "timeoutRealSeconds", 600) <= 0) Fail(c, path, "timeoutRealSeconds must be positive");
             var end = settings.Element("End"); Fixed(end, "condition", "oneSideAllDowned"); Fixed(end, "onTimeLimit", "fewestAliveLoses"); Fixed(end, "onTie", "draw");
+            if (I(end, "confirmationTicks", 300) < 0 || I(end, "confirmationTicks", 300) > 36000) Fail(end, path, "confirmationTicks must be 0..36000");
             var metrics = settings.Element("Metrics");
-            Fixed(metrics, "damageBasis", "engineSettled"); Fixed(metrics, "dpsBasis", "unitLifetime"); Fixed(metrics, "teamDpsBasis", "battleWindow"); Fixed(metrics, "meanPopulation", "aliveOnMap"); Fixed(metrics, "population", "initialRoster"); Fixed(metrics, "includeZeroValues", "true"); Fixed(metrics, "distributions", "min,max,mean,median");
+            // Keep old inputs loadable while freezing an accurate dynamic population tag.
+            if (A(metrics, "population") == "initialRoster") metrics.SetAttributeValue("population", "registeredRoster");
+            Fixed(metrics, "damageBasis", "engineSettled"); Fixed(metrics, "dpsBasis", "unitLifetime"); Fixed(metrics, "teamDpsBasis", "battleWindow"); Fixed(metrics, "meanPopulation", "aliveOnMap"); Fixed(metrics, "population", "registeredRoster"); Fixed(metrics, "includeZeroValues", "true"); Fixed(metrics, "distributions", "min,max,mean,median");
             if (I(metrics, "detailLimit", 10000) < 0 || I(metrics, "detailLimit", 10000) > 1000000) Fail(metrics, path, "detailLimit must be 0..1000000");
             if (!new[] { "true", "false" }.Contains(A(metrics, "requireCompleteAttribution", "false"))) Fail(metrics, path, "requireCompleteAttribution must be true/false");
             var overlay = settings.Element("Overlay");
@@ -75,8 +78,8 @@ namespace LogSyncMod.AutoTest.Scenarios
             foreach (var team in teams)
             {
                 Fixed(team, "factionSource", "temporary"); if (team.Attribute("factionDef") != null) Fail(team, path, "GroupCombat creates isolated temporary factions, factionDef is not accepted");
-                var ai = A(team, "ai", A(settings, "aiPolicy", "assaultThings"));
-                if (!new[] { "seekAndAttack", "assaultThings", "assaultColony", "defendPoint", "native" }.Contains(ai)) Fail(team, path, "team ai must be seekAndAttack/assaultThings/assaultColony/defendPoint");
+                var ai = A(team, "ai", A(settings, "aiPolicy", "battle"));
+                if (!new[] { "battle", "seekAndAttack", "assaultThings", "assaultColony", "defendPoint", "native" }.Contains(ai)) Fail(team, path, "team ai must be battle/seekAndAttack/assaultThings/assaultColony/defendPoint/native");
                 if (ai != "defendPoint" && team.Attributes().Any(a => a.Name.LocalName.StartsWith("defend", StringComparison.Ordinal))) Fail(team, path, "defend coordinates/radius require ai=defendPoint");
                 if (ai == "defendPoint" && (I(team, "defendX", 0) < 0 || I(team, "defendZ", 0) < 0 || I(team, "defendX", 0) >= I(c.Element("Scene"), "sizeX", 50) || I(team, "defendZ", 0) >= I(c.Element("Scene"), "sizeZ", 50) || D(team, "defendRadius", 28) <= 0 || !double.IsFinite(D(team, "defendRadius", 28)))) Fail(team, path, "invalid defend point/radius");
             }
