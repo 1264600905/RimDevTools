@@ -22,12 +22,12 @@
       <PawnGroup id="riflemen" template="rifleman" team="rifles" count="20" originX="24" originZ="42" formation="grid" columns="4" spacing="3"/>
       <PawnGroup id="smgmen" template="smg" team="smgs" count="20" originX="62" originZ="42" formation="grid" columns="4" spacing="3"/>
     </Actors>
-    <GroupCombat start="simultaneous" timeSpeed="fast">
+    <GroupCombat start="simultaneous" timeSpeed="normal">
       <End condition="oneSideAllDowned" onTimeLimit="fewestAliveLoses" onTie="draw" />
-      <Metrics damageBasis="engineSettled" dpsBasis="battleWindow" population="initialRoster" includeZeroValues="true" distributions="min,max,mean,median" />
+      <Metrics damageBasis="engineSettled" dpsBasis="unitLifetime" teamDpsBasis="battleWindow" meanPopulation="aliveOnMap" population="initialRoster" includeZeroValues="true" distributions="min,max,mean,median" />
       <Overlay enabled="true" layout="teamsLeftRight" topUnitsPerMetric="10" topTypesPerTeam="5" humanPortrait="renderedPawn" refreshRealMilliseconds="250">
         <Rankings damageDealt="true" damageTaken="true" />
-        <Summary dps="battleWindowMeanPerInitialUnit" damageTaken="totalAndMeanPerInitialUnit" />
+        <Summary dps="livingUnitLifetimeMean" damageTaken="totalAndMeanPerLivingUnit" />
       </Overlay>
     </GroupCombat>
     <Output purpose="benchmark" showAllParticipants="true" />

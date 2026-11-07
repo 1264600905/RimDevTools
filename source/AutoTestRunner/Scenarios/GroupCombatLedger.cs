@@ -17,6 +17,8 @@ namespace LogSyncMod.AutoTest.Scenarios
         private long sequence;
         private long events;
         private long invalidEvents;
+        private readonly Dictionary<string, int> observedTicks = new Dictionary<string, int>();
+        private int snapshotTick;
         public GroupCombatLedger(IEnumerable<GroupCombatUnit> roster, IEnumerable<KeyValuePair<string, string>> teamNames, int detailLimit = 10000)
         {
             if (detailLimit < 0) throw new ArgumentOutOfRangeException(nameof(detailLimit));
@@ -61,22 +63,39 @@ namespace LogSyncMod.AutoTest.Scenarios
             if (details.Count < detailLimit) details.Add(hit);
         }
 
-        public void SetState(string id, string state)
+        public void SetState(string id, string state, int? elapsedTicks = null)
         {
             if (!new[] { "standing", "downed", "dead", "escaped", "removed" }.Contains(state)) throw new ArgumentException("Unknown roster state " + state);
+            Advance(units[id], elapsedTicks ?? snapshotTick);
             units[id].State = state;
+        }
+
+        private void Advance(GroupCombatUnit unit, int tick)
+        {
+            observedTicks.TryGetValue(unit.Id, out var previous);
+            if (tick < previous) throw new ArgumentOutOfRangeException(nameof(tick), "Unit lifetime clock cannot move backwards");
+            if (unit.Alive) unit.AliveTicks += tick - previous;
+            observedTicks[unit.Id] = tick;
         }
 
         public GroupCombatRoundResult Snapshot(int elapsedTicks, bool includeEventDetails = true)
         {
             if (elapsedTicks < 0) throw new ArgumentOutOfRangeException(nameof(elapsedTicks));
+            snapshotTick = elapsedTicks;
             var seconds = elapsedTicks / 60d;
-            foreach (var unit in units.Values) unit.Dps = seconds > 0 ? unit.EnemyDamage / seconds : 0;
+            foreach (var unit in units.Values)
+            {
+                Advance(unit, elapsedTicks);
+                unit.Dps = unit.AliveTicks > 0 ? unit.EnemyDamage * 60d / unit.AliveTicks : 0;
+            }
             foreach (var team in teams.Values)
             {
                 var members = units.Values.Where(u => u.Team == team.Id).ToList();
                 team.Initial = members.Count; team.Standing = members.Count(u => u.State == "standing"); team.Downed = members.Count(u => u.State == "downed"); team.Dead = members.Count(u => u.State == "dead"); team.Escaped = members.Count(u => u.State == "escaped"); team.Removed = members.Count(u => u.State == "removed"); team.Alive = team.Standing + team.Downed;
-                team.Dps = seconds > 0 ? team.EnemyDamage / seconds : 0; team.MeanDps = team.Dps / team.Initial; team.MeanDamageTaken = team.DamageTaken / team.Initial;
+                var living = members.Where(u => u.Alive).ToList();
+                team.Dps = seconds > 0 ? team.EnemyDamage / seconds : 0;
+                team.MeanDps = living.Count > 0 ? living.Average(u => u.Dps) : 0;
+                team.MeanDamageTaken = living.Count > 0 ? living.Average(u => u.DamageTaken) : 0;
                 team.Damage = GroupCombatDistribution.Calculate(members.Select(u => new KeyValuePair<string, double>(u.Id, u.EnemyDamage)));
                 team.DpsDistribution = GroupCombatDistribution.Calculate(members.Select(u => new KeyValuePair<string, double>(u.Id, u.Dps)));
                 team.Taken = GroupCombatDistribution.Calculate(members.Select(u => new KeyValuePair<string, double>(u.Id, u.DamageTaken)));
@@ -94,7 +113,7 @@ namespace LogSyncMod.AutoTest.Scenarios
             return result;
         }
 
-        private static GroupCombatUnit CopyUnit(GroupCombatUnit u) => new GroupCombatUnit { Id = u.Id, NativeId = u.NativeId, Team = u.Team, Group = u.Group, GroupName = u.GroupName, Kind = u.Kind, KindLabel = u.KindLabel, Name = u.Name, State = u.State, X = u.X, Z = u.Z, InitialSnapshot = u.InitialSnapshot, EnemyDamage = u.EnemyDamage, FriendlyDamage = u.FriendlyDamage, SelfDamage = u.SelfDamage, DamageTaken = u.DamageTaken, Dps = u.Dps };
+        private static GroupCombatUnit CopyUnit(GroupCombatUnit u) => new GroupCombatUnit { Id = u.Id, NativeId = u.NativeId, Team = u.Team, Group = u.Group, GroupName = u.GroupName, Kind = u.Kind, KindLabel = u.KindLabel, Name = u.Name, State = u.State, X = u.X, Z = u.Z, InitialSnapshot = u.InitialSnapshot, EnemyDamage = u.EnemyDamage, FriendlyDamage = u.FriendlyDamage, SelfDamage = u.SelfDamage, DamageTaken = u.DamageTaken, AliveTicks = u.AliveTicks, Dps = u.Dps };
         private static GroupCombatDistribution CopyDistribution(GroupCombatDistribution d) => new GroupCombatDistribution { Count = d.Count, Min = d.Min, Max = d.Max, Mean = d.Mean, Median = d.Median, MinIds = d.MinIds.ToList(), MaxIds = d.MaxIds.ToList() };
         private static GroupCombatTeamResult CopyTeam(GroupCombatTeamResult t) => new GroupCombatTeamResult { Id = t.Id, Name = t.Name, Outcome = t.Outcome, EliminatedAtTick = t.EliminatedAtTick, Initial = t.Initial, Standing = t.Standing, Downed = t.Downed, Dead = t.Dead, Escaped = t.Escaped, Removed = t.Removed, Alive = t.Alive, EnemyDamage = t.EnemyDamage, UnrosteredEnemyDamage = t.UnrosteredEnemyDamage, FriendlyDamage = t.FriendlyDamage, SelfDamage = t.SelfDamage, DamageTaken = t.DamageTaken, Dps = t.Dps, MeanDps = t.MeanDps, MeanDamageTaken = t.MeanDamageTaken, Damage = CopyDistribution(t.Damage), DpsDistribution = CopyDistribution(t.DpsDistribution), Taken = CopyDistribution(t.Taken) };
         private static GroupCombatDamageEvent CopyEvent(GroupCombatDamageEvent e) => new GroupCombatDamageEvent { Id = e.Id, ParentId = e.ParentId, Tick = e.Tick, SourceId = e.SourceId, VictimId = e.VictimId, SourceTeam = e.SourceTeam, VictimTeam = e.VictimTeam, DamageDef = e.DamageDef, WeaponDef = e.WeaponDef, Channel = e.Channel, Attribution = e.Attribution, Amount = e.Amount, RawAmount = e.RawAmount, Absorbed = e.Absorbed, Note = e.Note };

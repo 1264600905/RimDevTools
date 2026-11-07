@@ -952,8 +952,8 @@ public static class SettingsEditor
             : Remove(settings, "autoTestTargetDefNames");
         if (auto && batchSize.HasValue) changed |= Set(settings, "autoTestBatchSize", Math.Max(1, batchSize.Value).ToString());
         changed |= Set(settings, "autoTestCaptureScreenshots", "True");
-        changed |= Set(settings, "autoTestPreventPause", "True");
-        changed |= Set(settings, "autoTestUseFastSpeed", "True");
+        changed |= Set(settings, "autoTestPreventPause", mode == "groupcombat" ? "False" : "True");
+        changed |= Set(settings, "autoTestUseFastSpeed", mode == "groupcombat" ? "False" : "True");
         changed |= Set(settings, "testMuteAudio", muteAudio == true ? "True" : "False");
         changed |= Set(settings, "testSessionActive", string.IsNullOrWhiteSpace(runId) ? "False" : "True");
         changed |= Set(settings, "testSessionKind", string.IsNullOrWhiteSpace(runId) ? "" : mode);

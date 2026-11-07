@@ -29,6 +29,10 @@ namespace LogSyncMod.AutoTest
                     case "verify-groupcombat-data": try { result = GroupCombatDataProbe.Run(); } finally { global::LogSyncMod.TestSessionCompletion.Complete("manual", global::LogSyncMod.LogSyncMod.settings?.autoTestRunId); } break;
                     case "verify-groupcombat-unique-map": try { result = GroupCombatDataProbe.RunUniqueMap(); } finally { global::LogSyncMod.TestSessionCompletion.Complete("manual", global::LogSyncMod.LogSyncMod.settings?.autoTestRunId); } break;
                     case "groupcombat-status": result = GroupCombatService.Status; break;
+                    case "verify-groupcombat-overlay":
+                        if (!GroupCombatService.Measuring) throw new InvalidOperationException("Overlay verification requires a running groupcombat round");
+                        GroupCombatOverlay.RequestInputVerification(); result = new { requested = true }; break;
+                    case "verify-groupcombat-speed": GroupCombatService.SetVerificationSpeed(Text("speed")); result = GroupCombatService.Status; break;
                     case "groupcombat-cancel": GroupCombatService.Cancel(); result = new { requested = true }; break;
                     case "verify-groupcombat-execution-fault": GroupCombatService.VerifyExecutionFailure(); result = new { requested = true }; break;
                     case "verify-pawn-data": try { result = TemporaryPawnDataProbe.Run(); } finally { global::LogSyncMod.TestSessionCompletion.Complete("manual", global::LogSyncMod.LogSyncMod.settings?.autoTestRunId); } break;

@@ -50,7 +50,7 @@ RimDevTools.exe test run --mode groupcombat --scenario-path AutoTest.Core.Tests/
 
 普通原生行为和模组行为仍可能逃离，结果单列 escaped。不会新增召唤物归属或阵营转换规则。
 
-GroupCombat 的 `timeSpeed` 接受 normal、fast、superfast；durationSeconds 默认 180（10800 ticks），支持 `(0,86400]`。Case 的 timeoutRealSeconds 是独立实际时间上限。所有成员准备完毕并拍完初始图后才开始共同计时和战斗；暂停不增加 DPS 分母。
+GroupCombat 的 `timeSpeed` 默认 `normal`（一倍速），接受 normal、fast、superfast，例如 `<GroupCombat timeSpeed="fast"/>`。durationSeconds 默认 180（10800 ticks），支持 `(0,86400]`。群战期间允许使用原生暂停和速度控制；暂停时战斗计时、存活计时、DPS 分母和 Case 的 timeoutRealSeconds 均暂停。CLI 的 timeout-seconds 仍是整个进程的独立实际时间上限。所有成员准备完毕并拍完初始图后才开始共同计时和战斗。
 
 一方站立数为零即落败，同 tick 双方全倒为平局。达到模拟时限时比较仍在场的活人数（含倒地）；少者落败，相等平局。死亡、逃离、未知移除分开记录。没有无伤害提前结束策略。
 
@@ -71,15 +71,21 @@ Templates 可引用第三批暂存角色：`<PawnTemplate id="staged" file="../.
 
 ## 榜单与输出
 
-每方半透明面板显示：存活编组前五种及数量、独立的输出/承伤 Top10、实际角色渲染图、状态、人均 DPS 和总/人均承伤。相同指标跨方使用共同刻度；榜单每 250 毫秒刷新，伤害账本按事件累计。小分辨率使用面板滚动；角色随机外观不会拆成新编组，明确配装差异会分组。
+每方半透明面板显示：存活编组前五种及数量、并排的输出/承伤 Top10、实际角色渲染图、状态、存活人均 DPS 和总/存活人均承伤。相同指标跨方使用共同刻度；榜单每 250 毫秒刷新，伤害账本按事件累计。两侧面板只绘图，鼠标点击和滚轮穿透到下方游戏，不创建滚动条；小分辨率自动紧凑显示排行名称与数值。角色随机外观不会拆成新编组，明确配装差异会分组。
 
-`<Output width="1280" height="720"/>` 可设置本次截图分辨率，宽高须一起填写，范围分别为 800—3840、600—2160。省略时使用启动分辨率，结束恢复原设置。`<GroupCombat><Overlay enabled="false"/></GroupCombat>` 可关闭榜单。
+群战使用专用跟随视角，持续按场上存活单位（含倒地）的整体边界居中，并预留两侧榜单、顶部标题和底部原生时间控制区域。中心位置和缩放都按实际时间平滑过渡，不瞬间切点；留出缩放余量，隔离战斗震屏，战斗中只在容纳更多单位时扩大，不随伤亡缩成单人特写。兼容 CameraPlus 的实际投影缩放；停止群战后恢复原相机配置和视角。榜单状态使用“存活 / 倒地 / 死亡 / 离场 / 移除”。
+
+群战默认无边框全屏，`<Output width="1280" height="720"/>` 仅设置生成截图的尺寸，按已完成的全屏帧缩放写入正式原始产物，不改变游戏窗口或触发窗口缩小。宽高须一起填写，范围分别为 800—3840、600—2160；省略时直接使用当前全屏帧尺寸，结束恢复启动前的显示设置。`<GroupCombat><Overlay enabled="false"/></GroupCombat>` 可关闭榜单。
 
 CLI 成功返回 result.artifacts，失败返回 error.details.artifacts。工具在对应 autoTestOutputPath 原始路径生成 `groupcombat_<runId>_Result.json`、`_Report.md` 和 `_Screenshots`。JSON 包含冻结输入、每轮初始角色快照、逐单位/队伍/矩阵、分布极值的单位 ID、原始精度中位数、明细保留数及测量限制。群战保留全部参与者，不套用普通回归只列失败的过滤规则；不追加或重写既有回归结果。
 
 ## 伤害口径与限制
 
-主指标使用原生 Thing.TakeDamage 返回的 DamageResult.totalDamageDealt，表示引擎结算量，不等同于武器面板伤害，也不承诺等于截断后的净生命损失。DPS = 对敌 Pawn 结算伤害 /（共同战斗 ticks / 60）；人均值与分布包含全部初始成员，含死亡、零输出和零承伤。
+主指标使用原生 Thing.TakeDamage 返回的 DamageResult.totalDamageDealt，表示引擎结算量，不等同于武器面板伤害，也不承诺等于截断后的净生命损失。团队 DPS = 团队对敌 Pawn 结算伤害 /（共同战斗 ticks / 60）。个人 DPS = 该单位对敌 Pawn 结算伤害 /（自身在场存活 AliveTicks / 60）；站立和倒地均算存活，死亡、逃离和移除期间停止累计，重新在场存活后恢复累计。
+
+MeanDps 为当前场上每个活着单位的个人 DPS 的算术平均；MeanDamageTaken 为同一批单位自开战以来累计承受伤害的算术平均，单位是伤害量，不是每秒承伤。零输出和零承伤的存活单位也参与均值；场上零存活时两个均值均为 0。总量、排行和完整分布仍保留全部初始成员（含阵亡者），个人分布中的 DPS 使用各自存活时间。JSON 的 AliveTicks 可用于复核分母。
+
+显式填写指标元数据时使用 `<Metrics damageBasis="engineSettled" dpsBasis="unitLifetime" teamDpsBasis="battleWindow" population="initialRoster" meanPopulation="aliveOnMap"/>`；其中 population 描述完整分布，meanPopulation 描述面板人均值。显式 Summary 使用 `dps="livingUnitLifetimeMean" damageTaken="totalAndMeanPerLivingUnit"`。旧的 battleWindow 个人 DPS 和初始人数均值配置会拒绝加载，避免配置与结果含义不符。
 
 友伤、自伤、环境和未知来源分别记账，护盾、护甲/物品及建筑使用独立通道。原生 CompShield 完全吸收的输入单独记录为 shield，不增加主 DPS；第三方护盾的吸收量、直接 Hediff 修改、流血及绕过 TakeDamage 的持续效果不推断归属，不归给“最近攻击者”。
 

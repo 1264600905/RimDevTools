@@ -277,7 +277,7 @@ namespace LogSyncMod.AutoTest.Scenarios
         private const string Conditions = "All Any Not HasHediff ThingExists ActorState CorpseState ActorCount Equipped Wearing HasTrait SkillLevel HasAbility StepSucceeded HealthPercent NeedLevel ResourceLevel ComponentState EnvironmentState ActorPosition ModResourceLevel ThingHeld ThingQuantity HasController PawnAppearance HasGene HasXenotype PlantGrowth TerrainState ThingStyle";
         private static readonly Dictionary<string, string> Attributes = new Dictionary<string, string> {
             {"GroupCombat", "start aiPolicy durationSeconds timeSpeed"}, {"End", "condition onTimeLimit onTie"},
-            {"Metrics", "damageBasis dpsBasis population includeZeroValues distributions detailLimit requireCompleteAttribution"},
+            {"Metrics", "damageBasis dpsBasis teamDpsBasis population meanPopulation includeZeroValues distributions detailLimit requireCompleteAttribution"},
             {"Overlay", "enabled layout topUnitsPerMetric topTypesPerTeam humanPortrait refreshRealMilliseconds"}, {"Rankings", "damageDealt damageTaken"}, {"Summary", "dps damageTaken"},
             {"Experiments", "swapSides"}, {"Seed", "value"}, {"Output", "purpose showAllParticipants width height"},
             {"TestSuite", "schemaVersion id packageId gameVersion"}, {"Case", "id name seed timeoutRealSeconds caseType kind"}, {"PawnTemplate", "id extends"},

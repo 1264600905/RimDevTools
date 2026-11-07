@@ -41,7 +41,7 @@ namespace LogSyncMod.AutoTest
         private static int originalScreenWidth, originalScreenHeight, requestedWidth, requestedHeight;
         private static FullScreenMode originalScreenMode;
         private static int startTick, durationTicks, preparedFrame, roundIndex;
-        private static float roundStartedRealtime, phaseStartedRealtime;
+        private static float roundStartedRealtime, phaseStartedRealtime, lastFrameRealtime, pausedRealtime;
         private static bool overlayEnabled = true;
         private static string aiPolicy;
         private static string phase;
@@ -57,8 +57,14 @@ namespace LogSyncMod.AutoTest
         internal static GroupCombatRoundResult Display => current;
         internal static string Phase => phase;
         internal static bool OverlayEnabled => overlayEnabled;
-        internal static object Status => new { busy = Busy, phase, runId = report?.RunId, caseId = input?.CaseId, mapId = Map?.uniqueID, elapsedTicks = current?.ElapsedTicks, totalEvents = current?.TotalEvents, artifacts = new { autoTestOutputPath = outputPath }, teamAi, actors = pawns.Select(p => new { id = p.Key, x = p.Value.Position.x, z = p.Value.Position.z, dead = p.Value.Dead, downed = p.Value.Downed, job = p.Value.CurJob?.def.defName, duty = p.Value.mindState?.duty?.def.defName }), rounds = report?.Rounds.Select(r => new { r.CaseId, r.ExecutionStatus, r.CleanupComplete, r.EndReason, r.Error }) };
+        internal static object Status => new { busy = Busy, phase, runId = report?.RunId, caseId = input?.CaseId, mapId = Map?.uniqueID, elapsedTicks = current?.ElapsedTicks, totalEvents = current?.TotalEvents, speed = Find.TickManager?.CurTimeSpeed.ToString(), paused = Find.TickManager?.Paused, pausedRealtime, screen = new { width = Screen.width, height = Screen.height, windowWidth = Screen.windowWidth, windowHeight = Screen.windowHeight, fullScreen = Screen.fullScreen, mode = Screen.fullScreenMode.ToString() }, camera = GroupCombatCamera.Status, overlayInput = GroupCombatOverlay.InputVerification, artifacts = new { autoTestOutputPath = outputPath }, teamAi, actors = pawns.Select(p => new { id = p.Key, x = p.Value.Position.x, z = p.Value.Position.z, dead = p.Value.Dead, downed = p.Value.Downed, job = p.Value.CurJob?.def.defName, duty = p.Value.mindState?.duty?.def.defName }), rounds = report?.Rounds.Select(r => new { r.CaseId, r.ExecutionStatus, r.CleanupComplete, r.EndReason, r.Error }) };
         internal static void Cancel() { if (Busy) cancel = true; }
+        internal static void SetVerificationSpeed(string speed)
+        {
+            if (!Measuring || global::LogSyncMod.LogSyncMod.settings is not { testSessionActive: true, testSessionKind: "groupcombat" })
+                throw new InvalidOperationException("Speed verification requires a running CLI groupcombat round");
+            Find.TickManager.CurTimeSpeed = speed switch { "paused" => TimeSpeed.Paused, "normal" => TimeSpeed.Normal, "fast" => TimeSpeed.Fast, "superfast" => TimeSpeed.Superfast, _ => throw new ArgumentException("Unknown verification speed") };
+        }
         internal static void VerifyExecutionFailure()
         {
             if (!Measuring || global::LogSyncMod.LogSyncMod.settings is not { testSessionActive: true, testSessionKind: "groupcombat" })
@@ -84,6 +90,7 @@ namespace LogSyncMod.AutoTest
                     report = new GroupCombatRunReport { RunId = consumedRunId, StartedAtUtc = DateTime.UtcNow.ToString("O"), GameVersion = VersionControl.CurrentVersionStringWithRev, LoadedMods = LoadedModManager.RunningMods.Select(m => m.PackageIdPlayerFacing + "@" + m.ModMetaData?.ModVersion).ToList() };
                     originalSpeed = Find.TickManager.CurTimeSpeed;
                     originalScreenWidth = Screen.width; originalScreenHeight = Screen.height; originalScreenMode = Screen.fullScreenMode;
+                    Screen.fullScreenMode = FullScreenMode.FullScreenWindow;
                     logGuard = global::LogSyncMod.TestLogWindowGuard.RegisterExternalSession();
                     cancel = false; roundIndex = 0;
                     var frozen = JsonSerializer.Deserialize<ScenarioPlan>(Encoding.UTF8.GetString(Convert.FromBase64String(settings.groupCombatPlan)));
@@ -100,12 +107,16 @@ namespace LogSyncMod.AutoTest
                     StartRound(pending.Dequeue()); return;
                 }
                 if (cancel && phase != "finishing") Freeze("cancelled", "cancelled", null);
-                if (phase != "finishing" && Time.realtimeSinceStartup - roundStartedRealtime >= ScenarioLoader.D(roundConfig, "timeoutRealSeconds", 600)) Freeze("timeout", "realtimeLimit", "Group combat realtime deadline exceeded");
+                var now = Time.realtimeSinceStartup;
+                if (Measuring && Find.TickManager.Paused) pausedRealtime += Math.Max(0, now - lastFrameRealtime);
+                lastFrameRealtime = now;
+                if (phase != "finishing" && now - roundStartedRealtime - pausedRealtime >= ScenarioLoader.D(roundConfig, "timeoutRealSeconds", 600)) Freeze("timeout", "realtimeLimit", "Group combat realtime deadline exceeded");
                 if (phase == "prepared" && CaptureFinished())
                 {
                     phase = "running"; startTick = Find.TickManager.TicksGame; current.ExecutionStatus = "running";
                     var settingsNode = roundConfig.Element("GroupCombat");
-                    Find.TickManager.CurTimeSpeed = ScenarioLoader.A(settingsNode, "timeSpeed", "fast") switch { "normal" => TimeSpeed.Normal, "superfast" => TimeSpeed.Superfast, _ => TimeSpeed.Fast };
+                    Find.TickManager.CurTimeSpeed = ScenarioLoader.A(settingsNode, "timeSpeed", "normal") switch { "fast" => TimeSpeed.Fast, "superfast" => TimeSpeed.Superfast, _ => TimeSpeed.Normal };
+                    Trace("group.start", "configuredSpeed=" + ScenarioLoader.A(settingsNode, "timeSpeed", "normal") + "; actualSpeed=" + Find.TickManager.CurTimeSpeed + "; pauseAllowed=true");
                     ScheduleAttacks(true);
                     Log.Message("[LogSyncGroupCombat] START caseId=" + input.CaseId + " map=" + Map.uniqueID + " participants=" + pawns.Count);
                 }
@@ -123,6 +134,7 @@ namespace LogSyncMod.AutoTest
         private static void StartRound(GroupCombatRoundInput next)
         {
             input = next; roundIndex++; phase = "preparing"; roundStartedRealtime = Time.realtimeSinceStartup;
+            lastFrameRealtime = roundStartedRealtime; pausedRealtime = 0;
             current = new GroupCombatRoundResult { CaseId = input.CaseId, TestDefName = input.TestDefName, Name = input.Name, Seed = input.Seed, Swapped = input.Swapped, Source = input.Source, InputHash = input.InputHash };
             preexistingFactions = Find.FactionManager.AllFactions.ToList();
             preexistingRelations = RelationFingerprint();
@@ -131,8 +143,7 @@ namespace LogSyncMod.AutoTest
             overlayEnabled = ScenarioLoader.A(settings.Element("Overlay"), "enabled", "true") == "true";
             aiPolicy = ScenarioLoader.A(settings, "aiPolicy", "assaultThings");
             durationTicks = (int)Math.Ceiling(ScenarioLoader.D(settings, "durationSeconds", 180) * 60);
-            var output = c.Element("Output"); requestedWidth = ScenarioLoader.I(output, "width", originalScreenWidth); requestedHeight = ScenarioLoader.I(output, "height", originalScreenHeight);
-            if (Screen.width != requestedWidth || Screen.height != requestedHeight) Screen.SetResolution(requestedWidth, requestedHeight, FullScreenMode.Windowed);
+            var output = c.Element("Output"); requestedWidth = ScenarioLoader.I(output, "width", 0); requestedHeight = ScenarioLoader.I(output, "height", 0);
             arena = new AutoTestMainMap(Find.CurrentMap, input.Seed, new IntVec3(ScenarioLoader.I(scene, "sizeX", 50), 1, ScenarioLoader.I(scene, "sizeZ", 50)), ScenarioLoader.A(scene, "generatorDef", "LogSync_AutoTestStudioMap"));
             current.MapId = Map.uniqueID; current.IsPocketMap = Map.Parent is PocketMapParent; current.GeneratorDef = Map.generatorDef.defName;
             foreach (var team in c.Element("Teams").Elements("Team"))
@@ -183,6 +194,7 @@ namespace LogSyncMod.AutoTest
                 Trace("group.ai", "team=" + id + "; ai=" + ai + "; nativeLordJob=" + job?.GetType().Name + "; simultaneousStart=true");
             }
             current.Environment = "tile=" + Map.Tile + "; weather=" + Map.weatherManager.curWeather.defName + "; temperature=" + Map.mapTemperature.OutdoorTemp + "; sunGlow=" + GenCelestial.CurCelestialSunGlow(Map) + "; ai=" + string.Join(",", teamAi.Select(p => p.Key + "=" + p.Value));
+            GroupCombatCamera.Begin();
             phase = "prepared"; Refresh(0); RequestCapture("initial"); Write();
         }
 
@@ -236,7 +248,7 @@ namespace LogSyncMod.AutoTest
             foreach (var pair in pawns)
             {
                 var p = pair.Value;
-                ledger.SetState(pair.Key, p.Dead ? "dead" : exited.Contains(p) ? "escaped" : p.Destroyed || !p.Spawned || p.Map != Map ? "removed" : p.Downed ? "downed" : "standing");
+                ledger.SetState(pair.Key, p.Dead ? "dead" : exited.Contains(p) ? "escaped" : p.Destroyed || !p.Spawned || p.Map != Map ? "removed" : p.Downed ? "downed" : "standing", ticks);
             }
             var sample = ledger.Snapshot(ticks, includeEventDetails);
             sample.CaseId = current.CaseId; sample.TestDefName = current.TestDefName; sample.Name = current.Name; sample.Seed = current.Seed; sample.Swapped = current.Swapped; sample.Source = current.Source; sample.InputHash = current.InputHash; sample.MapId = current.MapId; sample.IsPocketMap = current.IsPocketMap; sample.GeneratorDef = current.GeneratorDef; sample.Environment = current.Environment;
@@ -255,6 +267,8 @@ namespace LogSyncMod.AutoTest
             if (phase == "finishing") return;
             if (ledger != null) { Refresh(phase == "running" ? Math.Max(0, Find.TickManager.TicksGame - startTick) : 0, includeEventDetails: true); if (executionStatus == "completed") endRule.Evaluate(current, durationTicks); }
             current.ExecutionStatus = executionStatus; current.EndReason = reason; current.Error = error;
+            Trace("group.final_clock", "pausedRealSeconds=" + pausedRealtime.ToString("F3", CultureInfo.InvariantCulture));
+            if (GroupCombatCamera.Active) Trace("group.camera", JsonSerializer.Serialize(GroupCombatCamera.Status));
             phase = "finishing"; Find.TickManager.CurTimeSpeed = TimeSpeed.Paused; RequestCapture("final"); Write();
         }
 
@@ -278,14 +292,17 @@ namespace LogSyncMod.AutoTest
         {
             if (!Busy || input == null || Map == null) return;
             GroupCombatOverlay.Draw();
-            if (Event.current.type != EventType.Repaint || captureRequested || pendingCapture == null || Time.frameCount - preparedFrame < 3 || Time.realtimeSinceStartup - phaseStartedRealtime < 1 || Screen.width != requestedWidth || Screen.height != requestedHeight || !AutoTestScreenshotService.PrepareCaptureFrame()) return;
-            current.ScreenshotWidth = Screen.width; current.ScreenshotHeight = Screen.height;
-            ScreenCapture.CaptureScreenshot(pendingCapture); current.Screenshots.Add(pendingCapture); captureRequested = true;
+            if (Event.current.type != EventType.Repaint || captureRequested || pendingCapture == null || Time.frameCount - preparedFrame < 3 || Time.realtimeSinceStartup - phaseStartedRealtime < 1 || !Screen.fullScreen || !AutoTestScreenshotService.PrepareCaptureFrame()) return;
+            current.ScreenshotWidth = requestedWidth > 0 ? requestedWidth : Screen.width; current.ScreenshotHeight = requestedHeight > 0 ? requestedHeight : Screen.height;
+            if (current.ScreenshotWidth == Screen.width && current.ScreenshotHeight == Screen.height) ScreenCapture.CaptureScreenshot(pendingCapture);
+            else Find.CameraDriver.StartCoroutine(GroupCombatScreenshot.Capture(pendingCapture, current.ScreenshotWidth, current.ScreenshotHeight));
+            current.Screenshots.Add(pendingCapture); captureRequested = true;
         }
 
         private static void FinishRound()
         {
             phase = "cleaning";
+            GroupCombatCamera.End();
             var errors = new List<string>();
             try { backend?.Cleanup(); } catch (Exception ex) { errors.Add(ex.ToString()); }
             try { arena?.Dispose(); } catch (Exception ex) { errors.Add(ex.ToString()); }

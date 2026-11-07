@@ -50,7 +50,8 @@ public static class GroupCombatResultValidator
                 if (team.Initial != units.Count || team.Initial == 0 || team.Initial != team.Standing + team.Downed + team.Dead + team.Escaped + team.Removed || team.Alive != team.Standing + team.Downed || team.Alive != units.Count(u => u.Alive)) return "群战初始人数与最终状态分项不一致";
                 if (!Equal(team.EnemyDamage, units.Sum(u => u.EnemyDamage) + team.UnrosteredEnemyDamage) || !Equal(team.DamageTaken, round.Matrix.Where(m => m.Channel == "pawn" && m.Victim == team.Id).Sum(m => m.Amount))) return "群战输出/承伤未与逐单位及矩阵核对一致";
                 var dps = round.SimulatedSeconds > 0 ? team.EnemyDamage / round.SimulatedSeconds : 0;
-                if (!Equal(team.Dps, dps) || !Equal(team.MeanDps, dps / team.Initial) || !Equal(team.MeanDamageTaken, team.DamageTaken / team.Initial) || units.Any(u => !Equal(u.Dps, round.SimulatedSeconds > 0 ? u.EnemyDamage / round.SimulatedSeconds : 0))) return "群战 DPS/人均值未采用共同模拟窗口和初始人数";
+                var living = units.Where(u => u.Alive).ToList();
+                if (!Equal(team.Dps, dps) || !Equal(team.MeanDps, living.Count > 0 ? living.Average(u => u.Dps) : 0) || !Equal(team.MeanDamageTaken, living.Count > 0 ? living.Average(u => u.DamageTaken) : 0) || units.Any(u => u.AliveTicks < 0 || u.AliveTicks > round.ElapsedTicks || u.Alive && u.AliveTicks == 0 && round.ElapsedTicks > 0 || !Equal(u.Dps, u.AliveTicks > 0 ? u.EnemyDamage * 60d / u.AliveTicks : 0))) return "群战个人 DPS 未采用存活模拟时间，或人均值未采用当前场上存活成员";
                 foreach (var pair in new[] {
                     (team.Damage, GroupCombatDistribution.Calculate(units.Select(u => KeyValuePair.Create(u.Id, u.EnemyDamage)))),
                     (team.DpsDistribution, GroupCombatDistribution.Calculate(units.Select(u => KeyValuePair.Create(u.Id, u.Dps)))),

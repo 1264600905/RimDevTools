@@ -42,6 +42,10 @@ internal static class GroupCombatTests
         Reject(Xml.Replace("<GroupCombat>", "<GroupCombat durationSeconds=\"0\">"), "group compiler rejects zero battle duration");
         Reject(Xml.Replace("<GroupCombat>", "<GroupCombat aiPolicy=\"magic\">"), "group compiler rejects unknown AI rather than silently substituting one");
         Reject(Xml.Replace("<GroupCombat>", "<GroupCombat><Metrics includeZeroValues=\"false\"/>"), "group compiler preserves initial roster including zero-output members");
+        Reject(Xml.Replace("<GroupCombat>", "<GroupCombat timeSpeed='paused'>"), "XML speed rejects pause as an initial battle speed while allowing runtime pause");
+        Reject(Xml.Replace("<GroupCombat>", "<GroupCombat><Metrics dpsBasis='battleWindow'/>"), "stale metadata cannot silently describe lifetime DPS as a shared window");
+        Reject(Xml.Replace("<GroupCombat>", "<GroupCombat><Overlay><Summary dps='battleWindowMeanPerInitialUnit'/></Overlay>"), "stale initial-roster mean metadata is rejected");
+        assert(Compile(Xml.Replace("<GroupCombat>", "<GroupCombat timeSpeed='fast'><Metrics dpsBasis='unitLifetime' teamDpsBasis='battleWindow' meanPopulation='aliveOnMap'/>" )).Cases.Count == 1, "XML accepts explicit battle speed and unambiguous live lifetime mean metadata");
         Reject(Xml.Replace("originZ=\"20\"", "originZ=\"75\""), "group grid footprint validates both map axes");
         Reject(Xml.Replace("<Team id=\"A\" name=\"甲\" />", "<Team id=\"A\" factionDef=\"player\"/>"), "group compiler forbids borrowing player factions");
         var duplicate = XElement.Parse(Xml); var second = new XElement(duplicate.Element("Case")); second.SetAttributeValue("id", "other"); duplicate.Add(second);
@@ -76,9 +80,9 @@ internal static class GroupCombatTests
         var ledger = new GroupCombatLedger(roster, names, detailLimit: 2);
         void Hit(string source, string victim, double amount, string channel = "pawn") => ledger.Record(new GroupCombatDamageEvent { Tick = 1, SourceId = source, VictimId = victim, Amount = amount, RawAmount = amount, Channel = channel });
         Hit("a0", "b0", 10); Hit("a0", "b0", 10); Hit("a1", "b1", 10);
-        ledger.SetState("a0", "dead"); Hit("b0", "a1", 6); Hit("a1", "a2", 2); Hit("a1", "a1", 3); Hit(null, "b1", 5); Hit("unidentified", "b1", 7); Hit("a1", "b1", 99, "shield"); Hit("a1", "b1", 4, "armor");
+        ledger.SetState("a0", "dead", 60); Hit("b0", "a1", 6); Hit("a1", "a2", 2); Hit("a1", "a1", 3); Hit(null, "b1", 5); Hit("unidentified", "b1", 7); Hit("a1", "b1", 99, "shield"); Hit("a1", "b1", 4, "armor");
         var snapshot = ledger.Snapshot(120); var a = snapshot.Teams.Single(t => t.Id == "A"); var b = snapshot.Teams.Single(t => t.Id == "B");
-        assert(a.EnemyDamage == 30 && a.Damage.Mean == 10 && a.Damage.Median == 10 && a.Dps == 15 && a.MeanDps == 5, "known sequence computes exact common-window DPS, odd median and zero/dead initial members");
+        assert(a.EnemyDamage == 30 && a.Damage.Mean == 10 && a.Damage.Median == 10 && a.Dps == 15 && a.MeanDps == 2.5 && a.MeanDamageTaken == 5.5, "known sequence computes team window DPS, living lifetime means and all-roster distribution");
         assert(a.Damage.Min == 0 && a.Damage.MinIds.Single() == "a2" && a.Damage.MaxIds.Single() == "a0" && a.Dead == 1, "distribution extrema identify units including zero values and dead top damage dealer");
         assert(b.Taken.Median == 21 && b.DamageTaken == 42 && a.FriendlyDamage == 2 && a.SelfDamage == 3, "even median and taken totals include explicit environment/unknown/friendly/self categories");
         assert(snapshot.Matrix.Where(c => c.Victim == "B" && c.Channel == "pawn").Sum(c => c.Amount) == b.DamageTaken && snapshot.Matrix.Single(c => c.Channel == "shield").Amount == 99, "shield and armor channels never inflate main damage and matrix reconciles with total taken");
@@ -90,7 +94,32 @@ internal static class GroupCombatTests
         for (int i = 0; i < 20000; i++) Hit("a1", "b0", 1);
         var overflow = ledger.Snapshot(600);
         assert(overflow.TotalEvents == 20011 && overflow.Teams[0].EnemyDamage == 20039 && overflow.Teams[0].Damage.Mean * 3 == 20039, "twenty thousand additional events preserve exact roster/team totals beyond retained evidence capacity");
-        assert(ledger.Snapshot(0).Teams.All(t => t.Dps == 0) && ledger.Snapshot(0).Units.All(u => u.Dps == 0), "not-started window never divides by zero");
+        assert(new GroupCombatLedger(roster.Select(u => new GroupCombatUnit { Id = u.Id, Team = u.Team }), names).Snapshot(0).Units.All(u => u.Dps == 0), "not-started window never divides by zero");
+
+        assert(snapshot.Units.Single(u => u.Id == "a0").AliveTicks == 60 && snapshot.Units.Single(u => u.Id == "a0").Dps == 20, "dead units retain their own lifetime DPS rather than the continuing battle window");
+        var lifetime = new GroupCombatLedger(new[] { new GroupCombatUnit { Id = "a", Team = "A" }, new GroupCombatUnit { Id = "b", Team = "B" } }, names);
+        lifetime.SetState("a", "downed", 30);
+        lifetime.SetState("a", "removed", 60);
+        var absent = lifetime.Snapshot(120);
+        assert(absent.Units[0].AliveTicks == 60 && absent.Teams[0].MeanDps == 0 && absent.Teams[0].MeanDamageTaken == 0, "downed time counts but removed units leave live means with a finite zero for an empty team");
+        lifetime.SetState("a", "standing", 120);
+        assert(lifetime.Snapshot(180).Units[0].AliveTicks == 120, "re-entered units resume alive time without counting time off the battlefield");
+        foreach (var resolution in new[] { (800f, 600f), (1280f, 720f), (1920f, 1080f) })
+        {
+            var positions = new[] { (3f, 4f), (97f, 90f), (50f, 50f) };
+            var frame = GroupCombatPresentation.Frame(positions, resolution.Item1, resolution.Item2, true);
+            var halfWidth = frame.size * resolution.Item1 / resolution.Item2;
+            var inset = GroupCombatPresentation.PanelWidth(resolution.Item1) + 22;
+            assert(positions.All(p => (p.Item1 - frame.x) / (2 * halfWidth) + .5f >= inset / resolution.Item1 && (p.Item1 - frame.x) / (2 * halfWidth) + .5f <= 1 - inset / resolution.Item1 && (p.Item2 - frame.z) / (2 * frame.size) + .5f >= 90 / resolution.Item2 && (p.Item2 - frame.z) / (2 * frame.size) + .5f <= 1 - 94 / resolution.Item2), "dedicated wide camera contains the crowd between panels at " + resolution);
+        }
+        var motion = new GroupCombatCameraMotion();
+        motion.Step(0, 0, 24, 0);
+        motion.Step(100, 50, 40, 1f / 60);
+        assert(motion.X > 0 && motion.X < 5 && motion.Size > 24 && motion.Size < 25, "camera position and zoom move toward a new target without teleporting");
+        for (var i = 0; i < 600; i++) motion.Step(100, 50, 40, 1f / 60);
+        assert(Math.Abs(motion.X - 100) < .001 && Math.Abs(motion.Z - 50) < .001 && Math.Abs(motion.Size - 40) < .001, "smoothed camera converges without overshoot or persistent oscillation");
+        var before = motion.X; motion.Step(-100, -50, 60, 20);
+        assert(motion.X < before && motion.X > 50 && motion.Size < 43, "long focus gaps preserve a gradual position and zoom transition");
 
         GroupCombatRoundResult State(params (string id, int standing, int downed)[] counts) => new GroupCombatRoundResult { ElapsedTicks = 100, Teams = counts.Select(c => new GroupCombatTeamResult { Id = c.id, Standing = c.standing, Downed = c.downed, Alive = c.standing + c.downed }).ToList() };
         var ends = new GroupCombatEndRule(); var both = State(("A", 2, 0), ("B", 2, 0));

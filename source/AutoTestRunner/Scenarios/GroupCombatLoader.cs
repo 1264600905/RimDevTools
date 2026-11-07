@@ -52,20 +52,20 @@ namespace LogSyncMod.AutoTest.Scenarios
             void Fixed(XElement e, string field, string value) { if (e?.Attribute(field) != null && A(e, field) != value) Fail(e, path, field + " must be " + value); }
             Fixed(c, "kind", "groupCombat"); Fixed(settings, "start", "simultaneous");
             if (!new[] { "seekAndAttack", "assaultThings", "assaultColony", "defendPoint", "native" }.Contains(A(settings, "aiPolicy", "assaultThings"))) Fail(settings, path, "aiPolicy must be seekAndAttack/assaultThings/assaultColony/defendPoint");
-            if (!new[] { "normal", "fast", "superfast" }.Contains(A(settings, "timeSpeed", "fast"))) Fail(settings, path, "timeSpeed must be normal/fast/superfast");
+            if (!new[] { "normal", "fast", "superfast" }.Contains(A(settings, "timeSpeed", "normal"))) Fail(settings, path, "timeSpeed must be normal/fast/superfast");
             var duration = D(settings, "durationSeconds", 180);
             if (!double.IsFinite(duration) || duration <= 0 || duration > 86400) Fail(settings, path, "durationSeconds must be finite and in (0,86400]");
             if (D(c, "timeoutRealSeconds", 600) <= 0) Fail(c, path, "timeoutRealSeconds must be positive");
             var end = settings.Element("End"); Fixed(end, "condition", "oneSideAllDowned"); Fixed(end, "onTimeLimit", "fewestAliveLoses"); Fixed(end, "onTie", "draw");
             var metrics = settings.Element("Metrics");
-            Fixed(metrics, "damageBasis", "engineSettled"); Fixed(metrics, "dpsBasis", "battleWindow"); Fixed(metrics, "population", "initialRoster"); Fixed(metrics, "includeZeroValues", "true"); Fixed(metrics, "distributions", "min,max,mean,median");
+            Fixed(metrics, "damageBasis", "engineSettled"); Fixed(metrics, "dpsBasis", "unitLifetime"); Fixed(metrics, "teamDpsBasis", "battleWindow"); Fixed(metrics, "meanPopulation", "aliveOnMap"); Fixed(metrics, "population", "initialRoster"); Fixed(metrics, "includeZeroValues", "true"); Fixed(metrics, "distributions", "min,max,mean,median");
             if (I(metrics, "detailLimit", 10000) < 0 || I(metrics, "detailLimit", 10000) > 1000000) Fail(metrics, path, "detailLimit must be 0..1000000");
             if (!new[] { "true", "false" }.Contains(A(metrics, "requireCompleteAttribution", "false"))) Fail(metrics, path, "requireCompleteAttribution must be true/false");
             var overlay = settings.Element("Overlay");
             if (!new[] { "true", "false" }.Contains(A(overlay, "enabled", "true"))) Fail(overlay, path, "enabled must be true/false");
             Fixed(overlay, "layout", "teamsLeftRight"); Fixed(overlay, "topUnitsPerMetric", "10"); Fixed(overlay, "topTypesPerTeam", "5"); Fixed(overlay, "humanPortrait", "renderedPawn"); Fixed(overlay, "refreshRealMilliseconds", "250");
             Fixed(overlay?.Element("Rankings"), "damageDealt", "true"); Fixed(overlay?.Element("Rankings"), "damageTaken", "true");
-            Fixed(overlay?.Element("Summary"), "dps", "battleWindowMeanPerInitialUnit"); Fixed(overlay?.Element("Summary"), "damageTaken", "totalAndMeanPerInitialUnit");
+            Fixed(overlay?.Element("Summary"), "dps", "livingUnitLifetimeMean"); Fixed(overlay?.Element("Summary"), "damageTaken", "totalAndMeanPerLivingUnit");
             Fixed(c.Element("Output"), "purpose", "benchmark"); Fixed(c.Element("Output"), "showAllParticipants", "true");
             var output = c.Element("Output");
             if ((output?.Attribute("width") != null) != (output?.Attribute("height") != null)) Fail(output, path, "Output width and height must be specified together");

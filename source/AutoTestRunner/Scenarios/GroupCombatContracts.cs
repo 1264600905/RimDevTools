@@ -35,6 +35,7 @@ namespace LogSyncMod.AutoTest.Scenarios
         public double FriendlyDamage { get; set; }
         public double SelfDamage { get; set; }
         public double DamageTaken { get; set; }
+        public int AliveTicks { get; set; }
         public double Dps { get; set; }
         public bool Alive => State == "standing" || State == "downed";
     }
