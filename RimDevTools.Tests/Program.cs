@@ -61,6 +61,15 @@ if (args.Length == 1 && args[0] is "--tool-update" or "--tool-update-live")
     return;
 }
 
+if (args.Length == 1 && args[0] == "--groupcombat-result")
+{
+    GroupCombatResultTests.Run((passed, message) => {
+        if (!passed) throw new InvalidOperationException("FAIL: " + message);
+        Console.WriteLine("PASS: " + message);
+    });
+    return;
+}
+
 var suite = new TestSuite();
 await suite.RunAsync();
 

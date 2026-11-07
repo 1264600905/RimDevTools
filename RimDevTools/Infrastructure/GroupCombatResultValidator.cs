@@ -47,7 +47,7 @@ public static class GroupCombatResultValidator
             foreach (var team in round.Teams)
             {
                 var units = round.Units.Where(u => u.Team == team.Id).ToList();
-                if (team.Initial <= 0 || team.Initial != units.Count(u => !u.JoinedDuringBattle) || team.Joined != units.Count(u => u.JoinedDuringBattle) || team.Total != units.Count || team.Total != team.Standing + team.Downed + team.Dead + team.Escaped + team.Removed || team.Alive != team.Standing + team.Downed || team.Alive != units.Count(u => u.Alive) || team.PendingRevival != units.Count(u => u.PendingRevival)) return "群战初始/新增人数与最终状态分项不一致";
+                if (team.Initial <= 0 || team.Initial != units.Count(u => !u.JoinedDuringBattle) || team.Joined != units.Count(u => u.JoinedDuringBattle) || team.Total != units.Count || team.Total != team.Standing + team.Downed + team.Dead + team.Escaped + team.Removed || team.Alive != team.Standing || team.Alive != units.Count(u => u.Alive) || team.PendingRevival != units.Count(u => u.PendingRevival)) return "群战初始/新增人数与最终状态分项不一致";
                 if (!Equal(team.EnemyDamage, units.Sum(u => u.EnemyDamage) + team.UnrosteredEnemyDamage) || !Equal(team.DamageTaken, round.Matrix.Where(m => m.Channel == "pawn" && m.Victim == team.Id).Sum(m => m.Amount))) return "群战输出/承伤未与逐单位及矩阵核对一致";
                 var dps = round.SimulatedSeconds > 0 ? team.EnemyDamage / round.SimulatedSeconds : 0;
                 var living = units.Where(u => u.Alive).ToList();

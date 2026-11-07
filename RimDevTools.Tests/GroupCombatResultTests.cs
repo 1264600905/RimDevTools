@@ -23,6 +23,14 @@ internal static class GroupCombatResultTests
         round.Events.AddRange(new[] { new GroupCombatDamageEvent { Id = 1, Amount = 10 }, new GroupCombatDamageEvent { Id = 2, Amount = 10 } });
         var report = new GroupCombatRunReport { RunId = "run", Status = "completed", Rounds = new List<GroupCombatRoundResult> { round }, PlannedRounds = new List<GroupCombatRoundInput> { new GroupCombatRoundInput { CaseId = round.CaseId } } };
         check(GroupCombatResultValidator.ValidateIntegrity(report) == null, "group numeric result independently reconciles initial roster, tick clock, matrix, totals, DPS and distributions");
+        var downedReport = JsonSerializer.Deserialize<GroupCombatRunReport>(JsonSerializer.Serialize(report))!;
+        downedReport.Rounds[0].Units[2].State = "downed";
+        var downedTeam = downedReport.Rounds[0].Teams[1];
+        downedTeam.Standing = downedTeam.Alive = 1; downedTeam.Downed = 1;
+        downedTeam.MeanDps = 1.4; downedTeam.MeanDamageTaken = 7;
+        check(GroupCombatResultValidator.ValidateIntegrity(downedReport) == null, "group validator accepts downed members excluded from survivor counts and living means");
+        downedTeam.Alive = 2;
+        check(GroupCombatResultValidator.ValidateIntegrity(downedReport) != null, "group validator rejects including downed members in survivor counts");
         var dynamicReport = JsonSerializer.Deserialize<GroupCombatRunReport>(JsonSerializer.Serialize(report))!;
         var dynamicRound = dynamicReport.Rounds[0];
         dynamicRound.Units.Add(new GroupCombatUnit { Id = "summon", Team = "A", JoinedDuringBattle = true, JoinedAtTick = 300 });

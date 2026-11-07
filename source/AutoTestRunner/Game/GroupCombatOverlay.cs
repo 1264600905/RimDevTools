@@ -164,7 +164,8 @@ namespace LogSyncMod.AutoTest
                 else
                 {
                     // Compact screens keep every rank visible on one line.
-                    DrawName(new Rect(bar.x, y, bar.width, rowHeight), rank + "." + unit.Name.Substring(0, Math.Min(3, unit.Name.Length)) + " " + value(unit).ToString("F0"), Mathf.Min(12 * uiScale, rowHeight - 2), unit.State);
+                    var text = rank + "." + unit.Name + " " + value(unit).ToString("F0");
+                    DrawName(new Rect(bar.x, y, bar.width, rowHeight), text, Mathf.Min(Mathf.Min(12 * uiScale, rowHeight - 2), bar.width / Mathf.Max(1, text.Length)), unit.State);
                 }
                 y += rowHeight;
             }

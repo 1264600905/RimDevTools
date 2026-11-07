@@ -1,0 +1,19 @@
+<TestSuite schemaVersion="1" id="groupcombat.wolves-mercenaries" gameVersion="1.7">
+  <Case id="twenty-vs-twenty" kind="groupCombat" name="20狼对20雇佣兵" seed="12345" timeoutRealSeconds="300">
+    <testDefName>GroupCombat_WolvesVsMercenaries</testDefName>
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all">
+      <Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/>
+    </Scene>
+    <Teams><Team id="wolves" name="森林狼"/><Team id="mercenaries" name="雇佣枪手"/></Teams>
+    <Actors>
+      <PawnGroup id="wolves" team="wolves" count="20" originX="22" originZ="42" formation="grid" columns="4" spacing="2">
+        <basePawnKind>Wolf_Timber</basePawnKind><minGenerationAge>5</minGenerationAge><maxGenerationAge>5</maxGenerationAge>
+      </PawnGroup>
+      <PawnGroup id="mercenaries" team="mercenaries" count="20" originX="62" originZ="42" formation="grid" columns="4" spacing="2">
+        <basePawnKind>Mercenary_Gunner</basePawnKind>
+      </PawnGroup>
+    </Actors>
+    <GroupCombat timeSpeed="fast" durationSeconds="180"/>
+    <Output purpose="benchmark" showAllParticipants="true" width="1920" height="1080"/>
+  </Case>
+</TestSuite>

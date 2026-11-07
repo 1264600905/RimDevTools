@@ -99,8 +99,20 @@ namespace LogSyncMod.AutoTest
             var unit = new GroupCombatUnit { Id = id, NativeId = pawn.GetUniqueLoadID(), Team = team, Group = "native/" + pawn.kindDef.defName, GroupName = "战斗新增", Kind = pawn.kindDef.defName, KindLabel = pawn.kindDef.LabelCap, Name = pawn.LabelShort, X = pawn.PositionHeld.x, Z = pawn.PositionHeld.z, State = pawn.Dead ? "dead" : pawn.Downed ? "downed" : "standing", WasDowned = pawn.Downed, WasDead = pawn.Dead };
             ledger.AddUnit(unit, ticks);
             pawns.Add(id, pawn); rosterIds.Add(pawn, id);
+            SyncUnitNames();
             pawn.relations?.ClearAllRelations();
             Trace("group.join", "id=" + id + "; team=" + team + "; kind=" + unit.Kind + "; tick=" + ticks);
+        }
+
+        private static void SyncUnitNames()
+        {
+            foreach (var pair in pawns)
+            {
+                var name = ledger.UnitName(pair.Key);
+                var pawn = pair.Value;
+                if (pawn.LabelShort == name) continue;
+                pawn.Name = pawn.Name is NameTriple full ? new NameTriple(full.First, name, full.Last) : new NameSingle(name);
+            }
         }
 
         private static void DiscoverParticipants()
@@ -247,10 +259,12 @@ namespace LogSyncMod.AutoTest
                 {
                     var pawn = members[i]; var id = actorId + "[" + i + "]";
                     pawns.Add(id, pawn); rosterIds.Add(pawn, id);
-                    roster.Add(new GroupCombatUnit { Id = id, NativeId = pawn.GetUniqueLoadID(), Team = ScenarioLoader.A(actor, "team"), Group = GroupCombatPlan.DisplayGroupKey(actor), GroupName = actorId, Kind = pawn.kindDef.defName, KindLabel = pawn.kindDef.LabelCap, Name = pawn.LabelShort, X = pawn.Position.x, Z = pawn.Position.z, InitialSnapshot = TemporaryPawnData.Serialize(TemporaryPawnCapture.Capture(pawn)) });
+                    roster.Add(new GroupCombatUnit { Id = id, NativeId = pawn.GetUniqueLoadID(), Team = ScenarioLoader.A(actor, "team"), Group = GroupCombatPlan.DisplayGroupKey(actor), GroupName = actorId, Kind = pawn.kindDef.defName, KindLabel = pawn.kindDef.LabelCap, Name = pawn.LabelShort, X = pawn.Position.x, Z = pawn.Position.z });
                 }
             }
             ledger = new GroupCombatLedger(roster, c.Element("Teams").Elements("Team").Select(t => new KeyValuePair<string, string>(ScenarioLoader.A(t, "id"), ScenarioLoader.A(t, "name", ScenarioLoader.A(t, "id")))), ScenarioLoader.I(settings.Element("Metrics"), "detailLimit", 10000));
+            SyncUnitNames();
+            foreach (var unit in roster) unit.InitialSnapshot = TemporaryPawnData.Serialize(TemporaryPawnCapture.Capture(pawns[unit.Id]));
             endRule = new GroupCombatEndRule(ScenarioLoader.I(settings.Element("End"), "confirmationTicks", 300));
             foreach (var node in c.Element("Teams").Elements("Team"))
             {

@@ -43,7 +43,7 @@ namespace LogSyncMod.AutoTest.Scenarios
         public double DamageTaken { get; set; }
         public int AliveTicks { get; set; }
         public double Dps { get; set; }
-        public bool Alive => State == "standing" || State == "downed";
+        public bool Alive => State == "standing";
     }
 
     public sealed class GroupCombatDamageEvent

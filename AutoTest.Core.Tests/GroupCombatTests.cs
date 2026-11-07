@@ -91,7 +91,7 @@ internal static class GroupCombatTests
         assert(GroupCombatPresentation.SurvivorTotals(new[] {
             new GroupCombatUnit { State = "downed", EnemyDamage = 7, DamageTaken = 9 },
             new GroupCombatUnit { State = "escaped", EnemyDamage = 100, DamageTaken = 100 }
-        }) == (7d, 9d), "settlement counts living downed members while excluding units that left the map");
+        }) == (0d, 0d), "settlement excludes downed members and units that left the map from survivor totals");
         assert(Compile(Xml.Replace("<GroupCombat>", "<GroupCombat aiPolicy='battle'>")).Cases.Count == 1, "benchmark assault policy is accepted without replacing pawn think trees");
         assert(a.EnemyDamage == 30 && a.Damage.Mean == 10 && a.Damage.Median == 10 && a.Dps == 15 && a.MeanDps == 2.5 && a.MeanDamageTaken == 5.5, "known sequence computes team window DPS, living lifetime means and all-roster distribution");
         assert(a.MeanOutput == 10 && new GroupCombatTeamResult().MeanOutput == 0, "average output divides total damage including deceased contributions by the initial roster and handles empty teams");
@@ -154,15 +154,15 @@ internal static class GroupCombatTests
         var before = motion.X; motion.Step(-100, -50, 60, 20);
         assert(motion.X < before && motion.X > 50 && motion.Size < 43, "long focus gaps preserve a gradual position and zoom transition");
 
-        GroupCombatRoundResult State(params (string id, int standing, int downed)[] counts) => new GroupCombatRoundResult { ElapsedTicks = 100, Teams = counts.Select(c => new GroupCombatTeamResult { Id = c.id, Initial = c.standing + c.downed, Standing = c.standing, Downed = c.downed, Alive = c.standing + c.downed }).ToList() };
+        GroupCombatRoundResult State(params (string id, int standing, int downed)[] counts) => new GroupCombatRoundResult { ElapsedTicks = 100, Teams = counts.Select(c => new GroupCombatTeamResult { Id = c.id, Initial = c.standing + c.downed, Standing = c.standing, Downed = c.downed, Alive = c.standing }).ToList() };
         var ends = new GroupCombatEndRule(0); var both = State(("A", 2, 0), ("B", 2, 0));
         assert(!ends.Evaluate(both, 10800), "default battle window lasts 10800 ticks without an all-down elimination");
         var down = State(("A", 0, 3), ("B", 1, 0));
-        assert(new GroupCombatEndRule(0).Evaluate(down, 10800) && down.Teams[0].Outcome == "loss", "all downed loses immediately even though downed combatants are alive");
+        assert(new GroupCombatEndRule(0).Evaluate(down, 10800) && down.Teams[0].Outcome == "loss", "all downed loses immediately with zero combat survivors");
         var draw = State(("A", 0, 1), ("B", 0, 2));
         assert(new GroupCombatEndRule(0).Evaluate(draw, 10800) && draw.Teams.All(t => t.Outcome == "draw"), "same tick mutual all-down yields a draw");
         var timeout = State(("A", 1, 3), ("B", 2, 1)); timeout.ElapsedTicks = 10800;
-        assert(new GroupCombatEndRule(0).Evaluate(timeout, 10800) && timeout.Teams[0].Outcome == "win", "time-limit alive counts include downed and can favor a side with fewer standing members");
+        assert(new GroupCombatEndRule(0).Evaluate(timeout, 10800) && timeout.Teams[1].Outcome == "win", "time-limit survivor counts exclude downed and favor the side with more standing members");
         Reject(Xml.Replace("<Team id=\"B\" name=\"乙\" />", "<Team id=\"B\"/><Team id=\"C\"/>"), "group compiler rejects a third team under the two-side product scope");
 
     }

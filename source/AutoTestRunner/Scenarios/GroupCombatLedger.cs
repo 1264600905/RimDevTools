@@ -10,6 +10,7 @@ namespace LogSyncMod.AutoTest.Scenarios
     public sealed class GroupCombatLedger
     {
         private readonly Dictionary<string, GroupCombatUnit> units;
+        private readonly Dictionary<string, string> originalNames;
         private readonly Dictionary<string, GroupCombatTeamResult> teams;
         private readonly Dictionary<string, GroupCombatMatrixCell> matrix = new Dictionary<string, GroupCombatMatrixCell>();
         private readonly List<GroupCombatDamageEvent> details = new List<GroupCombatDamageEvent>();
@@ -24,6 +25,8 @@ namespace LogSyncMod.AutoTest.Scenarios
             if (detailLimit < 0) throw new ArgumentOutOfRangeException(nameof(detailLimit));
             this.detailLimit = detailLimit;
             units = roster.ToDictionary(u => u.Id, StringComparer.Ordinal);
+            originalNames = units.ToDictionary(p => p.Key, p => p.Value.Name ?? "", StringComparer.Ordinal);
+            AssignDistinctNames();
             teams = teamNames.ToDictionary(t => t.Key, t => new GroupCombatTeamResult { Id = t.Key, Name = t.Value }, StringComparer.Ordinal);
             if (teams.Count != 2 || units.Count == 0 || units.Values.Any(u => !teams.ContainsKey(u.Team)) || teams.Keys.Any(t => !units.Values.Any(u => u.Team == t))) throw new ArgumentException("Group combat requires two nonempty teams and unique roster IDs");
         }
@@ -35,7 +38,27 @@ namespace LogSyncMod.AutoTest.Scenarios
             if (units.ContainsKey(unit.Id)) return false;
             unit.JoinedDuringBattle = true; unit.JoinedAtTick = elapsedTicks; unit.AliveTicks = 0;
             units.Add(unit.Id, unit); observedTicks[unit.Id] = elapsedTicks;
+            originalNames.Add(unit.Id, unit.Name ?? "");
+            AssignDistinctNames();
             return true;
+        }
+        public string UnitName(string id) => units[id].Name;
+
+        private void AssignDistinctNames()
+        {
+            // Reserve explicit names so generated suffixes cannot collide with them.
+            var used = new HashSet<string>(originalNames.Values, StringComparer.Ordinal);
+            foreach (var group in units.Values.GroupBy(u => originalNames[u.Id], StringComparer.Ordinal))
+            {
+                if (group.Count() == 1) { group.First().Name = group.Key; continue; }
+                var number = 1;
+                foreach (var unit in group)
+                {
+                    string name;
+                    do { name = group.Key + " " + number++; } while (!used.Add(name));
+                    unit.Name = name;
+                }
+            }
         }
         public void Record(GroupCombatDamageEvent hit)
         {
@@ -90,7 +113,8 @@ namespace LogSyncMod.AutoTest.Scenarios
         {
             observedTicks.TryGetValue(unit.Id, out var previous);
             if (tick < previous) throw new ArgumentOutOfRangeException(nameof(tick), "Unit lifetime clock cannot move backwards");
-            if (unit.Alive) unit.AliveTicks += tick - previous;
+            // Downing changes combat counts, but does not end the native lifetime.
+            if (unit.State is "standing" or "downed") unit.AliveTicks += tick - previous;
             observedTicks[unit.Id] = tick;
         }
 
@@ -107,7 +131,7 @@ namespace LogSyncMod.AutoTest.Scenarios
             foreach (var team in teams.Values)
             {
                 var members = units.Values.Where(u => u.Team == team.Id).ToList();
-                team.Initial = members.Count(u => !u.JoinedDuringBattle); team.Joined = members.Count(u => u.JoinedDuringBattle); team.Standing = members.Count(u => u.State == "standing"); team.Downed = members.Count(u => u.State == "downed"); team.Dead = members.Count(u => u.State == "dead"); team.Escaped = members.Count(u => u.State == "escaped"); team.Removed = members.Count(u => u.State == "removed"); team.Alive = team.Standing + team.Downed;
+                team.Initial = members.Count(u => !u.JoinedDuringBattle); team.Joined = members.Count(u => u.JoinedDuringBattle); team.Standing = members.Count(u => u.State == "standing"); team.Downed = members.Count(u => u.State == "downed"); team.Dead = members.Count(u => u.State == "dead"); team.Escaped = members.Count(u => u.State == "escaped"); team.Removed = members.Count(u => u.State == "removed"); team.Alive = team.Standing;
                 var living = members.Where(u => u.Alive).ToList();
                 team.PendingRevival = members.Count(u => u.PendingRevival);
                 team.Dps = seconds > 0 ? team.EnemyDamage / seconds : 0;

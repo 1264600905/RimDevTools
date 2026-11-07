@@ -5,6 +5,26 @@ internal static class GroupCombatLifecycleTests
     internal static void Run(Action<bool, string> check)
     {
         var teams = new[] { KeyValuePair.Create("A", "A"), KeyValuePair.Create("B", "B") };
+        var counts = new GroupCombatLedger(new[] {
+            new GroupCombatUnit { Id = "standing", Team = "A", Name = "狼", EnemyDamage = 10, DamageTaken = 20 },
+            new GroupCombatUnit { Id = "downed", Team = "A", Name = "狼", EnemyDamage = 30, DamageTaken = 40 },
+            new GroupCombatUnit { Id = "enemy", Team = "B", Name = "狼" },
+            new GroupCombatUnit { Id = "explicit", Team = "B", Name = "狼 1" }
+        }, teams);
+        counts.SetState("downed", "downed", 60);
+        var sample = counts.Snapshot(120);
+        check(sample.Teams[0].Alive == 1 && sample.Teams[0].Standing == 1 && sample.Teams[0].Downed == 1 && sample.Teams[0].Total == 2,
+            "downed units leave live battlefield counts while remaining in roster and downed counts");
+        check(sample.Teams[0].MeanDamageTaken == 20 && GroupCombatPresentation.SurvivorTotals(sample.Units.Where(u => u.Team == "A")) == (10d, 20d)
+            && sample.Units.Single(u => u.Id == "downed").AliveTicks == 120,
+            "survivor metrics exclude downed units without shortening their native lifetime");
+        check(sample.Units.Select(u => u.Name).Distinct().Count() == 4 && counts.UnitName("standing") == "狼 2" && counts.UnitName("enemy") == "狼 4",
+            "duplicate names receive increasing space-number suffixes across teams and avoid explicit-name collisions");
+        counts.AddUnit(new GroupCombatUnit { Id = "joined", Team = "B", Name = "狼" }, 120);
+        check(counts.UnitName("joined") == "狼 5" && sample.Units.Single(u => u.Id == "standing").Name == "狼 2",
+            "reinforcement names continue the sequence while existing result snapshots retain their names");
+        counts.SetState("downed", "standing", 120);
+        check(counts.Snapshot(180).Teams[0].Alive == 2, "recovered units rejoin live battlefield and survivor counts");
         var ledger = new GroupCombatLedger(new[] { new GroupCombatUnit { Id = "a", Team = "A" }, new GroupCombatUnit { Id = "b", Team = "B" } }, teams);
         ledger.SetState("a", "dead", 60); var before = ledger.Snapshot(60);
         check(ledger.AddUnit(new GroupCombatUnit { Id = "summon", Team = "A" }, 60) && !ledger.AddUnit(new GroupCombatUnit { Id = "summon", Team = "A" }, 60), "summoned units register once across repeated lifecycle hooks");
