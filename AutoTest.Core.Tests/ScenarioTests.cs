@@ -71,6 +71,8 @@ internal static class ScenarioTests
         check(engine.Outcome.Status == "cancelled" && backend.Cleaned == 1, "explicit cancellation is distinct and cleans up");
         backend = new Backend { CleanupThrows = true }; engine = new ScenarioExecution(plan.Cases[0], backend, clock); engine.Poll(1); engine.Poll(2);
         check(engine.Outcome.ErrorCode == "scenario.cleanup" && engine.Outcome.Status == "failed", "cleanup error cannot turn green");
+        backend = new Backend { CompletionThrows = true }; engine = new ScenarioExecution(plan.Cases[0], backend, clock); engine.Poll(1); engine.Poll(2);
+        check(engine.Outcome.Status == "failed" && engine.Outcome.ErrorCode == "scenario.configuration" && backend.Cleaned == 1, "native completion gate rejects unused coverage before success and still cleans up");
         var condition = XElement.Parse("<HasHediff quantifier='all'/>");
         check(!ScenarioExecution.Match(condition, new ScenarioSample(), new ScenarioSample()), "all on zero targets does not pass vacuously");
         var old = new ScenarioSample { TargetCount = 1, Matches = new HashSet<string> { "old-item" } };
@@ -83,6 +85,10 @@ internal static class ScenarioTests
         clock = new TestClock(); backend = new Backend { Match = false }; engine = new ScenarioExecution(Compile(transientXml).Cases[0], backend, clock); engine.Poll(1);
         backend.Match = true; engine.Observe(2); backend.Match = false; engine.Observe(2); engine.Poll(2); engine.Poll(3);
         check(engine.Completed && engine.Outcome.Status == "passed", "event observation retains a same-tick transient effect");
+        var interventionXml = Suite(caseBody: body.Replace("<Require id='ready'><ActorState actor='p' state='alive'/></Require>", "<Checkpoint id='before'/><DebugAction id='inject' actionId='native.addHediff' def='Metalblood'><Select mode='single' actor='p'/></DebugAction><Wait id='ready'><HasHediff actor='p' def='Metalblood' transition='added' since='before'/></Wait>"));
+        clock = new TestClock(); backend = new Backend { Match = false, DebugMakesMatch = true }; engine = new ScenarioExecution(Compile(interventionXml).Cases[0], backend, clock);
+        for (int tick = 0; tick < 5 && !engine.Completed; tick++) engine.Poll(tick);
+        check(engine.Outcome.Status == "failed" && engine.Outcome.Error.Contains("cannot be attributed") && engine.Outcome.Trace.Any(t => t.Stage == "debug.interference"), "debug-injected effect is recorded and never attributed to a previous cast baseline");
         var basePath = Path.Combine("AutoTest.Core.Tests", "Fixtures", "Scenarios");
         if (Directory.Exists(basePath))
         {
@@ -91,12 +97,13 @@ internal static class ScenarioTests
         }
     }
     private sealed class TestClock : IAutoTestClock { public long Ms; public DateTime UtcNow => DateTime.UnixEpoch.AddMilliseconds(Ms); public long RealtimeMilliseconds => Ms; }
-    private sealed class Backend : IScenarioBackend
+    private sealed class Backend : IScenarioBackend, IScenarioCompletionBackend
     {
-        public bool Match = true, ProbeThrows, PrepareThrows, CleanupThrows; public int Cleaned;
+        public bool Match = true, ProbeThrows, PrepareThrows, CleanupThrows, DebugMakesMatch, CompletionThrows; public int Cleaned;
         public void Prepare(ScenarioCase c) { if (PrepareThrows) throw new Exception("prepare fault"); }
         public ScenarioSample Sample(XElement c) { if (ProbeThrows) throw new Exception("probe fault"); return new ScenarioSample { TargetCount = 1, Matches = Match ? new HashSet<string> { "p" } : new HashSet<string>() }; }
-        public bool Execute(XElement step, bool first) => true;
+        public bool Execute(XElement step, bool first) { if (step.Name == "DebugAction" && DebugMakesMatch) Match = true; return true; }
         public void Cleanup() { Cleaned++; if (CleanupThrows) throw new Exception("cleanup fault"); }
+        public void ValidateCompletion() { if (CompletionThrows) throw new ScenarioConfigurationException("unused coverage target"); }
     }
 }

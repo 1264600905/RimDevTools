@@ -16,6 +16,8 @@ namespace LogSyncMod.AutoTest.Scenarios
     public sealed class ScenarioPlan
     {
         public int SchemaVersion { get; set; } = 1;
+        public bool ScenarioOnly { get; set; }
+        public List<string> SelectedTestDefNames { get; set; } = new List<string>();
         public List<ScenarioInput> Inputs { get; set; } = new List<ScenarioInput>();
         public List<ScenarioCase> Cases { get; set; } = new List<ScenarioCase>();
     }
@@ -30,6 +32,52 @@ namespace LogSyncMod.AutoTest.Scenarios
         public string PackageId { get; set; }
         public string Xml { get; set; }
         public Dictionary<string, string> SourceLocations { get; set; } = new Dictionary<string, string>();
+        public string CaseType { get; set; } = "ExternalScenario";
+        public string CoverageMode { get; set; } = "supplement";
+        public List<ScenarioCoverageTarget> Coverage { get; set; } = new List<ScenarioCoverageTarget>();
+        public List<ScenarioCoverageTarget> SelectionTargets { get; set; } = new List<ScenarioCoverageTarget>();
+    }
+
+    public sealed class ScenarioCoverageTarget
+    {
+        public string PackageId { get; set; }
+        public string DefType { get; set; }
+        public string DefName { get; set; }
+        public string CaseType { get; set; }
+        // Empty means the unvaried case, never a wildcard.
+        public string Variant { get; set; } = "";
+        public List<string> EvidenceSteps { get; set; } = new List<string>();
+        public string Key => string.Join("|", PackageId, DefType, DefName, CaseType, Variant).ToLowerInvariant();
+    }
+
+    public sealed class ScenarioOrdinaryCandidate
+    {
+        public string CaseId { get; set; }
+        public ScenarioCoverageTarget Target { get; set; }
+    }
+
+    public sealed class ScenarioSelection
+    {
+        public List<ScenarioCase> Cases { get; set; } = new List<ScenarioCase>();
+        public List<string> OrdinaryCaseIds { get; set; } = new List<string>();
+        public List<ScenarioSelectionDecision> Decisions { get; set; } = new List<ScenarioSelectionDecision>();
+        public List<ScenarioReplacement> Replacements { get; set; } = new List<ScenarioReplacement>();
+        public bool ReplacementLimitExceeded { get; set; }
+    }
+
+    public sealed class ScenarioSelectionDecision
+    {
+        public string CaseId { get; set; }
+        public string Reason { get; set; }
+        public bool Selected { get; set; }
+    }
+
+    public sealed class ScenarioReplacement
+    {
+        public string OrdinaryCaseId { get; set; }
+        public string ScenarioCaseId { get; set; }
+        public string TestDefName { get; set; }
+        public ScenarioCoverageTarget Target { get; set; }
     }
 
     public sealed class ScenarioConfigurationException : Exception
@@ -60,6 +108,11 @@ namespace LogSyncMod.AutoTest.Scenarios
         void Cleanup();
     }
 
+    public interface IScenarioCompletionBackend
+    {
+        void ValidateCompletion();
+    }
+
     public sealed class ScenarioTrace
     {
         public int Tick { get; set; }
@@ -77,6 +130,9 @@ namespace LogSyncMod.AutoTest.Scenarios
         public string Source { get; set; }
         public string InputHash { get; set; }
         public List<string> TargetDefNames { get; set; } = new List<string>();
+        public string CaseType { get; set; }
+        public string CoverageMode { get; set; }
+        public List<ScenarioCoverageTarget> Coverage { get; set; } = new List<ScenarioCoverageTarget>();
         public List<ScenarioTrace> Trace { get; set; } = new List<ScenarioTrace>();
     }
 

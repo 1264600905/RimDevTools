@@ -31,6 +31,7 @@ internal sealed class CoreTestSuite
         TestErrorPolicy();
         AutoTestReportTests.Run(Assert);
         ScenarioTests.Run(Assert);
+        ScenarioPlanningTests.Run(Assert);
         TestRuntimeQueue();
         TestRuntimeHistory();
         TestCaseEvidenceRetention();

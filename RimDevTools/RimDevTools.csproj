@@ -18,5 +18,8 @@
     <Compile Include="..\source\AutoTestRunner\Core\AutoTestResultStatus.cs" Link="Shared\AutoTestResultStatus.cs" />
     <Compile Include="..\source\AutoTestRunner\Scenarios\ScenarioContracts.cs" Link="Shared\ScenarioContracts.cs" />
     <Compile Include="..\source\AutoTestRunner\Scenarios\ScenarioLoader.cs" Link="Shared\ScenarioLoader.cs" />
+    <Compile Include="..\source\AutoTestRunner\Scenarios\ScenarioExpansion.cs" Link="Shared\ScenarioExpansion.cs" />
+    <Compile Include="..\source\AutoTestRunner\Scenarios\ScenarioPlanner.cs" Link="Shared\ScenarioPlanner.cs" />
+    <Compile Include="..\source\AutoTestRunner\Scenarios\ScenarioDebugActions.cs" Link="Shared\ScenarioDebugActions.cs" />
   </ItemGroup>
 </Project>

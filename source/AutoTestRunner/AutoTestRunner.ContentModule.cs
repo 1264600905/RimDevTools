@@ -25,6 +25,9 @@ namespace LogSyncMod.AutoTest
                 case AutoTestKind.Recipe:
                     StartRecipeSession(item);
                     break;
+                case AutoTestKind.RecipeExecution:
+                    StartRecipeFunctionalSession(item);
+                    break;
                 case AutoTestKind.Hediff:
                     StartHediffSession(item);
                     break;
@@ -493,7 +496,7 @@ namespace LogSyncMod.AutoTest
             {
                 ThingDef productDef = ResolvePrimaryRecipeProduct(recipe);
                 AutoTestRecipeClassification classification = ClassifyRecipe(recipe, ResolveRecipeWorktable(recipe));
-                if (productDef == null && classification.Kind != AutoTestRecipeExecutionKind.MechResurrection)
+                if (productDef == null && classification.Kind != AutoTestRecipeExecutionKind.MechResurrection && recipe.specialProducts?.Contains(SpecialProductType.StoneBlocks) != true)
                 {
                     QueueImmediateResult(
                         RegisterDiscoveredCase(AutoTestCaseType.RecipeBillUi, "RecipeDef", recipe.defName, recipe.label),
@@ -522,11 +525,10 @@ namespace LogSyncMod.AutoTest
                 }
 
                 requiredWorktables.Add(worktableDef);
-                recipeItems.Add(CreateWorkItem(
-                    AutoTestKind.Recipe,
-                    thingDef: productDef,
-                    recipeDef: recipe,
-                    worktableDef: worktableDef));
+                if (settings.HasAnyScope(AutoTestScope.UI, AutoTestScope.Recipes) || settings.ShouldRunStandardSuite())
+                    recipeItems.Add(CreateWorkItem(AutoTestKind.Recipe, thingDef: productDef, recipeDef: recipe, worktableDef: worktableDef));
+                if (settings.HasAnyScope(AutoTestScope.Combat, AutoTestScope.Recipes) || settings.ShouldRunStandardSuite())
+                    recipeItems.Add(CreateWorkItem(AutoTestKind.RecipeExecution, thingDef: productDef, recipeDef: recipe, worktableDef: worktableDef));
             }
 
             PlaceRecipeWorktables(requiredWorktables);
@@ -605,7 +607,8 @@ namespace LogSyncMod.AutoTest
             if (!recipeOwnedByTargetMod && !producesTargetModThing) return false;
             bool hasDiscoverableProduct = ResolvePrimaryRecipeProduct(recipe) != null;
             bool discoverableResurrection = recipeOwnedByTargetMod && recipe.mechResurrection;
-            return (hasDiscoverableProduct || discoverableResurrection) && MatchesTargetDefNameFilter(recipe);
+            bool nativeStoneProducts = recipeOwnedByTargetMod && recipe.specialProducts?.Contains(SpecialProductType.StoneBlocks) == true;
+            return (hasDiscoverableProduct || discoverableResurrection || nativeStoneProducts) && MatchesTargetDefNameFilter(recipe);
         }
 
         private ThingDef ResolvePrimaryRecipeProduct(RecipeDef recipe)

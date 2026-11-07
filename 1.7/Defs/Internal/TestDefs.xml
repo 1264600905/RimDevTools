@@ -19,6 +19,22 @@
     </genSteps>
   </MapGeneratorDef>
 
+  <MapGeneratorDef>
+    <defName>LogSync_AutoTestOutdoorPocketMap</defName>
+    <label>log sync outdoor scenario arena</label>
+    <disableCallAid>true</disableCallAid>
+    <pocketMapProperties>
+      <biome>TemperateForest</biome>
+      <temperature>21</temperature>
+      <canBeCleaned>true</canBeCleaned>
+    </pocketMapProperties>
+    <genSteps>
+      <li>ElevationFertility</li>
+      <li>LogSync_AutoTestFlatSoil</li>
+      <li>Fog</li>
+    </genSteps>
+  </MapGeneratorDef>
+
   <GenStepDef>
     <defName>LogSync_AutoTestFlatSoil</defName>
     <order>200</order>

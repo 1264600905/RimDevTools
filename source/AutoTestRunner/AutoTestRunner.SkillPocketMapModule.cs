@@ -17,6 +17,7 @@ namespace LogSyncMod.AutoTest
         WaitingForMap,
         SpawningCaster,
         ConfiguringAbilities,
+        ProbingGizmoUi,
         SpawningTargets,
         Fighting,
         CapturingScreenshot,
@@ -53,6 +54,10 @@ namespace LogSyncMod.AutoTest
             public AutoTestResult Result;
             public MapParent Parent;
             public bool AllowScreenshots;
+            public bool GizmoOnly;
+            private long gizmoProbeStarted;
+            private int gizmoReadyFrame = -1;
+            private readonly HashSet<Pawn> ownedUiPawns = new HashSet<Pawn>();
             public int WaitTicks;
             public Ability Ability;
             public int FightTicksRemaining;
@@ -82,6 +87,13 @@ namespace LogSyncMod.AutoTest
             public SkillPocketMapTestSession(AutoTestRunner owner)
             {
                 this.owner = owner;
+            }
+
+            private Pawn GenerateSessionPawn(PawnGenerationRequest request)
+            {
+                var pawn = PawnGenerator.GeneratePawn(request);
+                if (GizmoOnly && pawn != null) ownedUiPawns.Add(pawn);
+                return pawn;
             }
 
             public void Update()
@@ -124,7 +136,13 @@ namespace LogSyncMod.AutoTest
                             break;
                         }
 
-                        Phase = SkillPocketMapTestPhase.SpawningTargets;
+                        if (GizmoOnly)
+                        { gizmoProbeStarted = owner.evidenceClock.RealtimeMilliseconds; Phase = SkillPocketMapTestPhase.ProbingGizmoUi; }
+                        else Phase = SkillPocketMapTestPhase.SpawningTargets;
+                        break;
+                    case SkillPocketMapTestPhase.ProbingGizmoUi:
+                        if (owner.evidenceClock.RealtimeMilliseconds - gizmoProbeStarted >= 15000)
+                        { Result.Status = "failed"; Result.Stage = "ability_ui_timeout"; Result.ErrorMessage = "Native Gizmo UI did not settle within 15 realtime seconds"; Phase = SkillPocketMapTestPhase.CleaningUp; }
                         break;
                     case SkillPocketMapTestPhase.SpawningTargets:
                         if (!TrySpawnTargets())
@@ -228,7 +246,7 @@ namespace LogSyncMod.AutoTest
                     forceGenerateNewPawn: true,
                     canGeneratePawnRelations: false,
                     mustBeCapableOfViolence: false);
-                Pawn pawn = PawnGenerator.GeneratePawn(request);
+                Pawn pawn = GenerateSessionPawn(request);
                 if (pawn == null)
                 {
                     Result.Status = "failed_caster_spawn";
@@ -249,7 +267,7 @@ namespace LogSyncMod.AutoTest
 
             private bool TrySpawnMechanitorControlledMech(PawnKindDef pawnKind)
             {
-                Pawn mechanitor = PawnGenerator.GeneratePawn(
+                Pawn mechanitor = GenerateSessionPawn(
                     new PawnGenerationRequest(
                         PawnKindDefOf.Colonist,
                         Faction.OfPlayer,
@@ -278,7 +296,7 @@ namespace LogSyncMod.AutoTest
                 GenSpawn.Spawn(mechanitor, mechanitorPos, TestMap);
                 MechanitorPawn = mechanitor;
 
-                Pawn mech = PawnGenerator.GeneratePawn(
+                Pawn mech = GenerateSessionPawn(
                     new PawnGenerationRequest(
                         pawnKind,
                         Faction.OfPlayer,
@@ -321,7 +339,7 @@ namespace LogSyncMod.AutoTest
                     forceGenerateNewPawn: true,
                     canGeneratePawnRelations: false,
                     mustBeCapableOfViolence: true);
-                Pawn pawn = PawnGenerator.GeneratePawn(request);
+                Pawn pawn = GenerateSessionPawn(request);
                 if (pawn == null)
                 {
                     Result.Status = "failed_fallback_caster_spawn";
@@ -368,7 +386,8 @@ namespace LogSyncMod.AutoTest
                     CasterPawn.drafter.FireAtWill = false;
                 }
 
-                SearchAndDestroyEnabled = AutoTestRunner.TryEnableSearchAndDestroy(CasterPawn, out string searchAndDestroyStatus);
+                string searchAndDestroyStatus = "not enabled for UI-only checks";
+                SearchAndDestroyEnabled = !GizmoOnly && AutoTestRunner.TryEnableSearchAndDestroy(CasterPawn, out searchAndDestroyStatus);
                 SearchAndDestroyStatus = searchAndDestroyStatus ?? string.Empty;
                 Result.Notes = AutoTestRunner.AppendNote(Result.Notes, "SearchAndDestroy=" + (SearchAndDestroyEnabled ? "Enabled" : SearchAndDestroyStatus));
                 if (SearchAndDestroyEnabled)
@@ -602,7 +621,7 @@ namespace LogSyncMod.AutoTest
                             forceGenerateNewPawn: true,
                             canGeneratePawnRelations: false,
                             mustBeCapableOfViolence: true);
-                        Pawn pawn = PawnGenerator.GeneratePawn(request);
+                        Pawn pawn = GenerateSessionPawn(request);
                         if (pawn == null)
                         {
                             continue;
@@ -645,7 +664,7 @@ namespace LogSyncMod.AutoTest
                     return false;
                 }
 
-                Pawn pawn = PawnGenerator.GeneratePawn(
+                Pawn pawn = GenerateSessionPawn(
                     new PawnGenerationRequest(
                         PawnKindDefOf.Colonist,
                         Faction.OfPlayer,
@@ -1097,7 +1116,8 @@ namespace LogSyncMod.AutoTest
             {
                 try
                 {
-                    RunCleanupStep("semantic_probe", () => owner.RecordSkillSemanticBeforeCleanup(this));
+                    if (!GizmoOnly) RunCleanupStep("semantic_probe", () => owner.RecordSkillSemanticBeforeCleanup(this));
+                    if (GizmoOnly) RunCleanupStep("clear_ui_selection", () => Find.Selector.ClearSelection());
                     RunCleanupStep("destroy_map", () =>
                     {
                         if (TestMap != null && Find.Maps.Contains(TestMap)) owner.DestroyPocketMap(TestMap, Parent);
@@ -1111,11 +1131,50 @@ namespace LogSyncMod.AutoTest
                         if (sourceMap == null) throw new InvalidOperationException("No surviving source map is available after skill pocket map cleanup.");
                         Current.Game.CurrentMap = sourceMap;
                     });
+                    if (GizmoOnly) RunCleanupStep("destroy_ui_pawns", () =>
+                    {
+                        foreach (var pawn in ownedUiPawns.OrderBy(p => p.RaceProps.IsMechanoid ? 0 : 1))
+                        { if (Find.WorldPawns.Contains(pawn)) Find.WorldPawns.RemovePawn(pawn); if (!pawn.Destroyed) pawn.Destroy(DestroyMode.Vanish); }
+                        owner.SemanticAssert(Result, "ability_ui.owned_pawns_removed", ownedUiPawns.All(p => p.Destroyed), "all generated UI pawns destroyed and removed from WorldPawns", "owned=" + ownedUiPawns.Count + "; live=" + ownedUiPawns.Count(p => !p.Destroyed));
+                    });
                     RunCleanupStep("verify_cleanup", () => owner.RecordSkillCleanupSemantic(this));
                 }
                 finally
                 {
                     Phase = SkillPocketMapTestPhase.Done;
+                }
+            }
+
+            public void ProcessGizmoUi()
+            {
+                if (!GizmoOnly || Phase != SkillPocketMapTestPhase.ProbingGizmoUi) return;
+                using (AutoTestOperationContext.PushCase(Result.CaseId))
+                {
+                    try
+                    {
+                        if (gizmoReadyFrame < 0)
+                        {
+                            owner.FocusPocketMapOverview(TestMap);
+                            Find.Selector.ClearSelection(); Find.Selector.Select(CasterPawn, false, false);
+                            gizmoReadyFrame = Time.frameCount + 3;
+                            return;
+                        }
+                        if (Time.frameCount < gizmoReadyFrame) return;
+                        var selection = AutoTestSelectionProbe.Capture();
+                        bool listed = Find.Selector.IsSelected(CasterPawn) && selection.Gizmos.Any(g => g.AbilityDefName == AbilityDef.defName);
+                        owner.SemanticAssert(Result, "ability_ui.gizmo_listed_for_selection", listed, "ability Gizmo bound to actual selected caster and AbilityDef", selection.Summary, "UI-only check; native disabled state retained; ability effects are not covered", System.Text.Json.JsonSerializer.Serialize(selection));
+                        Result.Status = listed ? "passed" : "failed";
+                        Result.Stage = "ability_ui_gizmos";
+                        Result.ErrorMessage = listed ? null : "Ability Gizmo was not listed for the selected caster";
+                        Result.Notes = AutoTestRunner.AppendNote(Result.Notes, "UiOnly=True;EffectsChecked=False;ForceBypass=False");
+                        TryCaptureSkillScreenshot(!listed, "ability_ui");
+                    }
+                    catch (Exception ex)
+                    {
+                        Result.Status = "failed"; Result.Stage = "ability_ui_probe"; Result.ErrorMessage = ex.ToString();
+                        owner.SemanticAssert(Result, "ability_ui.probe_completed", false, "native UI enumeration completes", ex.ToString());
+                    }
+                    Phase = SkillPocketMapTestPhase.CleaningUp;
                 }
             }
 
@@ -1247,8 +1306,8 @@ namespace LogSyncMod.AutoTest
 
                 Result.OverlayLine1 = Result.DefName;
                 Result.OverlayLine2 = string.IsNullOrWhiteSpace(Result.Label) ? Result.DefName : Result.Label;
-                Result.OverlayLine3 = "TargetMode: " + SkillTargetMode;
-                Result.OverlayLine4 = WarmupScreenshotTick >= 0
+                Result.OverlayLine3 = GizmoOnly ? "Gizmo UI; effects not checked" : "TargetMode: " + SkillTargetMode;
+                Result.OverlayLine4 = GizmoOnly ? "Native availability; no force bypass" : WarmupScreenshotTick >= 0
                     ? "WarmupEnd+2: " + WarmupScreenshotTick
                     : "CastTick: " + (FirstCastTick >= 0 ? FirstCastTick.ToString() : "NA");
 
@@ -1318,14 +1377,21 @@ namespace LogSyncMod.AutoTest
             Log.Message("[LogSyncAutoTest] Skill pocket map queue prepared. Total=" + pendingSkillAbilityDefs.Count);
         }
 
-        private void StartNewSkillPocketMapSession(AbilityDef abilityDef)
+        private void BeginAbilityGizmoUiTestSession()
         {
-            AutoTestResult result = CreateResult(AutoTestCaseType.SkillPocketMap, nameof(AbilityDef), abilityDef.defName, abilityDef.label);
+            foreach (var def in DefDatabase<AbilityDef>.AllDefsListForReading.Where(IsTargetSkillAbilityDef).OrderBy(d => d.defName))
+            { RegisterDiscoveredCase(AutoTestCaseType.AbilityGizmoUi, nameof(AbilityDef), def.defName, def.label); pendingAbilityGizmoDefs.Enqueue(def); }
+        }
+
+        private void StartNewSkillPocketMapSession(AbilityDef abilityDef, bool gizmoOnly = false)
+        {
+            AutoTestResult result = CreateResult(gizmoOnly ? AutoTestCaseType.AbilityGizmoUi : AutoTestCaseType.SkillPocketMap, nameof(AbilityDef), abilityDef.defName, abilityDef.label);
             result.OverlayLine1 = string.IsNullOrWhiteSpace(abilityDef.label) ? abilityDef.defName : abilityDef.label;
             result.OverlayLine2 = abilityDef.defName;
             SkillPocketMapTestSession session = new SkillPocketMapTestSession(this)
             {
                 AbilityDef = abilityDef,
+                GizmoOnly = gizmoOnly,
                 Result = result,
                 AllowScreenshots = ShouldCaptureScreenshots(),
                 Phase = SkillPocketMapTestPhase.Initializing
@@ -1377,7 +1443,7 @@ namespace LogSyncMod.AutoTest
             for (int i = 0; i < activeSkillPocketMapSessions.Count; i++)
             {
                 SkillPocketMapTestSession session = activeSkillPocketMapSessions[i];
-                if (session == null || session.AbilityDef == null || session.CasterPawn == null)
+                if (session == null || session.GizmoOnly || session.AbilityDef == null || session.CasterPawn == null)
                 {
                     continue;
                 }

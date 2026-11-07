@@ -68,6 +68,8 @@ internal static class AutoTestReportTests
         legacy.Cases.Add(new AutoTestCaseEvidence { CaseId = first.CaseId, Logs = [new() { Level = "exception", Message = "legacy\r\nstack" }, new() { Level = "error", Message = "legacy\nstack" }] });
         var legacyReport = Render("BuildMarkdown", artifacts, [first], null, legacy);
         assert(Count(legacyReport, "### Log ") == 1 && legacyReport.Contains("- Occurrences: 2", StringComparison.Ordinal), "legacy rows normalize line endings and severity aliases while retaining counts");
+        var matrix = Render("BuildMarkdown", artifacts, [new AutoTestResult { CaseId = "Rule/a/1", DefName = "Rule", CaseType = "ExternalScenario", Status = "failed" }, new AutoTestResult { CaseId = "Rule/b/1", DefName = "Rule", CaseType = "ExternalScenario", Status = "failed" }], null, null);
+        assert(matrix.Contains("| CaseId |", StringComparison.Ordinal) && matrix.Contains("Failure Details: Rule (Rule/a/1)", StringComparison.Ordinal) && matrix.Contains("Failure Details: Rule (Rule/b/1)", StringComparison.Ordinal), "matrix report rows and failure anchors retain independent execution identities");
     }
 
     private static string ImagePath(AutoTestRunArtifacts artifacts, string path) => Path.Combine(Path.GetDirectoryName(artifacts.ReportPath)!, path.Replace('/', Path.DirectorySeparatorChar));

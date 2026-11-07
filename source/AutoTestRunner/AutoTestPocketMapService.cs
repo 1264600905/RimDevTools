@@ -12,6 +12,8 @@ namespace LogSyncMod.AutoTest
         public IntVec3 MapSize;
         public string MapGeneratorDefName;
         public Action<Map> OnGenerated;
+        public bool InheritSourceTile;
+        public int? Seed;
     }
 
     internal sealed class AutoTestPocketMapHandle
@@ -48,15 +50,16 @@ namespace LogSyncMod.AutoTest
                 }
 
                 pocketMapParent.sourceMap = request.SourceMap;
+                if (request.InheritSourceTile) pocketMapParent.Tile = request.SourceMap.Tile;
                 pocketMapParent.mapGenerator = generatorDef;
 
-                Map generatedMap = MapGenerator.GenerateMap(
-                    request.MapSize,
-                    pocketMapParent,
-                    generatorDef,
-                    null,
-                    request.OnGenerated,
-                    isPocketMap: true);
+                Map generatedMap;
+                using (var seed = request.Seed.HasValue ? new ScenarioMapSeed(request.Seed.Value) : null)
+                {
+                    if (request.Seed.HasValue && !ScenarioMapSeed.Supported) throw new InvalidOperationException("Native map seed adapter is unavailable for this game build");
+                    generatedMap = MapGenerator.GenerateMap(request.MapSize, pocketMapParent, generatorDef, null, request.OnGenerated, isPocketMap: true);
+                    seed?.Verify();
+                }
 
                 if (generatedMap == null)
                 {

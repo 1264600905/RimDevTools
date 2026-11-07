@@ -236,9 +236,6 @@ namespace LogSyncMod.AutoTest
             AutoTestAbilitySnapshot after = AutoTestAbilityProbe.Capture(session.Ability);
             bool owned = caster.Abilities.Any(item => string.Equals(item.DefName, session.AbilityDef?.defName, StringComparison.OrdinalIgnoreCase));
             SemanticAssert(session.Result, "skill.ability_owned", owned, session.AbilityDef?.defName, string.Join(",", caster.Abilities.Select(item => item.DefName).ToArray()), null, caster.Summary);
-            AutoTestSelectionSnapshot selection = AutoTestSelectionProbe.Capture(new object[] { session.CasterPawn });
-            bool gizmoListed = selection.Gizmos.Any(gizmo => string.IsNullOrEmpty(session.AbilityDef?.label) || string.Equals(gizmo.Label, session.AbilityDef.label, StringComparison.OrdinalIgnoreCase));
-            SemanticAssert(session.Result, "skill.gizmo_listed_for_selection", gizmoListed, "ability gizmo bound to current selection", selection.Summary, null, selection.Summary);
             SemanticAssert(session.Result, "skill.force_bypass_recorded", true, "forceBypass explicitly recorded", "forceBypass=true; nativeAvailable=" + (session.AbilityBefore?.Available ?? false), "The current isolated skill harness deliberately bypasses GizmoDisabled/CanCast and records that fact.");
             SemanticAssert(session.Result, "skill.target_type_matched", !string.IsNullOrWhiteSpace(session.SkillTargetMode) && session.SkillTargetMode != "Unknown", "resolved target mode", session.SkillTargetMode);
             SemanticAssert(session.Result, "skill.cast_accepted", session.CastSucceeded, "cast job or warmup observed", "castSucceeded=" + session.CastSucceeded + " firstCastTick=" + session.FirstCastTick + " warmupStart=" + session.WarmupStartTick);

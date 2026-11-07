@@ -10,6 +10,37 @@ namespace LogSyncMod.AutoTest
 {
     internal sealed partial class AutoTestRunner
     {
+        private void StartRecipeFunctionalSession(AutoTestWorkItem item)
+        {
+            var result = CreateResult(item.ManifestEntry, "RecipeDef", item.RecipeDef.defName, item.RecipeDef.label);
+            var session = new ActiveSession { Item = item, Result = result, RecipeWorktableThing = GetPlacedRecipeWorktable(item.WorktableDef) };
+            using (AutoTestOperationContext.PushCase(result.CaseId))
+            {
+                try
+                {
+                    result.Stage = "produce";
+                    var execution = ExecuteRecipe(session);
+                    result.Status = execution.Success ? execution.PassedAfterRetry ? AutoTestResultStatus.PassedAfterRetry : AutoTestResultStatus.Passed : AutoTestRecipeResultPolicy.FailureStatus(execution.FailureKind);
+                    result.ErrorMessage = execution.ErrorMessage;
+                    result.Notes = AppendNote(result.Notes, "FunctionalExecution=True;UiChecked=False;NativeWorkAccelerated=True");
+                    SemanticAssert(result, "recipe.functional_execution", execution.Success || execution.FailureKind == AutoTestFailureKind.UnsupportedPath, "native execution succeeds or explicit unsupported adapter", result.Status, execution.ErrorMessage);
+                }
+                catch (Exception ex) { result.Status = "failed"; result.ErrorMessage = ex.ToString(); }
+                finally
+                {
+                    try
+                    {
+                        foreach (var product in session.RecipeProducts.Distinct())
+                        { if (product is Pawn pawn && Find.WorldPawns.Contains(pawn)) Find.WorldPawns.RemovePawn(pawn); if (!product.Destroyed) product.Destroy(DestroyMode.Vanish); }
+                        if (session.RecipeWorktableThing is IBillGiver giver && session.RecipeBill != null && giver.BillStack.Bills.Contains(session.RecipeBill)) giver.BillStack.Delete(session.RecipeBill);
+                        SemanticAssert(result, "recipe.products_cleaned", session.RecipeProducts.All(p => p.Destroyed), "all functional products removed", "remaining=" + session.RecipeProducts.Count(p => !p.Destroyed));
+                    }
+                    catch (Exception ex) { result.Status = "failed"; result.ErrorMessage += "\nRecipe cleanup: " + ex; }
+                    RecordResult(result);
+                }
+            }
+        }
+
         private sealed class AutoTestRecipeExecutionResult
         {
             public bool Success;
@@ -154,7 +185,7 @@ namespace LogSyncMod.AutoTest
                         return Failed(AutoTestFailureKind.DeterministicFailure, verification.ErrorMessage);
 
                     productionBill.Notify_IterationCompleted(worker, ingredients);
-                    session.Result.Notes = AppendNote(session.Result.Notes, "BillConfigOpened=True");
+                    session.Result.Notes = AppendNote(session.Result.Notes, "RecipeFunctionExecuted=True");
                     session.Result.Notes = AppendNote(session.Result.Notes, "Ingredients=" + ingredientSummary);
                     session.Result.Notes = AppendNote(session.Result.Notes, "Products=" + BuildPlacedProductSummary(placedTotals, placedStacks));
                     session.Result.Notes = AppendNote(session.Result.Notes, "BillIterationCompleted=True");
@@ -333,7 +364,7 @@ namespace LogSyncMod.AutoTest
                     return new AutoTestRecipeExecutionResult { FailureKind = AutoTestFailureKind.DeterministicFailure, ErrorMessage = "Placed mech Pawn failed health/kind/faction/death/map validation." };
 
                 mechBill.Notify_IterationCompleted(worker, ingredients);
-                session.Result.Notes = AppendNote(session.Result.Notes, "BillConfigOpened=True");
+                session.Result.Notes = AppendNote(session.Result.Notes, "RecipeFunctionExecuted=True");
                 session.Result.Notes = AppendNote(session.Result.Notes, "Ingredients=" + ingredientSummary);
                 session.Result.Notes = AppendNote(session.Result.Notes, "Products=" + placedPawn.kindDef.defName + "x1(stacks=1)");
                 session.Result.Notes = AppendNote(session.Result.Notes, "MechPawnHealthReadable=True;MechPawnFaction=" + (placedPawn.Faction?.def?.defName ?? "None") + ";MechPawnDead=False;MechPawnMap=True");

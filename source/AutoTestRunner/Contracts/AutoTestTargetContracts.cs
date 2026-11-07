@@ -34,5 +34,6 @@ namespace LogSyncMod.AutoTest
         [DataMember(Name = "label", Order = 5)] public string Label { get; set; }
         [DataMember(Name = "disabled", Order = 6)] public bool Disabled { get; set; }
         [DataMember(Name = "disabledReason", Order = 7)] public string DisabledReason { get; set; }
+        [DataMember(Name = "abilityDefName", Order = 8)] public string AbilityDefName { get; set; }
     }
 }

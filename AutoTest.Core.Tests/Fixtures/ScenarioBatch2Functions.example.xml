@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TestSuite schemaVersion="1" id="batch2.functions" packageId="ludeon.rimworld">
+  <Case id="recipe" caseType="RecipeExecution" timeoutRealSeconds="90">
+    <testDefName>Batch2_StonecuttingProductsAndConsumption</testDefName>
+    <Targets><Def defType="RecipeDef" defName="Make_StoneBlocksAny" /></Targets>
+    <Scene /><Teams><Team id="player" factionDef="player" /></Teams>
+    <Actors>
+      <Pawn id="worker" team="player" x="15" z="20"><basePawnKind>SpaceRefugee</basePawnKind><Skills><Set def="Crafting" level="12" /></Skills></Pawn>
+      <Building id="bench" def="TableStonecutter" stuff="Steel" team="player" x="18" z="20" />
+      <Thing id="chunk" def="ChunkGranite" x="20" z="20" />
+    </Actors>
+    <Steps>
+      <ExecuteRecipe id="produce" actor="worker" worktable="bench" recipe="Make_StoneBlocksAny" output="products" accelerate="true"><Ingredients><Ingredient actor="chunk" count="1" /></Ingredients></ExecuteRecipe>
+      <Require id="verify"><ThingQuantity actor="products" def="BlocksGranite" min="20" max="20" /><ActorState actor="chunk" state="destroyed" /><ThingExists def="BlocksGranite" transition="added" since="produce" /></Require>
+      <Screenshot id="recipe-image" focus="bench" />
+    </Steps>
+    <Success><StepSucceeded ref="verify" /><StepSucceeded ref="recipe-image" /></Success>
+  </Case>
+  <Case id="corpse" caseType="CorpseLifecycle" timeoutRealSeconds="90">
+    <testDefName>Batch2_CorpseRotAndSamePawnResurrection</testDefName>
+    <Scene /><Actors><Corpse id="corpse" x="20" z="20"><basePawnKind>SpaceRefugee</basePawnKind></Corpse></Actors>
+    <Steps>
+      <Require id="dead"><ActorState actor="corpse.innerPawn" state="dead" /><CorpseState actor="corpse" state="valid" /></Require>
+      <SetRot id="rot" actor="corpse" state="Rotting" />
+      <Require id="rotten"><ComponentState actor="corpse" component="rot" state="Rotting" /></Require>
+      <Resurrect id="revive" actor="corpse" />
+      <Require id="alive"><ActorState actor="corpse.innerPawn" state="alive" /><ActorState actor="corpse.innerPawn" state="spawned" /><CorpseState actor="corpse" state="destroyed" /></Require>
+      <Screenshot id="resurrection-image" focus="corpse.innerPawn" />
+    </Steps>
+    <Success><StepSucceeded ref="rotten" /><StepSucceeded ref="alive" /></Success>
+  </Case>
+  <Case id="inventory" caseType="ThingBehavior" timeoutRealSeconds="90">
+    <testDefName>Batch2_InventoryPreservesThingIdentity</testDefName>
+    <Scene /><Actors><Pawn id="pawn" x="20" z="20"><basePawnKind>SpaceRefugee</basePawnKind></Pawn><Thing id="steel" def="Steel" count="25" x="22" z="20" /></Actors>
+    <Steps>
+      <TransferThing id="take" actor="steel" target="pawn" />
+      <Require id="held"><ThingHeld actor="steel" target="pawn" /><ThingQuantity actor="steel" def="Steel" min="25" max="25" /></Require>
+      <Checkpoint id="before-drop" />
+      <DropInventory id="drop" actor="pawn" target="steel" />
+      <Require id="same"><ActorState actor="steel" state="spawned" /><Not><ThingExists def="Steel" transition="added" since="before-drop" /></Not></Require>
+      <Destroy id="destroy" actor="steel" />
+      <Require id="gone"><ActorState actor="steel" state="destroyed" /></Require>
+    </Steps>
+    <Success><StepSucceeded ref="held" /><StepSucceeded ref="same" /><StepSucceeded ref="gone" /></Success>
+  </Case>
+</TestSuite>

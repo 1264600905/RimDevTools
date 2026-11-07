@@ -115,6 +115,7 @@ namespace LogSyncMod.AutoTest
         private readonly Queue<ThingDef> pendingMeleeWeaponDefs = new Queue<ThingDef>();
         private readonly List<SkillPocketMapTestSession> activeSkillPocketMapSessions = new List<SkillPocketMapTestSession>();
         private readonly Queue<AbilityDef> pendingSkillAbilityDefs = new Queue<AbilityDef>();
+        private readonly Queue<AbilityDef> pendingAbilityGizmoDefs = new Queue<AbilityDef>();
         private readonly List<ThreeViewTestSession> activeThreeViewSessions = new List<ThreeViewTestSession>();
         private readonly Queue<AutoTestThreeViewTargetSpec> pendingThreeViewTargets = new Queue<AutoTestThreeViewTargetSpec>();
         private readonly List<StaticViewTestSession> activeStaticViewSessions = new List<StaticViewTestSession>();
@@ -240,7 +241,8 @@ namespace LogSyncMod.AutoTest
                 return;
             }
 
-            if (!string.IsNullOrWhiteSpace(settings.autoTestScenarioPlan))
+            if (!LoadScenarioPlan()) return;
+            if (externalPlan?.ScenarioOnly == true)
             {
                 InitializeScenarios();
                 return;
@@ -298,17 +300,20 @@ namespace LogSyncMod.AutoTest
             {
                 BeginSkillPocketMapTestSession();
             }
+            if (settings.ShouldTestSkillPocketMaps() || settings.HasScope(AutoTestScope.UI) || settings.ShouldRunStandardSuite()) BeginAbilityGizmoUiTestSession();
 
             if (settings.ShouldTestCombatPawns())
             {
                 BeginCombatPawnTestSession();
             }
 
-            ApplyBatchLimit();
+            if (externalPlan != null) InitializeScenarios();
+            else ApplyBatchLimit();
+            if (completed) return;
             MaterializeImmediateResults();
-            BuildPlannedManifest();
+            if (externalPlan == null) BuildPlannedManifest();
 
-            int totalPending = pendingItems.Count + pendingTurretDefs.Count + pendingRangedWeaponDefs.Count + pendingMeleeWeaponDefs.Count + pendingSkillAbilityDefs.Count + pendingStaticViewTargets.Count + pendingThreeViewTargets.Count + pendingCombatPawnTargets.Count;
+            int totalPending = pendingItems.Count + pendingTurretDefs.Count + pendingRangedWeaponDefs.Count + pendingMeleeWeaponDefs.Count + pendingSkillAbilityDefs.Count + pendingAbilityGizmoDefs.Count + pendingStaticViewTargets.Count + pendingThreeViewTargets.Count + pendingCombatPawnTargets.Count;
             int pocketMapMaxConcurrent = settings.GetPocketMapMaxConcurrent();
             Log.Message(string.Format(
                 "[LogSyncAutoTest] START packageId={0} map={1} scope={2} pending={3} pocketMapMaxConcurrent={4}",
@@ -330,10 +335,10 @@ namespace LogSyncMod.AutoTest
                 settings.ShouldTestSkillPocketMaps()));
             Log.Message("[LogSyncAutoTest] TARGET DefNames: " + (settings.autoTestTargetDefNames.Count == 0 ? "<all>" : string.Join(",", settings.autoTestTargetDefNames)));
 
-            if (totalPending == 0)
+            if (totalPending == 0 && !HasPendingScenarios)
             {
                 Log.Warning("[LogSyncAutoTest] No matching auto-test targets were found for " + targetPackageId);
-                Finish();
+                if (!TryActivateDeferredScenarios()) Finish();
             }
         }
 
@@ -359,7 +364,7 @@ namespace LogSyncMod.AutoTest
         {
             if (completed) return;
             PollPocketMapCleanupWatchdog();
-            if (scenarioQueue != null) { TickScenarios(); return; }
+            if (HasPendingScenarios) { TickScenarios(); return; }
 
             if (cancelRequested)
             {
@@ -367,7 +372,7 @@ namespace LogSyncMod.AutoTest
                 cancelRequested = false;
             }
 
-            if (activeSession == null && pendingItems.Count > 0)
+            if (activeSession == null && pendingItems.Count > 0 && !activeSkillPocketMapSessions.Any(s => s.GizmoOnly))
             {
                 StartNextSession();
             }
@@ -528,6 +533,7 @@ namespace LogSyncMod.AutoTest
                 pendingRangedWeaponDefs.Count == 0 &&
                 pendingMeleeWeaponDefs.Count == 0 &&
                 pendingSkillAbilityDefs.Count == 0 &&
+                pendingAbilityGizmoDefs.Count == 0 &&
                 pendingStaticViewTargets.Count == 0 &&
                 pendingThreeViewTargets.Count == 0 &&
                 pendingCombatPawnTargets.Count == 0 &&
@@ -540,13 +546,14 @@ namespace LogSyncMod.AutoTest
                 activeCombatPawnSessions.Count == 0 &&
                 pocketMapService.PendingCleanupCount == 0)
             {
-                Finish();
+                if (!TryActivateDeferredScenarios()) Finish();
             }
         }
 
         private bool TryStartNextPocketMapSession()
         {
             if (pocketMapService.PendingCleanupCount > 0) return false;
+            if (activeSkillPocketMapSessions.Any(s => s.GizmoOnly)) return false;
             int maxConcurrentPocketMaps = settings.GetPocketMapMaxConcurrent();
             int activePocketMaps = GetActivePocketMapSessionCount();
             if (activePocketMaps >= maxConcurrentPocketMaps)
@@ -572,6 +579,12 @@ namespace LogSyncMod.AutoTest
                 return true;
             }
 
+            if (pendingAbilityGizmoDefs.Count > 0)
+            {
+                if (GetActivePocketMapSessionCount() != 0 || activeSession != null || pendingItems.Count > 0) return false;
+                StartNewSkillPocketMapSession(pendingAbilityGizmoDefs.Dequeue(), gizmoOnly: true);
+                return true;
+            }
             if (pendingSkillAbilityDefs.Count > 0)
             {
                 StartNewSkillPocketMapSession(pendingSkillAbilityDefs.Dequeue());
@@ -667,7 +680,7 @@ namespace LogSyncMod.AutoTest
         internal void PollPocketMapCleanupWatchdog()
         {
             pocketMapService.PollCleanupWatchdog();
-            if (scenarioQueue != null && !completed) TickScenarios();
+            if (HasPendingScenarios && !completed) TickScenarios();
         }
 
         private int GetActivePocketMapSessionCount()
@@ -686,6 +699,7 @@ namespace LogSyncMod.AutoTest
                    pendingRangedWeaponDefs.Count > 0 ||
                    pendingMeleeWeaponDefs.Count > 0 ||
                    pendingSkillAbilityDefs.Count > 0 ||
+                   pendingAbilityGizmoDefs.Count > 0 ||
                    activeTurretSessions.Count > 0 ||
                    activeRangedWeaponSessions.Count > 0 ||
                    activeMeleeWeaponSessions.Count > 0 ||
@@ -812,11 +826,15 @@ namespace LogSyncMod.AutoTest
 
         private void CancelActiveSessions()
         {
+            foreach (var remaining in deferredScenarioQueue)
+                results.Add(new AutoTestResult { PackageId = targetPackageId, CaseId = remaining.CaseId, CaseType = remaining.CaseType, Scope = "ExternalScenario", Category = "Scenario", DefType = "TestRule", DefName = remaining.TestDefName, Label = remaining.Name, Status = "cancelled", Stage = "cancel", ErrorMessage = "Explicit cancellation before deferred scene preparation" });
+            deferredScenarioQueue.Clear();
             pendingItems.Clear();
             pendingTurretDefs.Clear();
             pendingRangedWeaponDefs.Clear();
             pendingMeleeWeaponDefs.Clear();
             pendingSkillAbilityDefs.Clear();
+            pendingAbilityGizmoDefs.Clear();
             pendingStaticViewTargets.Clear();
             pendingThreeViewTargets.Clear();
             pendingCombatPawnTargets.Clear();
@@ -879,7 +897,7 @@ namespace LogSyncMod.AutoTest
             }
 
             int limit = Math.Max(1, settings.autoTestBatchSize);
-            int originalTotal = pendingItems.Count + pendingTurretDefs.Count + pendingRangedWeaponDefs.Count + pendingMeleeWeaponDefs.Count + pendingSkillAbilityDefs.Count + pendingStaticViewTargets.Count + pendingThreeViewTargets.Count + pendingCombatPawnTargets.Count + pendingImmediateResults.Count;
+            int originalTotal = pendingItems.Count + pendingTurretDefs.Count + pendingRangedWeaponDefs.Count + pendingMeleeWeaponDefs.Count + pendingSkillAbilityDefs.Count + pendingAbilityGizmoDefs.Count + pendingStaticViewTargets.Count + pendingThreeViewTargets.Count + pendingCombatPawnTargets.Count + pendingImmediateResults.Count;
             if (originalTotal <= limit)
             {
                 return;
@@ -892,6 +910,7 @@ namespace LogSyncMod.AutoTest
             RetainSelected(pendingRangedWeaponDefs, selectedIndices, ref candidateIndex);
             RetainSelected(pendingMeleeWeaponDefs, selectedIndices, ref candidateIndex);
             RetainSelected(pendingSkillAbilityDefs, selectedIndices, ref candidateIndex);
+            RetainSelected(pendingAbilityGizmoDefs, selectedIndices, ref candidateIndex);
             RetainSelected(pendingStaticViewTargets, selectedIndices, ref candidateIndex);
             RetainSelected(pendingThreeViewTargets, selectedIndices, ref candidateIndex);
             RetainSelected(pendingCombatPawnTargets, selectedIndices, ref candidateIndex);
@@ -932,6 +951,8 @@ namespace LogSyncMod.AutoTest
                     return AutoTestCaseType.TerrainInfoCard;
                 case AutoTestKind.Recipe:
                     return AutoTestCaseType.RecipeBillUi;
+                case AutoTestKind.RecipeExecution:
+                    return AutoTestCaseType.RecipeExecution;
                 case AutoTestKind.Hediff:
                     return AutoTestCaseType.HediffInfoCard;
                 case AutoTestKind.AnimalInfoCard:
@@ -1009,7 +1030,10 @@ namespace LogSyncMod.AutoTest
                     return "Terrain";
                 case AutoTestCaseType.RecipeInfoCard:
                 case AutoTestCaseType.RecipeBillUi:
+                case AutoTestCaseType.RecipeExecution:
                     return "Recipe";
+                case AutoTestCaseType.AbilityGizmoUi:
+                    return "AbilityUi";
                 case AutoTestCaseType.HediffInfoCard:
                     return "Hediff";
                 case AutoTestCaseType.AnimalInfoCard:
@@ -1089,6 +1113,7 @@ namespace LogSyncMod.AutoTest
                 case AutoTestCaseType.PawnInfoCard:
                 case AutoTestCaseType.GeneInfoCard:
                 case AutoTestCaseType.XenotypeInfoCard:
+                case AutoTestCaseType.AbilityGizmoUi:
                     return AutoTestScope.UI;
                 case AutoTestCaseType.TurretPocketMap:
                 case AutoTestCaseType.RangedWeaponPocketMap:
@@ -1116,6 +1141,8 @@ namespace LogSyncMod.AutoTest
                     return AutoTestScope.View;
                 case AutoTestCaseType.SkillPocketMap:
                     return AutoTestScope.Misc;
+                case AutoTestCaseType.RecipeExecution:
+                    return AutoTestScope.Combat;
                 default:
                     return AutoTestScope.Misc;
             }
@@ -1256,6 +1283,7 @@ namespace LogSyncMod.AutoTest
 
         private void BuildPlannedManifest()
         {
+            foreach (var entry in discoveredManifest) { entry.Planned = false; entry.PlannedOrder = 0; }
             plannedManifest.Clear();
             plannedCaseIds.Clear();
             nextPlannedOrder = 1;
@@ -1284,6 +1312,7 @@ namespace LogSyncMod.AutoTest
             {
                 AddPlannedManifestEntry(RegisterDiscoveredCase(AutoTestCaseType.SkillPocketMap, nameof(AbilityDef), def?.defName, def?.label));
             }
+            foreach (AbilityDef def in pendingAbilityGizmoDefs) AddPlannedManifestEntry(RegisterDiscoveredCase(AutoTestCaseType.AbilityGizmoUi, nameof(AbilityDef), def?.defName, def?.label));
 
             foreach (AutoTestStaticViewTargetSpec spec in pendingStaticViewTargets)
             {
@@ -1308,6 +1337,7 @@ namespace LogSyncMod.AutoTest
                     result.DefName,
                     result.Label));
             }
+            foreach (var deferred in pendingImmediateResults) AddPlannedManifestEntry(deferred.ManifestEntry);
         }
 
         private void AddPlannedManifestEntry(AutoTestManifestEntry entry)
@@ -1333,7 +1363,10 @@ namespace LogSyncMod.AutoTest
         private AutoTestRunSummary BuildRunSummary()
         {
             AutoTestRunSummary summary = new AutoTestRunSummary();
-            summary.RunMode = scenarioQueue != null ? "ExternalScenario" : ResolveRunMode();
+            summary.RunMode = externalPlan == null ? ResolveRunMode() : externalPlan.ScenarioOnly ? "ExternalScenario" : "MixedScenario";
+            summary.ScenarioSelection = externalSelection;
+            summary.VerifiedCoverageKeys = results.Where(r => r.Scenario != null && AutoTestResultStatus.IsPassed(r.Status))
+                .SelectMany(r => r.Scenario.Coverage.Select(t => t.Key)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
             summary.DiscoveredCount = discoveredManifest.Count;
             summary.PlannedCount = plannedManifest.Count;
             summary.ExecutedCount = results.Count;
@@ -1365,10 +1398,12 @@ namespace LogSyncMod.AutoTest
             {
                 foreach (string requested in settings.autoTestTargetDefNames)
                 {
-                    bool matched = plannedManifest.Any(entry =>
+                    var matchingManifest = externalPlan == null ? plannedManifest : discoveredManifest;
+                    bool matched = matchingManifest.Any(entry =>
                         string.Equals(entry.DefName, requested, StringComparison.OrdinalIgnoreCase) ||
                         entry.DefName.StartsWith(requested + "@", StringComparison.OrdinalIgnoreCase) ||
-                        entry.DefName.EndsWith("@" + requested, StringComparison.OrdinalIgnoreCase));
+                        entry.DefName.EndsWith("@" + requested, StringComparison.OrdinalIgnoreCase)) ||
+                        externalPlan?.Cases.Any(c => c.Coverage.Concat(c.SelectionTargets).Any(t => string.Equals(t.DefName, requested, StringComparison.OrdinalIgnoreCase))) == true;
                     if (!matched) summary.MissingDefNames.Add(requested);
                 }
                 foreach (string missing in summary.MissingDefNames)

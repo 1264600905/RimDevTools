@@ -169,7 +169,7 @@ namespace LogSyncMod
 
         public bool ShouldTestRecipes()
         {
-            return HasAnyScope(AutoTestScope.UI, AutoTestScope.Recipes) || ShouldRunStandardSuite();
+            return HasAnyScope(AutoTestScope.UI, AutoTestScope.Combat, AutoTestScope.Recipes) || ShouldRunStandardSuite();
         }
 
         public bool ShouldTestHediffs()

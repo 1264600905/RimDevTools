@@ -496,7 +496,8 @@ public static class CliHelp
           --defname <value>           Repeatable auto-mode DefName allowlist.
           --batch-size <n>            Positive auto random-case limit; defaults to 40.
           --scenario-path <path>      1.7 external XML file or nonrecursive *.autotest.xml folder.
-          --scenario-only             Run the frozen external plan independently (required in batch 1).
+          --scenario-only             Run only external cases; omit to mix with ordinary tests.
+          --test-name <name>          Select an external testDefName or unique display name; repeatable.
           --isolated-desktop          Force a private Windows desktop for this run.
           --no-isolated-desktop       Force the current visible desktop for this run.
           --verbose                  Include the active mod list, additions, and deploy diagnostics.

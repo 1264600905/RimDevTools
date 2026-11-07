@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TestSuite schemaVersion="1" id="batch2.biotech" packageId="ludeon.rimworld.biotech">
+  <Requirements><DLC packageId="ludeon.rimworld.biotech" /></Requirements>
+  <Case id="hemogen-jump" caseType="SkillPocketMap" timeoutRealSeconds="90">
+    <testDefName>Batch2_HemogenCostAndNativeLongjump</testDefName>
+    <Targets><Def defType="AbilityDef" defName="Longjump" /></Targets>
+    <Scene /><Teams><Team id="player" factionDef="player" /></Teams>
+    <Actors><Pawn id="caster" team="player" x="20" z="20"><basePawnKind>SpaceRefugee</basePawnKind><minGenerationAge>25</minGenerationAge><maxGenerationAge>25</maxGenerationAge><Xenotype def="Sanguophage" /></Pawn></Actors>
+    <Steps>
+      <DebugAction id="hemogen" actionId="native.fillHemogen" value="1"><Select mode="single" actor="caster" /></DebugAction>
+      <Require id="ready"><ResourceLevel actor="caster" def="Hemogenic" min="0.99" /><HasAbility actor="caster" def="Longjump" /></Require>
+      <CastAbility id="jump" actor="caster" def="Longjump" targetX="26" targetZ="20" timeoutRealSeconds="20" />
+      <Wait id="landed" timeoutRealSeconds="20"><ActorPosition actor="caster" x="26" z="20" /><ResourceLevel actor="caster" def="Hemogenic" max="0.97" /></Wait>
+      <Screenshot id="jump-image" focus="caster" />
+    </Steps>
+    <Success><StepSucceeded ref="jump" /><StepSucceeded ref="landed" /></Success>
+  </Case>
+  <Case id="deathless-passive" caseType="SkillPocketMap" timeoutRealSeconds="90">
+    <testDefName>Batch2_PassiveDeathlessReactionToDamage</testDefName>
+    <Targets><Def defType="GeneDef" defName="Deathless" /></Targets>
+    <Scene /><Actors><Pawn id="patient" x="20" z="20"><basePawnKind>SpaceRefugee</basePawnKind><minGenerationAge>25</minGenerationAge><maxGenerationAge>25</maxGenerationAge><Genes mode="replace"><Add def="Deathless" /></Genes></Pawn></Actors>
+    <Steps>
+      <ApplyDamage id="stimulus" actor="patient" def="Cut" amount="1000" armorPenetration="100" part="Heart" />
+      <Wait id="reaction" timeoutRealSeconds="20"><HasHediff actor="patient" def="RegenerationComa" transition="added" since="stimulus" observation="eventually" /></Wait>
+      <Require id="survived"><ActorState actor="patient" state="alive" /></Require>
+      <Screenshot id="passive-image" focus="patient" />
+    </Steps>
+    <Success><StepSucceeded ref="reaction" /><StepSucceeded ref="survived" /></Success>
+  </Case>
+  <Case id="missing-hemogen" timeoutRealSeconds="60">
+    <testDefName>Batch2_ExpectedMissingHemogenResource</testDefName>
+    <Scene /><Actors><Pawn id="pawn" x="20" z="20"><basePawnKind>SpaceRefugee</basePawnKind><Genes mode="replace" /></Pawn></Actors>
+    <Steps><DebugAction id="hemogen" actionId="native.fillHemogen"><Select mode="single" actor="pawn" /></DebugAction></Steps>
+    <Success><StepSucceeded ref="hemogen" /></Success>
+  </Case>
+</TestSuite>

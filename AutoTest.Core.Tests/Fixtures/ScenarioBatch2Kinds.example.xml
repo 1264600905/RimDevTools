@@ -1,0 +1,397 @@
+<?xml version='1.0' encoding='utf-8'?>
+<TestSuite schemaVersion="1" id="batch2.kinds" packageId="ludeon.rimworld">
+  <Requirements>
+    <Mod packageId="hentailoliteam.axolotl" />
+  </Requirements>
+  <Case id="TurretPocketMap" caseType="TurretPocketMap" timeoutRealSeconds="90" seed="31981">
+    <testDefName>Batch2_TurretPocketMap_CustomDamage</testDefName>
+    <Scene />
+    <Teams>
+      <Team id="a" factionDef="player" />
+      <Team id="b" factionDef="AncientsHostile" />
+    </Teams>
+    <Actors>
+      <Building def="Turret_MiniTurret" stuff="Steel" team="a" x="20" z="20" id="attacker" />
+      <Building def="LogSync_AutoTestPowerGenerator" team="a" x="19" z="20" id="generator" />
+      <Pawn id="target" team="b" x="27" z="20">
+        <basePawnKind>SpaceRefugee</basePawnKind>
+        <Hediffs>
+          <Ensure def="LogSync_TurretTestTarget" severity="1" />
+        </Hediffs>
+      </Pawn>
+    </Actors>
+    <Steps>
+      <DebugAction id="fuel" actionId="native.refuel">
+        <Select mode="single" actor="attacker" />
+      </DebugAction>
+      <Wait id="powered" timeoutRealSeconds="10">
+        <ComponentState actor="attacker" component="power" state="true" />
+      </Wait>
+      <Attack id="attack" actor="attacker" target="target" melee="false" />
+      <Wait id="damage" timeoutRealSeconds="20">
+        <HealthPercent actor="target" max="0.99999" />
+      </Wait>
+      <Screenshot id="image" focus="target" />
+    </Steps>
+    <Success>
+      <StepSucceeded ref="damage" />
+      <StepSucceeded ref="image" />
+    </Success>
+  </Case>
+  <Case id="TurretPocketMap-negative" caseType="TurretPocketMap" timeoutRealSeconds="90" seed="31981">
+    <testDefName>Batch2_TurretPocketMap_ExpectedAssertionFailure</testDefName>
+    <Scene />
+    <Teams>
+      <Team id="a" factionDef="player" />
+      <Team id="b" factionDef="AncientsHostile" />
+    </Teams>
+    <Actors>
+      <Building def="Turret_MiniTurret" stuff="Steel" team="a" x="20" z="20" id="attacker" />
+      <Building def="LogSync_AutoTestPowerGenerator" team="a" x="19" z="20" id="generator" />
+      <Pawn id="target" team="b" x="27" z="20">
+        <basePawnKind>SpaceRefugee</basePawnKind>
+        <Hediffs>
+          <Ensure def="LogSync_TurretTestTarget" severity="1" />
+        </Hediffs>
+      </Pawn>
+    </Actors>
+    <Steps>
+      <Require id="expected-failure">
+        <ActorState actor="target" state="destroyed" />
+      </Require>
+      <DebugAction id="fuel" actionId="native.refuel">
+        <Select mode="single" actor="attacker" />
+      </DebugAction>
+      <Wait id="powered" timeoutRealSeconds="10">
+        <ComponentState actor="attacker" component="power" state="true" />
+      </Wait>
+      <Attack id="attack" actor="attacker" target="target" melee="false" />
+      <Wait id="damage" timeoutRealSeconds="20">
+        <HealthPercent actor="target" max="0.99999" />
+      </Wait>
+      <Screenshot id="image" focus="target" />
+    </Steps>
+    <Success>
+      <StepSucceeded ref="damage" />
+      <StepSucceeded ref="image" />
+    </Success>
+  </Case>
+  <Case id="MeleeWeaponPocketMap" caseType="MeleeWeaponPocketMap" timeoutRealSeconds="90" seed="31981">
+    <testDefName>Batch2_MeleeWeaponPocketMap_CustomDamage</testDefName>
+    <Scene />
+    <Teams>
+      <Team id="a" factionDef="player" />
+      <Team id="b" factionDef="AncientsHostile" />
+    </Teams>
+    <Actors>
+      <Pawn id="attacker" team="a" x="20" z="20">
+        <basePawnKind>SpaceRefugee</basePawnKind>
+        <Equipment mode="replace">
+          <SetPrimary def="MeleeWeapon_LongSword" stuff="Steel" quality="Normal" />
+        </Equipment>
+      </Pawn>
+      <Building def="Wall" stuff="Steel" team="b" x="21" z="20" id="target" />
+    </Actors>
+    <Steps>
+      <Attack id="attack" actor="attacker" target="target" melee="true" />
+      <Wait id="damage" timeoutRealSeconds="20">
+        <HealthPercent actor="target" max="0.99999" />
+      </Wait>
+      <Screenshot id="image" focus="target" />
+    </Steps>
+    <Success>
+      <StepSucceeded ref="damage" />
+      <StepSucceeded ref="image" />
+    </Success>
+  </Case>
+  <Case id="MeleeWeaponPocketMap-negative" caseType="MeleeWeaponPocketMap" timeoutRealSeconds="90" seed="31981">
+    <testDefName>Batch2_MeleeWeaponPocketMap_ExpectedAssertionFailure</testDefName>
+    <Scene />
+    <Teams>
+      <Team id="a" factionDef="player" />
+      <Team id="b" factionDef="AncientsHostile" />
+    </Teams>
+    <Actors>
+      <Pawn id="attacker" team="a" x="20" z="20">
+        <basePawnKind>SpaceRefugee</basePawnKind>
+        <Equipment mode="replace">
+          <SetPrimary def="MeleeWeapon_LongSword" stuff="Steel" quality="Normal" />
+        </Equipment>
+      </Pawn>
+      <Building def="Wall" stuff="Steel" team="b" x="21" z="20" id="target" />
+    </Actors>
+    <Steps>
+      <Require id="expected-failure">
+        <ActorState actor="target" state="destroyed" />
+      </Require>
+      <Attack id="attack" actor="attacker" target="target" melee="true" />
+      <Wait id="damage" timeoutRealSeconds="20">
+        <HealthPercent actor="target" max="0.99999" />
+      </Wait>
+      <Screenshot id="image" focus="target" />
+    </Steps>
+    <Success>
+      <StepSucceeded ref="damage" />
+      <StepSucceeded ref="image" />
+    </Success>
+  </Case>
+  <Case id="ApparelCombat" caseType="ApparelCombat" timeoutRealSeconds="90" seed="31981">
+    <testDefName>Batch2_ApparelCombat_CustomDamage</testDefName>
+    <Scene />
+    <Teams>
+      <Team id="a" factionDef="player" />
+      <Team id="b" factionDef="AncientsHostile" />
+    </Teams>
+    <Actors>
+      <Pawn id="attacker" team="a" x="20" z="20">
+        <basePawnKind>SpaceRefugee</basePawnKind>
+        <Equipment mode="replace">
+          <SetPrimary def="MeleeWeapon_Club" stuff="Steel" />
+        </Equipment>
+      </Pawn>
+      <Pawn id="target" team="b" x="21" z="20">
+        <basePawnKind>SpaceRefugee</basePawnKind>
+        <Apparel mode="replace">
+          <Add def="Apparel_PowerArmor" quality="Normal" />
+        </Apparel>
+        <Equipment mode="replace" />
+      </Pawn>
+    </Actors>
+    <Steps>
+      <Attack id="attack" actor="attacker" target="target" melee="true" />
+      <Wait id="damage" timeoutRealSeconds="20">
+        <HealthPercent actor="target" max="0.99999" />
+      </Wait>
+      <Screenshot id="image" focus="target" />
+    </Steps>
+    <Success>
+      <StepSucceeded ref="damage" />
+      <StepSucceeded ref="image" />
+    </Success>
+  </Case>
+  <Case id="ApparelCombat-negative" caseType="ApparelCombat" timeoutRealSeconds="90" seed="31981">
+    <testDefName>Batch2_ApparelCombat_ExpectedAssertionFailure</testDefName>
+    <Scene />
+    <Teams>
+      <Team id="a" factionDef="player" />
+      <Team id="b" factionDef="AncientsHostile" />
+    </Teams>
+    <Actors>
+      <Pawn id="attacker" team="a" x="20" z="20">
+        <basePawnKind>SpaceRefugee</basePawnKind>
+        <Equipment mode="replace">
+          <SetPrimary def="MeleeWeapon_Club" stuff="Steel" />
+        </Equipment>
+      </Pawn>
+      <Pawn id="target" team="b" x="21" z="20">
+        <basePawnKind>SpaceRefugee</basePawnKind>
+        <Apparel mode="replace">
+          <Add def="Apparel_PowerArmor" quality="Normal" />
+        </Apparel>
+        <Equipment mode="replace" />
+      </Pawn>
+    </Actors>
+    <Steps>
+      <Require id="expected-failure">
+        <ActorState actor="target" state="destroyed" />
+      </Require>
+      <Attack id="attack" actor="attacker" target="target" melee="true" />
+      <Wait id="damage" timeoutRealSeconds="20">
+        <HealthPercent actor="target" max="0.99999" />
+      </Wait>
+      <Screenshot id="image" focus="target" />
+    </Steps>
+    <Success>
+      <StepSucceeded ref="damage" />
+      <StepSucceeded ref="image" />
+    </Success>
+  </Case>
+  <Case id="AnimalCombat" caseType="AnimalCombat" timeoutRealSeconds="90" seed="31981">
+    <testDefName>Batch2_AnimalCombat_CustomDamage</testDefName>
+    <Scene />
+    <Teams>
+      <Team id="a" factionDef="player" />
+      <Team id="b" factionDef="AncientsHostile" />
+    </Teams>
+    <Actors>
+      <Pawn id="attacker" team="a" x="20" z="20">
+        <basePawnKind>Wolf_Timber</basePawnKind>
+      </Pawn>
+      <Building def="Wall" stuff="Steel" team="b" x="21" z="20" id="target" />
+    </Actors>
+    <Steps>
+      <Attack id="attack" actor="attacker" target="target" melee="true" />
+      <Wait id="damage" timeoutRealSeconds="20">
+        <HealthPercent actor="target" max="0.99999" />
+      </Wait>
+      <Screenshot id="image" focus="target" />
+    </Steps>
+    <Success>
+      <StepSucceeded ref="damage" />
+      <StepSucceeded ref="image" />
+    </Success>
+  </Case>
+  <Case id="AnimalCombat-negative" caseType="AnimalCombat" timeoutRealSeconds="90" seed="31981">
+    <testDefName>Batch2_AnimalCombat_ExpectedAssertionFailure</testDefName>
+    <Scene />
+    <Teams>
+      <Team id="a" factionDef="player" />
+      <Team id="b" factionDef="AncientsHostile" />
+    </Teams>
+    <Actors>
+      <Pawn id="attacker" team="a" x="20" z="20">
+        <basePawnKind>Wolf_Timber</basePawnKind>
+      </Pawn>
+      <Building def="Wall" stuff="Steel" team="b" x="21" z="20" id="target" />
+    </Actors>
+    <Steps>
+      <Require id="expected-failure">
+        <ActorState actor="target" state="destroyed" />
+      </Require>
+      <Attack id="attack" actor="attacker" target="target" melee="true" />
+      <Wait id="damage" timeoutRealSeconds="20">
+        <HealthPercent actor="target" max="0.99999" />
+      </Wait>
+      <Screenshot id="image" focus="target" />
+    </Steps>
+    <Success>
+      <StepSucceeded ref="damage" />
+      <StepSucceeded ref="image" />
+    </Success>
+  </Case>
+  <Case id="MechanoidCombat" caseType="MechanoidCombat" timeoutRealSeconds="90" seed="31981">
+    <testDefName>Batch2_MechanoidCombat_CustomDamage</testDefName>
+    <Scene />
+    <Teams>
+      <Team id="a" factionDef="AncientsHostile" />
+      <Team id="b" factionDef="player" />
+    </Teams>
+    <Actors>
+      <Pawn id="attacker" team="a" x="20" z="20">
+        <basePawnKind>Mech_Scyther</basePawnKind>
+      </Pawn>
+      <Building def="Wall" stuff="Steel" team="b" x="21" z="20" id="target" />
+    </Actors>
+    <Steps>
+      <Attack id="attack" actor="attacker" target="target" melee="true" />
+      <Wait id="damage" timeoutRealSeconds="20">
+        <HealthPercent actor="target" max="0.99999" />
+      </Wait>
+      <Screenshot id="image" focus="target" />
+    </Steps>
+    <Success>
+      <StepSucceeded ref="damage" />
+      <StepSucceeded ref="image" />
+    </Success>
+  </Case>
+  <Case id="MechanoidCombat-negative" caseType="MechanoidCombat" timeoutRealSeconds="90" seed="31981">
+    <testDefName>Batch2_MechanoidCombat_ExpectedAssertionFailure</testDefName>
+    <Scene />
+    <Teams>
+      <Team id="a" factionDef="AncientsHostile" />
+      <Team id="b" factionDef="player" />
+    </Teams>
+    <Actors>
+      <Pawn id="attacker" team="a" x="20" z="20">
+        <basePawnKind>Mech_Scyther</basePawnKind>
+      </Pawn>
+      <Building def="Wall" stuff="Steel" team="b" x="21" z="20" id="target" />
+    </Actors>
+    <Steps>
+      <Require id="expected-failure">
+        <ActorState actor="target" state="destroyed" />
+      </Require>
+      <Attack id="attack" actor="attacker" target="target" melee="true" />
+      <Wait id="damage" timeoutRealSeconds="20">
+        <HealthPercent actor="target" max="0.99999" />
+      </Wait>
+      <Screenshot id="image" focus="target" />
+    </Steps>
+    <Success>
+      <StepSucceeded ref="damage" />
+      <StepSucceeded ref="image" />
+    </Success>
+  </Case>
+  <Case id="AlienCombat" caseType="AlienCombat" timeoutRealSeconds="90" seed="31981">
+    <testDefName>Batch2_AlienCombat_CustomDamage</testDefName>
+    <Scene />
+    <Teams>
+      <Team id="a" factionDef="player" />
+      <Team id="b" factionDef="AncientsHostile" />
+    </Teams>
+    <Actors>
+      <Pawn id="attacker" team="a" x="20" z="20">
+        <basePawnKind>Axolotl_Colonist</basePawnKind>
+        <Equipment mode="replace">
+          <SetPrimary def="MeleeWeapon_LongSword" stuff="Steel" quality="Normal" />
+        </Equipment>
+      </Pawn>
+      <Building def="Wall" stuff="Steel" team="b" x="21" z="20" id="target" />
+    </Actors>
+    <Steps>
+      <Attack id="attack" actor="attacker" target="target" melee="true" />
+      <Wait id="damage" timeoutRealSeconds="20">
+        <HealthPercent actor="target" max="0.99999" />
+      </Wait>
+      <Screenshot id="image" focus="target" />
+    </Steps>
+    <Success>
+      <StepSucceeded ref="damage" />
+      <StepSucceeded ref="image" />
+    </Success>
+  </Case>
+  <Case id="AlienCombat-negative" caseType="AlienCombat" timeoutRealSeconds="90" seed="31981">
+    <testDefName>Batch2_AlienCombat_ExpectedAssertionFailure</testDefName>
+    <Scene />
+    <Teams>
+      <Team id="a" factionDef="player" />
+      <Team id="b" factionDef="AncientsHostile" />
+    </Teams>
+    <Actors>
+      <Pawn id="attacker" team="a" x="20" z="20">
+        <basePawnKind>Axolotl_Colonist</basePawnKind>
+        <Equipment mode="replace">
+          <SetPrimary def="MeleeWeapon_LongSword" stuff="Steel" quality="Normal" />
+        </Equipment>
+      </Pawn>
+      <Building def="Wall" stuff="Steel" team="b" x="21" z="20" id="target" />
+    </Actors>
+    <Steps>
+      <Require id="expected-failure">
+        <ActorState actor="target" state="destroyed" />
+      </Require>
+      <Attack id="attack" actor="attacker" target="target" melee="true" />
+      <Wait id="damage" timeoutRealSeconds="20">
+        <HealthPercent actor="target" max="0.99999" />
+      </Wait>
+      <Screenshot id="image" focus="target" />
+    </Steps>
+    <Success>
+      <StepSucceeded ref="damage" />
+      <StepSucceeded ref="image" />
+    </Success>
+  </Case>
+  <Case id="health" caseType="HediffEffect" timeoutRealSeconds="60">
+    <testDefName>Batch2_HediffSeverityAndRemoval</testDefName>
+    <Scene />
+    <Actors>
+      <Pawn id="patient" x="20" z="20">
+        <basePawnKind>SpaceRefugee</basePawnKind>
+      </Pawn>
+    </Actors>
+    <Steps>
+      <AddHediff def="AlcoholHigh" severity="0.2" id="add" actor="patient" />
+      <Require id="present">
+        <HasHediff def="AlcoholHigh" severityMin="0.19" severityMax="0.21" transition="added" since="add" actor="patient" />
+      </Require>
+      <RemoveHediff def="AlcoholHigh" id="remove" actor="patient" />
+      <Require id="removed">
+        <HasHediff def="AlcoholHigh" transition="removed" since="remove" actor="patient" />
+      </Require>
+    </Steps>
+    <Success>
+      <StepSucceeded ref="present" />
+      <StepSucceeded ref="removed" />
+    </Success>
+  </Case>
+</TestSuite>

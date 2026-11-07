@@ -19,6 +19,7 @@ namespace LogSyncMod.AutoTest.Scenarios
         private readonly HashSet<string> succeeded = new HashSet<string>();
         private readonly HashSet<XElement> seen = new HashSet<XElement>();
         private readonly HashSet<string> observedTransitions = new HashSet<string>();
+        private readonly Dictionary<string, HashSet<XElement>> interventionChanges = new Dictionary<string, HashSet<XElement>>();
         private long started, stepStarted;
         private int index, stableStart = -1, observationStart;
         private bool prepared, stepEntered, observing, cleaning;
@@ -34,6 +35,9 @@ namespace LogSyncMod.AutoTest.Scenarios
             steps = root.Element("Steps").Elements().ToList();
             leaves = root.Descendants().Where(e => e.Parent != null && new[] { "Require", "Wait", "All", "Any", "Not", "Success" }.Contains(e.Parent.Name.LocalName) && !new[] { "All", "Any", "Not", "StepSucceeded" }.Contains(e.Name.LocalName)).ToList();
             Outcome = new ScenarioOutcome { TestDefName = definition.TestDefName, CaseId = definition.CaseId, Source = definition.Source, InputHash = definition.InputHash, TargetDefNames = root.Element("Targets")?.Elements("Def").Select(e => ScenarioLoader.A(e, "defName")).ToList() ?? new List<string>() };
+            Outcome.CaseType = definition.CaseType;
+            Outcome.CoverageMode = definition.CoverageMode;
+            Outcome.Coverage = definition.Coverage;
         }
 
         public void Poll(int tick, bool cancel = false)
@@ -55,6 +59,7 @@ namespace LogSyncMod.AutoTest.Scenarios
                 if (index >= steps.Count)
                 {
                     if (!Evaluate(root.Element("Success"))) throw new InvalidOperationException("Success predicates not satisfied: " + root.Element("Success"));
+                    (backend as IScenarioCompletionBackend)?.ValidateCompletion();
                     End("passed", null, null, tick);
                     return;
                 }
@@ -89,9 +94,33 @@ namespace LogSyncMod.AutoTest.Scenarios
                         match && tick - stableStart >= Math.Max(0, ScenarioLoader.I(step, "stableTicks", 1) - 1);
                 }
                 else if (type == "Checkpoint") done = true;
+                else if (type == "DebugAction" && first)
+                {
+                    var before = leaves.ToDictionary(e => e, ReadSample);
+                    observing = true; // Native hooks must not attribute this intervention to a cast.
+                    try { done = backend.Execute(step, true); }
+                    finally
+                    {
+                        observing = false;
+                        foreach (var leaf in leaves.Where(e => ScenarioLoader.A(e, "transition") != null))
+                        {
+                            var after = ReadSample(leaf);
+                            if (before[leaf].Matches.SetEquals(after.Matches) && before[leaf].Existing.SetEquals(after.Existing)) continue;
+                            foreach (var baseline in baselines.Keys) { interventionChanges[baseline].Add(leaf); ever[baseline][leaf] = false; }
+                            seen.Remove(leaf);
+                            Mark("debug.interference", tick, "Explicit intervention changed observed objects; take a new checkpoint before attributing later transitions: " + leaf);
+                        }
+                    }
+                }
                 else done = backend.Execute(step, first);
                 if (done)
                 {
+                    if (type == "Require" || type == "Wait")
+                        foreach (var leaf in step.Descendants().Where(leaves.Contains))
+                        {
+                            var observation = ReadSample(leaf);
+                            Mark("predicate.observation", tick, leaf.ToString(SaveOptions.DisableFormatting) + "; currentMatches=" + string.Join(",", observation.Matches) + "; " + observation.Details);
+                        }
                     succeeded.Add(ScenarioLoader.A(step, "id"));
                     Mark("step.completed", tick, ScenarioLoader.A(step, "id"));
                     stepEntered = false;
@@ -115,6 +144,7 @@ namespace LogSyncMod.AutoTest.Scenarios
                 foreach (var baseline in baselines)
                 foreach (var leaf in leaves)
                 {
+                    if (interventionChanges[baseline.Key].Contains(leaf)) continue;
                     var current = ReadSample(leaf);
                     if (Match(leaf, current, baseline.Value[leaf]))
                     {
@@ -136,6 +166,7 @@ namespace LogSyncMod.AutoTest.Scenarios
         {
             baselines[id] = leaves.ToDictionary(e => e, ReadSample);
             ever[id] = leaves.ToDictionary(e => e, e => false);
+            interventionChanges[id] = new HashSet<XElement>();
         }
 
         private bool Evaluate(XElement e)
@@ -148,6 +179,7 @@ namespace LogSyncMod.AutoTest.Scenarios
             var eventually = ScenarioLoader.A(e, "observation", ScenarioLoader.A(wait, "observation")) == "eventually";
             var baselineId = ScenarioLoader.A(e, "since", eventually && wait != null ? ScenarioLoader.A(wait, "id") : "prepared");
             if (!baselines.TryGetValue(baselineId, out var baseline)) throw new InvalidOperationException("Baseline has not been reached: " + baselineId);
+            if (interventionChanges[baselineId].Contains(e)) throw new InvalidOperationException("DebugAction changed this transition after baseline '" + baselineId + "'; it cannot be attributed to the tested ability. Establish a new checkpoint: " + e);
             var sample = ReadSample(e);
             var match = Match(e, sample, baseline[e]);
             if (match) seen.Add(e);

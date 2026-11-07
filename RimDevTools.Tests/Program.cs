@@ -237,6 +237,7 @@ internal sealed partial class TestSuite
             await TestModAsync();
             await TestDeployAsync();
             TestAutoResultValidator();
+            ScenarioResultTests.Run(Assert);
             TestLogArchive();
             await TestDoctorIsReadOnlyAsync();
             await TestRunPreflightAsync();

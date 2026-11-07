@@ -77,7 +77,7 @@ namespace LogSyncMod.AutoTest
 
         public void ProcessUi()
         {
-            if (scenarioQueue != null)
+            if (HasPendingScenarios)
             {
                 try { if (Event.current != null) CaptureScenarioUi(); }
                 catch (Exception ex) { scenarioObservationError = ex; }
@@ -102,6 +102,7 @@ namespace LogSyncMod.AutoTest
             AutoTestScreenshotOverlay.DrawOverlay();
 
             if (completed) return;
+            foreach (var session in activeSkillPocketMapSessions.Where(s => s.GizmoOnly).ToList()) session.ProcessGizmoUi();
 
             if (activeThreeViewUiSession != null)
             {
@@ -828,29 +829,7 @@ namespace LogSyncMod.AutoTest
         {
             if (activeSession == null) return;
 
-            if (activeSession.Item.Kind == AutoTestKind.Recipe)
-            {
-                activeSession.Result.Stage = "produce";
-                AutoTestRecipeExecutionResult execution = ExecuteRecipe(activeSession);
-                if (!execution.Success)
-                {
-                    string errorMessage = execution.ErrorMessage;
-                    activeSession.Result.Status = AutoTestRecipeResultPolicy.FailureStatus(execution.FailureKind);
-                    activeSession.Result.ErrorMessage = errorMessage;
-                    activeSession.Result.Notes = AppendNote(activeSession.Result.Notes, "FailureKind=" + execution.FailureKind);
-                    activeSession.Result.Notes = AppendNote(activeSession.Result.Notes, "Trace=" + InfoCardCloseTrace.Describe());
-                    RecordInfoCardSemantic(false);
-                    CleanupSelectionAndWindows();
-                    RecordInfoCardClosedSemantic();
-                    InfoCardCloseTrace.Stop();
-                    FinalizeInfoCardEvidence(false, errorMessage);
-                    CompleteSemanticCase(activeSession.Result);
-                    activeSession = null;
-                    return;
-                }
-                activeSession.PassedAfterRetry = execution.PassedAfterRetry;
-            }
-            else if (activeSession.SpawnedThing != null && !activeSession.SpawnedThing.Destroyed)
+            if (activeSession.SpawnedThing != null && !activeSession.SpawnedThing.Destroyed)
             {
                 if (!IsPawnInfoCardKind(activeSession.Item.Kind))
                 {
@@ -872,7 +851,7 @@ namespace LogSyncMod.AutoTest
             }
 
             activeSession.Result.Status = activeSession.PassedAfterRetry ? AutoTestResultStatus.PassedAfterRetry : AutoTestResultStatus.Passed;
-            activeSession.Result.Stage = activeSession.Item.Kind == AutoTestKind.Recipe ? "produce" : "info_close";
+            activeSession.Result.Stage = activeSession.Item.Kind == AutoTestKind.Recipe ? "recipe_ui_close" : "info_close";
             activeSession.Result.Notes = AppendNote(activeSession.Result.Notes, "Trace=" + InfoCardCloseTrace.Describe());
             Log.Message("[LogSyncAutoTest] InfoCard close confirmed for " + activeSession.Result.DefName);
             CleanupSelectionAndWindows();

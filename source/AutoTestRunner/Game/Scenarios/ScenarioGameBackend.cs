@@ -14,7 +14,7 @@ using Verse.AI;
 
 namespace LogSyncMod.AutoTest
 {
-    internal sealed class ScenarioGameBackend : IScenarioBackend
+    internal sealed partial class ScenarioGameBackend : IScenarioBackend, IScenarioCompletionBackend
     {
         private readonly Map source;
         private readonly AutoTestPocketMapService maps;
@@ -29,6 +29,10 @@ namespace LogSyncMod.AutoTest
         private int castBaseline;
         private bool castStarted;
         private int attackTick;
+        private ScenarioCase currentDefinition;
+        private readonly HashSet<string> usedCoverage = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private bool acceptActivations;
+        internal static Action<Ability> AbilityActivation;
         public Map Map => handle?.Map;
         internal static Action NativeObservation;
 
@@ -37,6 +41,7 @@ namespace LogSyncMod.AutoTest
 
         public void Prepare(ScenarioCase definition)
         {
+            currentDefinition = definition;
             var c = XElement.Parse(definition.Xml);
             ValidateDefs(c, definition);
             foreach (var requirement in c.Element("Requirements")?.Elements() ?? Enumerable.Empty<XElement>())
@@ -55,7 +60,10 @@ namespace LogSyncMod.AutoTest
                 if (a.RelationKindWith(b).ToString() != A(r, "value")) throw new ScenarioConfigurationException("Requested relation differs from loaded factions; choose existing factions with the required relation (temporary factions arrive with group combat)");
             }
             var s = c.Element("Scene");
-            handle = maps.Create(new AutoTestPocketMapRequest { SourceMap = source, MapSize = new IntVec3(I(s, "sizeX", 50), 1, I(s, "sizeZ", 50)) }, out var error);
+            var generator = Def<MapGeneratorDef>(A(s, "generatorDef", "LogSync_AutoTestPocketMap"));
+            if (generator.pocketMapProperties?.biome == null || generator.genSteps == null || generator.genSteps.Any(g => g == null || g.genStep == null))
+                throw new ScenarioConfigurationException("Loaded generator is not a valid pocket-map generator or has missing GenStep dependencies: " + generator.defName);
+            handle = maps.Create(new AutoTestPocketMapRequest { SourceMap = source, MapGeneratorDefName = A(s, "generatorDef"), InheritSourceTile = true, Seed = I(c, "seed", 12345), MapSize = new IntVec3(I(s, "sizeX", 50), 1, I(s, "sizeZ", 50)) }, out var error);
             if (handle == null) throw new InvalidOperationException(error);
             Current.Game.CurrentMap = Map;
             Find.World.renderer.wantedMode = WorldRenderMode.None;
@@ -63,10 +71,15 @@ namespace LogSyncMod.AutoTest
             Rand.PushState(I(c, "seed", 12345));
             try
             {
+                PrepareEnvironment(s);
                 foreach (var actor in c.Element("Actors").Elements()) CreateActor(actor);
+                foreach (var step in c.Element("Steps").Elements().Where(e => e.Attribute("output") != null)) actors.Add(A(step, "output"), new List<Thing>());
+                ValidateCapability(definition, c);
+                ValidateEnvironment(s);
             }
             finally { Rand.PopState(); }
-            trace("scene.ready", "map=" + Map.uniqueID + "; unfogged=" + Map.AllCells.All(cell => !cell.Fogged(Map)) + "; actors=" + string.Join(",", actors.Select(a => a.Key + "=" + string.Join("|", a.Value.Select(v => v.GetUniqueLoadID())))));
+            trace("scene.ready", "map=" + Map.uniqueID + "; mapSeed=" + I(c, "seed", 12345) + "; unfogged=" + Map.AllCells.All(cell => !cell.Fogged(Map)) + "; actors=" + string.Join(",", actors.Select(a => a.Key + "=" + string.Join("|", a.Value.Select(v => v.GetUniqueLoadID())))));
+            acceptActivations = true;
         }
 
         private void CreateActor(XElement actor)
@@ -149,6 +162,25 @@ namespace LogSyncMod.AutoTest
 
         private void ApplyPawnConfig(Pawn pawn, XElement a)
         {
+            if (a.Element("Xenotype") != null)
+            {
+                Need(pawn.genes, "genes");
+                foreach (var g in pawn.genes.GenesListForReading.ToList()) pawn.genes.RemoveGene(g);
+                pawn.genes.SetXenotype(Def<XenotypeDef>(A(a.Element("Xenotype"), "def")));
+            }
+            if (a.Element("Genes") is XElement genes)
+            {
+                Need(pawn.genes, "genes");
+                var mode = A(genes, "mode", "patch");
+                if (mode == "inherit" && genes.HasElements) throw new ScenarioConfigurationException("inherit Genes cannot modify genes");
+                if (mode == "replace") foreach (var g in pawn.genes.GenesListForReading.ToList()) pawn.genes.RemoveGene(g);
+                foreach (var e in genes.Elements())
+                {
+                    var gene = Def<GeneDef>(A(e, "def"));
+                    if (e.Name == "Remove") foreach (var g in pawn.genes.GenesListForReading.Where(g => g.def == gene).ToList()) pawn.genes.RemoveGene(g);
+                    else if (!pawn.genes.HasActiveGene(gene)) pawn.genes.AddGene(gene, bool.Parse(A(e, "xenogene", "false")));
+                }
+            }
             foreach (var item in a.Element("forcedTraits")?.Elements("li") ?? Enumerable.Empty<XElement>())
                 SetTrait(pawn, item.Element("def")?.Value, int.Parse(item.Element("degree")?.Value ?? "0", CultureInfo.InvariantCulture));
             foreach (var item in a.Element("skills")?.Elements("li") ?? Enumerable.Empty<XElement>())
@@ -268,6 +300,19 @@ namespace LogSyncMod.AutoTest
         {
             var type = step.Name.LocalName;
             if (type == "Screenshot") return screenshot(step);
+            if (type == "DebugAction")
+            {
+                if (first) { var previous = acceptActivations; acceptActivations = false; try { ExecuteDebugAction(step); } finally { acceptActivations = previous; } }
+                return true;
+            }
+            if (new[] { "ExecuteRecipe", "TransferThing", "DropInventory", "SetRot", "Resurrect", "ApplyDamage", "BindMech" }.Contains(type)) { if (first) ExecuteFunctionalAction(step); return true; }
+            if (type == "ManTurret")
+            {
+                var pawn = Pawn(A(step, "actor")); var turret = One(A(step, "target"));
+                var mannable = turret.TryGetComp<CompMannable>() ?? throw new ScenarioConfigurationException("Target is not mannable");
+                if (first) pawn.jobs.TryTakeOrderedJob(JobMaker.MakeJob(JobDefOf.ManTurret, turret), JobTag.Misc);
+                return mannable.ManningPawn == pawn;
+            }
             if (type == "CastAbility")
             {
                 var pawn = Pawn(A(step, "actor"));
@@ -275,10 +320,11 @@ namespace LogSyncMod.AutoTest
                 {
                     if (A(step, "force", "false") != "false") throw new ScenarioConfigurationException("External scenes do not force abilities");
                     casting = pawn.abilities?.GetAbility(Def<AbilityDef>(A(step, "def"))) ?? throw new ScenarioConfigurationException("Actor lacks ability");
-                    var target = new LocalTargetInfo(One(A(step, "target")));
+                    var target = A(step, "target") != null ? new LocalTargetInfo(One(A(step, "target"))) : new LocalTargetInfo(new IntVec3(I(step, "targetX"), 0, I(step, "targetZ")));
+                    if (!target.Cell.InBounds(Map)) throw new ScenarioConfigurationException("Ability target outside scene");
                     if (!casting.CanCast || !casting.CanQueueCast || !casting.CanApplyOn(target) || !casting.verb.ValidateTarget(target, false)) throw new InvalidOperationException("Native ability prerequisites/target rejected: " + casting.def.defName + " " + casting.CanCast.Reason);
                     castBaseline = casting.lastCastTick; castStarted = false;
-                    trace("cast.accepted", casting.def.defName + "; cooldown=" + casting.CooldownTicksRemaining + "; charges=" + casting.RemainingCharges);
+                    trace("cast.accepted", casting.def.defName + "; target=" + target + "; cooldown=" + casting.CooldownTicksRemaining + "; charges=" + casting.RemainingCharges);
                     // Native job API avoids opening a confirmation dialog, while retaining its validation and resource rules.
                     if (casting.def.verbProperties.nonInterruptingSelfCast) casting.verb.TryStartCastOn(pawn);
                     else pawn.jobs.TryTakeOrderedJob(casting.GetJob(target, LocalTargetInfo.Invalid), JobTag.Misc);
@@ -286,20 +332,32 @@ namespace LogSyncMod.AutoTest
                 if (!castStarted && (pawn.CurJob?.ability == casting || casting.verb.state == VerbState.Bursting || casting.lastCastTick != castBaseline))
                 { castStarted = true; trace("cast.started", casting.def.defName); }
                 if (casting.lastCastTick != castBaseline)
-                { trace("cast.completed", casting.def.defName + "; lastCastTick=" + casting.lastCastTick + "; cooldown=" + casting.CooldownTicksRemaining); return true; }
+                { trace("cast.completed", casting.def.defName + "; lastCastTick=" + casting.lastCastTick + "; cooldown=" + casting.CooldownTicksRemaining); MarkCoverage("SkillPocketMap", casting.def.defName); return true; }
                 return false;
             }
             if (type == "Attack")
             {
-                var p = Pawn(A(step, "actor")); var target = One(A(step, "target"));
+                var attacker = One(A(step, "actor")); var target = One(A(step, "target"));
                 if (first)
                 {
                     attackTick = GenTicks.TicksGame;
-                    if (A(step, "melee", "false") == "true") p.jobs.TryTakeOrderedJob(JobMaker.MakeJob(JobDefOf.AttackMelee, target), JobTag.Misc);
-                    else if (!p.TryStartAttack(target)) throw new InvalidOperationException("Native attack rejected");
-                    trace("attack.started", p.GetUniqueLoadID() + " -> " + target.GetUniqueLoadID());
+                    if (attacker is Pawn p)
+                    {
+                        if (A(step, "melee", "false") == "true") p.jobs.TryTakeOrderedJob(JobMaker.MakeJob(JobDefOf.AttackMelee, target), JobTag.Misc);
+                        else if (!p.TryStartAttack(target)) throw new InvalidOperationException("Native attack rejected");
+                    }
+                    else if (attacker is Building_TurretGun turret)
+                    {
+                        if (!turret.AttackVerb.CanHitTarget(target)) throw new ScenarioConfigurationException("Turret target outside native range/line of sight");
+                        if (turret.TryGetComp<CompMannable>() == null && (!(target is Pawn) || !target.HostileTo(turret))) throw new ScenarioConfigurationException("This automatic turret cannot retain a forced target; supply a hostile Pawn for its native target acquisition");
+                        turret.OrderAttack(new LocalTargetInfo(target));
+                        trace("attack.turret_policy", "native " + (turret.TryGetComp<CompMannable>() == null ? "automatic acquisition" : "manned forced target") + "; target=" + target.GetUniqueLoadID());
+                    }
+                    else throw new ScenarioConfigurationException("Attack requires Pawn or native gun turret");
+                    trace("attack.started", attacker.GetUniqueLoadID() + " -> " + target.GetUniqueLoadID());
+                    MarkAttackCoverage(attacker, target, A(step, "melee", "false") == "true");
                 }
-                return GenTicks.TicksGame > attackTick;
+                return GenTicks.TicksGame > attackTick && (!(attacker is Building_TurretGun gun) || gun.CurrentTarget.Thing == target);
             }
             if (!first) return true;
             if (type == "Equip") Equip(Pawn(A(step, "actor")), step);
@@ -308,6 +366,7 @@ namespace LogSyncMod.AutoTest
                 var p = Pawn(A(step, "actor"));
                 if (p.equipment?.Primary == null || !p.equipment.TryDropEquipment(p.equipment.Primary, out var dropped, p.Position, false)) throw new InvalidOperationException("Native equipment drop rejected");
                 trace("equipment.dropped", dropped.GetUniqueLoadID());
+                MarkCoverage("ThingBehavior", dropped.def.defName);
             }
             else if (type == "CreateThing")
             {
@@ -321,7 +380,7 @@ namespace LogSyncMod.AutoTest
             else if (type == "AddHediff") AddHediff(Pawn(A(step, "actor")), step);
             else if (type == "RemoveHediff") RemoveHediff(Pawn(A(step, "actor")), step);
             else if (type == "Destroy") foreach (var thing in Select(A(step, "actor"))) thing.Destroy();
-            else if (type == "Kill") Pawn(A(step, "actor")).Kill(null);
+            else if (type == "Kill") { var pawn = Pawn(A(step, "actor")); pawn.Kill(null); MarkCoverage("CorpseLifecycle", pawn.kindDef.defName); }
             else if (type == "Pause") { AutoTestBootstrap.SetTemporaryPauseBypass(true); Find.TickManager.CurTimeSpeed = TimeSpeed.Paused; }
             else if (type == "Spawn")
             {
@@ -329,6 +388,8 @@ namespace LogSyncMod.AutoTest
                 GenSpawn.Spawn(t, Map.Center, Map, WipeMode.Vanish);
             }
             else throw new ScenarioConfigurationException("Unsupported action: " + type);
+            if (type == "CreateThing" || type == "Equip") MarkCoverage("ThingBehavior", A(step, "def"));
+            else if (A(step, "actor") != null && new[] { "Destroy", "Spawn" }.Contains(type)) foreach (var t in Select(A(step, "actor"))) MarkCoverage("ThingBehavior", t.def.defName);
             trace("action." + type, step.ToString(SaveOptions.DisableFormatting));
             return true;
         }
@@ -339,6 +400,15 @@ namespace LogSyncMod.AutoTest
             var sample = new ScenarioSample();
             var selected = A(c, "actor") != null ? Select(A(c, "actor")) : A(c, "group") != null ? Select(A(c, "group")) : new List<Thing>();
             sample.TargetCount = selected.Count;
+            if (name == "EnvironmentState") { sample.TargetCount = 1; sample.Details = "weather=" + Map.weatherManager.curWeather.defName + "; temperature=" + Map.mapTemperature.OutdoorTemp + "; sunGlow=" + GenCelestial.CurCelestialSunGlow(Map) + "; skyGlow=" + Map.skyManager.CurSkyGlow; if (SampleEnvironment(c)) sample.Matches.Add("environment"); return sample; }
+            if (name == "ThingQuantity")
+            {
+                var things = A(c, "actor") != null ? selected : Map.listerThings.AllThings;
+                var count = things.Where(t => !t.Destroyed && (A(c, "def") == null || t.def.defName == A(c, "def"))).Sum(t => t.stackCount);
+                sample.TargetCount = 1; sample.Details = "quantity=" + count;
+                if (count >= ScenarioLoader.D(c, "min", 0) && count <= ScenarioLoader.D(c, "max", double.MaxValue)) sample.Matches.Add("quantity");
+                return sample;
+            }
             if (name == "ActorCount") { if (selected.Count == I(c, "equals")) sample.Matches.Add("count"); return sample; }
             if (name == "ThingExists")
             {
@@ -351,6 +421,7 @@ namespace LogSyncMod.AutoTest
             foreach (var thing in selected)
             {
                 var p = thing as Pawn;
+                sample.Details += thing.GetUniqueLoadID() + "; spawned=" + thing.Spawned + "; destroyed=" + thing.Destroyed + "; position=" + thing.Position + "; health=" + (p != null ? p.health.summaryHealth.SummaryHealthPercent : thing.def.useHitPoints ? (float)thing.HitPoints / thing.MaxHitPoints : -1) + "; powerOutput=" + thing.TryGetComp<CompPowerTrader>()?.PowerOutput + "; ";
                 bool match;
                 if (name == "HasHediff")
                 {
@@ -361,6 +432,7 @@ namespace LogSyncMod.AutoTest
                         sample.Existing.Add(key); sample.Owners[key] = p.GetUniqueLoadID();
                         if (h.Severity >= ScenarioLoader.D(c, "severityMin", 0) && h.Severity <= ScenarioLoader.D(c, "severityMax", double.MaxValue)) sample.Matches.Add(key);
                     }
+                    if (sample.Matches.Count > 0) MarkCoverage("HediffEffect", A(c, "def"));
                     continue;
                 }
                 else if (name == "ActorState") match = A(c, "state") switch { "alive" => p != null && !p.Dead && !p.Destroyed, "dead" => p != null && p.Dead, "downed" => p?.Downed == true, "standing" => p != null && !p.Downed && !p.Dead, "spawned" => thing.Spawned, "destroyed" => thing.Destroyed, _ => throw new ScenarioConfigurationException("Unknown actor state") };
@@ -370,16 +442,27 @@ namespace LogSyncMod.AutoTest
                 else if (name == "HasTrait") match = p?.story?.traits.HasTrait(Def<TraitDef>(A(c, "def")), I(c, "degree")) == true;
                 else if (name == "SkillLevel") { var skill = p?.skills?.GetSkill(Def<SkillDef>(A(c, "def"))); match = skill != null && skill.Level >= ScenarioLoader.D(c, "min", 0) && skill.Level <= ScenarioLoader.D(c, "max", 20); }
                 else if (name == "HasAbility") match = p?.abilities?.GetAbility(Def<AbilityDef>(A(c, "def"))) != null;
+                else if (name == "HealthPercent") { var value = p != null ? p.health.summaryHealth.SummaryHealthPercent : thing.def.useHitPoints ? (float)thing.HitPoints / thing.MaxHitPoints : throw new ScenarioConfigurationException("Actor has no health/hit points"); match = InRange(value, c); }
+                else if (name == "NeedLevel") { var need = p?.needs?.TryGetNeed(Def<NeedDef>(A(c, "def"))); match = need != null && InRange(need.CurLevelPercentage, c); }
+                else if (name == "ResourceLevel") { var resource = p?.genes?.GetGene(Def<GeneDef>(A(c, "def"))) as Gene_Resource; match = resource != null && resource.Active && InRange(resource.ValuePercent, c); }
+                else if (name == "ComponentState") match = SampleComponent(thing, c);
+                else if (name == "ActorPosition") match = thing.Spawned && thing.Map == Map && thing.Position.DistanceTo(new IntVec3(I(c, "x"), 0, I(c, "z"))) <= ScenarioLoader.D(c, "radius", 0);
+                else if (name == "ModResourceLevel") { if (A(c, "resource") != "axolotl.qi") throw new ScenarioConfigurationException("Unregistered mod resource"); var value = ReadAxolotlQi(p, out var max); match = max > 0 && InRange(value / max, c); }
+                else if (name == "ThingHeld") match = Pawn(A(c, "target")).inventory?.innerContainer.Contains(thing) == true;
+                else if (name == "HasController") match = p?.GetOverseer() == Pawn(A(c, "target"));
                 else throw new ScenarioConfigurationException("Unsupported probe: " + name);
                 if (match) sample.Matches.Add(thing.GetUniqueLoadID());
+                if (match && thing is Corpse matchedCorpse && !matchedCorpse.Destroyed) MarkCoverage("CorpseLifecycle", matchedCorpse.InnerPawn.kindDef.defName);
             }
             return sample;
         }
 
         public void Cleanup()
         {
+            acceptActivations = false;
             AutoTestBootstrap.SetTemporaryPauseBypass(false);
             var errors = new List<Exception>();
+            if (Map != null) OutdoorTemperatures.Remove(Map);
             if (source != null && Find.Maps.Contains(source)) { Current.Game.CurrentMap = source; Find.CameraDriver.JumpToCurrentMapLoc(source.Center); }
             // Remove only owned objects; destroy map first so native death/despawn hooks have their normal map.
             if (handle != null) { try { maps.Destroy(handle.Map, handle.Parent); } catch (Exception ex) { errors.Add(ex); } }
@@ -412,6 +495,45 @@ namespace LogSyncMod.AutoTest
 
         private static object ResolveDef(string type, string name) => type switch {
             "ThingDef" => Def<ThingDef>(name), "PawnKindDef" => Def<PawnKindDef>(name), "AbilityDef" => Def<AbilityDef>(name), "RecipeDef" => Def<RecipeDef>(name), "HediffDef" => Def<HediffDef>(name), "TerrainDef" => Def<TerrainDef>(name), "GeneDef" => Def<GeneDef>(name), "XenotypeDef" => Def<XenotypeDef>(name), "HairDef" => Def<HairDef>(name), "HeadTypeDef" => Def<HeadTypeDef>(name), "BodyTypeDef" => Def<BodyTypeDef>(name), _ => throw new ScenarioConfigurationException("Unsupported Def reference type: " + type) };
+        internal static void ValidateCoverage(ScenarioCase definition)
+        {
+            var nodes = XElement.Parse(definition.Xml).Element("Coverage")?.Elements("Target").ToList() ?? new List<XElement>();
+            for (int index = 0; index < definition.Coverage.Count; index++)
+            {
+                var t = definition.Coverage[index];
+                try
+                {
+                    var def = (Def)ResolveDef(t.DefType, t.DefName);
+                    if (!string.Equals(def.modContentPack?.PackageIdPlayerFacing, t.PackageId, StringComparison.OrdinalIgnoreCase))
+                        throw new ScenarioConfigurationException(definition.Source + ": coverage package differs from loaded Def owner: " + t.Key);
+                    var expected = t.CaseType switch {
+                        "SkillPocketMap" => "AbilityDef", "RecipeExecution" => "RecipeDef", "HediffEffect" => "HediffDef",
+                        "AnimalCombat" or "MechanoidCombat" or "AlienCombat" or "HumanoidThreeView" or "AnimalThreeView" or "MechanoidThreeView" or "AlienThreeView" or "PawnLifeStageThreeView" or "CorpseLifecycle" => "PawnKindDef",
+                        "TerrainPatchView" => "TerrainDef", "GeneThreeView" => "GeneDef", "XenotypeThreeView" => "XenotypeDef", "HairThreeView" => "HairDef", "HeadTypeThreeView" => "HeadTypeDef", "BodyTypeThreeView" => "BodyTypeDef", _ => "ThingDef" };
+                    if (t.DefType != expected) throw new ScenarioConfigurationException(definition.Source + ": coverage " + t.CaseType + " requires " + expected);
+                    if (!string.IsNullOrEmpty(t.Variant))
+                    {
+                        if (new[] { "ApparelCombat", "ApparelThreeView", "WeaponThreeView" }.Contains(t.CaseType))
+                        {
+                            var parts = t.Variant.Split('@');
+                            if (parts.Length != 2) throw new ScenarioConfigurationException(definition.Source + ": item variant requires PawnKindDef@BodyTypeDef (or Default)");
+                            Def<PawnKindDef>(parts[0]); if (parts[1] != "Default") Def<BodyTypeDef>(parts[1]);
+                        }
+                        else if (t.CaseType == "AnimalThreeView")
+                        {
+                            var kind = Def<PawnKindDef>(t.DefName);
+                            if (!kind.race.race.lifeStageAges.Any(a => a.def.defName == t.Variant)) throw new ScenarioConfigurationException(definition.Source + ": unknown animal life-stage variant " + t.Variant);
+                        }
+                        else throw new ScenarioConfigurationException(definition.Source + ": capability has no such ordinary variant: " + t.Key);
+                    }
+                }
+                catch (ScenarioConfigurationException ex)
+                {
+                    var location = index < nodes.Count && definition.SourceLocations.TryGetValue(ScenarioLoader.ElementKey(nodes[index]), out var exact) ? exact : definition.Source;
+                    throw new ScenarioConfigurationException(location + ": " + ex.Message);
+                }
+            }
+        }
         private static void ValidateDefs(XElement c, ScenarioCase definition)
         {
             foreach (var e in c.Descendants())
@@ -420,13 +542,15 @@ namespace LogSyncMod.AutoTest
                 {
                 foreach (var attr in e.Attributes().Where(a => new[] { "def", "matchDef", "withDef", "stuff", "defName" }.Contains(a.Name.LocalName)))
                 {
+                    if (e.Name == "Target") continue; // Full package/type/key validated before planning.
                     var type = attr.Name == "defName" ? A(e, "defType") : attr.Name == "stuff" || attr.Name == "matchDef" || attr.Name == "withDef" ? "ThingDef" :
-                        new[] { "HasHediff", "AddHediff", "RemoveHediff" }.Contains(e.Name.LocalName) || e.Parent?.Name == "Hediffs" ? "HediffDef" :
+                        new[] { "HasHediff", "AddHediff", "RemoveHediff" }.Contains(e.Name.LocalName) || e.Parent?.Name == "Hediffs" || e.Name == "DebugAction" && (A(e, "actionId") == "native.addHediff" || A(e, "actionId") == "native.removeHediff") ? "HediffDef" :
                         e.Name == "HasAbility" || e.Name == "CastAbility" || e.Parent?.Name == "Abilities" ? "AbilityDef" :
-                        e.Name == "SkillLevel" || e.Parent?.Name == "Skills" ? "SkillDef" : e.Name == "HasTrait" || e.Parent?.Name == "Traits" ? "TraitDef" : e.Name == "TerrainArea" ? "TerrainDef" : "ThingDef";
-                    if (type == "SkillDef") Def<SkillDef>(attr.Value); else if (type == "TraitDef") Def<TraitDef>(attr.Value); else ResolveDef(type, attr.Value);
+                        e.Name == "SkillLevel" || e.Parent?.Name == "Skills" ? "SkillDef" : e.Name == "HasTrait" || e.Parent?.Name == "Traits" ? "TraitDef" : e.Name == "TerrainArea" || e.Name == "TerrainRect" ? "TerrainDef" : e.Name == "RoofRect" ? "RoofDef" : "ThingDef";
+                    if (e.Name == "ApplyDamage") Def<DamageDef>(attr.Value); else if (e.Parent?.Name == "Genes") Def<GeneDef>(attr.Value); else if (e.Name == "Xenotype") Def<XenotypeDef>(attr.Value); else if (e.Name == "EnvironmentState") Def<WeatherDef>(attr.Value); else if (type == "RoofDef" && attr.Value != "none") Def<RoofDef>(attr.Value); else if (type == "RoofDef") { } else if (e.Name == "NeedLevel") Def<NeedDef>(attr.Value); else if (e.Name == "ResourceLevel") Def<GeneDef>(attr.Value); else if (type == "SkillDef") Def<SkillDef>(attr.Value); else if (type == "TraitDef") Def<TraitDef>(attr.Value); else ResolveDef(type, attr.Value);
                 }
                 if (e.Name == "basePawnKind") Def<PawnKindDef>(e.Value.Trim());
+                if (e.Name == "ExecuteRecipe") Def<RecipeDef>(A(e, "recipe"));
                 if (e.Name == "race") Def<ThingDef>(e.Value.Trim());
                 if (e.Name == "hair") Def<HairDef>(e.Value.Trim());
                 if (e.Name == "headType") Def<HeadTypeDef>(e.Value.Trim());

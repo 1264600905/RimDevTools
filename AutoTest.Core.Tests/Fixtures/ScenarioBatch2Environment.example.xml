@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TestSuite schemaVersion="1" id="batch2.environment" packageId="ludeon.rimworld">
+  <ScenePresets>
+    <Scene id="outdoor" type="pocketMap" generatorDef="LogSync_AutoTestOutdoorPocketMap" sizeX="50" sizeZ="50" revealFog="all">
+      <Environment weather="Clear" temperature="23" roof="none" naturalSun="true" />
+      <Layout>
+        <TerrainRect def="Concrete" x="10" z="10" width="8" height="3" />
+        <ThingRect def="Sandbags" stuff="Cloth" x="19" z="10" width="1" height="4" />
+        <RoofRect def="RoofConstructed" x="23" z="10" width="3" height="3" />
+      </Layout>
+      <Validation><Reachable fromX="10" fromZ="10" toX="30" toZ="10" /></Validation>
+    </Scene>
+  </ScenePresets>
+  <Case id="native-sky" name="原生自然天空与太阳能" timeoutRealSeconds="90">
+    <testDefName>Batch2_NaturalSunAndSolar</testDefName>
+    <Scene preset="outdoor" />
+    <Actors><Building id="solar" def="SolarGenerator" x="15" z="20" /></Actors>
+    <Steps>
+      <Require id="environment"><EnvironmentState property="weather" def="Clear" /><EnvironmentState property="temperature" min="22.9" max="23.1" /><EnvironmentState property="unfogged" /></Require>
+      <Wait id="sunlight" timeoutRealSeconds="20"><EnvironmentState property="skyGlow" min="0.05" /><EnvironmentState property="sunGlow" min="0.05" /><ComponentState actor="solar" component="powerOutput" min="1" /></Wait>
+      <Screenshot id="solar-image" focus="solar" />
+    </Steps>
+    <Success><StepSucceeded ref="sunlight" /><StepSucceeded ref="solar-image" /></Success>
+  </Case>
+  <Case id="indoor" name="室内屋顶与预设覆盖" timeoutRealSeconds="60">
+    <testDefName>Batch2_IndoorPresetOverride</testDefName>
+    <Scene preset="outdoor"><Environment weather="Clear" temperature="18" roof="RoofConstructed" naturalSun="false" /></Scene>
+    <Actors><Thing id="lamp" def="GlowPod" x="20" z="20" /></Actors>
+    <Steps><Require id="indoors"><EnvironmentState property="temperature" min="17.9" max="18.1" /><ThingExists actor="lamp" def="GlowPod" /></Require><Screenshot id="indoor-image" focus="lamp" /></Steps>
+    <Success><StepSucceeded ref="indoors" /><StepSucceeded ref="indoor-image" /></Success>
+  </Case>
+</TestSuite>

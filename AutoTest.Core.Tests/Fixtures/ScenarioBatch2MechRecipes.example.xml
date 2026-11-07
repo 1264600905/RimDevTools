@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TestSuite schemaVersion="1" id="batch2.mech-recipes" packageId="ludeon.rimworld.biotech">
+  <Requirements><DLC packageId="ludeon.rimworld.biotech" /></Requirements>
+  <Templates><PawnTemplate id="mechanitor"><basePawnKind>SpaceRefugee</basePawnKind><Hediffs><Ensure def="MechlinkImplant" part="Brain" severity="1" /><Ensure def="LogSync_TestMechanitorBandwidth" severity="1" /></Hediffs></PawnTemplate></Templates>
+  <Case id="gestation" caseType="RecipeExecution" timeoutRealSeconds="90">
+    <testDefName>Batch2_NativeMechGestation</testDefName>
+    <Scene /><Teams><Team id="player" factionDef="player" /></Teams>
+    <Actors>
+      <Pawn id="worker" template="mechanitor" team="player" x="15" z="20" />
+      <Building id="bench" def="MechGestator" team="player" x="20" z="20" />
+      <Thing id="steel" def="Steel" count="50" x="23" z="20" /><Thing id="subcore" def="SubcoreBasic" x="24" z="20" />
+    </Actors>
+    <Steps>
+      <ExecuteRecipe id="gestate" actor="worker" recipe="Militor" worktable="bench" output="product" accelerate="true"><Ingredients><Ingredient actor="steel" count="50" /><Ingredient actor="subcore" count="1" /></Ingredients></ExecuteRecipe>
+      <BindMech id="control" actor="product" target="worker" />
+      <Require id="living"><ActorState actor="product" state="alive" /><ActorState actor="product" state="spawned" /><HasController actor="product" target="worker" /><ActorState actor="steel" state="destroyed" /><ActorState actor="subcore" state="destroyed" /></Require>
+      <Screenshot id="gestation-image" focus="product" />
+    </Steps>
+    <Success><StepSucceeded ref="living" /></Success>
+  </Case>
+  <Case id="resurrection" caseType="RecipeExecution" timeoutRealSeconds="90">
+    <testDefName>Batch2_NativeMechResurrectionIdentity</testDefName>
+    <Scene /><Teams><Team id="player" factionDef="player" /></Teams>
+    <Actors>
+      <Pawn id="worker" template="mechanitor" team="player" x="15" z="20" />
+      <Building id="bench" def="MechGestator" team="player" x="20" z="20" />
+      <Corpse id="corpse" team="player" x="24" z="20"><basePawnKind>Mech_Militor</basePawnKind></Corpse><Thing id="steel" def="Steel" count="25" x="23" z="20" />
+    </Actors>
+    <Steps>
+      <ExecuteRecipe id="revive" actor="worker" recipe="ResurrectLightMech" worktable="bench" output="product" accelerate="true"><Ingredients><Ingredient actor="corpse" count="1" /><Ingredient actor="steel" count="25" /></Ingredients></ExecuteRecipe>
+      <Require id="same-pawn"><ActorState actor="corpse.innerPawn" state="alive" /><ActorState actor="corpse.innerPawn" state="spawned" /><ActorState actor="product" state="alive" /><CorpseState actor="corpse" state="destroyed" /></Require>
+      <Screenshot id="resurrected-image" focus="product" />
+    </Steps>
+    <Success><StepSucceeded ref="same-pawn" /></Success>
+  </Case>
+</TestSuite>

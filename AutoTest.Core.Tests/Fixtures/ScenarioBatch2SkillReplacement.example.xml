@@ -1,0 +1,53 @@
+<?xml version='1.0' encoding='utf-8'?>
+<TestSuite schemaVersion="1" id="batch2.skill-replacement" packageId="hentailoliteam.axolotl">
+  <Requirements>
+    <Mod packageId="hentailoliteam.axolotl" />
+  </Requirements>
+  <Templates>
+    <PawnTemplate id="caster">
+      <basePawnKind>Axolotl_Colonist</basePawnKind>
+      <minGenerationAge>25</minGenerationAge>
+      <maxGenerationAge>25</maxGenerationAge>
+      <Hediffs>
+        <Ensure def="Axolotl_LotlQi" severity="5" />
+      </Hediffs>
+      <Abilities>
+        <Ensure def="Axolotl_SkillMove" />
+        <Ensure def="Axolotl_SwordAura" />
+        <Ensure def="Axolotl_Thunder_SuperSkill" />
+      </Abilities>
+    </PawnTemplate>
+  </Templates>
+  <Case id="thunder" caseType="SkillPocketMap" timeoutRealSeconds="90">
+    <testDefName>Batch2_ThunderReplacement</testDefName>
+    <Targets>
+      <Def defType="AbilityDef" defName="Axolotl_Thunder_SuperSkill" />
+    </Targets>
+    <Scene />
+    <Teams>
+      <Team id="player" factionDef="player" />
+    </Teams>
+    <Actors>
+      <Pawn id="caster" template="caster" team="player" x="14" z="20" />
+    </Actors>
+    <Steps>
+      <DebugAction id="qi" actionId="axolotl.fillQi">
+        <Select mode="single" actor="caster" />
+      </DebugAction>
+      <CastAbility id="cast" actor="caster" def="Axolotl_Thunder_SuperSkill" target="caster" timeoutRealSeconds="20" />
+      <Wait id="effect" timeoutRealSeconds="20">
+        <HasHediff actor="caster" def="Axolotl_ThunderStrengthen" transition="added" since="cast" observation="eventually" />
+      </Wait>
+      <Screenshot id="thunder-image" focus="caster" />
+    </Steps>
+    <Success>
+      <StepSucceeded ref="cast" />
+      <StepSucceeded ref="effect" />
+    </Success>
+    <Coverage mode="replace">
+      <Target defType="AbilityDef" defName="Axolotl_Thunder_SuperSkill" caseType="SkillPocketMap">
+        <Evidence step="effect" />
+      </Target>
+    </Coverage>
+  </Case>
+</TestSuite>

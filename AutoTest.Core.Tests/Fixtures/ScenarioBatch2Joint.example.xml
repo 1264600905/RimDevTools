@@ -1,0 +1,94 @@
+<?xml version='1.0' encoding='utf-8'?>
+<TestSuite schemaVersion="1" id="batch2.coverage" packageId="ludeon.rimworld" gameVersion="1.7">
+  <Case id="joint" name="自定义远程命中与替代矩阵" caseType="RangedWeaponPocketMap" seed="31981" timeoutRealSeconds="90">
+    <testDefName>Batch2_JointReplacement</testDefName>
+    <Coverage mode="replace">
+      <Target defType="ThingDef" defName="Gun_Autopistol" caseType="RangedWeaponPocketMap">
+        <Evidence step="damage" />
+      </Target>
+      <Target defType="ThingDef" defName="Gun_Revolver" caseType="RangedWeaponPocketMap">
+        <Evidence step="second-damage" />
+      </Target>
+    </Coverage>
+    <Scene type="pocketMap" sizeX="50" sizeZ="50" revealFog="all" />
+    <Teams>
+      <Team id="allies" factionDef="player" />
+      <Team id="enemy" factionDef="AncientsHostile" />
+    </Teams>
+    <Actors>
+      <Pawn id="shooter" team="allies" x="15" z="20">
+        <basePawnKind>SpaceRefugee</basePawnKind>
+        <minGenerationAge>25</minGenerationAge>
+        <maxGenerationAge>25</maxGenerationAge>
+        <Skills>
+          <Set def="Shooting" level="20" />
+        </Skills>
+        <Equipment mode="replace">
+          <SetPrimary def="Gun_Autopistol" quality="Normal" />
+        </Equipment>
+      </Pawn>
+      <Building id="target" def="Wall" stuff="Steel" team="enemy" x="21" z="20" />
+      <Pawn id="second" team="allies" x="15" z="30">
+        <basePawnKind>SpaceRefugee</basePawnKind>
+        <minGenerationAge>25</minGenerationAge>
+        <maxGenerationAge>25</maxGenerationAge>
+        <Skills>
+          <Set def="Shooting" level="20" />
+        </Skills>
+        <Equipment mode="replace">
+          <SetPrimary def="Gun_Revolver" quality="Normal" />
+        </Equipment>
+      </Pawn>
+      <Building id="second-target" def="Wall" stuff="Steel" team="enemy" x="21" z="30" />
+    </Actors>
+    <Steps>
+      <DebugAction id="needs" actionId="native.fillNeeds">
+        <Select mode="single" actor="shooter" />
+      </DebugAction>
+      <Require id="prepared">
+        <Equipped actor="shooter" def="Gun_Autopistol" />
+        <NeedLevel actor="shooter" def="Food" min="0.9" />
+      </Require>
+      <Attack id="shoot" actor="shooter" target="target" timeoutRealSeconds="10" />
+      <Wait id="damage" timeoutRealSeconds="20">
+        <HealthPercent actor="target" max="0.99" />
+      </Wait>
+      <Screenshot id="hit-image" focus="target" />
+      <Attack id="second-shot" actor="second" target="second-target" />
+      <Wait id="second-damage" timeoutRealSeconds="20">
+        <HealthPercent actor="second-target" max="0.99" />
+      </Wait>
+    </Steps>
+    <Success>
+      <All>
+        <StepSucceeded ref="prepared" />
+        <StepSucceeded ref="damage" />
+        <StepSucceeded ref="hit-image" />
+        <StepSucceeded ref="second-damage" />
+      </All>
+    </Success>
+  </Case>
+  <Case id="out-of-range" caseType="HediffEffect" timeoutRealSeconds="60">
+    <testDefName>Batch2_OutOfRangeHediff</testDefName>
+    <Scene />
+    <Actors>
+      <Pawn id="patient" x="20" z="20">
+        <basePawnKind>SpaceRefugee</basePawnKind>
+      </Pawn>
+    </Actors>
+    <Steps>
+      <AddHediff def="AlcoholHigh" severity="0.2" id="add" actor="patient" />
+      <Require id="present">
+        <HasHediff def="AlcoholHigh" severityMin="0.19" severityMax="0.21" transition="added" since="add" actor="patient" />
+      </Require>
+      <RemoveHediff def="AlcoholHigh" id="remove" actor="patient" />
+      <Require id="removed">
+        <HasHediff def="AlcoholHigh" transition="removed" since="remove" actor="patient" />
+      </Require>
+    </Steps>
+    <Success>
+      <StepSucceeded ref="present" />
+      <StepSucceeded ref="removed" />
+    </Success>
+  </Case>
+</TestSuite>

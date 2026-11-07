@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using RimWorld;
 using Verse;
 
 namespace LogSyncMod.AutoTest
@@ -27,13 +28,15 @@ namespace LogSyncMod.AutoTest
             int ordinal = 0;
             foreach (object selected in selectedObjects ?? Enumerable.Empty<object>())
             {
-                object value = ReadRaw(selected, "GetGizmos");
+                // Direct native dispatch preserves immediate and lazy mod exceptions for the caller.
+                object value = selected is Thing thing ? thing.GetGizmos() : ReadRaw(selected, "GetGizmos");
                 IEnumerable enumerable = value as IEnumerable;
                 if (enumerable == null) continue;
                 foreach (object gizmo in enumerable)
                 {
                     if (!(gizmo is Gizmo)) continue;
                     string semantic = (gizmo.GetType().FullName ?? gizmo.GetType().Name) + "|" + ReadString(gizmo, "defaultLabel", "label") + "|" + ReadString(gizmo, "desc");
+                    var ability = gizmo is Command_Ability command ? command.Ability : ReadRaw(gizmo, "Ability", "ability") as Ability;
                     result.Add(new AutoTestGizmoRef
                     {
                         Id = AutoTestSelectionFingerprint.CreateGizmoId(fingerprint, ordinal, semantic),
@@ -42,7 +45,8 @@ namespace LogSyncMod.AutoTest
                         SemanticFingerprint = AutoTestSelectionFingerprint.Create(new[] { semantic }),
                         Label = ReadString(gizmo, "defaultLabel", "label") ?? gizmo.GetType().Name,
                         Disabled = ReadBool(gizmo, "disabled"),
-                        DisabledReason = ReadString(gizmo, "disabledReason") ?? string.Empty
+                        DisabledReason = ReadString(gizmo, "disabledReason") ?? string.Empty,
+                        AbilityDefName = ability?.def?.defName ?? string.Empty
                     });
                 }
             }

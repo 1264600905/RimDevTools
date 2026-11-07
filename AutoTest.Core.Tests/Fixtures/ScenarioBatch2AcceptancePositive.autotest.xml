@@ -1,0 +1,693 @@
+<?xml version='1.0' encoding='utf-8'?>
+<TestSuite schemaVersion="1" id="batch2.acceptance.positive" packageId="ludeon.rimworld">
+  <Templates>
+    <PawnTemplate id="caster">
+      <basePawnKind>Axolotl_Colonist</basePawnKind>
+      <minGenerationAge>25</minGenerationAge>
+      <maxGenerationAge>25</maxGenerationAge>
+      <Hediffs>
+        <Ensure def="Axolotl_LotlQi" severity="5" />
+      </Hediffs>
+      <Abilities>
+        <Ensure def="Axolotl_SkillMove" />
+        <Ensure def="Axolotl_SwordAura" />
+        <Ensure def="Axolotl_Thunder_SuperSkill" />
+      </Abilities>
+    </PawnTemplate>
+    <PawnTemplate id="mechanitor">
+      <basePawnKind>SpaceRefugee</basePawnKind>
+      <Hediffs>
+        <Ensure def="MechlinkImplant" part="Brain" severity="1" />
+        <Ensure def="LogSync_TestMechanitorBandwidth" severity="1" />
+      </Hediffs>
+    </PawnTemplate>
+  </Templates>
+  <Requirements>
+    <Mod packageId="hentailoliteam.axolotl" />
+    <DLC packageId="ludeon.rimworld.biotech" />
+  </Requirements>
+  <ScenePresets>
+    <Scene id="outdoor" type="pocketMap" generatorDef="LogSync_AutoTestOutdoorPocketMap" sizeX="50" sizeZ="50" revealFog="all">
+      <Environment weather="Clear" temperature="23" roof="none" naturalSun="true" />
+      <Layout>
+        <TerrainRect def="Concrete" x="10" z="10" width="8" height="3" />
+        <ThingRect def="Sandbags" stuff="Cloth" x="19" z="10" width="1" height="4" />
+        <RoofRect def="RoofConstructed" x="23" z="10" width="3" height="3" />
+      </Layout>
+      <Validation>
+        <Reachable fromX="10" fromZ="10" toX="30" toZ="10" />
+      </Validation>
+    </Scene>
+  </ScenePresets>
+  <Case id="move" caseType="SkillPocketMap" timeoutRealSeconds="90">
+    <testDefName>Batch2_Axolotl_FloatingCloudLanding</testDefName>
+    <Targets>
+      <Def defType="AbilityDef" defName="Axolotl_SkillMove" />
+    </Targets>
+    <Scene />
+    <Teams>
+      <Team id="player" factionDef="player" />
+    </Teams>
+    <Actors>
+      <Pawn id="caster" template="caster" team="player" x="14" z="20" />
+    </Actors>
+    <Steps>
+      <DebugAction id="qi" actionId="axolotl.fillQi">
+        <Select mode="single" actor="caster" />
+      </DebugAction>
+      <Require id="ready">
+        <ModResourceLevel actor="caster" resource="axolotl.qi" min="0.9" />
+      </Require>
+      <CastAbility id="cast" actor="caster" def="Axolotl_SkillMove" targetX="18" targetZ="20" timeoutRealSeconds="20" />
+      <Wait id="landed" timeoutRealSeconds="20">
+        <ActorPosition actor="caster" x="18" z="20" radius="0" />
+      </Wait>
+      <Screenshot id="landing-image" focus="caster" />
+    </Steps>
+    <Success>
+      <StepSucceeded ref="cast" />
+      <StepSucceeded ref="landed" />
+      <StepSucceeded ref="landing-image" />
+    </Success>
+  </Case>
+  <Case id="slash" caseType="SkillPocketMap" timeoutRealSeconds="90">
+    <testDefName>Batch2_Axolotl_SwordAuraDamage</testDefName>
+    <Targets>
+      <Def defType="AbilityDef" defName="Axolotl_SwordAura" />
+    </Targets>
+    <Scene />
+    <Teams>
+      <Team id="player" factionDef="player" />
+      <Team id="enemy" factionDef="AncientsHostile" />
+    </Teams>
+    <Actors>
+      <Pawn id="caster" template="caster" team="player" x="14" z="20" />
+      <Building id="target" def="Wall" stuff="Steel" team="enemy" x="20" z="20" />
+    </Actors>
+    <Steps>
+      <DebugAction id="qi" actionId="axolotl.fillQi">
+        <Select mode="single" actor="caster" />
+      </DebugAction>
+      <CastAbility id="cast" actor="caster" def="Axolotl_SwordAura" target="target" timeoutRealSeconds="20" />
+      <Wait id="hit" timeoutRealSeconds="20">
+        <HealthPercent actor="target" max="0.99" />
+      </Wait>
+      <Screenshot id="hit-image" focus="target" />
+    </Steps>
+    <Success>
+      <StepSucceeded ref="cast" />
+      <StepSucceeded ref="hit" />
+    </Success>
+  </Case>
+  <Case id="thunder" caseType="SkillPocketMap" timeoutRealSeconds="90">
+    <testDefName>Batch2_Axolotl_ThunderStrengthen</testDefName>
+    <Targets>
+      <Def defType="AbilityDef" defName="Axolotl_Thunder_SuperSkill" />
+    </Targets>
+    <Scene />
+    <Teams>
+      <Team id="player" factionDef="player" />
+    </Teams>
+    <Actors>
+      <Pawn id="caster" template="caster" team="player" x="14" z="20" />
+    </Actors>
+    <Steps>
+      <DebugAction id="qi" actionId="axolotl.fillQi">
+        <Select mode="single" actor="caster" />
+      </DebugAction>
+      <CastAbility id="cast" actor="caster" def="Axolotl_Thunder_SuperSkill" target="caster" timeoutRealSeconds="20" />
+      <Wait id="effect" timeoutRealSeconds="20">
+        <HasHediff actor="caster" def="Axolotl_ThunderStrengthen" transition="added" since="cast" observation="eventually" />
+      </Wait>
+      <Screenshot id="thunder-image" focus="caster" />
+    </Steps>
+    <Success>
+      <StepSucceeded ref="cast" />
+      <StepSucceeded ref="effect" />
+    </Success>
+  </Case>
+  <Case id="hemogen-jump" caseType="SkillPocketMap" timeoutRealSeconds="90">
+    <testDefName>Batch2_HemogenCostAndNativeLongjump</testDefName>
+    <Targets>
+      <Def defType="AbilityDef" defName="Longjump" />
+    </Targets>
+    <Scene />
+    <Teams>
+      <Team id="player" factionDef="player" />
+    </Teams>
+    <Actors>
+      <Pawn id="caster" team="player" x="20" z="20">
+        <basePawnKind>SpaceRefugee</basePawnKind>
+        <minGenerationAge>25</minGenerationAge>
+        <maxGenerationAge>25</maxGenerationAge>
+        <Xenotype def="Sanguophage" />
+      </Pawn>
+    </Actors>
+    <Steps>
+      <DebugAction id="hemogen" actionId="native.fillHemogen" value="1">
+        <Select mode="single" actor="caster" />
+      </DebugAction>
+      <Require id="ready">
+        <ResourceLevel actor="caster" def="Hemogenic" min="0.99" />
+        <HasAbility actor="caster" def="Longjump" />
+      </Require>
+      <CastAbility id="jump" actor="caster" def="Longjump" targetX="26" targetZ="20" timeoutRealSeconds="20" />
+      <Wait id="landed" timeoutRealSeconds="20">
+        <ActorPosition actor="caster" x="26" z="20" />
+        <ResourceLevel actor="caster" def="Hemogenic" max="0.97" />
+      </Wait>
+      <Screenshot id="jump-image" focus="caster" />
+    </Steps>
+    <Success>
+      <StepSucceeded ref="jump" />
+      <StepSucceeded ref="landed" />
+    </Success>
+  </Case>
+  <Case id="deathless-passive" caseType="SkillPocketMap" timeoutRealSeconds="90">
+    <testDefName>Batch2_PassiveDeathlessReactionToDamage</testDefName>
+    <Targets>
+      <Def defType="GeneDef" defName="Deathless" />
+    </Targets>
+    <Scene />
+    <Actors>
+      <Pawn id="patient" x="20" z="20">
+        <basePawnKind>SpaceRefugee</basePawnKind>
+        <minGenerationAge>25</minGenerationAge>
+        <maxGenerationAge>25</maxGenerationAge>
+        <Genes mode="replace">
+          <Add def="Deathless" />
+        </Genes>
+      </Pawn>
+    </Actors>
+    <Steps>
+      <ApplyDamage id="stimulus" actor="patient" def="Cut" amount="1000" armorPenetration="100" part="Heart" />
+      <Wait id="reaction" timeoutRealSeconds="20">
+        <HasHediff actor="patient" def="RegenerationComa" transition="added" since="stimulus" observation="eventually" />
+      </Wait>
+      <Require id="survived">
+        <ActorState actor="patient" state="alive" />
+      </Require>
+      <Screenshot id="passive-image" focus="patient" />
+    </Steps>
+    <Success>
+      <StepSucceeded ref="reaction" />
+      <StepSucceeded ref="survived" />
+    </Success>
+  </Case>
+  <Case id="ranged-damage" name="自定义远程命中与替代矩阵" caseType="RangedWeaponPocketMap" seed="31981" timeoutRealSeconds="90">
+    <testDefName>Batch2_RangedDamage</testDefName>
+    <Matrix>
+      <Row id="autopistol">
+        <Param name="weapon" value="Gun_Autopistol" />
+      </Row>
+      <Row id="revolver">
+        <Param name="weapon" value="Gun_Revolver" />
+      </Row>
+    </Matrix>
+    <Coverage mode="replace">
+      <Target defType="ThingDef" defName="${weapon}" caseType="RangedWeaponPocketMap">
+        <Evidence step="damage" />
+      </Target>
+    </Coverage>
+    <Scene type="pocketMap" sizeX="50" sizeZ="50" revealFog="all" />
+    <Teams>
+      <Team id="allies" factionDef="player" />
+      <Team id="enemy" factionDef="AncientsHostile" />
+    </Teams>
+    <Actors>
+      <Pawn id="shooter" team="allies" x="15" z="20">
+        <basePawnKind>SpaceRefugee</basePawnKind>
+        <minGenerationAge>25</minGenerationAge>
+        <maxGenerationAge>25</maxGenerationAge>
+        <Skills>
+          <Set def="Shooting" level="20" />
+        </Skills>
+        <Equipment mode="replace">
+          <SetPrimary def="${weapon}" quality="Normal" />
+        </Equipment>
+      </Pawn>
+      <Building id="target" def="Wall" stuff="Steel" team="enemy" x="21" z="20" />
+    </Actors>
+    <Steps>
+      <DebugAction id="needs" actionId="native.fillNeeds">
+        <Select mode="single" actor="shooter" />
+      </DebugAction>
+      <Require id="prepared">
+        <Equipped actor="shooter" def="${weapon}" />
+        <NeedLevel actor="shooter" def="Food" min="0.9" />
+      </Require>
+      <Attack id="shoot" actor="shooter" target="target" timeoutRealSeconds="10" />
+      <Wait id="damage" timeoutRealSeconds="20">
+        <HealthPercent actor="target" max="0.99" />
+      </Wait>
+      <Screenshot id="hit-image" focus="target" />
+    </Steps>
+    <Success>
+      <All>
+        <StepSucceeded ref="prepared" />
+        <StepSucceeded ref="damage" />
+        <StepSucceeded ref="hit-image" />
+      </All>
+    </Success>
+  </Case>
+  <Case id="native-sky" name="原生自然天空与太阳能" timeoutRealSeconds="90">
+    <testDefName>Batch2_NaturalSunAndSolar</testDefName>
+    <Scene preset="outdoor" />
+    <Actors>
+      <Building id="solar" def="SolarGenerator" x="15" z="20" />
+    </Actors>
+    <Steps>
+      <Require id="environment">
+        <EnvironmentState property="weather" def="Clear" />
+        <EnvironmentState property="temperature" min="22.9" max="23.1" />
+        <EnvironmentState property="unfogged" />
+      </Require>
+      <Wait id="sunlight" timeoutRealSeconds="20">
+        <EnvironmentState property="skyGlow" min="0.05" />
+        <EnvironmentState property="sunGlow" min="0.05" />
+        <ComponentState actor="solar" component="powerOutput" min="1" />
+      </Wait>
+      <Screenshot id="solar-image" focus="solar" />
+    </Steps>
+    <Success>
+      <StepSucceeded ref="sunlight" />
+      <StepSucceeded ref="solar-image" />
+    </Success>
+  </Case>
+  <Case id="indoor" name="室内屋顶与预设覆盖" timeoutRealSeconds="60">
+    <testDefName>Batch2_IndoorPresetOverride</testDefName>
+    <Scene preset="outdoor">
+      <Environment weather="Clear" temperature="18" roof="RoofConstructed" naturalSun="false" />
+    </Scene>
+    <Actors>
+      <Thing id="lamp" def="GlowPod" x="20" z="20" />
+    </Actors>
+    <Steps>
+      <Require id="indoors">
+        <EnvironmentState property="temperature" min="17.9" max="18.1" />
+        <ThingExists actor="lamp" def="GlowPod" />
+      </Require>
+      <Screenshot id="indoor-image" focus="lamp" />
+    </Steps>
+    <Success>
+      <StepSucceeded ref="indoors" />
+      <StepSucceeded ref="indoor-image" />
+    </Success>
+  </Case>
+  <Case id="recipe" caseType="RecipeExecution" timeoutRealSeconds="90">
+    <testDefName>Batch2_StonecuttingProductsAndConsumption</testDefName>
+    <Targets>
+      <Def defType="RecipeDef" defName="Make_StoneBlocksAny" />
+    </Targets>
+    <Scene />
+    <Teams>
+      <Team id="player" factionDef="player" />
+    </Teams>
+    <Actors>
+      <Pawn id="worker" team="player" x="15" z="20">
+        <basePawnKind>SpaceRefugee</basePawnKind>
+        <Skills>
+          <Set def="Crafting" level="12" />
+        </Skills>
+      </Pawn>
+      <Building id="bench" def="TableStonecutter" stuff="Steel" team="player" x="18" z="20" />
+      <Thing id="chunk" def="ChunkGranite" x="20" z="20" />
+    </Actors>
+    <Steps>
+      <ExecuteRecipe id="produce" actor="worker" worktable="bench" recipe="Make_StoneBlocksAny" output="products" accelerate="true">
+        <Ingredients>
+          <Ingredient actor="chunk" count="1" />
+        </Ingredients>
+      </ExecuteRecipe>
+      <Require id="verify">
+        <ThingQuantity actor="products" def="BlocksGranite" min="20" max="20" />
+        <ActorState actor="chunk" state="destroyed" />
+        <ThingExists def="BlocksGranite" transition="added" since="produce" />
+      </Require>
+      <Screenshot id="recipe-image" focus="bench" />
+    </Steps>
+    <Success>
+      <StepSucceeded ref="verify" />
+      <StepSucceeded ref="recipe-image" />
+    </Success>
+  </Case>
+  <Case id="corpse" caseType="CorpseLifecycle" timeoutRealSeconds="90">
+    <testDefName>Batch2_CorpseRotAndSamePawnResurrection</testDefName>
+    <Scene />
+    <Actors>
+      <Corpse id="corpse" x="20" z="20">
+        <basePawnKind>SpaceRefugee</basePawnKind>
+      </Corpse>
+    </Actors>
+    <Steps>
+      <Require id="dead">
+        <ActorState actor="corpse.innerPawn" state="dead" />
+        <CorpseState actor="corpse" state="valid" />
+      </Require>
+      <SetRot id="rot" actor="corpse" state="Rotting" />
+      <Require id="rotten">
+        <ComponentState actor="corpse" component="rot" state="Rotting" />
+      </Require>
+      <Resurrect id="revive" actor="corpse" />
+      <Require id="alive">
+        <ActorState actor="corpse.innerPawn" state="alive" />
+        <ActorState actor="corpse.innerPawn" state="spawned" />
+        <CorpseState actor="corpse" state="destroyed" />
+      </Require>
+      <Screenshot id="resurrection-image" focus="corpse.innerPawn" />
+    </Steps>
+    <Success>
+      <StepSucceeded ref="rotten" />
+      <StepSucceeded ref="alive" />
+    </Success>
+  </Case>
+  <Case id="inventory" caseType="ThingBehavior" timeoutRealSeconds="90">
+    <testDefName>Batch2_InventoryPreservesThingIdentity</testDefName>
+    <Scene />
+    <Actors>
+      <Pawn id="pawn" x="20" z="20">
+        <basePawnKind>SpaceRefugee</basePawnKind>
+      </Pawn>
+      <Thing id="steel" def="Steel" count="25" x="22" z="20" />
+    </Actors>
+    <Steps>
+      <TransferThing id="take" actor="steel" target="pawn" />
+      <Require id="held">
+        <ThingHeld actor="steel" target="pawn" />
+        <ThingQuantity actor="steel" def="Steel" min="25" max="25" />
+      </Require>
+      <Checkpoint id="before-drop" />
+      <DropInventory id="drop" actor="pawn" target="steel" />
+      <Require id="same">
+        <ActorState actor="steel" state="spawned" />
+        <Not>
+          <ThingExists def="Steel" transition="added" since="before-drop" />
+        </Not>
+      </Require>
+      <Destroy id="destroy" actor="steel" />
+      <Require id="gone">
+        <ActorState actor="steel" state="destroyed" />
+      </Require>
+    </Steps>
+    <Success>
+      <StepSucceeded ref="held" />
+      <StepSucceeded ref="same" />
+      <StepSucceeded ref="gone" />
+    </Success>
+  </Case>
+  <Case id="TurretPocketMap" caseType="TurretPocketMap" timeoutRealSeconds="90" seed="31981">
+    <testDefName>Batch2_TurretPocketMap_CustomDamage</testDefName>
+    <Scene />
+    <Teams>
+      <Team id="a" factionDef="player" />
+      <Team id="b" factionDef="AncientsHostile" />
+    </Teams>
+    <Actors>
+      <Building def="Turret_MiniTurret" stuff="Steel" team="a" x="20" z="20" id="attacker" />
+      <Building def="LogSync_AutoTestPowerGenerator" team="a" x="19" z="20" id="generator" />
+      <Pawn id="target" team="b" x="27" z="20">
+        <basePawnKind>SpaceRefugee</basePawnKind>
+        <Hediffs>
+          <Ensure def="LogSync_TurretTestTarget" severity="1" />
+        </Hediffs>
+      </Pawn>
+    </Actors>
+    <Steps>
+      <DebugAction id="fuel" actionId="native.refuel">
+        <Select mode="single" actor="attacker" />
+      </DebugAction>
+      <Wait id="powered" timeoutRealSeconds="10">
+        <ComponentState actor="attacker" component="power" state="true" />
+      </Wait>
+      <Attack id="attack" actor="attacker" target="target" melee="false" />
+      <Wait id="damage" timeoutRealSeconds="20">
+        <HealthPercent actor="target" max="0.99999" />
+      </Wait>
+      <Screenshot id="image" focus="target" />
+    </Steps>
+    <Success>
+      <StepSucceeded ref="damage" />
+      <StepSucceeded ref="image" />
+    </Success>
+  </Case>
+  <Case id="MeleeWeaponPocketMap" caseType="MeleeWeaponPocketMap" timeoutRealSeconds="90" seed="31981">
+    <testDefName>Batch2_MeleeWeaponPocketMap_CustomDamage</testDefName>
+    <Scene />
+    <Teams>
+      <Team id="a" factionDef="player" />
+      <Team id="b" factionDef="AncientsHostile" />
+    </Teams>
+    <Actors>
+      <Pawn id="attacker" team="a" x="20" z="20">
+        <basePawnKind>SpaceRefugee</basePawnKind>
+        <Equipment mode="replace">
+          <SetPrimary def="MeleeWeapon_LongSword" stuff="Steel" quality="Normal" />
+        </Equipment>
+      </Pawn>
+      <Building def="Wall" stuff="Steel" team="b" x="21" z="20" id="target" />
+    </Actors>
+    <Steps>
+      <Attack id="attack" actor="attacker" target="target" melee="true" />
+      <Wait id="damage" timeoutRealSeconds="20">
+        <HealthPercent actor="target" max="0.99999" />
+      </Wait>
+      <Screenshot id="image" focus="target" />
+    </Steps>
+    <Success>
+      <StepSucceeded ref="damage" />
+      <StepSucceeded ref="image" />
+    </Success>
+  </Case>
+  <Case id="ApparelCombat" caseType="ApparelCombat" timeoutRealSeconds="90" seed="31981">
+    <testDefName>Batch2_ApparelCombat_CustomDamage</testDefName>
+    <Scene />
+    <Teams>
+      <Team id="a" factionDef="player" />
+      <Team id="b" factionDef="AncientsHostile" />
+    </Teams>
+    <Actors>
+      <Pawn id="attacker" team="a" x="20" z="20">
+        <basePawnKind>SpaceRefugee</basePawnKind>
+        <Equipment mode="replace">
+          <SetPrimary def="MeleeWeapon_Club" stuff="Steel" />
+        </Equipment>
+      </Pawn>
+      <Pawn id="target" team="b" x="21" z="20">
+        <basePawnKind>SpaceRefugee</basePawnKind>
+        <Apparel mode="replace">
+          <Add def="Apparel_PowerArmor" quality="Normal" />
+        </Apparel>
+        <Equipment mode="replace" />
+      </Pawn>
+    </Actors>
+    <Steps>
+      <Attack id="attack" actor="attacker" target="target" melee="true" />
+      <Wait id="damage" timeoutRealSeconds="20">
+        <HealthPercent actor="target" max="0.99999" />
+      </Wait>
+      <Screenshot id="image" focus="target" />
+    </Steps>
+    <Success>
+      <StepSucceeded ref="damage" />
+      <StepSucceeded ref="image" />
+    </Success>
+  </Case>
+  <Case id="AnimalCombat" caseType="AnimalCombat" timeoutRealSeconds="90" seed="31981">
+    <testDefName>Batch2_AnimalCombat_CustomDamage</testDefName>
+    <Scene />
+    <Teams>
+      <Team id="a" factionDef="player" />
+      <Team id="b" factionDef="AncientsHostile" />
+    </Teams>
+    <Actors>
+      <Pawn id="attacker" team="a" x="20" z="20">
+        <basePawnKind>Wolf_Timber</basePawnKind>
+      </Pawn>
+      <Building def="Wall" stuff="Steel" team="b" x="21" z="20" id="target" />
+    </Actors>
+    <Steps>
+      <Attack id="attack" actor="attacker" target="target" melee="true" />
+      <Wait id="damage" timeoutRealSeconds="20">
+        <HealthPercent actor="target" max="0.99999" />
+      </Wait>
+      <Screenshot id="image" focus="target" />
+    </Steps>
+    <Success>
+      <StepSucceeded ref="damage" />
+      <StepSucceeded ref="image" />
+    </Success>
+  </Case>
+  <Case id="MechanoidCombat" caseType="MechanoidCombat" timeoutRealSeconds="90" seed="31981">
+    <testDefName>Batch2_MechanoidCombat_CustomDamage</testDefName>
+    <Scene />
+    <Teams>
+      <Team id="a" factionDef="AncientsHostile" />
+      <Team id="b" factionDef="player" />
+    </Teams>
+    <Actors>
+      <Pawn id="attacker" team="a" x="20" z="20">
+        <basePawnKind>Mech_Scyther</basePawnKind>
+      </Pawn>
+      <Building def="Wall" stuff="Steel" team="b" x="21" z="20" id="target" />
+    </Actors>
+    <Steps>
+      <Attack id="attack" actor="attacker" target="target" melee="true" />
+      <Wait id="damage" timeoutRealSeconds="20">
+        <HealthPercent actor="target" max="0.99999" />
+      </Wait>
+      <Screenshot id="image" focus="target" />
+    </Steps>
+    <Success>
+      <StepSucceeded ref="damage" />
+      <StepSucceeded ref="image" />
+    </Success>
+  </Case>
+  <Case id="AlienCombat" caseType="AlienCombat" timeoutRealSeconds="90" seed="31981">
+    <testDefName>Batch2_AlienCombat_CustomDamage</testDefName>
+    <Scene />
+    <Teams>
+      <Team id="a" factionDef="player" />
+      <Team id="b" factionDef="AncientsHostile" />
+    </Teams>
+    <Actors>
+      <Pawn id="attacker" team="a" x="20" z="20">
+        <basePawnKind>Axolotl_Colonist</basePawnKind>
+        <Equipment mode="replace">
+          <SetPrimary def="MeleeWeapon_LongSword" stuff="Steel" quality="Normal" />
+        </Equipment>
+      </Pawn>
+      <Building def="Wall" stuff="Steel" team="b" x="21" z="20" id="target" />
+    </Actors>
+    <Steps>
+      <Attack id="attack" actor="attacker" target="target" melee="true" />
+      <Wait id="damage" timeoutRealSeconds="20">
+        <HealthPercent actor="target" max="0.99999" />
+      </Wait>
+      <Screenshot id="image" focus="target" />
+    </Steps>
+    <Success>
+      <StepSucceeded ref="damage" />
+      <StepSucceeded ref="image" />
+    </Success>
+  </Case>
+  <Case id="health" caseType="HediffEffect" timeoutRealSeconds="60">
+    <testDefName>Batch2_HediffSeverityAndRemoval</testDefName>
+    <Scene />
+    <Actors>
+      <Pawn id="patient" x="20" z="20">
+        <basePawnKind>SpaceRefugee</basePawnKind>
+      </Pawn>
+    </Actors>
+    <Steps>
+      <AddHediff def="AlcoholHigh" severity="0.2" id="add" actor="patient" />
+      <Require id="present">
+        <HasHediff def="AlcoholHigh" severityMin="0.19" severityMax="0.21" transition="added" since="add" actor="patient" />
+      </Require>
+      <RemoveHediff def="AlcoholHigh" id="remove" actor="patient" />
+      <Require id="removed">
+        <HasHediff def="AlcoholHigh" transition="removed" since="remove" actor="patient" />
+      </Require>
+    </Steps>
+    <Success>
+      <StepSucceeded ref="present" />
+      <StepSucceeded ref="removed" />
+    </Success>
+  </Case>
+  <Case id="gestation" caseType="RecipeExecution" timeoutRealSeconds="90">
+    <testDefName>Batch2_NativeMechGestation</testDefName>
+    <Scene />
+    <Teams>
+      <Team id="player" factionDef="player" />
+    </Teams>
+    <Actors>
+      <Pawn id="worker" template="mechanitor" team="player" x="15" z="20" />
+      <Building id="bench" def="MechGestator" team="player" x="20" z="20" />
+      <Thing id="steel" def="Steel" count="50" x="23" z="20" />
+      <Thing id="subcore" def="SubcoreBasic" x="24" z="20" />
+    </Actors>
+    <Steps>
+      <ExecuteRecipe id="gestate" actor="worker" recipe="Militor" worktable="bench" output="product" accelerate="true">
+        <Ingredients>
+          <Ingredient actor="steel" count="50" />
+          <Ingredient actor="subcore" count="1" />
+        </Ingredients>
+      </ExecuteRecipe>
+      <BindMech id="control" actor="product" target="worker" />
+      <Require id="living">
+        <ActorState actor="product" state="alive" />
+        <ActorState actor="product" state="spawned" />
+        <HasController actor="product" target="worker" />
+        <ActorState actor="steel" state="destroyed" />
+        <ActorState actor="subcore" state="destroyed" />
+      </Require>
+      <Screenshot id="gestation-image" focus="product" />
+    </Steps>
+    <Success>
+      <StepSucceeded ref="living" />
+    </Success>
+  </Case>
+  <Case id="resurrection" caseType="RecipeExecution" timeoutRealSeconds="90">
+    <testDefName>Batch2_NativeMechResurrectionIdentity</testDefName>
+    <Scene />
+    <Teams>
+      <Team id="player" factionDef="player" />
+    </Teams>
+    <Actors>
+      <Pawn id="worker" template="mechanitor" team="player" x="15" z="20" />
+      <Building id="bench" def="MechGestator" team="player" x="20" z="20" />
+      <Corpse id="corpse" team="player" x="24" z="20">
+        <basePawnKind>Mech_Militor</basePawnKind>
+      </Corpse>
+      <Thing id="steel" def="Steel" count="25" x="23" z="20" />
+    </Actors>
+    <Steps>
+      <ExecuteRecipe id="revive" actor="worker" recipe="ResurrectLightMech" worktable="bench" output="product" accelerate="true">
+        <Ingredients>
+          <Ingredient actor="corpse" count="1" />
+          <Ingredient actor="steel" count="25" />
+        </Ingredients>
+      </ExecuteRecipe>
+      <Require id="same-pawn">
+        <ActorState actor="corpse.innerPawn" state="alive" />
+        <ActorState actor="corpse.innerPawn" state="spawned" />
+        <ActorState actor="product" state="alive" />
+        <CorpseState actor="corpse" state="destroyed" />
+      </Require>
+      <Screenshot id="resurrected-image" focus="product" />
+    </Steps>
+    <Success>
+      <StepSucceeded ref="same-pawn" />
+    </Success>
+  </Case>
+  <Case id="debug-scope" caseType="HediffEffect" timeoutRealSeconds="90">
+    <testDefName>Batch2_DebugRectangleAndSourceIsolation</testDefName>
+    <Scene /><Teams><Team id="a" factionDef="player" /><Team id="b" factionDef="AncientsHostile" /></Teams>
+    <Actors>
+      <Pawn id="caster" team="a" x="18" z="20"><basePawnKind>SpaceRefugee</basePawnKind></Pawn>
+      <PawnGroup id="enemies" team="b" originX="20" originZ="20" count="2" spacing="2"><basePawnKind>SpaceRefugee</basePawnKind></PawnGroup>
+      <Pawn id="outside" team="b" x="30" z="20"><basePawnKind>SpaceRefugee</basePawnKind></Pawn>
+    </Actors>
+    <Steps>
+      <DebugAction id="enemies-only" actionId="native.addHediff" def="AlcoholHigh" severity="0.2"><Select mode="rectangle" minX="17" minZ="19" maxX="23" maxZ="21" filter="enemies" relativeTo="caster" /></DebugAction>
+      <Require id="enemy-selection"><HasHediff actor="enemies" def="AlcoholHigh" quantifier="all" /><Not><HasHediff actor="caster" def="AlcoholHigh" /></Not><Not><HasHediff actor="outside" def="AlcoholHigh" /></Not></Require>
+      <DebugAction id="all-in-box" actionId="native.addHediff" def="GoJuiceHigh" severity="0.2"><Select mode="rectangle" minX="17" minZ="19" maxX="23" maxZ="21" filter="allScenePawns" /></DebugAction>
+      <Require id="all-selection"><HasHediff actor="caster" def="GoJuiceHigh" /><HasHediff actor="enemies" def="GoJuiceHigh" quantifier="all" /><Not><HasHediff actor="outside" def="GoJuiceHigh" /></Not></Require>
+    </Steps>
+    <Success><StepSucceeded ref="enemy-selection" /><StepSucceeded ref="all-selection" /></Success>
+  </Case>
+  <Case id="registered-resources" caseType="HediffEffect" timeoutRealSeconds="90">
+    <testDefName>Batch2_RegisteredResourceAndHealingActions</testDefName>
+    <Scene /><Actors>
+      <Pawn id="p" x="20" z="20"><basePawnKind>SpaceRefugee</basePawnKind><Hediffs><Ensure def="PsychicAmplifier" severity="6" part="Brain" /><Ensure def="Cut" severity="5" part="Torso" /><Ensure def="AlcoholHigh" severity="0.2" /></Hediffs></Pawn>
+      <Building id="battery" def="Battery" x="23" z="20" />
+    </Actors>
+    <Steps>
+      <DebugAction id="focus" actionId="native.setPsyfocus" value="0.75"><Select mode="single" actor="p" /></DebugAction>
+      <DebugAction id="charge" actionId="native.chargeBattery"><Select mode="single" actor="battery" /></DebugAction>
+      <DebugAction id="heal" actionId="native.healInjuries"><Select mode="single" actor="p" /></DebugAction>
+      <DebugAction id="remove" actionId="native.removeHediff" def="AlcoholHigh"><Select mode="single" actor="p" /></DebugAction>
+      <Require id="prepared"><ComponentState actor="battery" component="battery" min="0.99" /><Not><HasHediff actor="p" def="Cut" /></Not><Not><HasHediff actor="p" def="AlcoholHigh" /></Not></Require>
+    </Steps>
+    <Success><StepSucceeded ref="focus" /><StepSucceeded ref="charge" /><StepSucceeded ref="heal" /><StepSucceeded ref="remove" /><StepSucceeded ref="prepared" /></Success>
+  </Case>
+</TestSuite>

@@ -125,8 +125,8 @@ namespace LogSyncMod.AutoTest
             builder.AppendLine();
             builder.AppendLine("## Results");
             builder.AppendLine();
-            builder.AppendLine("| CaseType | Category | DefName | Status | Stage | Screenshot | Notes |");
-            builder.AppendLine("| --- | --- | --- | --- | --- | --- | --- |");
+            builder.AppendLine("| CaseType | Category | DefName | CaseId | Status | Stage | Screenshot | Notes |");
+            builder.AppendLine("| --- | --- | --- | --- | --- | --- | --- | --- |");
 
             if (failedResults.Count == 0)
             {
@@ -139,14 +139,15 @@ namespace LogSyncMod.AutoTest
                     ? string.Join("<br>", ResultScreenshotPaths(result).Select(path => BuildMarkdownLink(artifacts, path)).ToArray())
                     : string.Empty;
                 builder.AppendLine(string.Format(
-                    "| {0} | {1} | `{2}` | {3} | {4} | {5} | {6} |",
+                    "| {0} | {1} | `{2}` | `{7}` | {3} | {4} | {5} | {6} |",
                     EscapePipe(result.CaseType),
                     EscapePipe(result.Category),
                     EscapePipe(result.DefName),
                     EscapePipe(result.Status),
                     EscapePipe(result.Stage),
                     screenshotValue,
-                    EscapePipe(string.IsNullOrWhiteSpace(result.ErrorMessage) ? result.Notes : Trim(result.ErrorMessage, 160))));
+                    EscapePipe(string.IsNullOrWhiteSpace(result.ErrorMessage) ? result.Notes : Trim(result.ErrorMessage, 160)),
+                    EscapePipe(result.CaseId)));
             }
 
             if (runSummary != null && runSummary.MissingCaseIds.Count > 0)
@@ -177,6 +178,7 @@ namespace LogSyncMod.AutoTest
                     builder.AppendLine("#### " + result.DefName);
                     builder.AppendLine();
                     builder.AppendLine("- Label: " + (string.IsNullOrWhiteSpace(result.Label) ? result.DefName : result.Label));
+                    builder.AppendLine("- CaseId: `" + result.CaseId + "`");
                     builder.AppendLine("- Status: " + result.Status);
                     builder.AppendLine();
 
@@ -223,7 +225,7 @@ namespace LogSyncMod.AutoTest
                 string caseKey = ReportCaseKey(failedResult);
                 List<ReportLogGroup> logs = reportLogs.Where(log => log.CaseOccurrences.ContainsKey(caseKey)).ToList();
                 builder.AppendLine();
-                builder.AppendLine("## Failure Details: " + failedResult.DefName);
+                builder.AppendLine("## Failure Details: " + failedResult.DefName + " (" + failedResult.CaseId + ")");
                 builder.AppendLine();
                 builder.AppendLine("### Failed Assertions");
                 builder.AppendLine();
@@ -337,11 +339,11 @@ namespace LogSyncMod.AutoTest
                 .Where(path => !string.IsNullOrWhiteSpace(path)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         }
 
-        private static string SerializeScenario(Scenarios.ScenarioOutcome scenario)
+        private static string SerializeScenario(object scenario)
         {
             using (var stream = new MemoryStream())
             {
-                new System.Runtime.Serialization.Json.DataContractJsonSerializer(typeof(Scenarios.ScenarioOutcome)).WriteObject(stream, scenario);
+                new System.Runtime.Serialization.Json.DataContractJsonSerializer(scenario.GetType()).WriteObject(stream, scenario);
                 return Encoding.UTF8.GetString(stream.ToArray());
             }
         }
@@ -370,6 +372,8 @@ namespace LogSyncMod.AutoTest
             }
             if (runSummary != null)
             {
+                if (runSummary.ScenarioSelection != null) builder.AppendLine("  \"scenarioSelection\": " + SerializeScenario(runSummary.ScenarioSelection) + ",");
+                builder.AppendLine("  \"verifiedCoverageKeys\": " + BuildJsonArray(runSummary.VerifiedCoverageKeys) + ",");
                 builder.AppendLine("  \"runMode\": \"" + EscapeJson(runSummary.RunMode) + "\",");
                 builder.AppendLine("  \"completeness\": \"" + (runSummary.Complete ? "Complete" : "Incomplete") + "\",");
                 builder.AppendLine("  \"manifestDiscovered\": " + runSummary.DiscoveredCount + ",");

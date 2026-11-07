@@ -237,23 +237,22 @@ public static class TestCommand
             return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "MODE_INVALID", $"不支持的测试模式: {mode}", context.Root);
         ScenarioPlan? scenarioPlan = null;
         var scenarioPath = CliArgs.Value(args, "--scenario-path");
-        if (scenarioPath is not null || CliArgs.Has(args, "--scenario-only"))
+        if (scenarioPath is not null || CliArgs.Has(args, "--scenario-only") || CliArgs.Has(args, "--test-name"))
         {
             if (mode != "auto" || context.Config.GameVersion != "1.7")
                 return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "SCENARIO_BACKEND_UNSUPPORTED", "外部场景首版仅支持 1.7 的 auto 模式", context.Root);
-            if (string.IsNullOrWhiteSpace(scenarioPath) || !CliArgs.Has(args, "--scenario-only"))
-                return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "SCENARIO_ONLY_REQUIRED", "第一批独立运行外部场景，请同时提供 --scenario-path 和 --scenario-only；混合与替代在第二批接入", context.Root);
-            try { scenarioPlan = ScenarioLoader.Load(Path.GetFullPath(scenarioPath, context.Root)); }
+            if (string.IsNullOrWhiteSpace(scenarioPath))
+                return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "SCENARIO_PATH_REQUIRED", "--scenario-only 必须同时提供 --scenario-path", context.Root);
+            try { scenarioPlan = ScenarioLoader.Load(Path.GetFullPath(scenarioPath, context.Root)); ScenarioLoader.SelectRules(scenarioPlan, CliArgs.Values(args, "--test-name")); }
             catch (Exception ex) when (ex is IOException or XmlException or ScenarioConfigurationException or ArgumentException)
             { return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "SCENARIO_INVALID", ex.Message, context.Root); }
+            scenarioPlan.ScenarioOnly = CliArgs.Has(args, "--scenario-only");
         }
         var verifyWorkshopAssets = CliArgs.Has(args, "--verify-workshop-assets");
         if (verifyWorkshopAssets && (mode != "quick" || context.Config.GameVersion != "1.7"))
             return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "INVALID_ARGUMENT", "--verify-workshop-assets 仅支持 1.7 的 quick 测试", context.Root);
         if (!AutoTestSelectionParser.TryParse(args, mode, out var selection, out var selectionError))
             return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "INVALID_ARGUMENT", selectionError!, context.Root);
-        if (scenarioPlan is not null && (selection.HasExplicitScopes || selection.DefNames.Count > 0 || CliArgs.Has(args, "--batch-size")))
-            return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "SCENARIO_FILTERS_UNSUPPORTED", "第一批外部场景执行完整独立计划，不接受普通测试的 --scope、--defname 或 --batch-size；混合筛选在第二批接入", context.Root);
         if (CliArgs.Has(args, "--batch-size") && mode != "auto")
             return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "INVALID_ARGUMENT", "--batch-size 仅适用于 --mode auto", context.Root);
         if (CliArgs.Has(args, "--sync-source") && !CliArgs.Has(args, "--deploy"))
@@ -1086,6 +1085,8 @@ public static class AutoResultValidator
                     return Failure("AUTO_RESULT_INCOMPLETE", "自动测试未执行全部计划用例", new { path, executed, planned });
                 if (!root.TryGetProperty("results", out var results) || results.ValueKind != JsonValueKind.Array)
                     return Failure("AUTO_RESULT_INVALID", "自动测试结果缺少 results", new { path });
+                var scenarioError = ScenarioResultValidator.Validate(root);
+                if (scenarioError is not null) return Failure("AUTO_SCENARIO_RESULT_INVALID", scenarioError, new { path });
 
                 var failed = results.EnumerateArray()
                     .Where(item =>

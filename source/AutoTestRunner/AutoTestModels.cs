@@ -12,6 +12,7 @@ namespace LogSyncMod.AutoTest
         Plant,
         Terrain,
         Recipe,
+        RecipeExecution,
         Hediff,
         AnimalInfoCard,
         MechanoidInfoCard,
@@ -51,6 +52,8 @@ namespace LogSyncMod.AutoTest
         TerrainInfoCard,
         RecipeInfoCard,
         RecipeBillUi,
+        RecipeExecution,
+        AbilityGizmoUi,
         HediffInfoCard,
         AnimalInfoCard,
         MechanoidInfoCard,
@@ -126,6 +129,8 @@ namespace LogSyncMod.AutoTest
 
     internal sealed class AutoTestRunSummary
     {
+        public Scenarios.ScenarioSelection ScenarioSelection;
+        public List<string> VerifiedCoverageKeys = new List<string>();
         public string RunMode;
         public bool Complete;
         public int DiscoveredCount;

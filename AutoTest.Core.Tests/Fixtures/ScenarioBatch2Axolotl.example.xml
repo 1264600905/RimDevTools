@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TestSuite schemaVersion="1" id="batch2.axolotl" packageId="hentailoliteam.axolotl">
+  <Requirements><Mod packageId="hentailoliteam.axolotl" /></Requirements>
+  <Templates>
+    <PawnTemplate id="caster">
+      <basePawnKind>Axolotl_Colonist</basePawnKind><minGenerationAge>25</minGenerationAge><maxGenerationAge>25</maxGenerationAge>
+      <Hediffs><Ensure def="Axolotl_LotlQi" severity="5" /></Hediffs>
+      <Abilities><Ensure def="Axolotl_SkillMove" /><Ensure def="Axolotl_SwordAura" /><Ensure def="Axolotl_Thunder_SuperSkill" /></Abilities>
+    </PawnTemplate>
+  </Templates>
+  <Case id="move" caseType="SkillPocketMap" timeoutRealSeconds="90">
+    <testDefName>Batch2_Axolotl_FloatingCloudLanding</testDefName>
+    <Targets><Def defType="AbilityDef" defName="Axolotl_SkillMove" /></Targets>
+    <Scene /><Teams><Team id="player" factionDef="player" /></Teams>
+    <Actors><Pawn id="caster" template="caster" team="player" x="14" z="20" /></Actors>
+    <Steps>
+      <DebugAction id="qi" actionId="axolotl.fillQi"><Select mode="single" actor="caster" /></DebugAction>
+      <Require id="ready"><ModResourceLevel actor="caster" resource="axolotl.qi" min="0.9" /></Require>
+      <CastAbility id="cast" actor="caster" def="Axolotl_SkillMove" targetX="18" targetZ="20" timeoutRealSeconds="20" />
+      <Wait id="landed" timeoutRealSeconds="20"><ActorPosition actor="caster" x="18" z="20" radius="0" /></Wait>
+      <Screenshot id="landing-image" focus="caster" />
+    </Steps>
+    <Success><StepSucceeded ref="cast" /><StepSucceeded ref="landed" /><StepSucceeded ref="landing-image" /></Success>
+  </Case>
+  <Case id="slash" caseType="SkillPocketMap" timeoutRealSeconds="90">
+    <testDefName>Batch2_Axolotl_SwordAuraDamage</testDefName>
+    <Targets><Def defType="AbilityDef" defName="Axolotl_SwordAura" /></Targets>
+    <Scene /><Teams><Team id="player" factionDef="player" /><Team id="enemy" factionDef="AncientsHostile" /></Teams>
+    <Actors><Pawn id="caster" template="caster" team="player" x="14" z="20" /><Building id="target" def="Wall" stuff="Steel" team="enemy" x="20" z="20" /></Actors>
+    <Steps>
+      <DebugAction id="qi" actionId="axolotl.fillQi"><Select mode="single" actor="caster" /></DebugAction>
+      <CastAbility id="cast" actor="caster" def="Axolotl_SwordAura" target="target" timeoutRealSeconds="20" />
+      <Wait id="hit" timeoutRealSeconds="20"><HealthPercent actor="target" max="0.99" /></Wait>
+      <Screenshot id="hit-image" focus="target" />
+    </Steps>
+    <Success><StepSucceeded ref="cast" /><StepSucceeded ref="hit" /></Success>
+  </Case>
+  <Case id="thunder" caseType="SkillPocketMap" timeoutRealSeconds="90">
+    <testDefName>Batch2_Axolotl_ThunderStrengthen</testDefName>
+    <Targets><Def defType="AbilityDef" defName="Axolotl_Thunder_SuperSkill" /></Targets>
+    <Scene /><Teams><Team id="player" factionDef="player" /></Teams>
+    <Actors><Pawn id="caster" template="caster" team="player" x="14" z="20" /></Actors>
+    <Steps>
+      <DebugAction id="qi" actionId="axolotl.fillQi"><Select mode="single" actor="caster" /></DebugAction>
+      <CastAbility id="cast" actor="caster" def="Axolotl_Thunder_SuperSkill" target="caster" timeoutRealSeconds="20" />
+      <Wait id="effect" timeoutRealSeconds="20"><HasHediff actor="caster" def="Axolotl_ThunderStrengthen" transition="added" since="cast" observation="eventually" /></Wait>
+      <Screenshot id="thunder-image" focus="caster" />
+    </Steps>
+    <Success><StepSucceeded ref="cast" /><StepSucceeded ref="effect" /></Success>
+  </Case>
+</TestSuite>

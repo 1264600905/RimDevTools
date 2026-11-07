@@ -1,0 +1,46 @@
+<?xml version='1.0' encoding='utf-8'?>
+<TestSuite schemaVersion="1" id="batch2.invalid-coverage" packageId="ludeon.rimworld">
+  <Case id="exact-variant" caseType="ApparelCombat" timeoutRealSeconds="90" seed="31981">
+    <testDefName>Batch2_ExpectedInvalidCoverageVariant</testDefName>
+    <Scene />
+    <Teams>
+      <Team id="a" factionDef="player" />
+      <Team id="b" factionDef="AncientsHostile" />
+    </Teams>
+    <Actors>
+      <Pawn id="attacker" team="a" x="20" z="20">
+        <basePawnKind>SpaceRefugee</basePawnKind>
+        <Equipment mode="replace">
+          <SetPrimary def="MeleeWeapon_Club" stuff="Steel" />
+        </Equipment>
+      </Pawn>
+      <Pawn id="target" team="b" x="21" z="20">
+        <basePawnKind>Colonist</basePawnKind>
+        <Apparel mode="replace">
+          <Add def="Apparel_PowerArmor" quality="Normal" />
+        </Apparel>
+        <Equipment mode="replace" />
+        <gender>Male</gender>
+        <Appearance>
+          <bodyType>Male</bodyType>
+        </Appearance>
+      </Pawn>
+    </Actors>
+    <Steps>
+      <Attack id="attack" actor="attacker" target="target" melee="true" />
+      <Wait id="damage" timeoutRealSeconds="20">
+        <HealthPercent actor="target" max="0.99999" />
+      </Wait>
+      <Screenshot id="image" focus="target" />
+    </Steps>
+    <Success>
+      <StepSucceeded ref="damage" />
+      <StepSucceeded ref="image" />
+    </Success>
+    <Coverage mode="replace">
+      <Target defType="ThingDef" defName="Apparel_PowerArmor" caseType="ApparelCombat" variant="Colonist@Batch2_NoSuchBodyType">
+        <Evidence step="damage" />
+      </Target>
+    </Coverage>
+  </Case>
+</TestSuite>
