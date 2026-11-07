@@ -349,7 +349,7 @@ namespace LogSyncMod.AutoTest
                 if (first)
                 {
                     if (A(step, "force", "false") != "false") throw new ScenarioConfigurationException("External scenes do not force abilities");
-                    casting = pawn.abilities?.GetAbility(Def<AbilityDef>(A(step, "def"))) ?? throw new ScenarioConfigurationException("Actor lacks ability");
+                    casting = pawn.abilities?.GetAbility(Def<AbilityDef>(A(step, "def")), includeTemporary: true) ?? throw new ScenarioConfigurationException("Actor lacks ability");
                     var target = A(step, "target") != null ? new LocalTargetInfo(One(A(step, "target"))) : new LocalTargetInfo(new IntVec3(I(step, "targetX"), 0, I(step, "targetZ")));
                     if (!target.Cell.InBounds(Map)) throw new ScenarioConfigurationException("Ability target outside scene");
                     if (!casting.CanCast || !casting.CanQueueCast || !casting.CanApplyOn(target) || !casting.verb.ValidateTarget(target, false)) throw new InvalidOperationException("Native ability prerequisites/target rejected: " + casting.def.defName + " " + casting.CanCast.Reason);
@@ -473,7 +473,7 @@ namespace LogSyncMod.AutoTest
                 else if (name == "Wearing") match = p?.apparel?.WornApparel.Any(app => app.def.defName == A(c, "def")) == true;
                 else if (name == "HasTrait") match = p?.story?.traits.HasTrait(Def<TraitDef>(A(c, "def")), I(c, "degree")) == true;
                 else if (name == "SkillLevel") { var skill = p?.skills?.GetSkill(Def<SkillDef>(A(c, "def"))); match = skill != null && skill.Level >= ScenarioLoader.D(c, "min", 0) && skill.Level <= ScenarioLoader.D(c, "max", 20); }
-                else if (name == "HasAbility") match = p?.abilities?.GetAbility(Def<AbilityDef>(A(c, "def"))) != null;
+                else if (name == "HasAbility") match = p?.abilities?.GetAbility(Def<AbilityDef>(A(c, "def")), includeTemporary: true) != null;
                 else if (name == "HealthPercent") { var value = p != null ? p.health.summaryHealth.SummaryHealthPercent : thing.def.useHitPoints ? (float)thing.HitPoints / thing.MaxHitPoints : throw new ScenarioConfigurationException("Actor has no health/hit points"); match = InRange(value, c); }
                 else if (name == "NeedLevel") { var need = p?.needs?.TryGetNeed(Def<NeedDef>(A(c, "def"))); match = need != null && InRange(need.CurLevelPercentage, c); }
                 else if (name == "ResourceLevel") { var resource = p?.genes?.GetGene(Def<GeneDef>(A(c, "def"))) as Gene_Resource; match = resource != null && resource.Active && InRange(resource.ValuePercent, c); }

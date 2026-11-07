@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TestSuite schemaVersion="1" id="axolotl.regression" packageId="hentailoliteam.axolotl" gameVersion="1.7">
+  <Requirements>
+    <Mod packageId="hentailoliteam.axolotl" />
+    <DLC packageId="ludeon.rimworld.biotech" />
+  </Requirements>
+  <!-- 百花印是依赖施法者的技能附带状态，不独立创建；本套定向回归明确不包含它。
+       普通 HediffInfoCard / AbilityGizmoUi 不接受功能 Coverage 替代，不能宣称本套覆盖了 UI。 -->
+  <Templates>
+    <PawnTemplate id="moelotl">
+      <basePawnKind>Axolotl_Colonist</basePawnKind>
+      <race>Axolotl</race>
+      <minGenerationAge>25</minGenerationAge>
+      <maxGenerationAge>25</maxGenerationAge>
+    </PawnTemplate>
+    <PawnTemplate id="flame-caster" extends="moelotl">
+      <Equipment mode="patch">
+        <SetPrimary def="Axolotl_Flame_VermilionBird_Machete" stuff="Steel" quality="Normal" />
+      </Equipment>
+      <Hediffs mode="patch"><Ensure def="Axolotl_LotlQi" severity="5" /></Hediffs>
+      <Skills mode="patch"><Set def="Melee" level="12" /></Skills>
+    </PawnTemplate>
+  </Templates>
+  <Case id="regenerative-tissue" caseType="HediffEffect" seed="20261107" timeoutRealSeconds="90">
+    <testDefName>Axolotl_Regression_RegenerativeTissue</testDefName>
+    <Targets><Def defType="HediffDef" defName="Axolotl_RegenerativeTissue" /></Targets>
+    <Scene />
+    <Teams><Team id="player" factionDef="player" /></Teams>
+    <Actors><Pawn id="patient" template="moelotl" team="player" x="20" z="20" /></Actors>
+    <Steps>
+      <Require id="native-patient"><PawnAppearance actor="patient" property="race" value="Axolotl" /><ActorState actor="patient" state="alive" /></Require>
+      <AddHediff id="apply-tissue" actor="patient" def="Axolotl_RegenerativeTissue" part="Torso" severity="2" />
+      <Require id="tissue-present"><HasHediff actor="patient" def="Axolotl_RegenerativeTissue" severityMin="0.1" /></Require>
+      <Screenshot id="tissue-image" focus="patient" />
+      <Wait id="patient-stable" durationTicks="60" observation="always" timeoutRealSeconds="20"><ActorState actor="patient" state="alive" /></Wait>
+    </Steps>
+    <Success><StepSucceeded ref="tissue-present" /><StepSucceeded ref="patient-stable" /><StepSucceeded ref="tissue-image" /></Success>
+  </Case>
+  <Case id="instant-chop" caseType="SkillPocketMap" seed="20261107" timeoutRealSeconds="90">
+    <testDefName>Axolotl_Regression_InstantChop</testDefName>
+    <Targets><Def defType="AbilityDef" defName="Axolotl_InstantChop" /></Targets>
+    <Scene><Environment weather="Clear" temperature="23" roof="none" /></Scene>
+    <Teams><Team id="player" factionDef="player" /><Team id="enemy" factionDef="AncientsHostile" /></Teams>
+    <Actors>
+      <Pawn id="caster" template="flame-caster" team="player" x="14" z="20" />
+      <Pawn id="victim" team="enemy" x="18" z="20"><basePawnKind>Colonist</basePawnKind><Apparel mode="replace" /><Equipment mode="replace" /></Pawn>
+    </Actors>
+    <Steps>
+      <DebugAction id="fill-qi" actionId="axolotl.fillQi"><Select mode="single" actor="caster" /></DebugAction>
+      <Require id="native-caster">
+        <PawnAppearance actor="caster" property="race" value="Axolotl" />
+        <Equipped actor="caster" def="Axolotl_Flame_VermilionBird_Machete" />
+        <HasAbility actor="caster" def="Axolotl_InstantChop" />
+        <ModResourceLevel actor="caster" resource="axolotl.qi" min="0.9" />
+        <ActorState actor="caster" state="standing" />
+      </Require>
+      <Screenshot id="caster-image" focus="caster" />
+      <CastAbility id="cast" actor="caster" def="Axolotl_InstantChop" targetX="22" targetZ="20" timeoutRealSeconds="20" />
+      <Wait id="hit" timeoutRealSeconds="20"><Any><HealthPercent actor="victim" max="0.99" /><ActorState actor="victim" state="dead" /></Any></Wait>
+      <Require id="caster-survived"><ActorState actor="caster" state="alive" /><Equipped actor="caster" def="Axolotl_Flame_VermilionBird_Machete" /></Require>
+      <Screenshot id="hit-image" focus="victim" />
+      <DropEquipment id="drop-weapon" actor="caster" />
+      <Require id="weapon-ability-removed"><Not><HasAbility actor="caster" def="Axolotl_InstantChop" /></Not></Require>
+    </Steps>
+    <Success><StepSucceeded ref="cast" /><StepSucceeded ref="hit" /><StepSucceeded ref="caster-survived" /><StepSucceeded ref="weapon-ability-removed" /></Success>
+    <Coverage mode="replace"><Target defType="AbilityDef" defName="Axolotl_InstantChop" caseType="SkillPocketMap"><Evidence step="hit" /></Target></Coverage>
+  </Case>
+  <Case id="sharpshooter" caseType="AlienThreeView" seed="20261107" timeoutRealSeconds="90">
+    <testDefName>Axolotl_Regression_SharpshooterThreeView</testDefName>
+    <Targets><Def defType="PawnKindDef" defName="AxolotlSoldierSpecial_Physics" /></Targets>
+    <Scene type="studio" />
+    <Actors><Pawn id="presenter" x="25" z="25"><basePawnKind>AxolotlSoldierSpecial_Physics</basePawnKind></Pawn></Actors>
+    <Steps>
+      <Require id="native-sharpshooter"><PawnAppearance actor="presenter" property="kind" value="AxolotlSoldierSpecial_Physics" /><PawnAppearance actor="presenter" property="race" value="Axolotl" /><ActorState actor="presenter" state="standing" /></Require>
+      <View id="sharpshooter-view" actor="presenter" directions="West,South,North" pose="auto" loadout="preserve" cameraSize="11" stableFrames="5" />
+      <Require id="sharpshooter-retained"><PawnAppearance actor="presenter" property="kind" value="AxolotlSoldierSpecial_Physics" /><ActorState actor="presenter" state="alive" /></Require>
+    </Steps>
+    <Success><StepSucceeded ref="sharpshooter-view" /><StepSucceeded ref="sharpshooter-retained" /></Success>
+    <Coverage mode="replace"><Target defType="PawnKindDef" defName="AxolotlSoldierSpecial_Physics" caseType="AlienThreeView"><Evidence step="sharpshooter-retained" /></Target></Coverage>
+  </Case>
+  <Case id="xenotype" caseType="XenotypeThreeView" seed="20261107" timeoutRealSeconds="90">
+    <testDefName>Axolotl_Regression_MoeLotlXenotype</testDefName>
+    <Targets><Def defType="XenotypeDef" defName="Axolotl_Xenotype_MoeLotlBase" /></Targets>
+    <Scene type="studio" />
+    <Actors><Pawn id="presenter" template="moelotl" x="25" z="25"><Xenotype def="Axolotl_Xenotype_MoeLotlBase" /></Pawn></Actors>
+    <Steps>
+      <Require id="xenotype-identity"><HasXenotype actor="presenter" def="Axolotl_Xenotype_MoeLotlBase" /><PawnAppearance actor="presenter" property="race" value="Axolotl" /></Require>
+      <View id="xenotype-view" actor="presenter" directions="West,South,North" pose="standing" loadout="preserve" cameraSize="11" stableFrames="5" />
+      <!-- HAR blackEndoCategories 禁止 BodyType；原生 AddGene 会拒绝 Body_Thin。
+           逐项验证其余七项基因，且确认 Body_Thin 被过滤，不绕过种族限制强加基因。
+           Skin_SheerWhite 在当前实际运行中保留，不把它误归入受限的 Melanin。 -->
+      <Require id="gene-body-filtered"><Not><HasGene actor="presenter" def="Body_Thin" /></Not></Require>
+      <Require id="gene-skin"><HasGene actor="presenter" def="Skin_SheerWhite" /></Require>
+      <Require id="gene-hands"><HasGene actor="presenter" def="Hands_Human" /></Require>
+      <Require id="gene-clotting"><HasGene actor="presenter" def="Superclotting" /></Require>
+      <Require id="gene-healing"><HasGene actor="presenter" def="WoundHealing_Fast" /></Require>
+      <Require id="gene-cold"><HasGene actor="presenter" def="MinTemp_SmallIncrease" /></Require>
+      <Require id="gene-heat"><HasGene actor="presenter" def="MaxTemp_SmallDecrease" /></Require>
+      <Require id="gene-research"><HasGene actor="presenter" def="Axolotl_Research_Slow" /></Require>
+    </Steps>
+    <Success><StepSucceeded ref="xenotype-view" /><StepSucceeded ref="gene-body-filtered" /><StepSucceeded ref="gene-skin" /><StepSucceeded ref="gene-hands" /><StepSucceeded ref="gene-clotting" /><StepSucceeded ref="gene-healing" /><StepSucceeded ref="gene-cold" /><StepSucceeded ref="gene-heat" /><StepSucceeded ref="gene-research" /></Success>
+    <Coverage mode="replace"><Target defType="XenotypeDef" defName="Axolotl_Xenotype_MoeLotlBase" caseType="XenotypeThreeView"><Evidence step="xenotype-identity" /><Evidence step="gene-research" /></Target></Coverage>
+  </Case>
+</TestSuite>
