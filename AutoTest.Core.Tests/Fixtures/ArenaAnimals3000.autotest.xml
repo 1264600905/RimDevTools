@@ -1,0 +1,36 @@
+<ArenaSuite schemaVersion="1" id="arena.animals3000" gameVersion="1.7">
+  <Tournament id="animals20" name="二十种动物与虫族：3000点擂台" seed="12345">
+    <testDefName>Arena_Animals20_Budget3000</testDefName>
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all">
+      <Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/>
+    </Scene>
+    <Roster mode="combatPower" budget="3000"/>
+    <Entrants>
+      <Entrant id="AlphaThrumbo" pawnKind="AlphaThrumbo" name="阿尔法敲击兽"/>
+      <Entrant id="HiveQueen" pawnKind="HiveQueen" name="虫后"/>
+      <Entrant id="Thrumbo" pawnKind="Thrumbo" name="敲击兽"/>
+      <Entrant id="Mastodon" pawnKind="Mastodon" name="乳齿象"/>
+      <Entrant id="Megasloth" pawnKind="Megasloth" name="大地懒"/>
+      <Entrant id="Rhinoceros" pawnKind="Rhinoceros" name="犀牛"/>
+      <Entrant id="Elephant" pawnKind="Elephant" name="象"/>
+      <Entrant id="Hippo" pawnKind="Hippo" name="河马"/>
+      <Entrant id="Bear_Grizzly" pawnKind="Bear_Grizzly" name="灰熊"/>
+      <Entrant id="Bear_Polar" pawnKind="Bear_Polar" name="北极熊"/>
+      <Entrant id="Gorilla" pawnKind="Gorilla" name="大猩猩"/>
+      <Entrant id="Warg" pawnKind="Warg" name="座狼"/>
+      <Entrant id="Megaspider" pawnKind="Megaspider" name="巨型蜘蛛"/>
+      <Entrant id="Tiger" pawnKind="Tiger" name="老虎"/>
+      <Entrant id="Moose" pawnKind="Moose" name="驼鹿"/>
+      <Entrant id="Alligator" pawnKind="Alligator" name="短吻鳄"/>
+      <Entrant id="Cat_Scimitar" pawnKind="Cat_Scimitar" name="锯齿虎"/>
+      <Entrant id="Cougar" pawnKind="Cougar" name="美洲狮"/>
+      <Entrant id="Panther" pawnKind="Panther" name="黑豹"/>
+      <Entrant id="Caribou" pawnKind="Caribou" name="驯鹿"/>
+    </Entrants>
+    <Battle timeSpeed="superfast" durationSeconds="180" timeoutRealSeconds="300" confirmationTicks="300"/>
+    <Scoring survivalWeight="100" speedWeight="20" timeReferenceSeconds="180"/>
+    <TieBreak onDraw="replay" maxReplays="2"/>
+    <Presentation bracketSeconds="5" settlementSeconds="3"/>
+    <Output width="1920" height="1080"/>
+  </Tournament>
+</ArenaSuite>
