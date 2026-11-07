@@ -207,7 +207,8 @@ namespace LogSyncMod.AutoTest.Scenarios
                     var grid = actor.Name == "PawnGroup" && A(actor, "formation", "line") == "grid";
                     var columns = grid ? I(actor, "columns", 5) : count;
                     if (columns < 1 || columns > 100 || I(actor, "spacing", 2) < 1) Fail(actor, path, "columns and spacing must be positive (columns <= 100)");
-                    if (x < 0 || z < 0 || x + (actor.Name == "PawnGroup" ? (Math.Min(count, columns) - 1) * I(actor, "spacing", 2) : actor.Name == "TerrainArea" ? I(actor, "width") - 1 : 0) >= I(scene, "sizeX", 50) || z + (actor.Name == "PawnGroup" && grid ? ((count - 1) / columns) * I(actor, "spacing", 2) : actor.Name == "TerrainArea" ? I(actor, "height") - 1 : 0) >= I(scene, "sizeZ", 50)) Fail(actor, path, "actor lies outside the configured scene");
+                    var footprint = actor.Name == "PawnGroup" ? PawnGroupFormation.Extents(actor, groupCombat) : actor.Name == "TerrainArea" ? (x: I(actor, "width") - 1, z: I(actor, "height") - 1) : (x: 0, z: 0);
+                    if (x < 0 || z < 0 || x + footprint.x >= I(scene, "sizeX", 50) || z + footprint.z >= I(scene, "sizeZ", 50)) Fail(actor, path, "actor lies outside the configured scene");
                 }
                 for (var n = 0; n < count && actor.Name == "PawnGroup"; n++) if (!actors.Add(id + "[" + n + "]")) Fail(actor, path, "duplicate group member");
                 if (actor.Name == "Corpse" && !actors.Add(id + ".innerPawn")) Fail(actor, path, "duplicate corpse innerPawn");

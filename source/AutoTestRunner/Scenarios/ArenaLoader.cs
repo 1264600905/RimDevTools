@@ -106,10 +106,12 @@ namespace LogSyncMod.AutoTest.Scenarios
             for (int i = 0; i < 2; i++)
             {
                 var r = rosters.Single(r => r.Id == ids[i]); var columns = Math.Min(10, Math.Max(1, r.ResolvedCount));
-                var extent = (columns - 1) * 2;
-                var x = i == 0 ? Math.Max(1, width / 5 - extent / 2) : Math.Min(width - extent - 2, width * 4 / 5 - extent / 2);
-                var z = Math.Max(1, height / 2 - ((r.ResolvedCount - 1) / columns));
-                actors.Add(new XElement("PawnGroup", new XAttribute("id", i == 0 ? "left" : "right"), new XAttribute("team", i == 0 ? "A" : "B"), new XAttribute("count", r.ResolvedCount), new XAttribute("originX", x), new XAttribute("originZ", z), new XAttribute("formation", "grid"), new XAttribute("columns", columns), new XAttribute("spacing", 2), new XElement("basePawnKind", r.PawnKind)));
+                var actor = new XElement("PawnGroup", new XAttribute("id", i == 0 ? "left" : "right"), new XAttribute("team", i == 0 ? "A" : "B"), new XAttribute("count", r.ResolvedCount), new XAttribute("formation", "grid"), new XAttribute("columns", columns), new XAttribute("spacing", 2), new XElement("basePawnKind", r.PawnKind));
+                var extent = PawnGroupFormation.Extents(actor, verticalFirst: true);
+                var x = i == 0 ? Math.Max(1, width / 5 - extent.x / 2) : Math.Min(width - extent.x - 2, width * 4 / 5 - extent.x / 2);
+                var z = Math.Max(1, height / 2 - extent.z / 2);
+                actor.SetAttributeValue("originX", x); actor.SetAttributeValue("originZ", z);
+                actors.Add(actor);
             }
             var seed = match == null ? input.Seed : ArenaScheduler.AttemptSeed(input, match, attempt);
             var battle = new XElement("Case", new XAttribute("id", "arena"), new XAttribute("kind", "groupCombat"), new XAttribute("seed", seed), new XAttribute("name", input.Name), new XAttribute("timeoutRealSeconds", input.TimeoutRealSeconds), new XElement("testDefName", input.TestDefName), scene,

@@ -38,7 +38,28 @@ internal static class GroupCombatTests
         ScenarioLoader.SelectRules(plan, new[] { "Benchmark_HumanGroups" });
         var rounds = GroupCombatPlan.Expand(plan);
         assert(rounds.Count == 4 && rounds.Select(r => r.CaseId).Distinct().Count() == 4 && rounds.Select(r => r.Seed).SequenceEqual(new[] { 11, 11, 22, 22 }), "explicit seeds and side exchange expand unique round identities without renaming the rule");
-        assert((int)XElement.Parse(rounds[1].Xml).Element("Actors").Elements().First().Attribute("originX") == 80, "side exchange reflects actual grid extent and preserves valid spawn coordinates");
+        assert((int)XElement.Parse(rounds[1].Xml).Element("Actors").Elements().First().Attribute("originX") == 77, "side exchange reflects the vertical formation's horizontal extent and preserves valid spawn coordinates");
+        var vertical = XElement.Parse("<PawnGroup count='27' formation='grid' columns='10' spacing='2'/>");
+        assert(PawnGroupFormation.Offset(vertical, 1, true) == (0, 2)
+            && PawnGroupFormation.Offset(vertical, 9, true) == (0, 18)
+            && PawnGroupFormation.Offset(vertical, 10, true) == (2, 0)
+            && PawnGroupFormation.Offset(vertical, 26, true) == (4, 12), "combat formations fill ten vertical positions before moving to the next file");
+        assert(PawnGroupFormation.Extents(vertical, true) == (4, 18)
+            && PawnGroupFormation.Extents(vertical, false) == (18, 4), "partial files use the full actual bounds rather than the last member's position");
+        var verticalLine = XElement.Parse("<PawnGroup count='6' spacing='2'/>");
+        assert(PawnGroupFormation.Offset(verticalLine, 5, true) == (0, 10)
+            && PawnGroupFormation.Extents(verticalLine, true) == (0, 10)
+            && PawnGroupFormation.Offset(verticalLine, 5, false) == (10, 0), "combat lines are vertical while ordinary external scenarios retain their horizontal layout");
+        var footprintsMatch = true;
+        foreach (var population in new[] { 1, 3, 10, 27, 100 })
+        foreach (var length in new[] { 1, 4, 10, 100 })
+        {
+            var formation = new XElement(vertical); formation.SetAttributeValue("count", population); formation.SetAttributeValue("columns", length);
+            var offsets = Enumerable.Range(0, population).Select(i => PawnGroupFormation.Offset(formation, i, true)).ToArray();
+            var bounds = PawnGroupFormation.Extents(formation, true);
+            footprintsMatch &= offsets.Distinct().Count() == population && offsets.Max(p => p.x) == bounds.x && offsets.Max(p => p.z) == bounds.z;
+        }
+        assert(footprintsMatch, "vertical spawn cells and validation footprints agree for small, partial and maximum rosters");
         var byId = Compile(Xml); ScenarioLoader.SelectRules(byId, new[] { byId.Cases.Single().CaseId });
         assert(byId.Cases.Count == 1, "full stable case identity can explicitly select a benchmark");
         Reject(Xml.Replace("<Team id=\"B\" name=\"乙\" />", "<Team id=\"B\"/><Team id=\"C\"/><Team id=\"D\"/>"), "group compiler rejects a fourth team");

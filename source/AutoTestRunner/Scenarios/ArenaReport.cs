@@ -27,6 +27,7 @@ namespace LogSyncMod.AutoTest.Scenarios
     public sealed class ArenaBracketNode
     {
         public string Id, Label;
+        public string EntrantId;
         public float X, Y;
         public bool Active, Completed;
     }
@@ -41,7 +42,7 @@ namespace LogSyncMod.AutoTest.Scenarios
             var layout = new ArenaBracketLayout(); var tips = new Dictionary<string, ArenaBracketNode>();
             foreach (var r in tournament.Rosters)
             {
-                var node = new ArenaBracketNode { Id = "entrant/" + r.Id, Label = r.DisplayName + " ×" + r.ResolvedCount + "\nCP " + r.UnitCombatPower, X = 8, Y = 8 + layout.Nodes.Count * 64 };
+                var node = new ArenaBracketNode { Id = "entrant/" + r.Id, EntrantId = r.Id, Label = r.DisplayName + " ×" + r.ResolvedCount + "\nCP " + r.UnitCombatPower, X = 8, Y = 8 + layout.Nodes.Count * 64 };
                 tips[r.Id] = node; layout.Nodes.Add(node);
             }
             foreach (var m in tournament.Matches)
@@ -53,16 +54,41 @@ namespace LogSyncMod.AutoTest.Scenarios
                 var rightName = tournament.Rosters.Single(r => r.Id == m.Right).DisplayName ?? m.Right;
                 var winnerName = m.Winner == null ? "" : tournament.Rosters.Single(r => r.Id == m.Winner).DisplayName ?? m.Winner;
                 var kind = m.Kind == "qualification" ? "资格赛" : m.Kind == "extra" ? "低分加赛" : "第" + m.Round + "轮";
-                var node = new ArenaBracketNode { Id = m.Id, X = x, Y = y, Active = m.Winner == null, Completed = m.Winner != null, Label = kind + (m.Winner == null ? " · 本场\n" + leftName + " / " + rightName : "\n" + winnerName + " · " + m.Score.Value.ToString("F2")) };
+                var node = new ArenaBracketNode { Id = m.Id, EntrantId = m.Winner, X = x, Y = y, Active = m.Winner == null, Completed = m.Winner != null, Label = kind + (m.Winner == null ? " · 本场\n" + leftName + " / " + rightName : "\n" + winnerName + " · " + m.Score.Value.ToString("F2")) };
                 layout.Nodes.Add(node); layout.Edges.Add(new() { From = a.Id, To = node.Id }); layout.Edges.Add(new() { From = b.Id, To = node.Id });
                 if (m.Winner != null) { tips[m.Winner] = node; tips.Remove(m.Winner == m.Left ? m.Right : m.Left); }
             }
             var last = layout.Nodes.Last();
             var championName = tournament.Rosters.FirstOrDefault(r => r.Id == tournament.Champion)?.DisplayName ?? tournament.Champion;
-            var future = new ArenaBracketNode { Id = "future", X = layout.Nodes.Max(n => n.X) + 242, Y = last.Y, Label = tournament.Champion == null ? "后续晋级配对\n待定" : "冠军\n" + championName, Completed = tournament.Champion != null };
+            var future = new ArenaBracketNode { Id = "future", EntrantId = tournament.Champion, X = layout.Nodes.Max(n => n.X) + 242, Y = last.Y, Label = tournament.Champion == null ? "后续晋级配对\n待定" : "冠军\n" + championName, Completed = tournament.Champion != null };
             if (tournament.Matches.Count > 0) layout.Edges.Add(new() { From = last.Id, To = future.Id });
             layout.Nodes.Add(future);
             layout.Width = layout.Nodes.Max(n => n.X) + 218; layout.Height = layout.Nodes.Max(n => n.Y) + 64;
+            return layout;
+        }
+
+        public static ArenaBracketLayout BuildPostBattle(ArenaTournamentResult tournament)
+        {
+            var layout = Build(tournament);
+            var nodes = layout.Nodes.ToDictionary(n => n.Id);
+            var children = layout.Edges.GroupBy(e => e.To).ToDictionary(g => g.Key, g => g.Select(e => nodes[e.From]).ToList());
+            var consumed = layout.Edges.Select(e => e.From).ToHashSet();
+            float nextY = 8;
+            void Place(ArenaBracketNode node)
+            {
+                if (children.TryGetValue(node.Id, out var inputs))
+                {
+                    foreach (var input in inputs) Place(input);
+                    node.Y = inputs.Average(n => n.Y);
+                    node.X = inputs.Max(n => n.X) + 242;
+                }
+                else { node.Y = nextY; nextY += 76; }
+            }
+            // Lay out each known elimination subtree contiguously. No future
+            // opponents are invented for the scheduler's dynamic pairings.
+            foreach (var root in layout.Nodes.Where(n => !consumed.Contains(n.Id))) Place(root);
+            layout.Width = layout.Nodes.Max(n => n.X) + 218;
+            layout.Height = layout.Nodes.Max(n => n.Y) + 76;
             return layout;
         }
     }

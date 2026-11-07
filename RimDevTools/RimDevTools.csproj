@@ -19,6 +19,7 @@
     <Compile Include="..\source\AutoTestRunner\Core\TestArtifactDirectory.cs" Link="Shared\TestArtifactDirectory.cs" />
     <Compile Include="..\source\AutoTestRunner\Scenarios\ScenarioContracts.cs" Link="Shared\ScenarioContracts.cs" />
     <Compile Include="..\source\AutoTestRunner\Scenarios\ScenarioLoader.cs" Link="Shared\ScenarioLoader.cs" />
+    <Compile Include="..\source\AutoTestRunner\Scenarios\PawnGroupFormation.cs" Link="Shared\PawnGroupFormation.cs" />
     <Compile Include="..\source\AutoTestRunner\Scenarios\ScenarioCaseInheritance.cs" Link="Shared\ScenarioCaseInheritance.cs" />
     <Compile Include="..\source\AutoTestRunner\Scenarios\ScenarioExpansion.cs" Link="Shared\ScenarioExpansion.cs" />
     <Compile Include="..\source\AutoTestRunner\Scenarios\ScenarioPlanner.cs" Link="Shared\ScenarioPlanner.cs" />
@@ -30,6 +31,7 @@
     <Compile Include="..\source\AutoTestRunner\Scenarios\GroupCombatLoader.cs" Link="Shared\GroupCombatLoader.cs" />
     <Compile Include="..\source\AutoTestRunner\Scenarios\CombatRoster.cs" Link="Shared\CombatRoster.cs" />
     <Compile Include="..\source\AutoTestRunner\Scenarios\ArenaContracts.cs" Link="Shared\ArenaContracts.cs" />
+    <Compile Include="..\source\AutoTestRunner\Scenarios\ArenaPresentation.cs" Link="Shared\ArenaPresentation.cs" />
     <Compile Include="..\source\AutoTestRunner\Scenarios\ArenaLoader.cs" Link="Shared\ArenaLoader.cs" />
   </ItemGroup>
 </Project>

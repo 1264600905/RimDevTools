@@ -33,6 +33,11 @@ internal static class ArenaResultTests
         Reject(r => r.Tournaments[0].Matches.RemoveAt(0), "arena requires exactly N-1 decisive matches");
         Reject(r => r.Tournaments[0].Matches[3].Left = r.Tournaments[0].Matches[0].Right, "arena rejects an eliminated entrant returning in low-score extra match");
         Reject(r => r.Tournaments[0].Matches[0].Attempts[0].Screenshots.RemoveAt(0), "arena requires separate bracket, initial battlefield and final captures");
+        Reject(r => r.Tournaments[0].Matches[0].PostBattleScreenshots.Add("unfinished.png"), "arena rejects an invalid post-battle capture name");
+        Reject(r => r.Tournaments[0].Matches[0].PostBattleScreenshots.AddRange(new[] { "one_postbattle.png", "two_postbattle.png" }), "arena rejects post-battle captures that do not match attempt count");
+        var presented = Build(6);
+        foreach (var m in presented.Tournaments[0].Matches) m.PostBattleScreenshots.Add(m.Id + "_postbattle.png");
+        check(ArenaResultValidator.ValidateIntegrity(presented, presented.Plan, false) == null, "arena accepts per-attempt post-battle captures while retaining original three battle captures");
         Reject(r => r.Tournaments[0].ChampionScreenshot = null!, "arena requires a final champion capture");
         Reject(r => r.Tournaments[0].Rosters[0].UnitCombatPower = 0, "arena count mode still requires positive combatPower");
         Reject(r => r.Tournaments[0].Input.SurvivalWeight++, "arena rejects result-side changes to tournament scoring configuration");

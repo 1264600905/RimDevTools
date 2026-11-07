@@ -128,8 +128,8 @@ namespace LogSyncMod.AutoTest
                     ApplyColor(thing, A(actor, "color"));
                     if (actor.Attribute("growth") != null) SetPlantGrowth(thing, (float)ScenarioLoader.D(actor, "growth"));
                 }
-                var columns = actor.Name == "PawnGroup" && A(actor, "formation", "line") == "grid" ? I(actor, "columns", 5) : count;
-                var cell = new IntVec3(I(actor, "x", I(actor, "originX", 20)) + n % columns * I(actor, "spacing", 2), 0, I(actor, "z", I(actor, "originZ", 20)) + n / columns * I(actor, "spacing", 2));
+                var offset = actor.Name == "PawnGroup" ? PawnGroupFormation.Offset(actor, n, currentDefinition.CaseType == "GroupCombat") : (x: 0, z: 0);
+                var cell = new IntVec3(I(actor, "x", I(actor, "originX", 20)) + offset.x, 0, I(actor, "z", I(actor, "originZ", 20)) + offset.z);
                 if (!cell.InBounds(Map) || !cell.Standable(Map)) throw new ScenarioConfigurationException("Actor cell unavailable: " + id + " " + cell);
                 if (viewStudio != null && GenAdj.OccupiedRect(cell, ParseRotation(A(actor, "rotation", "North")), thing.def.Size).Cells.Any(c => !SceneCells.Contains(c))) throw new ScenarioConfigurationException("Actor footprint lies outside the studio: " + id);
                 if (A(actor, "spawn", "true") == "true") GenSpawn.Spawn(thing, cell, Map, ParseRotation(A(actor, "rotation", "North")), WipeMode.Vanish);

@@ -21,15 +21,24 @@ namespace LogSyncMod.AutoTest
         private static ArenaMatch match;
         private static IDisposable logGuard;
         private static bool waiting, cancel;
-        private static Vector2 scroll;
         private static float championStarted;
         private static bool championCaptured;
-        private static bool focusBracket, overview;
         private static TimeSpeed championOriginalSpeed;
+        private static ArenaMatch postBattleMatch;
+        private static float postBattleStarted;
+        private static bool postBattleCaptured;
+        private static string postBattleScreenshot;
+        private static TimeSpeed postBattleOriginalSpeed;
         private static readonly JsonSerializerOptions Json = new() { WriteIndented = true };
         internal static bool Busy => report != null && report.CompletedAtUtc == null;
         internal static void Cancel() { cancel = true; CombatFightService.Cancel(); }
-        internal static object Status => new { busy = Busy, status = report?.Status, runId = report?.RunId, tournament = tournament?.Input.TestDefName, match = match?.Id, attempt = match?.Attempts.Count + 1, artifacts = new { autoTestOutputPath = outputPath } };
+        internal static object Status => new { busy = Busy, status = report?.Status, runId = report?.RunId, tournament = tournament?.Input.TestDefName, match = match?.Id, attempt = match?.Attempts.Count + 1, presentation = postBattleMatch != null ? "postBattle" : tournament?.Status == "champion" ? "champion" : null, presentationMatch = postBattleMatch?.Id, presentationSeconds = postBattleMatch == null ? 0 : Time.realtimeSinceStartup - postBattleStarted, artifacts = new { autoTestOutputPath = outputPath } };
+        internal static ArenaScore ScoreFor(GroupCombatRoundResult fight)
+        {
+            var winner = fight.Teams.SingleOrDefault(t => t.Outcome == "win");
+            return tournament == null || winner == null ? null : ArenaScore.Calculate(tournament.Input, winner.Initial,
+                fight.Units.Count(u => u.Team == winner.Id && !u.JoinedDuringBattle && u.State == "standing"), fight.ElapsedTicks);
+        }
         internal static void Frame()
         {
             try
@@ -40,7 +49,7 @@ namespace LogSyncMod.AutoTest
                     if (settings is not { testSessionActive: true, testSessionKind: "arena" } || consumedRunId == settings.autoTestRunId || Current.ProgramState != ProgramState.Playing || LongEventHandler.AnyEventNowOrWaiting || Find.CurrentMap == null || CombatFightService.Busy || GroupCombatDamageCapture.ProbeActive) return;
                     consumedRunId = settings.autoTestRunId; outputPath = settings.autoTestOutputPath;
                     report = new ArenaRunReport { RunId = consumedRunId, StartedAtUtc = DateTime.UtcNow.ToString("O"), GameVersion = VersionControl.CurrentVersionStringWithRev, LoadedMods = LoadedModManager.RunningMods.Select(m => m.PackageIdPlayerFacing + "@" + m.ModMetaData?.ModVersion).ToList() };
-                    logGuard = global::LogSyncMod.TestLogWindowGuard.RegisterExternalSession(); cancel = false; waiting = false; match = null; tournament = null;
+                    logGuard = global::LogSyncMod.TestLogWindowGuard.RegisterExternalSession(); cancel = false; waiting = false; match = null; tournament = null; postBattleMatch = null;
                     var frozen = JsonSerializer.Deserialize<ArenaPlan>(Encoding.UTF8.GetString(Convert.FromBase64String(settings.arenaPlan)));
                     if (frozen?.Purpose != "arena" || frozen.SchemaVersion != 1) throw new ScenarioConfigurationException("Invalid frozen arena plan");
                     report.Plan = ArenaLoader.Compile(frozen.Inputs, frozen.SelectedTestDefNames);
@@ -68,6 +77,19 @@ namespace LogSyncMod.AutoTest
                 }
                 if (waiting || CombatFightService.Busy) return;
                 if (cancel) { Finish("cancelled", "Cancelled by user"); return; }
+                if (postBattleMatch != null)
+                {
+                    Find.TickManager.CurTimeSpeed = TimeSpeed.Paused;
+                    var elapsed = Time.realtimeSinceStartup - postBattleStarted;
+                    var ready = postBattleCaptured && AutoTestViewComposite.IsReady(postBattleScreenshot);
+                    if (elapsed > 20 && !ready) throw new IOException("Post-battle screenshot did not become ready: " + postBattleScreenshot);
+                    if (ready && elapsed >= ArenaPresentation.PostBattleSeconds)
+                    {
+                        Find.TickManager.CurTimeSpeed = postBattleOriginalSpeed;
+                        postBattleMatch = null; Write();
+                    }
+                    return;
+                }
                 if (report.Status != "running") { Finish(report.Status, report.Error); return; }
                 if (tournament?.Status == "champion")
                 {
@@ -88,14 +110,15 @@ namespace LogSyncMod.AutoTest
                 {
                     tournament.Champion = scheduler.Champion; tournament.Status = "champion";
                     championOriginalSpeed = Find.TickManager.CurTimeSpeed; Find.TickManager.CurTimeSpeed = TimeSpeed.Paused;
-                    championStarted = Time.realtimeSinceStartup; championCaptured = false; focusBracket = true;
+                    championStarted = Time.realtimeSinceStartup; championCaptured = false;
+                    ArenaPostBattleView.Begin(tournament, tournament.Matches.Last());
                     var directory = Path.Combine(outputPath, "arena_" + report.RunId + "_Screenshots"); Directory.CreateDirectory(directory);
                     tournament.ChampionScreenshot = Path.Combine(directory, "tournament_" + (report.Tournaments.IndexOf(tournament) + 1).ToString("D3") + "_champion.png");
                     Write(); return;
                 }
                 var fight = ArenaLoader.CompileBattle(tournament.Input, tournament.Rosters, match, match.Attempts.Count);
                 fight.ResolvedRosters = new() { tournament.Rosters.Single(r => r.Id == match.Left), tournament.Rosters.Single(r => r.Id == match.Right) };
-                waiting = true; scroll = Vector2.zero; focusBracket = true; overview = false; Write();
+                waiting = true; Write();
                 CombatFightService.BeginArenaFight(report.RunId, outputPath, fight, tournament.Input, OnFightCompleted);
             }
             catch (Exception ex)
@@ -112,19 +135,28 @@ namespace LogSyncMod.AutoTest
             if (cancel || result.ExecutionStatus != "completed" || !result.CleanupComplete)
             { report.Status = cancel ? "cancelled" : "error"; report.Error ??= result.Error ?? "Battle execution/cleanup failed"; Write(); return; }
             var winner = result.Teams.SingleOrDefault(t => t.Outcome == "win");
+            var completedMatch = match;
             if (winner == null)
             {
                 if (match.Attempts.Count > tournament.Input.MaxReplays) { report.Status = "unresolvedDraw"; report.Error = "Draw replay limit exhausted: " + match.Id; }
-                Write(); return;
             }
-            var id = winner.Id == "A" ? match.Left : match.Right;
-            var standing = result.Units.Count(u => !u.JoinedDuringBattle && u.Team == winner.Id && u.State == "standing");
-            var score = ArenaScore.Calculate(tournament.Input, winner.Initial, standing, result.ElapsedTicks);
-            scheduler.Resolve(id, score); match = null; Write();
+            else
+            {
+                var id = winner.Id == "A" ? match.Left : match.Right;
+                scheduler.Resolve(id, ScoreFor(result)); match = null;
+            }
+            postBattleMatch = completedMatch; postBattleStarted = Time.realtimeSinceStartup; postBattleCaptured = false;
+            postBattleOriginalSpeed = Find.TickManager.CurTimeSpeed; Find.TickManager.CurTimeSpeed = TimeSpeed.Paused;
+            var directory = Path.Combine(outputPath, "arena_" + report.RunId + "_Screenshots"); Directory.CreateDirectory(directory);
+            postBattleScreenshot = Path.Combine(directory, "tournament_" + (report.Tournaments.IndexOf(tournament) + 1).ToString("D3") + "_match_" + tournament.Matches.Count.ToString("D4") + "_attempt_" + completedMatch.Attempts.Count.ToString("D2") + "_postbattle.png");
+            completedMatch.PostBattleScreenshots.Add(postBattleScreenshot);
+            ArenaPostBattleView.Begin(tournament, completedMatch);
+            Write();
         }
         private static void Finish(string status, string error)
         {
             if (report == null || report.CompletedAtUtc != null) return;
+            if (postBattleMatch != null) { Find.TickManager.CurTimeSpeed = postBattleOriginalSpeed; postBattleMatch = null; }
             if (tournament?.Status == "champion") Find.TickManager.CurTimeSpeed = championOriginalSpeed;
             report.Status = status; report.Error = error; report.CompletedAtUtc = DateTime.UtcNow.ToString("O");
             foreach (var item in report.Tournaments.Where(t => t.Status != "completed"))
@@ -155,15 +187,23 @@ namespace LogSyncMod.AutoTest
         internal static void OnGui()
         {
             if (!Busy) return;
+            if (postBattleMatch != null)
+            {
+                var elapsed = Time.realtimeSinceStartup - postBattleStarted;
+                ArenaPostBattleView.Draw(elapsed);
+                if (!postBattleCaptured && Event.current.type == EventType.Repaint && elapsed >= ArenaPresentation.AnimationSeconds && AutoTestScreenshotService.PrepareCaptureFrame())
+                {
+                    CapturePresentation(postBattleScreenshot);
+                    postBattleCaptured = true;
+                }
+                return;
+            }
             if (tournament?.Status == "champion")
             {
-                DrawBracket();
+                ArenaPostBattleView.Draw(ArenaPresentation.PostBattleSeconds, champion: true);
                 if (!championCaptured && Event.current.type == EventType.Repaint && Time.realtimeSinceStartup - championStarted >= 1 && AutoTestScreenshotService.PrepareCaptureFrame())
                 {
-                    var output = XElement.Parse(tournament.Input.Xml).Element("Output");
-                    var width = ScenarioLoader.I(output, "width", Screen.width); var height = ScenarioLoader.I(output, "height", Screen.height);
-                    if (width == Screen.width && height == Screen.height) ScreenCapture.CaptureScreenshot(tournament.ChampionScreenshot);
-                    else Find.CameraDriver.StartCoroutine(GroupCombatScreenshot.Capture(tournament.ChampionScreenshot, width, height));
+                    CapturePresentation(tournament.ChampionScreenshot);
                     championCaptured = true;
                 }
                 return;
@@ -175,76 +215,13 @@ namespace LogSyncMod.AutoTest
                 Widgets.DrawWindowBackground(new Rect(UI.screenWidth / 2 - 200, 106, 400, 28));
                 Widgets.Label(new Rect(UI.screenWidth / 2 - 190, 109, 380, 24), label);
             }
-            if (CombatFightService.ShowingSettlement && match != null)
-            {
-                var fight = CombatFightService.Display; var winner = fight.Teams.SingleOrDefault(t => t.Outcome == "win");
-                var label = winner == null ? "平局 · 重赛或未决停止" : "胜利评分 " + ArenaScore.Calculate(tournament.Input, winner.Initial, fight.Units.Count(u => u.Team == winner.Id && !u.JoinedDuringBattle && u.State == "standing"), fight.ElapsedTicks).Value.ToString("F2");
-                Widgets.DrawWindowBackground(new Rect(UI.screenWidth / 2 - 200, UI.screenHeight - 96, 400, 44));
-                Widgets.Label(new Rect(UI.screenWidth / 2 - 190, UI.screenHeight - 88, 380, 32), label);
-            }
         }
-        internal static void DrawBracket()
+        private static void CapturePresentation(string path)
         {
-            if (tournament == null || match == null && tournament.Champion == null) return;
-            var oldFont = Text.Font; var oldAnchor = Text.Anchor; var oldColor = GUI.color;
-            try
-            {
-                var w = UI.screenWidth; var h = UI.screenHeight;
-                Widgets.DrawWindowBackground(new Rect(8, 8, w - 16, h - 16));
-                Text.Font = GameFont.Medium; Text.Anchor = TextAnchor.MiddleCenter;
-                Widgets.Label(new Rect(20, 18, w - 180, 40), tournament.Input.Name + " · 擂台对决天梯");
-                Text.Font = GameFont.Small;
-                if (Widgets.ButtonText(new Rect(w - 150, 22, 122, 32), "取消擂台")) Cancel();
-                var left = tournament.Rosters.Single(r => r.Id == (match?.Left ?? tournament.Champion)); var right = tournament.Rosters.Single(r => r.Id == (match?.Right ?? tournament.Champion));
-                var type = match?.Kind == "qualification" ? "资格赛" : match?.Kind == "extra" ? "低分加赛" : "第 " + match?.Round + " 轮";
-                Widgets.Label(new Rect(20, 62, w - 40, 34), match == null ? "冠军：" + left.DisplayName + " · " + (tournament.Rosters.Count - 1) + " 场淘汰对决完成" : type + " · " + left.DisplayName + " ×" + left.ResolvedCount + "  vs  " + right.DisplayName + " ×" + right.ResolvedCount + " · " + (match.Attempts.Count == 0 ? "首战" : "重赛 " + match.Attempts.Count + "/" + tournament.Input.MaxReplays));
-                Widgets.Label(new Rect(20, 96, w - 40, 30), "combatPower 配兵 · " + tournament.Input.RosterMode + (tournament.Input.Budget.HasValue ? " · 每方预算 " + tournament.Input.Budget : "") + " · 绿色为已晋级，金色为本场，后续配对待定");
-                var layout = ArenaBracketLayout.Build(tournament);
-                var viewport = new Rect(22, 138, w - 44, h - 194);
-                var scale = Math.Min(1.5f, Math.Min(viewport.width / layout.Width, viewport.height / layout.Height));
-                if (tournament.Rosters.Count > 8)
-                {
-                    if (Widgets.ButtonText(new Rect(w - 274, 99, 122, 28), "定位本场")) { focusBracket = true; overview = false; }
-                    if (Widgets.ButtonText(new Rect(w - 144, 99, 122, 28), overview ? "详细天梯" : "全局总览")) overview = !overview;
-                    if (focusBracket)
-                    {
-                        var node = layout.Nodes.FirstOrDefault(n => n.Active) ?? layout.Nodes.Last();
-                        scroll = new Vector2(Math.Max(0, Math.Min(node.X - viewport.width / 2 + 101, layout.Width - viewport.width)), Math.Max(0, Math.Min(node.Y - viewport.height / 2 + 24, layout.Height - viewport.height)));
-                        focusBracket = false;
-                    }
-                }
-                if (tournament.Rosters.Count <= 8 || overview)
-                {
-                    DrawTree(layout, new Vector2(viewport.x + (viewport.width - layout.Width * scale) / 2, viewport.y + (viewport.height - layout.Height * scale) / 2), scale);
-                }
-                else
-                {
-                    Widgets.BeginScrollView(viewport, ref scroll, new Rect(0, 0, Math.Max(viewport.width - 20, layout.Width), layout.Height));
-                    DrawTree(layout, Vector2.zero, 1); Widgets.EndScrollView();
-                }
-                Text.Anchor = TextAnchor.MiddleCenter;
-                Widgets.Label(new Rect(22, h - 50, w - 44, 30), "比赛前暂停展示 · 全部队伍每场重新满编 · 倒地不计存活 · N 位参赛者决出冠军需要 N−1 场胜负");
-            }
-            finally { Text.Font = oldFont; Text.Anchor = oldAnchor; GUI.color = oldColor; }
-        }
-        private static void DrawTree(ArenaBracketLayout layout, Vector2 origin, float scale)
-        {
-            foreach (var edge in layout.Edges)
-            {
-                var a = layout.Nodes.Single(n => n.Id == edge.From); var b = layout.Nodes.Single(n => n.Id == edge.To);
-                var p = origin + new Vector2((a.X + 202) * scale, (a.Y + 24) * scale); var q = origin + new Vector2(b.X * scale, (b.Y + 24) * scale);
-                Widgets.DrawLine(p, new Vector2(q.x - 14 * scale, p.y), Color.gray, 2);
-                Widgets.DrawLine(new Vector2(q.x - 14 * scale, p.y), new Vector2(q.x - 14 * scale, q.y), Color.gray, 2);
-                Widgets.DrawLine(new Vector2(q.x - 14 * scale, q.y), q, Color.gray, 2);
-            }
-            Text.Anchor = TextAnchor.MiddleCenter;
-            Text.Font = scale >= 1.25f ? GameFont.Medium : GameFont.Small;
-            foreach (var n in layout.Nodes)
-            {
-                var rect = new Rect(origin.x + n.X * scale, origin.y + n.Y * scale, 202 * scale, 48 * scale);
-                Widgets.DrawBoxSolid(rect, n.Active ? new Color(.45f, .34f, .09f) : n.Completed ? new Color(.12f, .29f, .19f) : new Color(.18f, .19f, .22f));
-                Widgets.DrawBox(rect); Widgets.Label(rect.ContractedBy(3), n.Label);
-            }
+            var output = XElement.Parse(tournament.Input.Xml).Element("Output");
+            var width = ScenarioLoader.I(output, "width", Screen.width); var height = ScenarioLoader.I(output, "height", Screen.height);
+            if (width == Screen.width && height == Screen.height) ScreenCapture.CaptureScreenshot(path);
+            else Find.CameraDriver.StartCoroutine(GroupCombatScreenshot.Capture(path, width, height));
         }
     }
 }

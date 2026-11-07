@@ -64,6 +64,13 @@ internal static class ArenaTests
         Reject(() => Parse("<!DOCTYPE ArenaSuite [<!ENTITY x SYSTEM 'file:///C:/Windows/win.ini'>]>" + xml), "arena disables DTD and external entity resolution");
         Reject(() => ScenarioLoader.Compile(plan.Inputs), "ordinary regression entry refuses ArenaSuite");
         var input = plan.Tournaments.Single();
+        var verticalRosters = new List<ResolvedCombatRoster> { CombatRoster.Resolve("a", "Wolf_Timber", 100, null, 27), CombatRoster.Resolve("b", "Bear_Polar", 200, null, 3) };
+        var verticalBattle = XElement.Parse(ArenaLoader.CompileBattle(input, verticalRosters, null, 0).Xml);
+        var verticalActors = verticalBattle.Element("Actors").Elements("PawnGroup").ToList();
+        check(PawnGroupFormation.Extents(verticalActors[0], true) == (4, 18)
+            && PawnGroupFormation.Extents(verticalActors[1], true) == (0, 4)
+            && verticalActors.All(a => ScenarioLoader.I(a, "originZ") + PawnGroupFormation.Extents(a, true).z / 2 == 50),
+            "arena centers both full and partial vertical formations using the same geometry as group combat");
         var score = ArenaScore.Calculate(input, 20, 15, 2700);
         check(score.Value == 90 && score.SurvivalRatio == .75m && score.SpeedFactor == .75m, "victory score uses initial standing ratio and simulated seconds");
         check(ArenaScore.Calculate(input, 20, 0, 12000).Value == 0, "summon-only victory cannot grant original roster survival points; late time bonus floors at zero");
@@ -79,6 +86,18 @@ internal static class ArenaTests
                 if (count > 64) { valid = false; break; }
             }
             check(valid && count == n - 1 && schedule.Champion != null && !eliminated.Contains(schedule.Champion), "knockout invariants: " + n + " entrants, N-1 unique unordered pairs, no eliminated entrant returns");
+            if (n is 5 or 20 or 64)
+            {
+                tournament.Champion = schedule.Champion;
+                var post = ArenaBracketLayout.BuildPostBattle(tournament);
+                var byId = post.Nodes.ToDictionary(node => node.Id);
+                check(post.Nodes.Count == 2 * n && post.Nodes.Where(node => node.Id.StartsWith("entrant/")).Select(node => node.EntrantId).Distinct().Count() == n,
+                    "post-battle tree preserves every entrant and completed match: " + n);
+                check(post.Nodes.All(a => post.Nodes.All(b => a == b || a.X != b.X || Math.Abs(a.Y - b.Y) >= 56))
+                    && post.Edges.All(e => byId[e.From].X < byId[e.To].X), "post-battle layout avoids overlapping cards and backward edges: " + n);
+                check(tournament.Matches.All(m => byId[m.Id].EntrantId == m.Winner) && byId["future"].EntrantId == tournament.Champion,
+                    "advancement and champion cards retain winner color identity: " + n);
+            }
         }
         var five = Tournament(input, 5); var s5 = new ArenaScheduler(five);
         var qualification = s5.Next(); check(qualification.Kind == "qualification" && qualification.Round == 0, "odd initial entrant count begins with a real qualification match");
@@ -137,6 +156,16 @@ internal static class ArenaTests
         check(!reviveRule.Evaluate(battle, 1000), "newly registered standing participant cancels arena defeat");
         var layout = ArenaBracketLayout.Build(Tournament(input, 64));
         check(layout.Nodes.Count == 65 && layout.Width > 0 && layout.Height >= 64 * 64, "64-entrant bracket retains all entrants and a future placeholder for scrollable overview");
+        var kinds = Enumerable.Range(0, 64).Select(i => "Kind" + i).ToArray();
+        var hues = ArenaPresentation.IdentityHues(kinds);
+        var reversedHues = ArenaPresentation.IdentityHues(kinds.Reverse());
+        check(hues.All(pair => pair.Value == reversedHues[pair.Key]) && hues.Values.All(h => h >= 0 && h < 1)
+            && hues.Values.All(a => hues.Values.All(b => a == b || Math.Min(Math.Abs(a - b), 1 - Math.Abs(a - b)) >= .65f / 64)),
+            "64 identity hues are stable across roster ordering and separated even after collision resolution");
+        check(ArenaPresentation.Progress(-1, 0, .5f) == 0 && ArenaPresentation.Progress(10, 0, .5f) == 1
+            && ArenaPresentation.RevealBSeconds > .5f && ArenaPresentation.AdvanceSeconds > ArenaPresentation.RevealBSeconds + .5f
+            && ArenaPresentation.PostBattleSeconds > ArenaPresentation.AnimationSeconds,
+            "post-battle A/B reveals precede advancement and leave a stable capture interval");
     }
     private static ArenaTournamentResult Tournament(ArenaTournamentInput source, int count)
     {

@@ -134,8 +134,7 @@ namespace LogSyncMod.AutoTest.Scenarios
                             foreach (var actor in copy.Element("Actors").Elements().Where(a => a.Name == "Pawn" || a.Name == "PawnGroup"))
                             {
                                 var attr = actor.Name == "PawnGroup" ? "originX" : "x";
-                                var columns = ScenarioLoader.A(actor, "formation", "line") == "grid" ? ScenarioLoader.I(actor, "columns", 5) : ScenarioLoader.I(actor, "count", 1);
-                                var extent = actor.Name == "PawnGroup" ? (Math.Min(columns, ScenarioLoader.I(actor, "count", 1)) - 1) * ScenarioLoader.I(actor, "spacing", 2) : 0;
+                                var extent = actor.Name == "PawnGroup" ? PawnGroupFormation.Extents(actor, verticalFirst: true).x : 0;
                                 actor.SetAttributeValue(attr, width - 1 - ScenarioLoader.I(actor, attr, 20) - extent);
                             }
                             foreach (var team in copy.Element("Teams").Elements("Team").Where(t => t.Attribute("defendX") != null)) team.SetAttributeValue("defendX", width - 1 - ScenarioLoader.I(team, "defendX"));

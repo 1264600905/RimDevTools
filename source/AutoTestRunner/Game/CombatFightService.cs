@@ -413,8 +413,9 @@ namespace LogSyncMod.AutoTest
         internal static void OnGui()
         {
             if (!Busy || input == null || Map == null) return;
-            if (!(IsArena && phase is "prepared" or "countdown")) GroupCombatOverlay.Draw();
-            if (IsArena && phase is "prepared" or "countdown") ArenaService.DrawBracket();
+            // Both modes use the existing roster/countdown presentation before
+            // combat. Tournament trees are shown only after settlement.
+            GroupCombatOverlay.Draw();
             if (Event.current.type != EventType.Repaint || captureRequested || pendingCapture == null || Time.frameCount - preparedFrame < 3 || Time.realtimeSinceStartup - phaseStartedRealtime < 1 || !Screen.fullScreen || !AutoTestScreenshotService.PrepareCaptureFrame()) return;
             current.ScreenshotWidth = requestedWidth > 0 ? requestedWidth : Screen.width; current.ScreenshotHeight = requestedHeight > 0 ? requestedHeight : Screen.height;
             if (current.ScreenshotWidth == Screen.width && current.ScreenshotHeight == Screen.height) ScreenCapture.CaptureScreenshot(pendingCapture);

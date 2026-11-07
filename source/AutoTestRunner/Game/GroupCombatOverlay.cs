@@ -88,7 +88,7 @@ namespace LogSyncMod.AutoTest
             var previous = GUI.color; GUI.color = NameColor(state);
             DrawText(rect, value, size); GUI.color = previous;
         }
-        private static void DrawText(Rect rect, string value, float size, TextAnchor anchor = TextAnchor.UpperLeft)
+        internal static void DrawText(Rect rect, string value, float size, TextAnchor anchor = TextAnchor.UpperLeft)
         {
             var fontSize = Mathf.RoundToInt(size);
             var key = fontSize + ":" + (int)anchor;
@@ -211,6 +211,7 @@ namespace LogSyncMod.AutoTest
         }
         private static void DrawSettlement(float width, float height, float panelWidth)
         {
+            if (CombatFightService.IsArena) { DrawArenaSettlement(width, height, panelWidth); return; }
             var cardWidth = Mathf.Min(width - 32, Mathf.Min(900, Mathf.Max(600, width - panelWidth * 2 - 40)));
             var cardHeight = Mathf.Min(370, height - 230);
             var rect = new Rect((width - cardWidth) / 2, (height - cardHeight) / 2, cardWidth, cardHeight);
@@ -240,6 +241,67 @@ namespace LogSyncMod.AutoTest
                     DrawText(new Rect(x, rect.y + 188 + row * 31, w, 28), lines[row], font, TextAnchor.MiddleCenter);
             }
         }
+        private static void DrawArenaSettlement(float width, float height, float panelWidth)
+        {
+            var cardWidth = Mathf.Min(width - 32, Mathf.Min(900, Mathf.Max(600, width - panelWidth * 2 - 40)));
+            var cardHeight = Mathf.Min(492, height - 150);
+            var rect = new Rect((width - cardWidth) / 2, (height - cardHeight) / 2, cardWidth, cardHeight);
+            var scale = cardHeight / 492;
+            var gold = new Color(1f, .79f, .28f);
+            var previous = GUI.color;
+            try
+            {
+                Widgets.DrawBoxSolid(rect, new Color(.025f, .035f, .05f, .97f));
+                GUI.color = gold; Widgets.DrawBox(rect, 2); GUI.color = previous;
+                DrawText(new Rect(rect.x, rect.y + 10 * scale, rect.width, 36 * scale), "擂台战斗结算", 27 * scale, TextAnchor.MiddleCenter);
+                var winner = snapshot.Teams.SingleOrDefault(t => t.Outcome == "win");
+                DrawText(new Rect(rect.x, rect.y + 48 * scale, rect.width, 32 * scale), winner == null ? "本场平局" : winner.Name + " · 胜利", 22 * scale, TextAnchor.MiddleCenter);
+                var score = ArenaService.ScoreFor(snapshot);
+                var hero = winner == null ? null : snapshot.Units.Where(u => u.Team == winner.Id && !u.JoinedDuringBattle)
+                    .OrderByDescending(u => u.State == "standing").ThenByDescending(u => u.EnemyDamage).FirstOrDefault();
+                if (hero != null)
+                {
+                    var icon = new Rect(rect.center.x - 198 * scale, rect.y + 85 * scale, 120 * scale, 120 * scale);
+                    if (portraits.ContainsKey(hero.Id)) DrawPortrait(icon, hero);
+                    else
+                    {
+                        var kind = DefDatabase<PawnKindDef>.GetNamedSilentFail(hero.Kind);
+                        if (kind?.race != null) Widgets.DefIcon(icon, kind.race);
+                    }
+                }
+                var scoreRect = hero == null ? new Rect(rect.x, rect.y + 81 * scale, rect.width, 92 * scale)
+                    : new Rect(rect.center.x - 54 * scale, rect.y + 81 * scale, 280 * scale, 92 * scale);
+                GUI.color = new Color(0, 0, 0, .8f);
+                DrawText(new Rect(scoreRect.x + 2, scoreRect.y + 3, scoreRect.width, scoreRect.height), score?.Value.ToString("F2") ?? "—", 76 * scale, TextAnchor.MiddleCenter);
+                GUI.color = gold;
+                DrawText(scoreRect, score?.Value.ToString("F2") ?? "—", 76 * scale, TextAnchor.MiddleCenter);
+                DrawText(new Rect(scoreRect.x, rect.y + 173 * scale, scoreRect.width, 26 * scale), score == null ? "平局不计晋级分数" : "本场胜利评分", 18 * scale, TextAnchor.MiddleCenter);
+                GUI.color = previous;
+                DrawText(new Rect(rect.x, rect.y + 205 * scale, rect.width, 26 * scale), score == null ? "即将展示赛后天梯" : "初始成员站立 " + score.Standing + " / " + score.Initial + "   ·   " + snapshot.SimulatedSeconds.ToString("F2") + " 秒", 17 * scale, TextAnchor.MiddleCenter);
+                for (var i = 0; i < snapshot.Teams.Count; i++)
+                {
+                    var team = snapshot.Teams[i];
+                    var members = snapshot.Units.Where(u => u.Team == team.Id).ToList();
+                    var living = GroupCombatPresentation.SurvivorTotals(members);
+                    var x = rect.x + 14 + i * cardWidth / 2;
+                    var w = cardWidth / 2 - 28;
+                    GUI.color = team.Outcome == "win" ? gold : Color.white;
+                    DrawText(new Rect(x, rect.y + 250 * scale, w, 32 * scale), TeamLabel(i) + " · " + Label(team.Outcome), 22 * scale, TextAnchor.MiddleCenter);
+                    GUI.color = previous;
+                    var lines = new[] {
+                        "存活 " + team.Alive + "/" + team.Total + " · 倒地 " + team.Downed + " · 死亡 " + team.Dead,
+                        "全队累计输出  " + team.EnemyDamage.ToString("F1"),
+                        "全队累计承伤  " + team.DamageTaken.ToString("F1"),
+                        "存活成员输出  " + living.output.ToString("F1"),
+                        "存活成员承伤  " + living.taken.ToString("F1")
+                    };
+                    for (var row = 0; row < lines.Length; row++)
+                        DrawText(new Rect(x, rect.y + (292 + row * 30) * scale, w, 28 * scale), lines[row], Mathf.Min(19 * scale, w / 17), TextAnchor.MiddleCenter);
+                }
+                DrawText(new Rect(rect.x, rect.y + 455 * scale, rect.width, 26 * scale), winner == null ? "赛后天梯将显示重赛结果" : "即将展示胜者晋级天梯", 15 * scale, TextAnchor.MiddleCenter);
+            }
+            finally { GUI.color = previous; }
+        }
         private static string Label(string state) => state switch { "standing" => "存活", "downed" => "倒地", "dead" => "死亡", "escaped" => "离场", "removed" => "移除", "win" => "胜利", "loss" => "落败", "draw" => "平局", "undetermined" => "进行中", "prepared" or "preparing" => "准备", "countdown" => "即将开战", "running" => "战斗", "finishing" => "结算", _ => state };
         private static void DrawPortrait(Rect rect, GroupCombatUnit unit)
         {
@@ -256,10 +318,10 @@ namespace LogSyncMod.AutoTest
             var state = pawn.story?.hairDef?.defName + "|" + pawn.story?.bodyType?.defName + "|" + string.Join(",", pawn.apparel?.WornApparel.Select(a => a.GetUniqueLoadID() + ":" + a.DrawColor) ?? Enumerable.Empty<string>()) + "|" + pawn.equipment?.Primary?.GetUniqueLoadID() + "|" + pawn.health.hediffSet.hediffs.Count;
             if (portraitStates.TryGetValue(unit.Id, out var old) && old == state) return;
             PortraitsCache.SetDirty(pawn);
-            var source = PortraitsCache.Get(pawn, new Vector2(64, 64), Rot4.South, cameraZoom: 1.1f);
+            var source = PortraitsCache.Get(pawn, new Vector2(128, 128), Rot4.South, cameraZoom: 1.1f);
             if (!portraits.TryGetValue(unit.Id, out var texture))
             {
-                texture = new RenderTexture(64, 64, 0); texture.Create(); portraits.Add(unit.Id, texture);
+                texture = new RenderTexture(128, 128, 0); texture.Create(); portraits.Add(unit.Id, texture);
             }
             Graphics.Blit(source, texture); portraitStates[unit.Id] = state;
         }

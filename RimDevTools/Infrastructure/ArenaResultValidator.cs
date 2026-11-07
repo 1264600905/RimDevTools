@@ -81,9 +81,12 @@ public static class ArenaResultValidator
                     if (endError != null) return endError;
                     var wins = a.Teams.Where(x => x.Outcome == "win").ToList();
                     if (ai < m.Attempts.Count - 1 && wins.Count != 0 || ai == m.Attempts.Count - 1 && (wins.Count != 1 || (wins[0].Id == "A" ? m.Left : m.Right) != m.Winner)) return "平局重赛或晋级胜者不符";
-                    if (a.Screenshots.Count != 3 || !a.Screenshots.Any(p => p.EndsWith("_bracket.png", StringComparison.Ordinal)) || !a.Screenshots.Any(p => p.EndsWith("_initial.png", StringComparison.Ordinal)) || !a.Screenshots.Any(p => p.EndsWith("_final.png", StringComparison.Ordinal)) || verifyArtifactFiles && a.Screenshots.Any(p => !File.Exists(p))) return "缺少赛前对阵树或赛后截图";
+                    if (a.Screenshots.Count != 3 || !a.Screenshots.Any(p => p.EndsWith("_bracket.png", StringComparison.Ordinal)) || !a.Screenshots.Any(p => p.EndsWith("_initial.png", StringComparison.Ordinal)) || !a.Screenshots.Any(p => p.EndsWith("_final.png", StringComparison.Ordinal)) || verifyArtifactFiles && a.Screenshots.Any(p => !File.Exists(p))) return "缺少赛前预览、初始战场或战斗结算截图";
                 }
                 if (!m.BracketScreenshots.SequenceEqual(m.Attempts.SelectMany(a => a.Screenshots.Where(p => p.EndsWith("_bracket.png", StringComparison.Ordinal))))) return "对阵图截图与每次尝试不一致";
+                // Older schema-1 reports have no post-battle captures. When present,
+                // require a distinct, completed presentation for every attempt.
+                if (m.PostBattleScreenshots.Count > 0 && (m.PostBattleScreenshots.Count != m.Attempts.Count || m.PostBattleScreenshots.Distinct(StringComparer.Ordinal).Count() != m.Attempts.Count || m.PostBattleScreenshots.Any(p => !p.EndsWith("_postbattle.png", StringComparison.Ordinal) || verifyArtifactFiles && !File.Exists(p)))) return "赛后天梯截图与每次尝试不一致";
                 var last = m.Attempts.Last(); var winner = last.Teams.Single(x => x.Outcome == "win");
                 var standing = last.Units.Count(u => u.Team == winner.Id && !u.JoinedDuringBattle && u.State == "standing");
                 // Independent decimal arithmetic, using simulated ticks from the final snapshot.
