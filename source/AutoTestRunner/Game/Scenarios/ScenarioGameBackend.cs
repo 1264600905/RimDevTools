@@ -79,6 +79,7 @@ namespace LogSyncMod.AutoTest
             if (handle == null) throw new InvalidOperationException(error);
             }
             runtimeRoot = c;
+            PrepareBoundActions();
             Current.Game.CurrentMap = Map;
             Find.World.renderer.wantedMode = WorldRenderMode.None;
             Find.CameraDriver.JumpToCurrentMapLoc(Map.Center);
@@ -571,6 +572,7 @@ namespace LogSyncMod.AutoTest
         {
             foreach (var e in c.Descendants())
             {
+                if (e.Ancestors("ActionBindings").Any()) continue; // Typed bindings resolve their own Def arguments and postconditions.
                 try
                 {
                 foreach (var attr in e.Attributes().Where(a => new[] { "def", "matchDef", "withDef", "stuff", "defName" }.Contains(a.Name.LocalName)))

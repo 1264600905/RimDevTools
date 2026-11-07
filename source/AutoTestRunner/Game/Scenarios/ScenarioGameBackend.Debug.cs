@@ -36,7 +36,8 @@ namespace LogSyncMod.AutoTest
 
         private void ExecuteDebugAction(XElement step)
         {
-            ScenarioDebugActions.Validate(step, "runtime");
+            var binding = runtimeRoot?.Element("ActionBindings")?.Elements("ActionBinding").FirstOrDefault(b => A(b, "id") == A(step, "actionId"));
+            ScenarioDebugActions.Validate(step, "runtime", binding);
             var action = A(step, "actionId");
             var targets = DebugTargets(step.Element("Select"));
             string SourceState() => string.Join("|", source.mapPawns.AllPawnsSpawned.Where(p => !owned.Contains(p)).OrderBy(p => p.thingIDNumber).Select(p => Describe(p) + "; needs=" + string.Join(",", p.needs?.AllNeeds.Select(n => n.def.defName + "=" + n.CurLevel) ?? Enumerable.Empty<string>())));
@@ -47,7 +48,8 @@ namespace LogSyncMod.AutoTest
                 trace("debug.before", action + "; target=" + t.GetUniqueLoadID() + "; " + State());
                 try
                 {
-                    if (action == "native.refuel")
+                    if (boundActions.TryGetValue(action, out var boundAction)) boundAction.Execute(step, t, trace);
+                    else if (action == "native.refuel")
                     { var comp = t.TryGetComp<CompRefuelable>() ?? throw new ScenarioConfigurationException("Target has no refuelable component"); comp.Refuel(comp.Props.fuelCapacity); if (comp.FuelPercentOfMax < .999f) throw new InvalidOperationException("Refuel postcondition failed"); }
                     else if (action == "native.chargeBattery")
                     { var comp = t.TryGetComp<CompPowerBattery>() ?? throw new ScenarioConfigurationException("Target has no battery component"); comp.SetStoredEnergyPct(1); if (comp.StoredEnergyPct < .999f) throw new InvalidOperationException("Battery postcondition failed"); }
@@ -67,7 +69,6 @@ namespace LogSyncMod.AutoTest
                         }
                         else if (action == "native.fillNeeds")
                         { Need(p.needs, "needs"); if (p.needs.AllNeeds.Count == 0) throw new ScenarioConfigurationException("Target has no needs to fill"); foreach (var n in p.needs.AllNeeds) n.CurLevel = n.MaxLevel; if (p.needs.AllNeeds.Any(n => n.CurLevelPercentage < .999f)) throw new InvalidOperationException("Fill needs postcondition failed"); }
-                        else if (action == "eliteRaidPlus.applyElite") ApplyEliteRaidPlus(p, I(step, "level"));
                         else if (action == "native.fillHemogen")
                         { var gene = p.genes?.GetFirstGeneOfType<Gene_Hemogen>(); if (gene == null || !gene.Active) throw new ScenarioConfigurationException("An active Hemogenic gene is required"); var value = (float)ScenarioLoader.D(step, "value", 1); gene.ValuePercent = value; if (!Mathf.Approximately(gene.ValuePercent, value)) throw new InvalidOperationException("Hemogen postcondition failed"); }
                         else if (action == "native.setPsyfocus")
@@ -86,20 +87,36 @@ namespace LogSyncMod.AutoTest
             if (!sourceUnchanged) throw new InvalidOperationException("DebugAction or a mod callback changed source-map pawns outside this scene");
         }
 
-        private void ApplyEliteRaidPlus(Pawn pawn, int level)
+        private readonly Dictionary<string, ScenarioBoundAction> boundActions = new Dictionary<string, ScenarioBoundAction>();
+
+        private void PrepareBoundActions()
         {
-            if (!LoadedModManager.RunningMods.Any(m => string.Equals(m.PackageIdPlayerFacing, "trigger.eliteraidplus", StringComparison.OrdinalIgnoreCase)))
-                throw new ScenarioConfigurationException("eliteRaidPlus.applyElite requires trigger.eliteraidplus");
-            var service = AppDomain.CurrentDomain.GetAssemblies().Select(a => a.GetType("EliteRaidPlus.EliteEnhancementService", false)).FirstOrDefault(t => t != null);
-            var apply = service?.GetMethod("Apply", BindingFlags.Public | BindingFlags.Static, null, new[] { typeof(Pawn), typeof(int) }, null);
-            if (apply == null) throw new ScenarioConfigurationException("Unsupported Elite Raid Plus API: EliteEnhancementService.Apply(Pawn, int)");
-            // Use the mod's complete pipeline: a Hediff alone omits gear, bionics and other enhancements.
-            var outcome = apply.Invoke(null, new object[] { pawn, level });
-            var elite = pawn.health.hediffSet.hediffs.SingleOrDefault(h => h.GetType().FullName == "EliteRaidPlus.Hediff_ElitePowerup");
-            var actualLevel = elite?.GetType().GetProperty("EliteLevel", BindingFlags.Public | BindingFlags.Instance)?.GetValue(elite);
-            if (outcome?.ToString() != "Applied" || !(actualLevel is int actual) || actual != level)
-                throw new ScenarioConfigurationException("Elite Raid Plus preparation failed: requested=" + level + "; outcome=" + outcome + "; actual=" + actualLevel);
-            trace("debug.elite", "target=" + pawn.GetUniqueLoadID() + "; level=" + actualLevel + "; def=" + elite.def.defName + "; outcome=" + outcome);
+            Type ResolveType(string name)
+            {
+                var types = AppDomain.CurrentDomain.GetAssemblies().Select(a => a.GetType(name, false)).Where(t => t != null).Distinct().ToList();
+                if (types.Count != 1) throw new ScenarioConfigurationException("Binding type must resolve uniquely: " + name);
+                return types[0];
+            }
+            object ResolveBoundDef(Type type, string name)
+            {
+                if (!typeof(Def).IsAssignableFrom(type)) throw new ScenarioConfigurationException("Binding Def argument must derive from Verse.Def: " + type.FullName);
+                return typeof(DefDatabase<>).MakeGenericType(type).GetMethod("GetNamed", new[] { typeof(string), typeof(bool) }).Invoke(null, new object[] { name, true })
+                    ?? throw new ScenarioConfigurationException("Binding Def not found: " + type.FullName + "/" + name);
+            }
+            foreach (var b in runtimeRoot.Element("ActionBindings")?.Elements("ActionBinding") ?? Enumerable.Empty<XElement>())
+            {
+                var package = A(b, "packageId");
+                var mod = LoadedModManager.RunningMods.FirstOrDefault(m => string.Equals(m.PackageIdPlayerFacing, package, StringComparison.OrdinalIgnoreCase))
+                    ?? throw new ScenarioConfigurationException("Action binding requires loaded mod: " + package);
+                foreach (var e in b.Elements("ExpectHediff").Where(e => e.Attribute("def") != null)) Def<HediffDef>(A(e, "def"));
+                var executor = new ScenarioBoundAction(b, ResolveType,
+                    t => mod.assemblies?.loadedAssemblies.Contains(t.Assembly) == true || package.Equals("ludeon.rimworld", StringComparison.OrdinalIgnoreCase) && t.Assembly == typeof(Pawn).Assembly,
+                    ResolveBoundDef, typeof(Hediff),
+                    target => target is Pawn p ? p.health.hediffSet.hediffs.Cast<object>() : throw new ScenarioConfigurationException("ExpectHediff requires a Pawn target"),
+                    h => ((Hediff)h).def.defName);
+                boundActions.Add(A(b, "id"), executor);
+                trace("debug.binding.prepared", "action=" + A(b, "id") + "; package=" + package + "; method=" + A(b, "type") + "." + A(b, "method"));
+            }
         }
 
         private static ThingComp AxolotlEnergy(Pawn p)

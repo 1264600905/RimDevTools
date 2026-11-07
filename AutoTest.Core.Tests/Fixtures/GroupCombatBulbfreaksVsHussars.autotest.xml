@@ -1,4 +1,17 @@
 <TestSuite schemaVersion="1" id="benchmark.bulbfreaks-hussars" gameVersion="1.7">
+  <ActionBindings>
+    <ActionBinding id="eliteRaidPlus.applyElite" packageId="trigger.eliteraidplus" type="EliteRaidPlus.EliteEnhancementService" method="Apply">
+      <Parameters>
+        <Parameter name="level" type="int" min="1" />
+      </Parameters>
+      <Arguments>
+        <Argument type="Verse.Pawn" source="selected" />
+        <Argument type="int" parameter="level" />
+      </Arguments>
+      <Result equals="Applied" />
+      <ExpectHediff type="EliteRaidPlus.Hediff_ElitePowerup" count="1" property="EliteLevel" equalsParameter="level" />
+    </ActionBinding>
+  </ActionBindings>
   <Templates>
     <PawnTemplate id="charge-centipede">
       <basePawnKind>Mech_CentipedeBlaster</basePawnKind>
@@ -99,8 +112,9 @@
       <PawnGroup id="hussars" count="2" />
     </Actors>
     <Steps>
-      <DebugAction id="apply-elite" actionId="eliteRaidPlus.applyElite" level="1">
+      <DebugAction id="apply-elite" actionId="eliteRaidPlus.applyElite">
         <Select mode="single" actor="left[0]" />
+        <Arg name="level" value="1" />
       </DebugAction>
       <Require id="elite-loadout">
         <All>
@@ -123,7 +137,7 @@
     </Actors>
     <Patches>
       <SetAttribute xpath="Teams/Team[@id='A']" name="name" value="二级精英骠骑电荷步枪手" />
-      <SetAttribute xpath="Steps/DebugAction[@id='apply-elite']" name="level" value="2" />
+      <SetAttribute xpath="Steps/DebugAction[@id='apply-elite']/Arg[@name='level']" name="value" value="2" />
       <SetAttribute xpath="Steps/Require[@id='roster-and-loadout']/All/ActorCount[@group='hussars']" name="equals" value="4" />
     </Patches>
   </Case>

@@ -8,24 +8,26 @@ namespace LogSyncMod.AutoTest.Scenarios
 {
     public static class ScenarioDebugActions
     {
-        // A closed registry: no menu invocation, method names, Class or private field paths.
+        // Built-in adapters coexist with explicit XML method bindings; neither opens menus.
         public static readonly IReadOnlyDictionary<string, string> Parameters = new Dictionary<string, string> {
             { "native.fillNeeds", "" }, { "native.fillHemogen", "value" }, { "native.setPsyfocus", "value" },
             { "native.addHediff", "def severity part durationTicks" }, { "native.removeHediff", "def part" },
             { "native.refuel", "" }, { "native.chargeBattery", "" }, { "native.healInjuries", "" },
-            { "axolotl.fillQi", "value" }, { "eliteRaidPlus.applyElite", "level" }
+            { "axolotl.fillQi", "value" }
         };
 
-        public static void Validate(XElement step, string path)
+        public static void Validate(XElement step, string path, XElement binding = null)
         {
             var action = ScenarioLoader.A(step, "actionId");
-            if (!Parameters.TryGetValue(action ?? "", out var allowed)) ScenarioLoader.Fail(step, path, "unregistered/non-interactive DebugAction: " + action);
+            if (binding == null) binding = ScenarioActionBindings.Find(step);
+            var builtIn = Parameters.TryGetValue(action ?? "", out var allowed);
+            if (!builtIn && binding == null) ScenarioLoader.Fail(step, path, "unregistered/non-interactive DebugAction: " + action);
+            if (!builtIn) { allowed = ""; ScenarioActionBindings.ValidateCall(step, binding, path); }
+            else if (step.Elements("Arg").Any()) ScenarioLoader.Fail(step, path, "built-in DebugAction uses its declared attributes, not Arg");
             foreach (var a in step.Attributes().Where(a => a.Name != "id" && a.Name != "actionId"))
                 if (!allowed.Split(' ').Contains(a.Name.ToString())) ScenarioLoader.Fail(step, path, "parameter is not supported by " + action + ": " + a.Name);
             if (action == "native.addHediff" || action == "native.removeHediff")
                 if (string.IsNullOrWhiteSpace(ScenarioLoader.A(step, "def"))) ScenarioLoader.Fail(step, path, "health action requires def");
-            if (action == "eliteRaidPlus.applyElite" && (step.Attribute("level") == null || ScenarioLoader.I(step, "level") <= 0))
-                ScenarioLoader.Fail(step, path, "eliteRaidPlus.applyElite requires a positive integer level");
             var select = step.Element("Select");
             if (select == null) ScenarioLoader.Fail(step, path, "DebugAction requires exactly one Select");
             var mode = ScenarioLoader.A(select, "mode");

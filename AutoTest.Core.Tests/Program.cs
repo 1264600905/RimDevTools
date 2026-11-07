@@ -32,6 +32,7 @@ internal sealed class CoreTestSuite
         AutoTestReportTests.Run(Assert);
         ScenarioTests.Run(Assert);
         ScenarioPlanningTests.Run(Assert);
+        ScenarioActionBindingTests.Run(Assert);
         ScenarioViewTests.Run(Assert);
         TemporaryPawnDataTests.Run(Assert);
         ManualTestPlanTests.Run(Assert);

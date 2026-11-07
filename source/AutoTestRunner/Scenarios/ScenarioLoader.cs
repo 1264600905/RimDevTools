@@ -84,6 +84,7 @@ namespace LogSyncMod.AutoTest.Scenarios
                     if (names.TryGetValue(name, out var previous)) Fail(node, input.Path, "duplicate testDefName " + name + "; first definition: " + previous);
                     names.Add(name, location);
                     var copy = Copy(node);
+                    ScenarioActionBindings.Freeze(copy, root.Element("ActionBindings"), input.Path);
                     if (root.Element("Requirements") != null)
                     {
                         var requirements = copy.Element("Requirements");
@@ -260,15 +261,17 @@ namespace LogSyncMod.AutoTest.Scenarios
 
         // Exact parent/child and attribute whitelist. No Class, private paths, arbitrary calls or ignored fields.
         private static readonly Dictionary<string, string> Children = new Dictionary<string, string> {
-            {"TestSuite", "Requirements Templates ScenePresets Case"}, {"Requirements", "Mod DLC"}, {"Templates", "PawnTemplate"}, {"ScenePresets", "Scene"},
+            {"TestSuite", "Requirements ActionBindings Templates ScenePresets Case"}, {"Requirements", "Mod DLC"}, {"Templates", "PawnTemplate"}, {"ScenePresets", "Scene"},
             {"Scene", "Environment Layout Validation"}, {"Layout", "TerrainRect RoofRect ThingRect"}, {"Validation", "Reachable"},
             {"PawnTemplate", "basePawnKind race gender minGenerationAge maxGenerationAge apparelTags apparelMoney weaponTags weaponMoney forcedTraits skills abilities Apparel Equipment Traits Skills Hediffs Abilities Appearance Genes Xenotype Age Resources"},
             {"Resources", "GeneResource Psyfocus AxolotlQi"},
-            {"Case", "testDefName Requirements Scene Teams Actors Steps Success Targets Coverage Matrix GroupCombat Output"}, {"GroupCombat", "End Metrics Overlay Experiments"}, {"Overlay", "Rankings Summary"}, {"Experiments", "Seed"}, {"Targets", "Def"},
+            {"Case", "testDefName Requirements ActionBindings Scene Teams Actors Steps Success Targets Coverage Matrix GroupCombat Output"}, {"GroupCombat", "End Metrics Overlay Experiments"}, {"Overlay", "Rankings Summary"}, {"Experiments", "Seed"}, {"Targets", "Def"},
             {"Coverage", "Target"}, {"Target", "Evidence"}, {"Matrix", "Row"}, {"Row", "Param"},
             {"Teams", "Team Relation"}, {"Actors", "Pawn PawnGroup Building Thing Corpse DefRef TerrainArea"},
             {"Steps", "Require Checkpoint Wait Screenshot View SetPlantGrowth CastAbility Attack Spawn CreateThing DropEquipment Equip AddHediff RemoveHediff Destroy Kill Pause DebugAction ExecuteRecipe TransferThing DropInventory SetRot Resurrect ApplyDamage BindMech ManTurret"},
-            {"DebugAction", "Select"},
+            {"DebugAction", "Select Arg"},
+            {"ActionBindings", "ActionBinding"}, {"ActionBinding", "Parameters Arguments Result ExpectHediff"},
+            {"Parameters", "Parameter"}, {"Arguments", "Argument"},
             {"ExecuteRecipe", "Ingredients"}, {"Ingredients", "Ingredient"},
             {"Genes", "Add Remove"},
             {"Apparel", "Add Replace Remove"}, {"Equipment", "SetPrimary"}, {"Traits", "Set Remove"}, {"Skills", "Set"}, {"Hediffs", "Ensure Remove"}, {"Abilities", "Ensure Remove"},
@@ -302,7 +305,10 @@ namespace LogSyncMod.AutoTest.Scenarios
             {"Spawn", "id actor"}, {"Equip", "id actor def stuff"}, {"AddHediff", "id actor def severity part durationTicks"}, {"RemoveHediff", "id actor def part"},
             {"CreateThing", "id def stuff x z count"}, {"DropEquipment", "id actor"},
             {"Destroy", "id actor"}, {"Kill", "id actor"}, {"Pause", "id"},
-            {"DebugAction", "id actionId value def severity part durationTicks level"}, {"Select", "mode actor minX minZ maxX maxZ filter relativeTo"},
+            {"DebugAction", "id actionId value def severity part durationTicks"}, {"Select", "mode actor minX minZ maxX maxZ filter relativeTo"},
+            {"ActionBinding", "id packageId type method"}, {"Parameter", "name type min max"},
+            {"Argument", "type source parameter value def"}, {"Arg", "name value"}, {"Result", "equals"},
+            {"ExpectHediff", "type def count property equals equalsParameter"},
             {"HealthPercent", "actor min max quantifier equals observation"}, {"NeedLevel", "actor def min max quantifier equals"}, {"ResourceLevel", "actor def min max quantifier equals"}, {"ComponentState", "actor component state min max"},
             {"Apparel", "mode"}, {"Equipment", "mode"}, {"Traits", "mode"}, {"Skills", "mode"}, {"Hediffs", "mode"}, {"Abilities", "mode"},
             {"Add", "def stuff quality color"}, {"Replace", "matchDef matchLayer withDef stuff quality color onMissing"}, {"Remove", "def part"}, {"SetPrimary", "def stuff quality color"},
@@ -340,12 +346,12 @@ namespace LogSyncMod.AutoTest.Scenarios
             foreach (var e in node.Elements())
             {
                 if (!children.Split(' ').Contains(e.Name.ToString())) Fail(e, path, "unknown/unsupported element: " + e.Name);
-                var multiple = name == "TestSuite" ? e.Name == "Case" : name == "Resources" ? e.Name == "GeneResource" : new[] { "Templates", "ScenePresets", "Experiments", "Layout", "Validation", "Actors", "Steps", "Teams", "Requirements", "Targets", "Coverage", "Target", "Matrix", "Row", "Ingredients", "Apparel", "Equipment", "Traits", "Skills", "Hediffs", "Abilities", "Genes", "All", "Any", "Require", "Wait", "Success", "forcedTraits", "skills", "abilities", "apparelTags", "weaponTags" }.Contains(name);
+                var multiple = name == "TestSuite" ? e.Name == "Case" : name == "DebugAction" ? e.Name == "Arg" : name == "ActionBinding" ? e.Name == "ExpectHediff" : name == "Resources" ? e.Name == "GeneResource" : new[] { "ActionBindings", "Parameters", "Arguments", "Templates", "ScenePresets", "Experiments", "Layout", "Validation", "Actors", "Steps", "Teams", "Requirements", "Targets", "Coverage", "Target", "Matrix", "Row", "Ingredients", "Apparel", "Equipment", "Traits", "Skills", "Hediffs", "Abilities", "Genes", "All", "Any", "Require", "Wait", "Success", "forcedTraits", "skills", "abilities", "apparelTags", "weaponTags" }.Contains(name);
                 if (node.Elements(e.Name).Count() > 1 && !multiple) Fail(e, path, "duplicate field " + e.Name);
                 ValidateTree(e, path, allowParameters);
             }
             if (node.HasElements && node.Nodes().OfType<XText>().Any(t => !string.IsNullOrWhiteSpace(t.Value))) Fail(node, path, "mixed text is not supported");
-            foreach (var a in node.Attributes().Where(a => new[] { "x", "z", "count", "sizeX", "sizeZ", "seed", "originX", "originZ", "spacing", "columns", "stableTicks", "durationTicks", "stableFrames", "confirmationTicks", "degree", "level", "equals", "width", "height", "minX", "minZ", "maxX", "maxZ", "fromX", "fromZ", "toX", "toZ", "targetX", "targetZ" }.Contains(a.Name.LocalName)))
+            foreach (var a in node.Attributes().Where(a => new[] { "x", "z", "count", "sizeX", "sizeZ", "seed", "originX", "originZ", "spacing", "columns", "stableTicks", "durationTicks", "stableFrames", "confirmationTicks", "degree", "level", "equals", "width", "height", "minX", "minZ", "maxX", "maxZ", "fromX", "fromZ", "toX", "toZ", "targetX", "targetZ" }.Contains(a.Name.LocalName) && !(a.Name == "equals" && (name == "Result" || name == "ExpectHediff"))))
                 if (!(allowParameters && a.Value.Contains("${")) && !int.TryParse(a.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out _)) Fail(node, path, "invalid integer " + a.Name);
             foreach (var a in node.Attributes().Where(a => new[] { "timeoutRealSeconds", "durationSeconds", "defendRadius", "severity", "severityMin", "severityMax", "min", "max", "value", "temperature", "radius", "amount", "armorPenetration", "growth", "cameraSize", "biologicalYears", "chronologicalYears" }.Contains(a.Name.LocalName) && !(name == "Param" || name == "Relation" || name == "PawnAppearance")))
                 if (!(allowParameters && a.Value.Contains("${")) && (!double.TryParse(a.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var d) || double.IsNaN(d) || double.IsInfinity(d))) Fail(node, path, "invalid finite number " + a.Name);

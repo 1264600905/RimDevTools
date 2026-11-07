@@ -18,6 +18,7 @@ namespace LogSyncMod.AutoTest
             ValidateDefs(runtimeRoot, currentDefinition);
             foreach (var requirement in runtimeRoot.Element("Requirements")?.Elements() ?? Enumerable.Empty<XElement>())
                 if (!LoadedModManager.RunningMods.Any(m => string.Equals(m.PackageIdPlayerFacing, A(requirement, "packageId"), StringComparison.OrdinalIgnoreCase))) throw new ScenarioConfigurationException("Required mod/DLC is not loaded: " + requirement);
+            PrepareBoundActions();
             groupMap = map;
             foreach (var faction in factions) teams.Add(faction.Key, faction.Value);
             Rand.PushState(definition.Seed);

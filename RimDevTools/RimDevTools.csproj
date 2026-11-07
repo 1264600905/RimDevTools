@@ -23,6 +23,7 @@
     <Compile Include="..\source\AutoTestRunner\Scenarios\ScenarioExpansion.cs" Link="Shared\ScenarioExpansion.cs" />
     <Compile Include="..\source\AutoTestRunner\Scenarios\ScenarioPlanner.cs" Link="Shared\ScenarioPlanner.cs" />
     <Compile Include="..\source\AutoTestRunner\Scenarios\ScenarioDebugActions.cs" Link="Shared\ScenarioDebugActions.cs" />
+    <Compile Include="..\source\AutoTestRunner\Scenarios\ScenarioActionBindings.cs" Link="Shared\ScenarioActionBindings.cs" />
     <Compile Include="..\source\AutoTestRunner\Scenarios\ScenarioViews.cs" Link="Shared\ScenarioViews.cs" />
     <Compile Include="..\source\AutoTestRunner\Scenarios\TemporaryPawnData.cs" Link="Shared\TemporaryPawnData.cs" />
     <Compile Include="..\source\AutoTestRunner\Scenarios\GroupCombatContracts.cs" Link="Shared\GroupCombatContracts.cs" />

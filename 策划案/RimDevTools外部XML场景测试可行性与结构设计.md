@@ -94,7 +94,7 @@ RimDevTools.exe test run --mode groupcombat `
 4. 开始运行时固定文件清单、内容哈希和解析后的计划，避免测试期间编辑文件导致前后混用。
 5. CLI 在启动前检查 XML 语法、结构和引用关系；实际 Def、身体部位、依赖及动作绑定在游戏加载完成后验证。
 6. 未知字段、错误类型、重复 ID、模板循环、无法解析的目标，以及缺失/重复 testDefName，给出文件、行号和字段路径，不能静默忽略；测试定义名按全部加载文件和 Suite 全局检查。
-7. 禁用 DTD 和外部实体解析；XML 不包含任意 C#、自由表达式或反射方法调用。
+7. 禁用 DTD 和外部实体解析；XML 不包含任意 C# 或自由表达式。模组公开静态接口可通过第 8 节的显式动作绑定调用。
 8. 所有结果、截图、日志和测试存档继续由 RimDevTools 管理，沿用工具生成的原始产物路径。XML 不另行指定证据归档目录。
 
 游戏内手动测试通过第 17 节的两个 DebugAction 发起，无需玩家编写 XML 或运行 CLI。首次手动执行分配正式路径，本次游戏进程启动内所有手动测试均追加到同一会话；回主菜单或切存档不拆分，退出重启后另建手动汇总，不复用自动测试会话。
@@ -127,6 +127,7 @@ RimDevTools.exe test run --mode groupcombat `
 | `Teams` | 阵营、阵营关系及敌友角色 |
 | `Actors` | Pawn、建筑、普通 Thing、尸体以及分组 |
 | `Steps` | 准备、DebugAction、攻击、施放、等待、截图等步骤 |
+| `ActionBindings` | 模组方法绑定、类型化参数、返回值及执行后检查；可在 Suite 共享或 Case 内定义 |
 | `Success` | 回归场景的成功条件、组合方式、数量和观察范围 |
 | `GroupCombat` | 群战数值评测专属的战斗起止规则、AI 策略、伤害口径、各方统计与实时显示 |
 | `Presentation` | 整套配装、三视图方向、姿态、图像布局及展示信息 |
@@ -295,7 +296,43 @@ RimDevTools.exe test run --mode groupcombat `
 4. 选择范围限定于当前场景拥有的对象，不遍历或影响主地图上的其他单位。
 5. 记录实际目标集合、执行步骤、执行前后状态及异常。
 6. 需要子菜单、再次点选或自由文本输入的原生动作，先提供专用适配，不能在场景运行时等待人工操作。
-7. XML 不指定任意类名、方法名或私有字段路径，不嵌入代码。
+7. 内置动作保持固定注册；扩展动作通过 `ActionBindings` 显式声明所属模组、公开静态方法与准确参数类型，不嵌入代码，不写私有字段。
+
+已实现 XML 动作绑定。Suite 级定义供各 Case 复用，Case 级同名定义覆盖 Suite 默认值；绑定按实际调用冻结进 Case，未使用的绑定不增加模组依赖。Case 继承和 XPath Patch 可调整调用参数，矩阵参数在最终校验前展开。
+
+```xml
+<ActionBindings>
+  <ActionBinding id="eliteRaidPlus.applyElite"
+                 packageId="trigger.eliteraidplus"
+                 type="EliteRaidPlus.EliteEnhancementService" method="Apply">
+    <Parameters>
+      <Parameter name="level" type="int" min="1" />
+    </Parameters>
+    <Arguments>
+      <Argument type="Verse.Pawn" source="selected" />
+      <Argument type="int" parameter="level" />
+    </Arguments>
+    <Result equals="Applied" />
+    <ExpectHediff type="EliteRaidPlus.Hediff_ElitePowerup" count="1"
+                  property="EliteLevel" equalsParameter="level" />
+  </ActionBinding>
+</ActionBindings>
+```
+
+对应的准备步骤：
+
+```xml
+<DebugAction id="prepare-elite" actionId="eliteRaidPlus.applyElite">
+  <Select mode="single" actor="left[0]" />
+  <Arg name="level" value="2" />
+</DebugAction>
+```
+
+`Parameter` 声明参数名及类型；`int`、`float`、`double`、`bool`、`string` 为基础类型别名，枚举使用完整类型名和已定义的枚举名称。数值参数可指定 `min`、`max`。`Arguments` 顺序就是方法参数顺序，每个 `Argument` 只使用 `source="selected"`、`parameter="参数名"`、`value="常量"` 或 `def="DefName"` 中的一种；Def 参数的 `type` 使用实际 Def 类型的完整名称。
+
+游戏侧在生成角色前核对模组已加载、声明类型确实属于该模组，以及方法的公开静态准确签名；不匹配不尝试其他重载，不支持泛型方法及 ref/out 参数。`Result` 比较基础类型或枚举返回值。`ExpectHediff` 以 `type` 或 `def` 匹配指定数量的 Hediff，可读取一个公开属性并与 `equals` 常量或 `equalsParameter` 参数比较。例中的精英等级由实际 Hediff 属性验证，强化算法仍由模组自身执行。
+
+绑定与内置动作共享场景目标选择、执行前后日志和原地图检查。新模组的直接公开静态接口可只写 XML；实例方法、打开菜单、等待人工点选或复杂流程协调仍需额外执行能力。新绑定不能覆盖已有内置动作 ID。
 
 DebugAction 可以插在顺序步骤中，例如“等待生命值低于阈值 → 执行准备动作 → 再施放技能”。不需要首版就引入无限循环或完整脚本事件系统。
 
@@ -540,7 +577,7 @@ packageId + defType + defName + caseType
 - DebugAction 采用稳定注册 ID，仅单体和矩形选择，不等待人工菜单操作。
 - 成功判据区分前置状态与动作后的变化，并明确数量和时间语义。
 - 场景对象、临时关系及其他运行状态由工具清理，不允许探针异常阻断恢复。
-- 不对 XML 开放任意代码或无限制私有字段写入；模组专属机制通过固定适配扩展。
+- 不对 XML 开放任意代码或无限制私有字段写入；模组公开静态接口通过显式 XML 动作绑定扩展，其他机制保留专用适配。
 - 所有日志、结果、截图和测试存档遵守仓库 AGENTS.md 的原始产物约定。
 - 群战是独立数值评测，必须显式选择群战类型并指名具体测试，不被普通回归或全量选择自动执行，不参与 Bug 回归覆盖和通过率。
 - 角色、配装、阵营、地图等定义供技能测试和其他口袋地图测试共用；群战固定新建普通主地图，完成、取消或异常终止后丢弃本轮地图。
