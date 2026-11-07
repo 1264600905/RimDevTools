@@ -1,0 +1,21 @@
+<TestSuite schemaVersion="1" id="batch4.species" gameVersion="1.7">
+  <ScenePresets><Scene id="arena" type="mainMap" sizeX="100" sizeZ="100"><Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/></Scene></ScenePresets>
+  <Case id="animals" kind="groupCombat" name="动物群战" seed="12345" timeoutRealSeconds="300">
+    <testDefName>Batch4_AnimalGroups</testDefName><Scene preset="arena"/>
+    <Teams><Team id="A" name="森林狼" ai="assaultThings"/><Team id="B" name="北极熊" ai="assaultThings"/></Teams>
+    <Actors>
+      <PawnGroup id="wolves" team="A" count="20" originX="22" originZ="42" formation="grid" columns="4" spacing="2"><basePawnKind>Wolf_Timber</basePawnKind><minGenerationAge>5</minGenerationAge><maxGenerationAge>5</maxGenerationAge></PawnGroup>
+      <PawnGroup id="bears" team="B" count="20" originX="62" originZ="42" formation="grid" columns="4" spacing="2"><basePawnKind>Bear_Polar</basePawnKind><minGenerationAge>5</minGenerationAge><maxGenerationAge>5</maxGenerationAge></PawnGroup>
+    </Actors>
+    <GroupCombat timeSpeed="fast"/>
+  </Case>
+  <Case id="mechs" kind="groupCombat" name="机械族群战" seed="24680" timeoutRealSeconds="300">
+    <testDefName>Batch4_MechanoidGroups</testDefName><Scene preset="arena"/>
+    <Teams><Team id="A" name="镰刀机械体" ai="assaultThings"/><Team id="B" name="长枪机械体" ai="assaultThings"/></Teams>
+    <Actors>
+      <PawnGroup id="scythers" team="A" count="10" originX="22" originZ="42" formation="grid" columns="2" spacing="3"><basePawnKind>Mech_Scyther</basePawnKind></PawnGroup>
+      <PawnGroup id="lancers" team="B" count="10" originX="62" originZ="42" formation="grid" columns="2" spacing="3"><basePawnKind>Mech_Lancer</basePawnKind></PawnGroup>
+    </Actors>
+    <GroupCombat timeSpeed="fast"/>
+  </Case>
+</TestSuite>

@@ -64,10 +64,12 @@ RimDevTools.exe mod copy <query> [--version <value>] [--deps] [--include-ignored
 RimDevTools.exe mod dependencies <query> [--version <value>] [--fuzzy] [--verbose]
 RimDevTools.exe mod dependents <query> [--version <value>] [--fuzzy] [--verbose]
 RimDevTools.exe test settings [--verbose]
-RimDevTools.exe test run [--deploy] [--mode quick|manual|auto] [--active-mods-file <path>] [--scope <value>]... [--defname <value>]... [--batch-size <n>] [--verbose]
+RimDevTools.exe test run [--deploy] [--mode quick|manual|auto|groupcombat] [--active-mods-file <path>] [--scope <value>]... [--defname <value>]... [--batch-size <n>] [--verbose]
 RimDevTools.exe test cleanup [--dry-run] [--status] [--verbose]
 RimDevTools.exe mods install-tools [--mods-path <path>] [--dry-run] [--verbose]
 ```
+
+1.7 独立群战入口：`test run --mode groupcombat --scenario-path <XML 文件或目录> --test-name <testDefName 或完整 caseId>`，多个名称可重复传入。只接受双方普通主地图评测，普通 auto 扫描不会运行群战；不传名称即报错。完整语法、样例和伤害口径见[第四批使用说明](../策划案/RimDevTools外部场景XML第四批使用说明.md)。
 
 项目命令从当前目录或直接父目录发现 `mod_config.jsonc`。最终结果是 stdout 上的单个 JSON 对象，进度与诊断写入 stderr。默认结果只包含摘要和关键字段；`--verbose` 展开检查项、计划、候选元数据和可用的详细结果，并显示构建、Unity、ILSpy 子进程输出。警告和错误始终保留；普通模式会显示子进程识别出的 warning/error 行，失败时最多附带 12 行、每行最多 500 个字符的末尾诊断。游戏自身 stdout/stderr 仍保持丢弃。`--version` 必须作为唯一参数使用，并只返回 RimDevTools 自身版本。
 

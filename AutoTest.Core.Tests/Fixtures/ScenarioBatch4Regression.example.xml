@@ -1,0 +1,218 @@
+<TestSuite schemaVersion="1" id="batch4.regression" packageId="ludeon.rimworld" gameVersion="1.7">
+  <Templates>
+    <PawnTemplate id="b1.human">
+      <basePawnKind>SpaceRefugee</basePawnKind>
+      <minGenerationAge>25</minGenerationAge>
+      <maxGenerationAge>25</maxGenerationAge>
+    </PawnTemplate>
+    <PawnTemplate id="b1.caster" extends="b1.human">
+      <Apparel mode="patch">
+        <Replace matchLayer="Overhead" withDef="Apparel_CowboyHat" stuff="Cloth" quality="Normal" onMissing="add" />
+      </Apparel>
+      <Equipment mode="patch">
+        <SetPrimary def="Gun_Autopistol" quality="Good" />
+      </Equipment>
+      <Traits mode="patch">
+        <Set def="Tough" degree="0" />
+      </Traits>
+      <Skills mode="patch">
+        <Set def="Shooting" level="14" passion="Major" />
+      </Skills>
+      <Hediffs mode="patch">
+        <Ensure def="Metalblood" severity="1" />
+      </Hediffs>
+      <Abilities mode="patch">
+        <Ensure def="MetalbloodInjection" />
+      </Abilities>
+    </PawnTemplate>
+    <PawnTemplate id="b2.caster">
+      <basePawnKind>Axolotl_Colonist</basePawnKind>
+      <minGenerationAge>25</minGenerationAge>
+      <maxGenerationAge>25</maxGenerationAge>
+      <Hediffs>
+        <Ensure def="Axolotl_LotlQi" severity="5" />
+      </Hediffs>
+      <Abilities>
+        <Ensure def="Axolotl_SkillMove" />
+        <Ensure def="Axolotl_SwordAura" />
+        <Ensure def="Axolotl_Thunder_SuperSkill" />
+      </Abilities>
+    </PawnTemplate>
+    <PawnTemplate id="b2.mechanitor">
+      <basePawnKind>SpaceRefugee</basePawnKind>
+      <Hediffs>
+        <Ensure def="MechlinkImplant" part="Brain" severity="1" />
+        <Ensure def="LogSync_TestMechanitorBandwidth" severity="1" />
+      </Hediffs>
+    </PawnTemplate>
+    <PawnTemplate id="b3.presenter">
+      <basePawnKind>SpaceRefugee</basePawnKind>
+      <gender>Male</gender>
+      <Age biologicalYears="25" chronologicalYears="25" />
+      <Appearance>
+        <hair>Shaved</hair>
+        <bodyType>Male</bodyType>
+        <headType>Male_AverageNormal</headType>
+        <hairColor>#241810</hairColor>
+      </Appearance>
+      <Apparel mode="replace">
+        <Add def="Apparel_Pants" stuff="Cloth" quality="Good" />
+        <Add def="Apparel_BasicShirt" stuff="Cloth" quality="Good" />
+        <Add def="Apparel_FlakVest" quality="Excellent" />
+        <Add def="Apparel_SimpleHelmet" stuff="Steel" quality="Excellent" />
+      </Apparel>
+      <Equipment>
+        <SetPrimary def="Gun_AssaultRifle" quality="Excellent" />
+      </Equipment>
+    </PawnTemplate>
+  </Templates>
+  <ScenePresets>
+    <Scene id="b2.outdoor" type="pocketMap" generatorDef="LogSync_AutoTestOutdoorPocketMap" sizeX="50" sizeZ="50" revealFog="all">
+      <Environment weather="Clear" temperature="23" roof="none" naturalSun="true" />
+      <Layout>
+        <TerrainRect def="Concrete" x="10" z="10" width="8" height="3" />
+        <ThingRect def="Sandbags" stuff="Cloth" x="19" z="10" width="1" height="4" />
+        <RoofRect def="RoofConstructed" x="23" z="10" width="3" height="3" />
+      </Layout>
+      <Validation>
+        <Reachable fromX="10" fromZ="10" toX="30" toZ="10" />
+      </Validation>
+    </Scene>
+  </ScenePresets>
+  <Requirements>
+    <DLC packageId="ludeon.rimworld.anomaly" />
+    <Mod packageId="hentailoliteam.axolotl" />
+    <DLC packageId="ludeon.rimworld.biotech" />
+  </Requirements>
+  <Case id="b1.full" seed="31981" timeoutRealSeconds="90">
+    <testDefName>Batch1_NativeMetalblood</testDefName>
+    <Targets>
+      <Def defType="AbilityDef" defName="MetalbloodInjection" />
+      <Def defType="ThingDef" defName="Gun_Autopistol" />
+    </Targets>
+    <Scene type="pocketMap" sizeX="50" sizeZ="50" revealFog="all" />
+    <Teams>
+      <Team id="ours" factionDef="player" />
+    </Teams>
+    <Actors>
+      <Pawn id="caster" template="b1.caster" team="ours" x="20" z="24" />
+      <PawnGroup id="friends" template="b1.human" team="ours" count="2" originX="25" originZ="24" spacing="3" />
+      <Building id="wall" def="Wall" stuff="Steel" x="20" z="18" />
+      <Building id="light" def="GlowPod" x="20" z="23" />
+      <Thing id="steel" def="Steel" count="25" x="22" z="18" />
+      <Corpse id="body" template="b1.human" x="25" z="18" />
+      <DefRef id="recipe" defType="RecipeDef" defName="Make_StoneBlocksAny" />
+      <TerrainArea id="soil" def="Soil" x="30" z="30" width="2" height="2" />
+    </Actors>
+    <Steps>
+      <Require id="prepared-check">
+        <All>
+          <ActorCount group="friends" equals="2" />
+          <Equipped actor="caster" def="Gun_Autopistol" />
+          <ActorState actor="friends" state="alive" quantifier="all" />
+          <HasTrait actor="caster" def="Tough" degree="0" />
+          <SkillLevel actor="caster" def="Shooting" min="14" max="14" />
+          <Wearing actor="caster" def="Apparel_CowboyHat" />
+          <HasHediff actor="caster" def="Metalblood" />
+          <CorpseState actor="body" state="valid" />
+          <ActorState actor="body.innerPawn" state="dead" />
+          <ThingExists actor="steel" def="Steel" />
+        </All>
+      </Require>
+      <RemoveHediff id="clear-existing" actor="caster" def="Metalblood" />
+      <Require id="removed">
+        <HasHediff actor="caster" def="Metalblood" transition="removed" since="prepared" />
+      </Require>
+      <Checkpoint id="ready-to-cast" />
+      <CastAbility id="cast" actor="caster" def="MetalbloodInjection" target="caster" force="false" />
+      <Wait id="effect" timeoutRealSeconds="5" stableTicks="2">
+        <HasHediff actor="caster" def="Metalblood" transition="added" since="cast" observation="eventually" />
+      </Wait>
+      <Screenshot id="effect-image" focus="caster" />
+      <Checkpoint id="before-drop" />
+      <DropEquipment id="drop" actor="caster" />
+      <Require id="not-created-by-drop">
+        <Not>
+          <ThingExists def="Gun_Autopistol" transition="added" since="before-drop" />
+        </Not>
+      </Require>
+      <CreateThing id="create-new" def="Gun_Autopistol" x="21" z="21" />
+      <Require id="new-identity">
+        <ThingExists def="Gun_Autopistol" transition="added" since="before-drop" />
+      </Require>
+      <Checkpoint id="transient-baseline" />
+      <AddHediff id="short-effect" actor="friends[0]" def="Metalblood" severity="1" durationTicks="1" />
+      <Wait id="observed-transient" timeoutRealSeconds="5">
+        <HasHediff actor="friends[0]" def="Metalblood" transition="added" since="transient-baseline" observation="eventually" />
+      </Wait>
+      <Wait id="transient-expired" timeoutRealSeconds="5">
+        <Not>
+          <HasHediff actor="friends[0]" def="Metalblood" />
+        </Not>
+      </Wait>
+    </Steps>
+    <Success>
+      <All>
+        <StepSucceeded ref="cast" />
+        <StepSucceeded ref="effect" />
+        <StepSucceeded ref="effect-image" />
+        <CorpseState actor="body" state="valid" />
+      </All>
+    </Success>
+  </Case>
+  <Case id="b2.move" caseType="SkillPocketMap" timeoutRealSeconds="90">
+    <testDefName>Batch2_Axolotl_FloatingCloudLanding</testDefName>
+    <Targets>
+      <Def defType="AbilityDef" defName="Axolotl_SkillMove" />
+    </Targets>
+    <Scene />
+    <Teams>
+      <Team id="player" factionDef="player" />
+    </Teams>
+    <Actors>
+      <Pawn id="caster" template="b2.caster" team="player" x="14" z="20" />
+    </Actors>
+    <Steps>
+      <DebugAction id="qi" actionId="axolotl.fillQi">
+        <Select mode="single" actor="caster" />
+      </DebugAction>
+      <Require id="ready">
+        <ModResourceLevel actor="caster" resource="axolotl.qi" min="0.9" />
+      </Require>
+      <CastAbility id="cast" actor="caster" def="Axolotl_SkillMove" targetX="18" targetZ="20" timeoutRealSeconds="20" />
+      <Wait id="landed" timeoutRealSeconds="20">
+        <ActorPosition actor="caster" x="18" z="20" radius="0" />
+      </Wait>
+      <Screenshot id="landing-image" focus="caster" />
+    </Steps>
+    <Success>
+      <StepSucceeded ref="cast" />
+      <StepSucceeded ref="landed" />
+      <StepSucceeded ref="landing-image" />
+    </Success>
+  </Case>
+  <Case id="b3.loadout" caseType="LoadoutView" timeoutRealSeconds="90">
+    <testDefName>Batch3_CompleteLoadout</testDefName>
+    <Scene />
+    <Actors>
+      <Pawn id="p" template="b3.presenter" x="25" z="25" />
+    </Actors>
+    <Steps>
+      <Require id="configured">
+        <Equipped actor="p" def="Gun_AssaultRifle" />
+        <Wearing actor="p" def="Apparel_FlakVest" />
+        <PawnAppearance actor="p" property="hair" value="Shaved" />
+      </Require>
+      <View id="loadout" actor="p" directions="South,East,North,West" pose="weaponReady" loadout="preserve" cameraSize="11" />
+      <Require id="retained">
+        <Equipped actor="p" def="Gun_AssaultRifle" />
+        <Wearing actor="p" def="Apparel_FlakVest" />
+        <Wearing actor="p" def="Apparel_SimpleHelmet" />
+      </Require>
+    </Steps>
+    <Success>
+      <StepSucceeded ref="loadout" />
+      <StepSucceeded ref="retained" />
+    </Success>
+  </Case>
+</TestSuite>

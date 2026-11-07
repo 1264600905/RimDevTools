@@ -234,18 +234,22 @@ public static class TestCommand
 
         var mode = CliArgs.Value(args, "--mode")?.ToLowerInvariant() ?? "quick";
         if (CliArgs.Has(args, "--quick-start") && mode != "manual") return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "INVALID_ARGUMENT", "--quick-start 只适用于 manual 测试", context.Root);
-        if (mode is not ("quick" or "manual" or "auto"))
+        if (mode is not ("quick" or "manual" or "auto" or "groupcombat"))
             return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "MODE_INVALID", $"不支持的测试模式: {mode}", context.Root);
         ScenarioPlan? scenarioPlan = null;
         var scenarioPath = CliArgs.Value(args, "--scenario-path");
+        if (mode == "groupcombat" && (string.IsNullOrWhiteSpace(scenarioPath) || CliArgs.Values(args, "--test-name").Count == 0))
+            return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "GROUPCOMBAT_NAME_REQUIRED", "群战必须同时提供 --scenario-path 和 --test-name，显式指名测试定义", context.Root);
+        if (mode == "groupcombat" && CliArgs.Has(args, "--scenario-only"))
+            return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "INVALID_ARGUMENT", "--scenario-only 属于普通回归入口；群战本身为独立评测", context.Root);
         if (scenarioPath is not null || CliArgs.Has(args, "--scenario-only") || CliArgs.Has(args, "--test-name"))
         {
-            if (mode != "auto" || context.Config.GameVersion != "1.7")
-                return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "SCENARIO_BACKEND_UNSUPPORTED", "外部场景首版仅支持 1.7 的 auto 模式", context.Root);
+            if (mode is not ("auto" or "groupcombat") || context.Config.GameVersion != "1.7")
+                return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "SCENARIO_BACKEND_UNSUPPORTED", "外部场景首版仅支持 1.7 的 auto/groupcombat 模式", context.Root);
             if (string.IsNullOrWhiteSpace(scenarioPath))
                 return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "SCENARIO_PATH_REQUIRED", "--scenario-only 必须同时提供 --scenario-path", context.Root);
-            try { scenarioPlan = ScenarioLoader.Load(Path.GetFullPath(scenarioPath, context.Root)); ScenarioLoader.SelectRules(scenarioPlan, CliArgs.Values(args, "--test-name")); }
-            catch (Exception ex) when (ex is IOException or XmlException or ScenarioConfigurationException or ArgumentException)
+            try { scenarioPlan = ScenarioLoader.Load(Path.GetFullPath(scenarioPath, context.Root), mode == "groupcombat"); ScenarioLoader.SelectRules(scenarioPlan, CliArgs.Values(args, "--test-name")); if (mode == "groupcombat") GroupCombatPlan.Expand(scenarioPlan); }
+            catch (Exception ex) when (ex is IOException or XmlException or ScenarioConfigurationException or ArgumentException or FormatException or OverflowException)
             { return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "SCENARIO_INVALID", ex.Message, context.Root); }
             scenarioPlan.ScenarioOnly = CliArgs.Has(args, "--scenario-only");
         }
@@ -320,7 +324,7 @@ public static class TestCommand
                 return CliResult.WriteFailure(command, deploy.ExitCode, "DEPLOY_FAILED", "测试前部署失败", context.Root, new { deploy.Error, dependencyWarnings }, dependencyWarnings);
         }
 
-        var artifacts = TestArtifactPaths.Create(context);
+        var artifacts = TestArtifactPaths.Create(context, mode);
         var syncLogPath = artifacts.SyncLogPath;
         var outputPath = artifacts.AutoTestOutputPath;
         ConfigTransaction? transaction = null;
@@ -342,7 +346,7 @@ public static class TestCommand
             await SettingsEditor.UpdateAsync(context, mode, transaction, runId, targetPackageId, muteAudio: mode != "manual", scopes: selection.Scopes, hasExplicitScopes: selection.HasExplicitScopes, defNames: selection.DefNames, batchSize: batchSize, artifacts: artifacts, scenarioPlan: scenarioPlan);
 
             var gameArguments = new List<string> { "-popupwindow" };
-            if (mode == "auto" || mode == "manual" && CliArgs.Has(args, "--quick-start")) gameArguments.Add("quicktest");
+            if (mode is "auto" or "groupcombat" || mode == "manual" && CliArgs.Has(args, "--quick-start")) gameArguments.Add("quicktest");
             if (verifyWorkshopAssets)
             {
                 assetScope = await WorkshopAssetVerificationScope.BeginAsync(context, runId, cancellationToken);
@@ -351,7 +355,7 @@ public static class TestCommand
             var deadline = DateTimeOffset.UtcNow.AddSeconds(timeout);
             gameSession = GameProcessLauncher.Start(gamePath, environment.References.RimWorldDirectory, gameArguments, isolation.Enabled, runId);
             if (mode == "auto") LastAutoTestProject.Record(context, configDirectory, runId);
-            outcome = await WaitForModeAsync(mode, gameSession.Process, timeout, syncLogPath, logOffset, outputPath, targetPackageId, runId, resultSnapshot, cancellationToken, verbose);
+            outcome = await WaitForModeAsync(mode, gameSession.Process, timeout, syncLogPath, logOffset, outputPath, targetPackageId, runId, resultSnapshot, cancellationToken, verbose, scenarioPlan);
             if (verifyWorkshopAssets && outcome.Ok && !await WorkshopAssetVerificationScope.WaitForSignalAsync(syncLogPath, runId, deadline, cancellationToken))
                 outcome = TestOutcome.Failure(ExitCodes.GameFailed, "WORKSHOP_ASSET_VERIFICATION_FAILED", "未取得本轮游戏资源包读取成功信号");
         }
@@ -430,7 +434,7 @@ public static class TestCommand
             var keepCount = mode == "auto"
                 ? Math.Min(context.Config.Retention.MaxLogFiles, context.Config.Retention.MaxAutoTestRuns)
                 : context.Config.Retention.MaxLogFiles;
-            LogArchive.PruneTestRunDirectories(TestArtifactPaths.LogRoot(context), keepCount);
+            if (mode != "groupcombat") LogArchive.PruneTestRunDirectories(TestArtifactPaths.LogRoot(context), keepCount);
         }
         catch (Exception ex)
         {
@@ -466,7 +470,7 @@ public static class TestCommand
             scopes = selection.Scopes,
             defNames = verbose ? selection.DefNames : null,
             batchSize,
-            captureScreenshots = mode == "auto",
+            captureScreenshots = mode is "auto" or "groupcombat",
             isolatedDesktop = isolation.Enabled,
             isolatedDesktopSource = isolation.Source,
             activeModCount = modList.Mods.Count,
@@ -491,7 +495,8 @@ public static class TestCommand
         string runId,
         IReadOnlyDictionary<string, AutoResultFingerprint> resultSnapshot,
         CancellationToken cancellationToken,
-        bool verbose)
+        bool verbose,
+        ScenarioPlan? scenarioPlan = null)
     {
         var startedAt = DateTime.UtcNow;
         var deadline = startedAt.AddSeconds(timeoutSeconds);
@@ -499,7 +504,7 @@ public static class TestCommand
         DateTime? lastHeartbeatAt = null;
         long observedHeartbeatSequence = 0;
         const string quickSignal = "[LogSyncMod] RUNTIME_READY_TO_CLOSE";
-        var autoSignal = $"[LogSyncAutoTest] COMPLETED runId={runId}";
+        var autoSignal = mode == "groupcombat" ? $"[LogSyncGroupCombat] COMPLETED runId={runId}" : $"[LogSyncAutoTest] COMPLETED runId={runId}";
         var scanner = new IncrementalTestLogScanner(runId, quickSignal, autoSignal);
         while (DateTime.UtcNow < deadline)
         {
@@ -528,6 +533,12 @@ public static class TestCommand
                     if (validation.Ok) return TestOutcome.Success(scanner.AutoCompleted ? $"{mode} completed signal" : $"{mode} result after game exit", validation.Details);
                     if (scanner.AutoCompleted) return TestOutcome.Failure(ExitCodes.GameFailed, validation.Code, validation.Message, validation.Details);
                 }
+            }
+            if (mode == "groupcombat" && (scanner.AutoCompleted || game.HasExited))
+            {
+                var validation = GroupCombatResultValidator.Validate(outputPath, runId, scenarioPlan);
+                if (validation.Ok) return TestOutcome.Success("groupcombat completed", validation.Details);
+                if (scanner.AutoCompleted) return TestOutcome.Failure(ExitCodes.GameFailed, validation.Code, validation.Message, validation.Details);
             }
 
             if (game.HasExited)
@@ -889,9 +900,9 @@ public sealed record TestArtifactPaths(string DirectoryPath, string SyncLogPath,
 {
     public static string LogRoot(ProjectContext context) => Path.Combine(context.Root, ".tools", "log");
 
-    public static TestArtifactPaths Create(ProjectContext context)
+    public static TestArtifactPaths Create(ProjectContext context, string kind = "auto")
     {
-        var paths = LogSyncMod.AutoTest.TestArtifactDirectory.Allocate(context.Root);
+        var paths = LogSyncMod.AutoTest.TestArtifactDirectory.Allocate(context.Root, kind);
         return new TestArtifactPaths(paths.DirectoryPath, paths.SyncLogPath, paths.AutoTestOutputPath);
     }
 }
@@ -926,7 +937,8 @@ public static class SettingsEditor
         changed |= Set(settings, "autoTestTargetPackageId", auto ? targetPackageId?.ToLowerInvariant() ?? context.Config.CurrentPackageId(context.Root)?.ToLowerInvariant() ?? "" : "");
         changed |= Set(settings, "autoTestRunId", runId ?? "");
         // Scribe interprets string escape sequences; an opaque base64 envelope preserves XML/JSON bytes.
-        changed |= Set(settings, "autoTestScenarioPlan", scenarioPlan is null ? "" : Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(JsonSerializer.Serialize(scenarioPlan))));
+        changed |= Set(settings, "autoTestScenarioPlan", scenarioPlan is null || mode != "auto" ? "" : Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(JsonSerializer.Serialize(scenarioPlan))));
+        changed |= Set(settings, "groupCombatPlan", scenarioPlan is null || mode != "groupcombat" ? "" : Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(JsonSerializer.Serialize(scenarioPlan))));
         changed |= Set(settings, "autoTestProjectRoot", auto ? Path.GetFullPath(context.Root) : "");
         changed |= Set(settings, "autoTestOutputPath", effectiveArtifacts?.AutoTestOutputPath ?? AutoTestOutputPath(context));
         var effectiveScopes = scopes is { Count: > 0 } ? DistinctValues(scopes) : ["Standard"];
@@ -1131,7 +1143,7 @@ public static class LogArchive
         if (!Directory.Exists(logRoot)) return;
         var directories = Directory.EnumerateDirectories(logRoot)
             .Where(path => Regex.IsMatch(Path.GetFileName(path), @"^\[\d{4}-\d{2}, \d{2}-\d{2}\](?:_\d{2})?$", RegexOptions.CultureInvariant))
-            .Where(path => !LogSyncMod.AutoTest.TestArtifactDirectory.IsManual(path))
+            .Where(path => !LogSyncMod.AutoTest.TestArtifactDirectory.IsIndependent(path))
             .OrderByDescending(Directory.GetLastWriteTimeUtc)
             .ToArray();
         foreach (var obsolete in directories.Skip(Math.Max(1, keepCount)))

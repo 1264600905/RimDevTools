@@ -13,7 +13,7 @@ namespace LogSyncMod.AutoTest.Scenarios
 {
     public static partial class ScenarioLoader
     {
-        public static ScenarioPlan Load(string path)
+        public static ScenarioPlan Load(string path, bool groupCombat = false)
         {
             path = Path.GetFullPath(path);
             var files = Directory.Exists(path) ? Directory.GetFiles(path, "*.autotest.xml", SearchOption.TopDirectoryOnly).OrderBy(p => p, StringComparer.Ordinal).ToArray() : new[] { path };
@@ -29,12 +29,13 @@ namespace LogSyncMod.AutoTest.Scenarios
                 catch (XmlException ex) { throw new ScenarioConfigurationException(file + ":" + ex.LineNumber + ": " + ex.Message); }
                 return new ScenarioInput { Path = file, Sha256 = BitConverter.ToString(sha.ComputeHash(bytes)).Replace("-", "").ToLowerInvariant(), Xml = doc.ToString(SaveOptions.DisableFormatting) };
             }).ToList();
-            return Compile(inputs);
+            if (groupCombat) ResolveGroupPawnFiles(inputs);
+            return Compile(inputs, groupCombat);
         }
 
-        public static ScenarioPlan Compile(IEnumerable<ScenarioInput> inputs)
+        public static ScenarioPlan Compile(IEnumerable<ScenarioInput> inputs, bool groupCombat = false)
         {
-            var plan = new ScenarioPlan { Inputs = inputs.ToList() };
+            var plan = new ScenarioPlan { Inputs = inputs.ToList(), Purpose = groupCombat ? "groupcombat" : "regression" };
             var names = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             foreach (var input in plan.Inputs)
             {
@@ -88,7 +89,14 @@ namespace LogSyncMod.AutoTest.Scenarios
                         if (requirements == null) copy.AddFirst(Copy(root.Element("Requirements")));
                         else requirements.Add(root.Element("Requirements").Elements().Select(Copy));
                     }
-                    if (copy.Element("Scene") == null || copy.Element("Actors") == null || copy.Element("Steps") == null || copy.Element("Success") == null) Fail(node, input.Path, "Case requires Scene, Actors, Steps and Success");
+                    var isGroup = A(copy, "caseType") == "GroupCombat" || A(copy, "kind") == "groupCombat";
+                    if (isGroup != groupCombat) Fail(copy, input.Path, isGroup ? "GroupCombat requires its independent named benchmark entry" : "groupcombat accepts only GroupCombat rules");
+                    if (isGroup)
+                    {
+                        copy.SetAttributeValue("caseType", "GroupCombat");
+                        if (copy.Element("Steps") == null) copy.Add(new XElement("Steps"));
+                    }
+                    if (copy.Element("Scene") == null || copy.Element("Actors") == null || copy.Element("Steps") == null || !isGroup && copy.Element("Success") == null) Fail(node, input.Path, "Case requires Scene, Actors, Steps and Success (GroupCombat uses its own end rules)");
                     var scene = copy.Element("Scene");
                     if (scene.Attribute("preset") != null)
                     {
@@ -113,14 +121,14 @@ namespace LogSyncMod.AutoTest.Scenarios
                         var xml = instance.Value;
                         ValidateTree(xml, input.Path);
                         xml.SetAttributeValue("packageId", A(root, "packageId", "ludeon.rimworld"));
-                        ValidateCase(xml, input.Path);
+                        ValidateCase(xml, input.Path, groupCombat);
                         plan.Cases.Add(new ScenarioCase { Name = A(node, "name", name), TestDefName = name, CaseId = name + "/" + instance.Key + "/1", Source = location, InputHash = input.Sha256, PackageId = A(root, "packageId", "ludeon.rimworld"), Xml = xml.ToString(SaveOptions.DisableFormatting), SourceLocations = xml.DescendantsAndSelf().ToDictionary(ElementKey, e => Location(e, input.Path)), CaseType = A(xml, "caseType", "ExternalScenario"), CoverageMode = A(xml.Element("Coverage"), "mode", "supplement"), Coverage = ParseCoverage(xml, input.Path), SelectionTargets = (xml.Element("Targets")?.Elements("Def") ?? Enumerable.Empty<XElement>()).Select(t => new ScenarioCoverageTarget { PackageId = A(root, "packageId", "ludeon.rimworld"), DefType = A(t, "defType"), DefName = A(t, "defName"), CaseType = A(xml, "caseType", "ExternalScenario") }).ToList() });
                     }
                 }
             }
             if (plan.Cases.Count == 0) throw new ScenarioConfigurationException("No runnable Case definitions");
             // Detect conflicts before launching the game, even when both rules are outside the chosen range.
-            ScenarioPlanner.Select(plan.Cases, Array.Empty<ScenarioOrdinaryCandidate>(), int.MaxValue, scenarioOnly: true);
+            if (!groupCombat) ScenarioPlanner.Select(plan.Cases, Array.Empty<ScenarioOrdinaryCandidate>(), int.MaxValue, scenarioOnly: true);
             return plan;
         }
 
@@ -154,14 +162,15 @@ namespace LogSyncMod.AutoTest.Scenarios
             return result;
         }
 
-        private static void ValidateCase(XElement c, string path)
+        private static void ValidateCase(XElement c, string path, bool groupCombat = false)
         {
             var type = A(c, "caseType", "ExternalScenario");
             if (type != "ExternalScenario" && !ScenarioTypes.NonUi.Contains(type)) Fail(c, path, "unknown/non-UI caseType " + type);
-            if (type == "GroupCombat") Fail(c, path, "GroupCombat requires its independent named benchmark entry");
+            if (type == "GroupCombat" && !groupCombat) Fail(c, path, "GroupCombat requires its independent named benchmark entry");
+            if (!groupCombat && (c.Attribute("kind") != null || c.Element("GroupCombat") != null || c.Element("Output") != null)) Fail(c, path, "benchmark configuration cannot enter a regression rule");
             var scene = c.Element("Scene");
             var view = ScenarioViews.Types.Contains(type);
-            if (A(scene, "type", view ? "studio" : "pocketMap") != (view ? "studio" : "pocketMap")) Fail(scene, path, view ? "View uses the existing main-map studio (type=studio), not a pocket map" : "this behavior backend requires pocketMap");
+            if (A(scene, "type", groupCombat ? "mainMap" : view ? "studio" : "pocketMap") != (groupCombat ? "mainMap" : view ? "studio" : "pocketMap")) Fail(scene, path, groupCombat ? "GroupCombat requires a new ordinary mainMap" : view ? "View uses the existing main-map studio (type=studio), not a pocket map" : "this behavior backend requires pocketMap");
             if (I(scene, "sizeX", 50) < 30 || I(scene, "sizeX", 50) > 250 || I(scene, "sizeZ", 50) < 30 || I(scene, "sizeZ", 50) > 250) Fail(scene, path, "map dimensions must be 30..250");
             if (A(scene, "revealFog", "all") != "all") Fail(scene, path, "batch 1 requires revealFog=all");
             if (scene.Attribute("id") != null) Fail(scene, path, "Scene id belongs only to ScenePresets");
@@ -173,7 +182,10 @@ namespace LogSyncMod.AutoTest.Scenarios
             var actors = new HashSet<string>();
             var teams = new HashSet<string>();
             foreach (var team in c.Element("Teams")?.Elements("Team") ?? Enumerable.Empty<XElement>())
+            {
+                if (!groupCombat && (team.Attribute("factionSource") != null || string.IsNullOrWhiteSpace(A(team, "factionDef")))) Fail(team, path, "regression team requires an existing factionDef");
                 if (!teams.Add(Required(team, "id", path))) Fail(team, path, "duplicate team id");
+            }
             foreach (var actor in c.Element("Actors").Elements())
             {
                 var id = Required(actor, "id", path);
@@ -184,7 +196,10 @@ namespace LogSyncMod.AutoTest.Scenarios
                 if (actor.Name != "DefRef")
                 {
                     var x = I(actor, "x", I(actor, "originX", 20)); var z = I(actor, "z", I(actor, "originZ", 20));
-                    if (x < 0 || z < 0 || x + (actor.Name == "PawnGroup" ? (count - 1) * I(actor, "spacing", 2) : actor.Name == "TerrainArea" ? I(actor, "width") - 1 : 0) >= I(scene, "sizeX", 50) || z + (actor.Name == "TerrainArea" ? I(actor, "height") - 1 : 0) >= I(scene, "sizeZ", 50)) Fail(actor, path, "actor lies outside the configured scene");
+                    var grid = actor.Name == "PawnGroup" && A(actor, "formation", "line") == "grid";
+                    var columns = grid ? I(actor, "columns", 5) : count;
+                    if (columns < 1 || columns > 100 || I(actor, "spacing", 2) < 1) Fail(actor, path, "columns and spacing must be positive (columns <= 100)");
+                    if (x < 0 || z < 0 || x + (actor.Name == "PawnGroup" ? (Math.Min(count, columns) - 1) * I(actor, "spacing", 2) : actor.Name == "TerrainArea" ? I(actor, "width") - 1 : 0) >= I(scene, "sizeX", 50) || z + (actor.Name == "PawnGroup" && grid ? ((count - 1) / columns) * I(actor, "spacing", 2) : actor.Name == "TerrainArea" ? I(actor, "height") - 1 : 0) >= I(scene, "sizeZ", 50)) Fail(actor, path, "actor lies outside the configured scene");
                 }
                 for (var n = 0; n < count && actor.Name == "PawnGroup"; n++) if (!actors.Add(id + "[" + n + "]")) Fail(actor, path, "duplicate group member");
                 if (actor.Name == "Corpse" && !actors.Add(id + ".innerPawn")) Fail(actor, path, "duplicate corpse innerPawn");
@@ -215,7 +230,7 @@ namespace LogSyncMod.AutoTest.Scenarios
                 if (A(element, "force", "false") != "false") Fail(element, path, "external scenes cannot force abilities");
                 if (A(element, "spawn") != null && !new[] { "true", "false" }.Contains(A(element, "spawn"))) Fail(element, path, "spawn must be true/false");
                 if (A(element, "melee") != null && !new[] { "true", "false" }.Contains(A(element, "melee"))) Fail(element, path, "melee must be true/false");
-                if (A(element, "formation", "line") != "line") Fail(element, path, "batch 1 supports line formation");
+                if (!new[] { "line", "grid" }.Contains(A(element, "formation", "line"))) Fail(element, path, "formation must be line/grid");
                 if (A(element, "onMissing", "fail") != "fail" && A(element, "onMissing") != "add") Fail(element, path, "onMissing must be fail/add");
                 if (A(element, "durationTicks") != null && I(element, "durationTicks") < 1 || A(element, "stableTicks") != null && I(element, "stableTicks") < 1 || A(element, "count") != null && I(element, "count") < 1) Fail(element, path, "tick durations, stability and counts must be positive");
                 if (A(element, "timeoutRealSeconds") != null && D(element, "timeoutRealSeconds") <= 0) Fail(element, path, "timeoutRealSeconds must be positive");
@@ -239,6 +254,7 @@ namespace LogSyncMod.AutoTest.Scenarios
                     if (ownerStep != null && !ownerStep.ElementsBeforeSelf().Concat(new[] { ownerStep }).Any(e => A(e, "id") == A(element, "since"))) Fail(element, path, "baseline must precede observation");
                 }
             }
+            if (groupCombat) ValidateGroupCombat(c, path);
         }
 
         // Exact parent/child and attribute whitelist. No Class, private paths, arbitrary calls or ignored fields.
@@ -247,7 +263,7 @@ namespace LogSyncMod.AutoTest.Scenarios
             {"Scene", "Environment Layout Validation"}, {"Layout", "TerrainRect RoofRect ThingRect"}, {"Validation", "Reachable"},
             {"PawnTemplate", "basePawnKind race gender minGenerationAge maxGenerationAge apparelTags apparelMoney weaponTags weaponMoney forcedTraits skills abilities Apparel Equipment Traits Skills Hediffs Abilities Appearance Genes Xenotype Age Resources"},
             {"Resources", "GeneResource Psyfocus AxolotlQi"},
-            {"Case", "testDefName Requirements Scene Teams Actors Steps Success Targets Coverage Matrix"}, {"Targets", "Def"},
+            {"Case", "testDefName Requirements Scene Teams Actors Steps Success Targets Coverage Matrix GroupCombat Output"}, {"GroupCombat", "End Metrics Overlay Experiments"}, {"Overlay", "Rankings Summary"}, {"Experiments", "Seed"}, {"Targets", "Def"},
             {"Coverage", "Target"}, {"Target", "Evidence"}, {"Matrix", "Row"}, {"Row", "Param"},
             {"Teams", "Team Relation"}, {"Actors", "Pawn PawnGroup Building Thing Corpse DefRef TerrainArea"},
             {"Steps", "Require Checkpoint Wait Screenshot View SetPlantGrowth CastAbility Attack Spawn CreateThing DropEquipment Equip AddHediff RemoveHediff Destroy Kill Pause DebugAction ExecuteRecipe TransferThing DropInventory SetRot Resurrect ApplyDamage BindMech ManTurret"},
@@ -260,9 +276,13 @@ namespace LogSyncMod.AutoTest.Scenarios
         };
         private const string Conditions = "All Any Not HasHediff ThingExists ActorState CorpseState ActorCount Equipped Wearing HasTrait SkillLevel HasAbility StepSucceeded HealthPercent NeedLevel ResourceLevel ComponentState EnvironmentState ActorPosition ModResourceLevel ThingHeld ThingQuantity HasController PawnAppearance HasGene HasXenotype PlantGrowth TerrainState ThingStyle";
         private static readonly Dictionary<string, string> Attributes = new Dictionary<string, string> {
-            {"TestSuite", "schemaVersion id packageId gameVersion"}, {"Case", "id name seed timeoutRealSeconds caseType"}, {"PawnTemplate", "id extends"},
+            {"GroupCombat", "start aiPolicy durationSeconds timeSpeed"}, {"End", "condition onTimeLimit onTie"},
+            {"Metrics", "damageBasis dpsBasis population includeZeroValues distributions detailLimit requireCompleteAttribution"},
+            {"Overlay", "enabled layout topUnitsPerMetric topTypesPerTeam humanPortrait refreshRealMilliseconds"}, {"Rankings", "damageDealt damageTaken"}, {"Summary", "dps damageTaken"},
+            {"Experiments", "swapSides"}, {"Seed", "value"}, {"Output", "purpose showAllParticipants width height"},
+            {"TestSuite", "schemaVersion id packageId gameVersion"}, {"Case", "id name seed timeoutRealSeconds caseType kind"}, {"PawnTemplate", "id extends"},
             {"Coverage", "mode"}, {"Target", "packageId defType defName caseType variant"}, {"Evidence", "step"}, {"Row", "id"}, {"Param", "name value"},
-            {"Scene", "id preset type sizeX sizeZ revealFog generatorDef"}, {"Team", "id factionDef"}, {"Relation", "a b value"},
+            {"Scene", "id preset type sizeX sizeZ revealFog generatorDef"}, {"Team", "id name factionDef factionSource ai defendX defendZ defendRadius"}, {"Relation", "a b value"},
             {"Environment", "weather temperature roof naturalSun"}, {"TerrainRect", "def x z width height"}, {"RoofRect", "def x z width height"}, {"ThingRect", "def stuff x z width height rotation"}, {"Reachable", "fromX fromZ toX toZ"},
             {"EnvironmentState", "property def min max"},
             {"Def", "defType defName"}, {"Mod", "packageId"}, {"DLC", "packageId"},
@@ -297,7 +317,7 @@ namespace LogSyncMod.AutoTest.Scenarios
             var name = node.Name.LocalName;
             var required = name switch {
                 "Thing" or "Building" or "CreateThing" or "Add" or "SetPrimary" or "Ensure" or "Set" or "Remove" => "def",
-                "Team" => "id factionDef", "Relation" => "a b value", "Def" or "DefRef" => "defType defName",
+                "Team" => "id", "Relation" => "a b value", "Def" or "DefRef" => "defType defName",
                 "Mod" or "DLC" => "packageId", "Target" => "defType defName caseType", "Evidence" => "step", "Row" => "id", "Param" => "name value", "CastAbility" => "actor def", "Attack" => "actor target",
                 "Equip" or "AddHediff" or "RemoveHediff" => "actor def", "Spawn" or "DropEquipment" or "Destroy" or "Kill" => "actor",
                 "HasHediff" or "Equipped" or "Wearing" or "HasTrait" or "SkillLevel" or "HasAbility" or "HasGene" or "HasXenotype" or "TerrainState" => "actor def",
@@ -309,7 +329,7 @@ namespace LogSyncMod.AutoTest.Scenarios
             foreach (var field in required.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries)) Required(node, field, path);
             var actor = new[] { "Pawn", "PawnGroup", "Corpse" }.Contains(name);
             var thing = new[] { "Thing", "Building" }.Contains(name);
-            var attrs = name == "PawnGroup" ? "id template team count originX originZ spacing formation spawn" : actor ? "id template team x z spawn" : thing ? "id def stuff team x z count quality color rotation growth spawn" : name == "DefRef" ? "id defType defName" : name == "TerrainArea" ? "id def x z width height" : Attributes.TryGetValue(name, out var text) ? text : "";
+            var attrs = name == "PawnGroup" ? "id template team count originX originZ spacing formation columns spawn" : actor ? "id template team x z spawn" : thing ? "id def stuff team x z count quality color rotation growth spawn" : name == "DefRef" ? "id defType defName" : name == "TerrainArea" ? "id def x z width height" : Attributes.TryGetValue(name, out var text) ? text : "";
             if (name == "Set") attrs = node.Parent?.Name == "Skills" ? "def level passion" : "def degree";
             if (name == "Ensure") attrs = node.Parent?.Name == "Hediffs" ? "def severity part durationTicks" : "def";
             if (name == "Remove") attrs = node.Parent?.Name == "Hediffs" ? "def part" : "def";
@@ -319,12 +339,12 @@ namespace LogSyncMod.AutoTest.Scenarios
             foreach (var e in node.Elements())
             {
                 if (!children.Split(' ').Contains(e.Name.ToString())) Fail(e, path, "unknown/unsupported element: " + e.Name);
-                var multiple = name == "TestSuite" ? e.Name == "Case" : name == "Resources" ? e.Name == "GeneResource" : new[] { "Templates", "ScenePresets", "Layout", "Validation", "Actors", "Steps", "Teams", "Requirements", "Targets", "Coverage", "Target", "Matrix", "Row", "Ingredients", "Apparel", "Equipment", "Traits", "Skills", "Hediffs", "Abilities", "Genes", "All", "Any", "Require", "Wait", "Success", "forcedTraits", "skills", "abilities", "apparelTags", "weaponTags" }.Contains(name);
+                var multiple = name == "TestSuite" ? e.Name == "Case" : name == "Resources" ? e.Name == "GeneResource" : new[] { "Templates", "ScenePresets", "Experiments", "Layout", "Validation", "Actors", "Steps", "Teams", "Requirements", "Targets", "Coverage", "Target", "Matrix", "Row", "Ingredients", "Apparel", "Equipment", "Traits", "Skills", "Hediffs", "Abilities", "Genes", "All", "Any", "Require", "Wait", "Success", "forcedTraits", "skills", "abilities", "apparelTags", "weaponTags" }.Contains(name);
                 if (node.Elements(e.Name).Count() > 1 && !multiple) Fail(e, path, "duplicate field " + e.Name);
                 ValidateTree(e, path, allowParameters);
             }
             if (node.HasElements && node.Nodes().OfType<XText>().Any(t => !string.IsNullOrWhiteSpace(t.Value))) Fail(node, path, "mixed text is not supported");
-            foreach (var a in node.Attributes().Where(a => new[] { "x", "z", "count", "sizeX", "sizeZ", "seed", "originX", "originZ", "spacing", "stableTicks", "durationTicks", "stableFrames", "degree", "level", "equals", "width", "height", "minX", "minZ", "maxX", "maxZ", "fromX", "fromZ", "toX", "toZ", "targetX", "targetZ" }.Contains(a.Name.LocalName)))
+            foreach (var a in node.Attributes().Where(a => new[] { "x", "z", "count", "sizeX", "sizeZ", "seed", "originX", "originZ", "spacing", "columns", "stableTicks", "durationTicks", "stableFrames", "degree", "level", "equals", "width", "height", "minX", "minZ", "maxX", "maxZ", "fromX", "fromZ", "toX", "toZ", "targetX", "targetZ" }.Contains(a.Name.LocalName)))
                 if (!(allowParameters && a.Value.Contains("${")) && !int.TryParse(a.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out _)) Fail(node, path, "invalid integer " + a.Name);
             foreach (var a in node.Attributes().Where(a => new[] { "timeoutRealSeconds", "severity", "severityMin", "severityMax", "min", "max", "value", "temperature", "radius", "amount", "armorPenetration", "growth", "cameraSize", "biologicalYears", "chronologicalYears" }.Contains(a.Name.LocalName) && !(name == "Param" || name == "Relation" || name == "PawnAppearance")))
                 if (!(allowParameters && a.Value.Contains("${")) && (!double.TryParse(a.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var d) || double.IsNaN(d) || double.IsInfinity(d))) Fail(node, path, "invalid finite number " + a.Name);

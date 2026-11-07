@@ -8,6 +8,7 @@
     <NoWarn>$(NoWarn);CS0649</NoWarn>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="..\source\LogSyncMod\TestSessionExitPolicy.cs" Link="Shared\TestSessionExitPolicy.cs" />
     <Compile Include="..\source\AutoTestRunner\Contracts\**\*.cs" Link="Contracts\%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="..\source\AutoTestRunner\Core\**\*.cs" Link="Core\%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="..\source\AutoTestRunner\Scenarios\**\*.cs" Link="Scenarios\%(RecursiveDir)%(Filename)%(Extension)" />

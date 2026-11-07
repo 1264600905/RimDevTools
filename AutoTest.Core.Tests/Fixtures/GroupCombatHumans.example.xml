@@ -1,0 +1,44 @@
+<TestSuite schemaVersion="1" id="batch4.humans" gameVersion="1.7">
+  <Templates>
+    <PawnTemplate id="rifleman">
+      <basePawnKind>Colonist</basePawnKind><minGenerationAge>25</minGenerationAge><maxGenerationAge>25</maxGenerationAge>
+      <Skills mode="patch"><Set def="Shooting" level="10"/><Set def="Melee" level="8"/></Skills>
+      <Apparel mode="replace"><Add def="Apparel_Pants" stuff="Cloth"/><Add def="Apparel_CollarShirt" stuff="Cloth"/><Add def="Apparel_FlakVest"/><Add def="Apparel_SimpleHelmet" stuff="Steel"/></Apparel>
+      <Equipment mode="replace"><SetPrimary def="Gun_AssaultRifle" quality="Normal"/></Equipment>
+      <Hediffs mode="replace"/>
+    </PawnTemplate>
+    <PawnTemplate id="smg" extends="rifleman"><Equipment mode="replace"><SetPrimary def="Gun_HeavySMG" quality="Normal"/></Equipment></PawnTemplate>
+  </Templates>
+  <ScenePresets>
+    <Scene id="daylight" type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all">
+      <Environment weather="Clear" temperature="21" roof="none" naturalSun="true" />
+    </Scene>
+  </ScenePresets>
+  <Case id="twenty-vs-twenty" kind="groupCombat" name="20名步枪手对20名冲锋枪手" seed="12345" timeoutRealSeconds="300">
+    <testDefName>Batch4_HumanFirefight</testDefName>
+    <Scene preset="daylight" />
+    <Teams><Team id="rifles" name="步枪队" ai="assaultThings"/><Team id="smgs" name="冲锋枪队" ai="assaultThings"/></Teams>
+    <Actors>
+      <PawnGroup id="riflemen" template="rifleman" team="rifles" count="20" originX="24" originZ="42" formation="grid" columns="4" spacing="3"/>
+      <PawnGroup id="smgmen" template="smg" team="smgs" count="20" originX="62" originZ="42" formation="grid" columns="4" spacing="3"/>
+    </Actors>
+    <GroupCombat start="simultaneous" timeSpeed="fast">
+      <End condition="oneSideAllDowned" onTimeLimit="fewestAliveLoses" onTie="draw" />
+      <Metrics damageBasis="engineSettled" dpsBasis="battleWindow" population="initialRoster" includeZeroValues="true" distributions="min,max,mean,median" />
+      <Overlay enabled="true" layout="teamsLeftRight" topUnitsPerMetric="10" topTypesPerTeam="5" humanPortrait="renderedPawn" refreshRealMilliseconds="250">
+        <Rankings damageDealt="true" damageTaken="true" />
+        <Summary dps="battleWindowMeanPerInitialUnit" damageTaken="totalAndMeanPerInitialUnit" />
+      </Overlay>
+    </GroupCombat>
+    <Output purpose="benchmark" showAllParticipants="true" />
+  </Case>
+  <Case id="seeds" kind="groupCombat" name="人类多种子与换边" seed="34567" timeoutRealSeconds="180">
+    <testDefName>Batch4_HumanRepeat</testDefName><Scene preset="daylight"/>
+    <Teams><Team id="A" name="步枪" ai="assaultThings"/><Team id="B" name="据点防御" ai="defendPoint" defendX="62" defendZ="45" defendRadius="28"/></Teams>
+    <Actors>
+      <PawnGroup id="left" template="rifleman" team="A" count="4" originX="25" originZ="45" formation="grid" columns="2" spacing="2"/>
+      <PawnGroup id="right" template="smg" team="B" count="4" originX="62" originZ="45" formation="grid" columns="2" spacing="2"/>
+    </Actors>
+    <GroupCombat durationSeconds="12" timeSpeed="fast"><Experiments swapSides="true"><Seed value="101"/><Seed value="202"/></Experiments></GroupCombat>
+  </Case>
+</TestSuite>

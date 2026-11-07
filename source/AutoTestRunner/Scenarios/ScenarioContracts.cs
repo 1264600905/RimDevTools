@@ -11,13 +11,16 @@ namespace LogSyncMod.AutoTest.Scenarios
         public string Path { get; set; }
         public string Sha256 { get; set; }
         public string Xml { get; set; }
+        public List<ScenarioInput> Dependencies { get; set; } = new List<ScenarioInput>();
     }
 
     public sealed class ScenarioPlan
     {
         public int SchemaVersion { get; set; } = 1;
+        public string Purpose { get; set; } = "regression";
         public bool ScenarioOnly { get; set; }
         public List<string> SelectedTestDefNames { get; set; } = new List<string>();
+        public List<string> SelectedCaseIds { get; set; } = new List<string>();
         public List<ScenarioInput> Inputs { get; set; } = new List<ScenarioInput>();
         public List<ScenarioCase> Cases { get; set; } = new List<ScenarioCase>();
     }

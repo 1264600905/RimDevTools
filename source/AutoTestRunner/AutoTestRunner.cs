@@ -779,6 +779,12 @@ namespace LogSyncMod.AutoTest
         {
             if (completed) return;
             completed = true;
+            try { FinishCore(); }
+            finally { if (manualOptions == null) global::LogSyncMod.TestSessionCompletion.Complete("auto", runId); }
+        }
+
+        private void FinishCore()
+        {
             CleanupSelectionAndWindows();
 
             foreach (AutoTestResult result in results) NormalizeResultStatus(result);

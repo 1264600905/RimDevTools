@@ -26,7 +26,12 @@ namespace LogSyncMod.AutoTest
                 object result;
                 switch (operation)
                 {
-                    case "verify-pawn-data": result = TemporaryPawnDataProbe.Run(); break;
+                    case "verify-groupcombat-data": try { result = GroupCombatDataProbe.Run(); } finally { global::LogSyncMod.TestSessionCompletion.Complete("manual", global::LogSyncMod.LogSyncMod.settings?.autoTestRunId); } break;
+                    case "verify-groupcombat-unique-map": try { result = GroupCombatDataProbe.RunUniqueMap(); } finally { global::LogSyncMod.TestSessionCompletion.Complete("manual", global::LogSyncMod.LogSyncMod.settings?.autoTestRunId); } break;
+                    case "groupcombat-status": result = GroupCombatService.Status; break;
+                    case "groupcombat-cancel": GroupCombatService.Cancel(); result = new { requested = true }; break;
+                    case "verify-groupcombat-execution-fault": GroupCombatService.VerifyExecutionFailure(); result = new { requested = true }; break;
+                    case "verify-pawn-data": try { result = TemporaryPawnDataProbe.Run(); } finally { global::LogSyncMod.TestSessionCompletion.Complete("manual", global::LogSyncMod.LogSyncMod.settings?.autoTestRunId); } break;
                     case "status":
                         result = new { busy = ManualTestService.Busy, progress = ManualTestService.Progress, readiness, dataVerification = TemporaryPawnDataProbe.LastResult, gameLaunchId = ManualTestService.GameLaunchId, manualSessionId = ManualTestService.ManualSessionId, artifacts = ManualTestService.Artifacts, invocations = ManualTestService.Invocations.Select(i => new { i.InvocationId, i.Status, resultCount = i.Results.Count, i.Error }) }; break;
                     case "catalog":
@@ -43,7 +48,7 @@ namespace LogSyncMod.AutoTest
                         result = new { path = capturedPath, hash = staged.Sha256, staged.RecordedFields, staged.UnrecordedFields }; break;
                     case "exit":
                         if (ManualTestService.Busy || global::LogSyncMod.LogSyncMod.settings is not { testSessionActive: true, testSessionKind: "manual" }) throw new InvalidOperationException("Exit is only available for an idle CLI manual test process");
-                        LongEventHandler.ExecuteWhenFinished(Application.Quit); result = new { exiting = true }; break;
+                        global::LogSyncMod.TestSessionCompletion.Complete("manual", global::LogSyncMod.LogSyncMod.settings?.autoTestRunId); result = new { exiting = true }; break;
                     default: throw new InvalidOperationException("Unknown native manual-test operation");
                 }
                 return JsonSerializer.Serialize(new { ok = true, result }, Json);

@@ -187,7 +187,9 @@ namespace LogSyncMod.AutoTest
             finally { studio = null; runner = null; if (pending.Count == 0) { logGuard?.Dispose(); logGuard = null; } AutoTestBootstrap.SetTemporaryPauseBypass(false); Find.TickManager.CurTimeSpeed = originalSpeed; }
             current.Status = cancelling ? "cancelled" : current.Error != null || current.Results.Any(r => AutoTestResultStatus.IsFailure(r.Status)) ? "completed_with_failures" : "completed";
             current.CompletedAtUtc = DateTime.UtcNow.ToString("O");
-            current = null; cancelling = false; Write();
+            current = null; cancelling = false;
+            try { Write(); }
+            finally { if (pending.Count == 0) global::LogSyncMod.TestSessionCompletion.Complete("manual", global::LogSyncMod.LogSyncMod.settings?.autoTestRunId); }
         }
 
         private static readonly JsonSerializerOptions Json = new JsonSerializerOptions { WriteIndented = true, IncludeFields = true };

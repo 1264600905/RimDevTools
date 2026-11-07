@@ -1,0 +1,82 @@
+<TestSuite schemaVersion="1" id="batch4.acceptance" gameVersion="1.7">
+  <Templates>
+    <PawnTemplate id="base"><basePawnKind>Colonist</basePawnKind><minGenerationAge>25</minGenerationAge><maxGenerationAge>25</maxGenerationAge><Apparel mode="replace"><Add def="Apparel_Pants" stuff="Cloth"/><Add def="Apparel_CollarShirt" stuff="Cloth"/></Apparel><Equipment mode="replace"/><Hediffs mode="replace"/></PawnTemplate>
+    <PawnTemplate id="loadout0" extends="base"><Equipment mode="replace"><SetPrimary def="Gun_Revolver" quality="Normal"/></Equipment></PawnTemplate>
+    <PawnTemplate id="loadout1" extends="base"><Equipment mode="replace"><SetPrimary def="Gun_Autopistol" quality="Normal"/></Equipment></PawnTemplate>
+    <PawnTemplate id="loadout2" extends="base"><Equipment mode="replace"><SetPrimary def="Gun_MachinePistol" quality="Normal"/></Equipment></PawnTemplate>
+    <PawnTemplate id="loadout3" extends="base"><Equipment mode="replace"><SetPrimary def="Gun_HeavySMG" quality="Normal"/></Equipment></PawnTemplate>
+    <PawnTemplate id="loadout4" extends="base"><Equipment mode="replace"><SetPrimary def="Gun_AssaultRifle" quality="Normal"/></Equipment></PawnTemplate>
+    <PawnTemplate id="loadout5" extends="base"><Equipment mode="replace"><SetPrimary def="Gun_BoltActionRifle" quality="Normal"/></Equipment></PawnTemplate>
+  </Templates>
+  <ScenePresets><Scene id="arena" type="mainMap" sizeX="100" sizeZ="100"><Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/></Scene></ScenePresets>
+  <Case id="overlay-1280" kind="groupCombat" name="六种配装 1280×720" seed="1704" timeoutRealSeconds="300">
+    <testDefName>Batch4_Overlay1280</testDefName><Scene preset="arena"/>
+    <Teams><Team id="A" name="左方六种配装" ai="defendPoint" defendX="15" defendZ="45" defendRadius="8"/><Team id="B" name="右方六种配装" ai="defendPoint" defendX="80" defendZ="45" defendRadius="8"/></Teams>
+    <Actors>
+      <PawnGroup id="A0" template="loadout0" team="A" count="2" originX="15" originZ="34" formation="line" spacing="2"/>
+      <PawnGroup id="A1" template="loadout1" team="A" count="2" originX="15" originZ="38" formation="line" spacing="2"/>
+      <PawnGroup id="A2" template="loadout2" team="A" count="2" originX="15" originZ="42" formation="line" spacing="2"/>
+      <PawnGroup id="A3" template="loadout3" team="A" count="2" originX="15" originZ="46" formation="line" spacing="2"/>
+      <PawnGroup id="A4" template="loadout4" team="A" count="2" originX="15" originZ="50" formation="line" spacing="2"/>
+      <PawnGroup id="A5" template="loadout5" team="A" count="2" originX="15" originZ="54" formation="line" spacing="2"/>
+      <PawnGroup id="B0" template="loadout0" team="B" count="2" originX="80" originZ="34" formation="line" spacing="2"/>
+      <PawnGroup id="B1" template="loadout1" team="B" count="2" originX="80" originZ="38" formation="line" spacing="2"/>
+      <PawnGroup id="B2" template="loadout2" team="B" count="2" originX="80" originZ="42" formation="line" spacing="2"/>
+      <PawnGroup id="B3" template="loadout3" team="B" count="2" originX="80" originZ="46" formation="line" spacing="2"/>
+      <PawnGroup id="B4" template="loadout4" team="B" count="2" originX="80" originZ="50" formation="line" spacing="2"/>
+      <PawnGroup id="B5" template="loadout5" team="B" count="2" originX="80" originZ="54" formation="line" spacing="2"/>
+    </Actors>
+    <GroupCombat timeSpeed="superfast"/>
+    <Output width="1280" height="720"/>
+  </Case>
+  <Case id="overlay-1920" kind="groupCombat" name="六种配装 1920×1080" seed="1704" timeoutRealSeconds="300">
+    <testDefName>Batch4_Overlay1920</testDefName><Scene preset="arena"/>
+    <Teams><Team id="A" name="左方六种配装" ai="defendPoint" defendX="15" defendZ="45" defendRadius="8"/><Team id="B" name="右方六种配装" ai="defendPoint" defendX="80" defendZ="45" defendRadius="8"/></Teams>
+    <Actors>
+      <PawnGroup id="A0" template="loadout0" team="A" count="2" originX="15" originZ="34" formation="line" spacing="2"/>
+      <PawnGroup id="A1" template="loadout1" team="A" count="2" originX="15" originZ="38" formation="line" spacing="2"/>
+      <PawnGroup id="A2" template="loadout2" team="A" count="2" originX="15" originZ="42" formation="line" spacing="2"/>
+      <PawnGroup id="A3" template="loadout3" team="A" count="2" originX="15" originZ="46" formation="line" spacing="2"/>
+      <PawnGroup id="A4" template="loadout4" team="A" count="2" originX="15" originZ="50" formation="line" spacing="2"/>
+      <PawnGroup id="A5" template="loadout5" team="A" count="2" originX="15" originZ="54" formation="line" spacing="2"/>
+      <PawnGroup id="B0" template="loadout0" team="B" count="2" originX="80" originZ="34" formation="line" spacing="2"/>
+      <PawnGroup id="B1" template="loadout1" team="B" count="2" originX="80" originZ="38" formation="line" spacing="2"/>
+      <PawnGroup id="B2" template="loadout2" team="B" count="2" originX="80" originZ="42" formation="line" spacing="2"/>
+      <PawnGroup id="B3" template="loadout3" team="B" count="2" originX="80" originZ="46" formation="line" spacing="2"/>
+      <PawnGroup id="B4" template="loadout4" team="B" count="2" originX="80" originZ="50" formation="line" spacing="2"/>
+      <PawnGroup id="B5" template="loadout5" team="B" count="2" originX="80" originZ="54" formation="line" spacing="2"/>
+    </Actors>
+    <GroupCombat timeSpeed="superfast"/>
+    <Output width="1920" height="1080"/>
+  </Case>
+  <Case id="PreparationFailure" kind="groupCombat" name="PreparationFailure" timeoutRealSeconds="600">
+    <testDefName>Batch4_PreparationFailure</testDefName><Scene preset="arena"/>
+    <Teams><Team id="A" ai="defendPoint" defendRadius="8"/><Team id="B" ai="defendPoint" defendRadius="8"/></Teams>
+    <Actors><Pawn id="a" team="A" x="15" z="45"><basePawnKind>Missing_Batch4_ControlledPawnKind</basePawnKind></Pawn><Pawn id="b" team="B" x="80" z="45"><basePawnKind>Colonist</basePawnKind></Pawn></Actors>
+    <Steps></Steps><GroupCombat durationSeconds="2" timeSpeed="superfast"/>
+  </Case>
+  <Case id="PreparationPredicate" kind="groupCombat" name="PreparationPredicate" timeoutRealSeconds="600">
+    <testDefName>Batch4_PreparationPredicate</testDefName><Scene preset="arena"/>
+    <Teams><Team id="A" ai="defendPoint" defendRadius="8"/><Team id="B" ai="defendPoint" defendRadius="8"/></Teams>
+    <Actors><Pawn id="a" team="A" x="15" z="45"><basePawnKind>Colonist</basePawnKind></Pawn><Pawn id="b" team="B" x="80" z="45"><basePawnKind>Colonist</basePawnKind></Pawn></Actors>
+    <Steps><Require id="deliberately-false"><HealthPercent actor="a" max="0"/></Require></Steps><GroupCombat durationSeconds="2" timeSpeed="superfast"/>
+  </Case>
+  <Case id="RealtimeLimit" kind="groupCombat" name="RealtimeLimit" timeoutRealSeconds="0.001">
+    <testDefName>Batch4_RealtimeLimit</testDefName><Scene preset="arena"/>
+    <Teams><Team id="A" ai="defendPoint" defendRadius="8"/><Team id="B" ai="defendPoint" defendRadius="8"/></Teams>
+    <Actors><Pawn id="a" team="A" x="15" z="45"><basePawnKind>Colonist</basePawnKind></Pawn><Pawn id="b" team="B" x="80" z="45"><basePawnKind>Colonist</basePawnKind></Pawn></Actors>
+    <Steps></Steps><GroupCombat durationSeconds="2" timeSpeed="superfast"/>
+  </Case>
+  <Case id="ExecutionFault" kind="groupCombat" name="ExecutionFault" timeoutRealSeconds="600">
+    <testDefName>Batch4_ExecutionFault</testDefName><Scene preset="arena"/>
+    <Teams><Team id="A" ai="defendPoint" defendRadius="8"/><Team id="B" ai="defendPoint" defendRadius="8"/></Teams>
+    <Actors><Pawn id="a" team="A" x="15" z="45"><basePawnKind>Colonist</basePawnKind></Pawn><Pawn id="b" team="B" x="80" z="45"><basePawnKind>Colonist</basePawnKind></Pawn></Actors>
+    <GroupCombat durationSeconds="180" timeSpeed="normal"/>
+  </Case>
+  <Case id="Recovery" kind="groupCombat" name="Recovery" timeoutRealSeconds="600">
+    <testDefName>Batch4_Recovery</testDefName><Scene preset="arena"/>
+    <Teams><Team id="A" ai="defendPoint" defendRadius="8"/><Team id="B" ai="defendPoint" defendRadius="8"/></Teams>
+    <Actors><Pawn id="a" team="A" x="15" z="45"><basePawnKind>Colonist</basePawnKind></Pawn><Pawn id="b" team="B" x="80" z="45"><basePawnKind>Colonist</basePawnKind></Pawn></Actors>
+    <Steps></Steps><GroupCombat durationSeconds="2" timeSpeed="superfast"/>
+  </Case>
+</TestSuite>

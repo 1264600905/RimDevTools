@@ -14,16 +14,20 @@ namespace LogSyncMod.AutoTest.Scenarios
             var values = requested.ToList();
             if (values.Count == 0) return;
             var selected = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var selectedCases = new HashSet<string>(StringComparer.Ordinal);
             foreach (var value in values)
             {
                 var matches = plan.Cases.Where(c => string.Equals(c.TestDefName, value, StringComparison.OrdinalIgnoreCase)).ToList();
                 if (matches.Count == 0) matches = plan.Cases.Where(c => string.Equals(c.Name, value, StringComparison.Ordinal)).ToList();
+                if (matches.Count == 0) matches = plan.Cases.Where(c => string.Equals(c.CaseId, value, StringComparison.Ordinal)).ToList();
                 var rules = matches.Select(c => c.TestDefName).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
                 if (rules.Count != 1) throw new ScenarioConfigurationException("Test name must select one definition (matrix instances stay together): " + value + "; matches=" + string.Join(",", rules));
                 selected.Add(rules[0]);
+                foreach (var match in matches) selectedCases.Add(match.CaseId);
             }
             plan.SelectedTestDefNames = selected.OrderBy(v => v, StringComparer.OrdinalIgnoreCase).ToList();
-            plan.Cases.RemoveAll(c => !selected.Contains(c.TestDefName));
+            plan.Cases.RemoveAll(c => plan.Purpose == "groupcombat" ? !selectedCases.Contains(c.CaseId) : !selected.Contains(c.TestDefName));
+            if (plan.Purpose == "groupcombat") plan.SelectedCaseIds = plan.Cases.Select(c => c.CaseId).ToList();
         }
 
         private static IEnumerable<KeyValuePair<string, XElement>> ExpandMatrix(XElement c, string path)

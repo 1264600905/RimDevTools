@@ -1,0 +1,18 @@
+<TestSuite schemaVersion="1" id="batch4.staged" gameVersion="1.7">
+  <!-- This functional input requires a Pawn previously captured by the game's DebugAction. -->
+  <Templates>
+    <PawnTemplate id="staged" file="../../.tools/ProjectData/temporary-test-pawn.xml"/>
+    <PawnTemplate id="stagedRifle" extends="staged"><Equipment mode="replace"><SetPrimary def="Gun_AssaultRifle" quality="Normal"/></Equipment></PawnTemplate>
+    <PawnTemplate id="stagedSMG" extends="staged"><Equipment mode="replace"><SetPrimary def="Gun_HeavySMG" quality="Normal"/></Equipment></PawnTemplate>
+  </Templates>
+  <Case id="staged-vs-staged" kind="groupCombat" name="暂存角色配装对抗" seed="13579" timeoutRealSeconds="180">
+    <testDefName>Batch4_StagedPawnGroups</testDefName>
+    <Scene type="mainMap" sizeX="100" sizeZ="100"><Environment weather="Clear" temperature="21" roof="none"/></Scene>
+    <Teams><Team id="A" name="暂存角色步枪" ai="seekAndAttack"/><Team id="B" name="暂存角色冲锋枪" ai="seekAndAttack"/></Teams>
+    <Actors>
+      <PawnGroup id="rifles" team="A" template="stagedRifle" count="3" originX="25" originZ="45" spacing="2"/>
+      <PawnGroup id="smgs" team="B" template="stagedSMG" count="3" originX="62" originZ="45" spacing="2"/>
+    </Actors>
+    <GroupCombat durationSeconds="20" timeSpeed="fast"/>
+  </Case>
+</TestSuite>

@@ -30,12 +30,15 @@ namespace LogSyncMod.AutoTest
             throw new IOException("Cannot allocate a unique RimDevTools test artifact directory: " + prefix);
         }
 
-        public static bool IsManual(string directory)
+        public static bool IsManual(string directory) => SessionKind(directory) == "manual";
+        public static bool IsIndependent(string directory) => SessionKind(directory) is "manual" or "groupcombat";
+
+        private static string SessionKind(string directory)
         {
             var path = Path.Combine(directory, "session.json");
-            if (!File.Exists(path)) return false;
+            if (!File.Exists(path)) return null;
             using var json = JsonDocument.Parse(File.ReadAllText(path));
-            return json.RootElement.TryGetProperty("kind", out var kind) && kind.GetString() == "manual";
+            return json.RootElement.TryGetProperty("kind", out var kind) ? kind.GetString() : null;
         }
     }
 }

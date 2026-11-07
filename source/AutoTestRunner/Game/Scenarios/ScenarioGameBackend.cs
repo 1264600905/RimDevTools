@@ -28,6 +28,7 @@ namespace LogSyncMod.AutoTest
         private readonly HashSet<Thing> owned = new HashSet<Thing>();
         private readonly Dictionary<string, object> references = new Dictionary<string, object>();
         private AutoTestPocketMapHandle handle;
+        private Map groupMap;
         private Ability casting;
         private int castBaseline;
         private bool castStarted;
@@ -36,7 +37,7 @@ namespace LogSyncMod.AutoTest
         private readonly HashSet<string> usedCoverage = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private bool acceptActivations;
         internal static Action<Ability> AbilityActivation;
-        public Map Map => viewStudio?.Map ?? handle?.Map;
+        public Map Map => groupMap ?? viewStudio?.Map ?? handle?.Map;
         internal static Action NativeObservation;
 
         internal ScenarioGameBackend(Map source, AutoTestPocketMapService maps, Func<XElement, bool> screenshot, Action<string, string> trace, Func<XElement, ScenarioViewStudio> createViewStudio = null)
@@ -126,7 +127,8 @@ namespace LogSyncMod.AutoTest
                     ApplyColor(thing, A(actor, "color"));
                     if (actor.Attribute("growth") != null) SetPlantGrowth(thing, (float)ScenarioLoader.D(actor, "growth"));
                 }
-                var cell = new IntVec3(I(actor, "x", I(actor, "originX", 20)) + n * I(actor, "spacing", 2), 0, I(actor, "z", I(actor, "originZ", 20)));
+                var columns = actor.Name == "PawnGroup" && A(actor, "formation", "line") == "grid" ? I(actor, "columns", 5) : count;
+                var cell = new IntVec3(I(actor, "x", I(actor, "originX", 20)) + n % columns * I(actor, "spacing", 2), 0, I(actor, "z", I(actor, "originZ", 20)) + n / columns * I(actor, "spacing", 2));
                 if (!cell.InBounds(Map) || !cell.Standable(Map)) throw new ScenarioConfigurationException("Actor cell unavailable: " + id + " " + cell);
                 if (viewStudio != null && GenAdj.OccupiedRect(cell, ParseRotation(A(actor, "rotation", "North")), thing.def.Size).Cells.Any(c => !SceneCells.Contains(c))) throw new ScenarioConfigurationException("Actor footprint lies outside the studio: " + id);
                 if (A(actor, "spawn", "true") == "true") GenSpawn.Spawn(thing, cell, Map, ParseRotation(A(actor, "rotation", "North")), WipeMode.Vanish);

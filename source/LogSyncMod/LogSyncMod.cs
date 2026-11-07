@@ -34,13 +34,14 @@ namespace LogSyncMod
                 ScheduleWindowModeLog();
 
                 // AutoTestRunner 在完成信号前恢复；只有 quick 使用 ready timer。
-                if (settings == null || !settings.autoTestEnabled)
+                if (settings == null || !settings.autoTestEnabled && settings.testSessionKind != "groupcombat")
                 {
                     var timer = new System.Timers.Timer(10000);
                     timer.Elapsed += (s, e) =>
                     {
                         TestAudioController.Restore("quick_ready");
                         Log.Message("[LogSyncMod] RUNTIME_READY_TO_CLOSE");
+                        TestSessionCompletion.Complete("quick", settings?.autoTestRunId);
                         timer.Stop();
                         timer.Dispose();
                     };

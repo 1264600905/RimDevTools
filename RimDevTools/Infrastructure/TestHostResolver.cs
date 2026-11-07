@@ -11,7 +11,7 @@ public sealed record TestHostResolution(
     {
         if (LogSyncAssemblyPath is null)
             return new CliError("LOGSYNC_TEST_HOST_UNAVAILABLE", LogSyncMessage ?? "缺少所选 RimWorld 版本对应的 LogSync 测试宿主");
-        if (mode == "auto" && AutoTestAssemblyPath is null)
+        if (mode is "auto" or "groupcombat" && AutoTestAssemblyPath is null)
             return new CliError("AUTOTEST_RUNNER_UNAVAILABLE", AutoTestMessage ?? "缺少所选 RimWorld 版本对应的 AutoTestRunner 程序集");
         return null;
     }

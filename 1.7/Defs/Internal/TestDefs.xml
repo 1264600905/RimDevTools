@@ -1,5 +1,15 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <Defs>
+  <FactionDef>
+    <defName>LogSync_GroupCombatFaction</defName>
+    <label>RimDevTools benchmark team</label>
+    <hidden>true</hidden>
+    <fixedName>RimDevTools benchmark team</fixedName>
+    <techLevel>Industrial</techLevel>
+    <humanlikeFaction>true</humanlikeFaction>
+    <backstoryFilters><li><categories><li>Outlander</li></categories></li></backstoryFilters>
+    <raidLootValueFromPointsCurve><points><li>(0,0)</li><li>(10000,0)</li></points></raidLootValueFromPointsCurve>
+  </FactionDef>
   <WorldObjectDef>
     <defName>LogSync_AutoTestStudioParent</defName>
     <label>RimDevTools test studio</label>

@@ -13,7 +13,8 @@ namespace LogSyncMod
         private static long lastHeartbeatAt = -IntervalMilliseconds;
         private static long sequence;
 
-        public static void Pulse()
+        internal static long Sequence => Volatile.Read(ref sequence);
+        public static void Pulse(bool force = false)
         {
             TestLogWindowGuard.Maintain();
             LogSyncSettings settings = LogSyncMod.settings;
@@ -21,7 +22,7 @@ namespace LogSyncMod
             if (string.IsNullOrWhiteSpace(runId)) return;
 
             long now = Clock.ElapsedMilliseconds;
-            if (now - Volatile.Read(ref lastHeartbeatAt) < IntervalMilliseconds) return;
+            if (!force && now - Volatile.Read(ref lastHeartbeatAt) < IntervalMilliseconds) return;
 
             Volatile.Write(ref lastHeartbeatAt, now);
             long nextSequence = Interlocked.Increment(ref sequence);
@@ -36,6 +37,7 @@ namespace LogSyncMod
         private static void Postfix()
         {
             RuntimeHeartbeat.Pulse();
+            TestSessionCompletion.Pump();
         }
     }
 
@@ -46,6 +48,7 @@ namespace LogSyncMod
         private static void Postfix()
         {
             RuntimeHeartbeat.Pulse();
+            TestSessionCompletion.Pump();
         }
     }
 }
