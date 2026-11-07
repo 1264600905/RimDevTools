@@ -25,6 +25,8 @@ namespace LogSyncMod.AutoTest
         private XElement scenarioView;
         private int scenarioViewIndex;
         private readonly List<string> scenarioViewImages = new List<string>();
+        private readonly List<Rect> scenarioViewPawnViewports = new List<Rect>();
+        private Rect? scenarioViewPawnViewport;
         private ScenarioPlan externalPlan;
         private ScenarioSelection externalSelection;
         private bool HasPendingScenarios => scenarioQueue != null && (scenarioQueue.Count > 0 || scenarioExecution != null);
@@ -219,6 +221,9 @@ namespace LogSyncMod.AutoTest
             }
             if (scenarioView != null) scenarioBackend.ValidateViewFrame(ScenarioViews.Directions(scenarioView)[scenarioViewIndex]);
             scenarioCaptured = screenshotService.TryCaptureMap(scenarioResult, true, true, results.Count, ScenarioLoader.A(scenarioCapture, "id"), null);
+            if (scenarioCaptured && scenarioView != null)
+                scenarioViewPawnViewport = externalPlan != null && manualOptions == null && ScenarioLoader.A(scenarioView, "composite", "true") == "true"
+                    ? scenarioBackend.CompositePawnViewport() : null;
             if (scenarioCaptured) scenarioExecution.Mark("screenshot.captured", Find.TickManager.TicksGame, scenarioResult.ScreenshotPath);
         }
 
@@ -264,7 +269,7 @@ namespace LogSyncMod.AutoTest
             if (scenarioView == null)
             {
                 if (!scenarioBackend.CanBeginView) return false;
-                scenarioView = step; scenarioViewIndex = 0; scenarioViewImages.Clear();
+                scenarioView = step; scenarioViewIndex = 0; scenarioViewImages.Clear(); scenarioViewPawnViewports.Clear(); scenarioViewPawnViewport = null;
                 scenarioBackend.BeginView(step);
                 scenarioBackend.UpdateView(directions[0]);
                 scenarioResult.OverlayLine1 = scenarioResult.Label;
@@ -277,6 +282,7 @@ namespace LogSyncMod.AutoTest
                 new XAttribute("focus", ScenarioLoader.A(step, "actor")), new XAttribute("cameraSize", ScenarioLoader.A(step, "cameraSize", "11")), new XAttribute("stableFrames", ScenarioLoader.A(step, "stableFrames", "5")));
             if (!QueueScenarioScreenshot(frame)) return false;
             scenarioViewImages.Add(scenarioResult.ScreenshotPath);
+            if (scenarioViewPawnViewport.HasValue) scenarioViewPawnViewports.Add(scenarioViewPawnViewport.Value);
             scenarioCaptured = false;
             scenarioViewIndex++;
             if (scenarioViewIndex < directions.Length)
@@ -287,12 +293,12 @@ namespace LogSyncMod.AutoTest
             }
             if (ScenarioLoader.A(step, "composite", "true") == "true")
             {
-                var path = AutoTestViewComposite.Compose(scenarioViewImages);
+                var path = AutoTestViewComposite.Compose(scenarioViewImages, scenarioViewPawnViewports.Count > 0 ? scenarioViewPawnViewports : null);
                 scenarioResult.ScreenshotPaths.Add(path);
                 scenarioExecution.Mark("view.composite", Find.TickManager.TicksGame, path);
             }
             scenarioBackend.CompleteView();
-            scenarioView = null; scenarioViewImages.Clear();
+            scenarioView = null; scenarioViewImages.Clear(); scenarioViewPawnViewports.Clear(); scenarioViewPawnViewport = null;
             return true;
         }
     }

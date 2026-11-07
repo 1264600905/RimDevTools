@@ -35,6 +35,66 @@ namespace LogSyncMod.AutoTest
         private int viewChangedTick;
         internal bool CanBeginView => Find.TickManager.TicksGame > viewChangedTick;
 
+        internal Rect? CompositePawnViewport()
+        {
+            if (!(viewTarget is Pawn pawn)) return null;
+            var camera = Find.CameraDriver.GetComponent<Camera>();
+            var minimum = new Vector2(float.PositiveInfinity, float.PositiveInfinity);
+            var maximum = new Vector2(float.NegativeInfinity, float.NegativeInfinity);
+            void Include(Vector3 world)
+            {
+                var point = camera.WorldToViewportPoint(world);
+                if (point.z <= 0) throw new InvalidOperationException("Pawn composite geometry is behind the camera");
+                minimum.x = Math.Min(minimum.x, point.x); minimum.y = Math.Min(minimum.y, point.y);
+                maximum.x = Math.Max(maximum.x, point.x); maximum.y = Math.Max(maximum.y, point.y);
+            }
+
+            // Frame preparation invalidates the render tree. Resolve native draw geometry again
+            // without drawing another pawn or relying on a previous direction's render requests.
+            var renderer = pawn.Drawer.renderer;
+            renderer.EnsureGraphicsInitialized();
+            HarmonyLib.AccessTools.Method(typeof(PawnRenderer), "ParallelGetPreRenderResults")
+                .Invoke(renderer, new object[] { pawn.DrawPos, (Rot4?)pawn.Rotation, false, true });
+            // Mesh transforms include HAR sizes, hair, apparel, tails and attachments.
+            var tree = renderer.renderTree;
+            var requests = tree == null ? null : HarmonyLib.AccessTools.Field(typeof(PawnRenderTree), "drawRequests")?.GetValue(tree) as List<PawnGraphicDrawRequest>;
+            var hasGeometry = false;
+            foreach (var request in requests ?? Enumerable.Empty<PawnGraphicDrawRequest>())
+            {
+                if (request.mesh == null || request.material == null) continue;
+                foreach (var vertex in request.mesh.vertices)
+                {
+                    Include(request.preDrawnComputedMatrix.MultiplyPoint3x4(vertex));
+                    hasGeometry = true;
+                }
+            }
+            if (!hasGeometry) throw new InvalidOperationException("Pawn composite has no settled render geometry");
+
+            // Wait_Combat presents a carried weapon outside the render tree. Match its native
+            // directional offset and rotated quad instead of reserving a large circular area.
+            if (configuredViewContext.DisplayWeapon && pawn.equipment?.Primary is Thing weapon)
+            {
+                var facing = pawn.Rotation;
+                var direction = new[] { "North", "East", "South", "West" }[facing.AsInt];
+                var offset = (Vector3)HarmonyLib.AccessTools.Field(typeof(PawnRenderUtility), "EqLoc" + direction).GetValue(null);
+                var position = pawn.DrawPos + offset * pawn.ageTracker.CurLifeStage.equipmentDrawDistanceFactor;
+                position.y += PawnRenderUtility.AltitudeForLayer(facing == Rot4.North ? -10f : 90f);
+                var aimAngle = facing == Rot4.West ? 217f : 143f;
+                var angle = facing == Rot4.West ? aimAngle - 270f - weapon.def.equippedAngleOffset : aimAngle - 90f + weapon.def.equippedAngleOffset;
+                var equippable = weapon.TryGetComp<CompEquippable>();
+                if (equippable != null)
+                {
+                    EquipmentUtility.Recoil(weapon.def, EquipmentUtility.GetRecoilVerb(equippable.AllVerbs), out var recoilOffset, out var recoilAngle, aimAngle);
+                    position += recoilOffset; angle += recoilAngle;
+                }
+                var size = weapon.Graphic.drawSize;
+                var matrix = Matrix4x4.TRS(position, Quaternion.AngleAxis(angle, Vector3.up), new Vector3(size.x, 0, size.y));
+                foreach (var vertex in MeshPool.plane10.vertices) Include(matrix.MultiplyPoint3x4(vertex));
+            }
+            if (minimum.x < 0 || minimum.y < 0 || maximum.x > 1 || maximum.y > 1) throw new InvalidOperationException("Pawn composite geometry extends outside the original image");
+            return new Rect(minimum.x, minimum.y, maximum.x - minimum.x, maximum.y - minimum.y);
+        }
+
         private IEnumerable<IntVec3> SceneCells => viewStudio != null ? new CellRect(viewStudio.Root.x, viewStudio.Root.z, viewStudio.Width, viewStudio.Height).Cells : Map.AllCells;
         private IntVec3 SceneCenter => viewStudio != null ? viewStudio.Root + new IntVec3(viewStudio.Width / 2, 0, viewStudio.Height / 2) : Map.Center;
 

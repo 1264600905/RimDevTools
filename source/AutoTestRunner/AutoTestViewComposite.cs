@@ -25,7 +25,7 @@ namespace LogSyncMod.AutoTest
             catch (IOException) { return false; }
         }
         // Inputs and output belong to the current tool-allocated screenshot directory.
-        internal static string Compose(IReadOnlyList<string> paths)
+        internal static string Compose(IReadOnlyList<string> paths, IReadOnlyList<Rect> pawnViewports = null)
         {
             var textures = new List<Texture2D>();
             Texture2D composite = null;
@@ -39,8 +39,22 @@ namespace LogSyncMod.AutoTest
                 }
                 if (textures.Count == 0 || textures.Any(t => t.width != textures[0].width || t.height != textures[0].height)) throw new InvalidOperationException("View originals have inconsistent dimensions");
                 var width = textures[0].width; var height = textures[0].height;
-                composite = new Texture2D(checked(width * textures.Count), height, TextureFormat.RGBA32, false);
-                for (var i = 0; i < textures.Count; i++) composite.SetPixels(i * width, 0, width, height, textures[i].GetPixels());
+                var crop = new RectInt(0, 0, width, height);
+                if (pawnViewports != null)
+                {
+                    if (pawnViewports.Count != paths.Count || pawnViewports.Any(r => r.width <= 0 || r.height <= 0)) throw new InvalidOperationException("Pawn view crop metadata is incomplete");
+                    // PNG pixels and camera viewports both start at the bottom left. Use one union
+                    // for every direction so the original scale and the pawn's alignment are retained.
+                    const int padding = 8;
+                    var left = Math.Max(0, (int)Math.Floor(pawnViewports.Min(r => r.xMin) * width) - padding);
+                    var bottom = Math.Max(0, (int)Math.Floor(pawnViewports.Min(r => r.yMin) * height) - padding);
+                    var right = Math.Min(width, (int)Math.Ceiling(pawnViewports.Max(r => r.xMax) * width) + padding);
+                    var top = Math.Min(height, (int)Math.Ceiling(pawnViewports.Max(r => r.yMax) * height) + padding);
+                    if (right <= left || top <= bottom) throw new InvalidOperationException("Pawn view crop is outside the original image");
+                    crop = new RectInt(left, bottom, right - left, top - bottom);
+                }
+                composite = new Texture2D(checked(crop.width * textures.Count), crop.height, TextureFormat.RGBA32, false);
+                for (var i = 0; i < textures.Count; i++) composite.SetPixels(i * crop.width, 0, crop.width, crop.height, textures[i].GetPixels(crop.x, crop.y, crop.width, crop.height));
                 composite.Apply();
                 var output = Path.Combine(Path.GetDirectoryName(paths[0]), Path.GetFileNameWithoutExtension(paths[0]) + "_composite.png");
                 File.WriteAllBytes(output, ImageConversion.EncodeToPNG(composite));
