@@ -28,8 +28,8 @@ powershell -ExecutionPolicy Bypass -File .tools\publish-rimdevtools.ps1 -CreateZ
 模板包目录内容（Tools 包仅含正式工具、两套核心 skill、发行清单与人工配置参考，不含模板及 `.gitignore`）：
 
 ```text
-artifacts/RimDevTools-1.3.0.0-Template-RimWorld-1.6/
-artifacts/RimDevTools-1.3.0.0-Template-RimWorld-1.7/
+artifacts/RimDevTools-1.5.0.0-Template-RimWorld-1.6/
+artifacts/RimDevTools-1.5.0.0-Template-RimWorld-1.7/
 ├── mod_config.jsonc
 ├── 1.6/ or 1.7/
 ├── About/
@@ -132,7 +132,7 @@ dotnet build RimDevTools.Tests\RimDevTools.Tests.csproj
 dotnet RimDevTools.Tests\bin\Debug\net10.0\RimDevTools.Tests.dll
 
 dotnet build RimDevTools.ReleaseTests\RimDevTools.ReleaseTests.csproj
-dotnet RimDevTools.ReleaseTests\bin\Debug\net10.0\RimDevTools.ReleaseTests.dll artifacts\RimDevTools-1.3.0.0-Template-RimWorld-1.7
+dotnet RimDevTools.ReleaseTests\bin\Debug\net10.0\RimDevTools.ReleaseTests.dll artifacts\RimDevTools-1.5.0.0-Template-RimWorld-1.7
 ```
 
 单元测试使用临时游戏目录。发布测试验证模板逐文件一致、三种 MCP 配置、两套 RimSage skill、单工具 Mod 清单、ILSpy 和干净日志/参考目录。

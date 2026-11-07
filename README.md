@@ -4,7 +4,7 @@
 
 RimDevTools 是面向 RimWorld 模组开发的 Windows 工具链，将环境检查、构建部署、依赖定位、日志采集、游戏测试与工坊发布组织为可重复的 CLI 操作。随包模板和工具 Mod 提供 RimWorld **1.6、1.7** 对应内容；CLI 也识别 1.7+ 现代布局，实际工具组件及更新支持范围以发行清单为准。
 
-当前源码版本为 **1.3.0.0**，包含旧项目模式、Tools 简化包与自动更新。2026-11-06 核对的[公开发行版 v1.2.2.0](https://github.com/1264600905/RimDevTools/releases/tag/v1.2.2.0)仍只有两个模板包；本次 1.3.0.0 实现及三包已在本地验证，尚未上传。需要立即使用新增功能时，可按下文从源码构建发行包。
+当前源码版本为 **1.5.0.0**，包含旧项目模式、Tools 简化包、自动更新、外部 XML 场景测试与模板中的自定义 XML 测试 skill。2026-11-06 核对的[公开发行版 v1.2.2.0](https://github.com/1264600905/RimDevTools/releases/tag/v1.2.2.0)仍只有两个模板包；本次 1.5.0.0 三包为本地构建，尚未上传。需要立即使用新增功能时，可按下文从源码构建发行包。
 
 ## 仓库包含什么
 
@@ -207,9 +207,9 @@ powershell -ExecutionPolicy Bypass -File .tools\publish-rimdevtools.ps1 -CreateZ
 输出为：
 
 ```text
-artifacts/RimDevTools-1.3.0.0-Template-RimWorld-1.6/
-artifacts/RimDevTools-1.3.0.0-Template-RimWorld-1.7/
-artifacts/RimDevTools-1.3.0.0-Tools/
+artifacts/RimDevTools-1.5.0.0-Template-RimWorld-1.6/
+artifacts/RimDevTools-1.5.0.0-Template-RimWorld-1.7/
+artifacts/RimDevTools-1.5.0.0-Tools/
 ```
 
 每个目录同时对应 `.zip` 和 `.zip.sha256`。验证三种发布布局，再执行 Windows 更新实测：
@@ -217,11 +217,11 @@ artifacts/RimDevTools-1.3.0.0-Tools/
 ```powershell
 dotnet build RimDevTools.ReleaseTests\RimDevTools.ReleaseTests.csproj
 dotnet RimDevTools.ReleaseTests\bin\Debug\net10.0\RimDevTools.ReleaseTests.dll `
-  artifacts\RimDevTools-1.3.0.0-Template-RimWorld-1.6
+  artifacts\RimDevTools-1.5.0.0-Template-RimWorld-1.6
 dotnet RimDevTools.ReleaseTests\bin\Debug\net10.0\RimDevTools.ReleaseTests.dll `
-  artifacts\RimDevTools-1.3.0.0-Template-RimWorld-1.7
+  artifacts\RimDevTools-1.5.0.0-Template-RimWorld-1.7
 dotnet RimDevTools.ReleaseTests\bin\Debug\net10.0\RimDevTools.ReleaseTests.dll `
-  artifacts\RimDevTools-1.3.0.0-Tools
+  artifacts\RimDevTools-1.5.0.0-Tools
 dotnet RimDevTools.Tests\bin\Debug\net10.0\RimDevTools.Tests.dll --tool-update
 dotnet RimDevTools.Tests\bin\Debug\net10.0\RimDevTools.Tests.dll --tool-update-live
 ```
