@@ -67,6 +67,7 @@ namespace LogSyncMod.AutoTest
                         }
                         else if (action == "native.fillNeeds")
                         { Need(p.needs, "needs"); if (p.needs.AllNeeds.Count == 0) throw new ScenarioConfigurationException("Target has no needs to fill"); foreach (var n in p.needs.AllNeeds) n.CurLevel = n.MaxLevel; if (p.needs.AllNeeds.Any(n => n.CurLevelPercentage < .999f)) throw new InvalidOperationException("Fill needs postcondition failed"); }
+                        else if (action == "eliteRaidPlus.applyElite") ApplyEliteRaidPlus(p, I(step, "level"));
                         else if (action == "native.fillHemogen")
                         { var gene = p.genes?.GetFirstGeneOfType<Gene_Hemogen>(); if (gene == null || !gene.Active) throw new ScenarioConfigurationException("An active Hemogenic gene is required"); var value = (float)ScenarioLoader.D(step, "value", 1); gene.ValuePercent = value; if (!Mathf.Approximately(gene.ValuePercent, value)) throw new InvalidOperationException("Hemogen postcondition failed"); }
                         else if (action == "native.setPsyfocus")
@@ -83,6 +84,22 @@ namespace LogSyncMod.AutoTest
             var sourceUnchanged = sourceBefore == SourceState();
             trace("debug.scope", "sourceMap=" + source.uniqueID + "; sourcePawns=" + string.Join(",", source.mapPawns.AllPawnsSpawned.Select(p => p.GetUniqueLoadID())) + "; selected=" + string.Join(",", targets.Select(t => t.GetUniqueLoadID())) + "; sourceUnchanged=" + sourceUnchanged);
             if (!sourceUnchanged) throw new InvalidOperationException("DebugAction or a mod callback changed source-map pawns outside this scene");
+        }
+
+        private void ApplyEliteRaidPlus(Pawn pawn, int level)
+        {
+            if (!LoadedModManager.RunningMods.Any(m => string.Equals(m.PackageIdPlayerFacing, "trigger.eliteraidplus", StringComparison.OrdinalIgnoreCase)))
+                throw new ScenarioConfigurationException("eliteRaidPlus.applyElite requires trigger.eliteraidplus");
+            var service = AppDomain.CurrentDomain.GetAssemblies().Select(a => a.GetType("EliteRaidPlus.EliteEnhancementService", false)).FirstOrDefault(t => t != null);
+            var apply = service?.GetMethod("Apply", BindingFlags.Public | BindingFlags.Static, null, new[] { typeof(Pawn), typeof(int) }, null);
+            if (apply == null) throw new ScenarioConfigurationException("Unsupported Elite Raid Plus API: EliteEnhancementService.Apply(Pawn, int)");
+            // Use the mod's complete pipeline: a Hediff alone omits gear, bionics and other enhancements.
+            var outcome = apply.Invoke(null, new object[] { pawn, level });
+            var elite = pawn.health.hediffSet.hediffs.SingleOrDefault(h => h.GetType().FullName == "EliteRaidPlus.Hediff_ElitePowerup");
+            var actualLevel = elite?.GetType().GetProperty("EliteLevel", BindingFlags.Public | BindingFlags.Instance)?.GetValue(elite);
+            if (outcome?.ToString() != "Applied" || !(actualLevel is int actual) || actual != level)
+                throw new ScenarioConfigurationException("Elite Raid Plus preparation failed: requested=" + level + "; outcome=" + outcome + "; actual=" + actualLevel);
+            trace("debug.elite", "target=" + pawn.GetUniqueLoadID() + "; level=" + actualLevel + "; def=" + elite.def.defName + "; outcome=" + outcome);
         }
 
         private static ThingComp AxolotlEnergy(Pawn p)

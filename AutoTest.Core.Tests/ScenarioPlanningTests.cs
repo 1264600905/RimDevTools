@@ -38,6 +38,11 @@ internal static class ScenarioPlanningTests
         Reject(Suite(scene: debugBody.Replace("actionId='native.fillNeeds'", "actionId='native.fillNeeds' value='1'")), "debug parameters are specific to the registered adapter");
         Reject(Suite(scene: debugBody.Replace("filter='allScenePawns'", "filter='enemies'")), "hostility filters require an explicit reference actor");
         Reject(Suite(scene: debugBody.Replace("minX='0'", "minX='31'")), "reversed debug rectangle rejected");
+        var eliteBody = debugBody.Replace("actionId='native.fillNeeds'", "actionId='eliteRaidPlus.applyElite' level='2'");
+        check(Compile(Suite(scene: eliteBody)).Cases.Count == 2, "Elite Raid Plus complete enhancement adapter accepts an explicit level");
+        Reject(Suite(scene: eliteBody.Replace(" level='2'", "")), "elite enhancement requires an explicit level");
+        Reject(Suite(scene: eliteBody.Replace("level='2'", "level='0'")), "level zero cannot silently create an ordinary pawn in an elite case");
+        Reject(Suite(scene: eliteBody.Replace("level='2'", "level='1.5'")), "elite enhancement rejects fractional levels");
         var duplicate = Suite(coverage).Replace("</TestSuite>", "<Case id='b'><testDefName>Conflict</testDefName>" + rows + coverage + body + "</Case></TestSuite>");
         Reject(duplicate, "two replace rules claiming the same complete target key fail before launch");
 

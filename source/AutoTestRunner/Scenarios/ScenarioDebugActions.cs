@@ -13,7 +13,7 @@ namespace LogSyncMod.AutoTest.Scenarios
             { "native.fillNeeds", "" }, { "native.fillHemogen", "value" }, { "native.setPsyfocus", "value" },
             { "native.addHediff", "def severity part durationTicks" }, { "native.removeHediff", "def part" },
             { "native.refuel", "" }, { "native.chargeBattery", "" }, { "native.healInjuries", "" },
-            { "axolotl.fillQi", "value" }
+            { "axolotl.fillQi", "value" }, { "eliteRaidPlus.applyElite", "level" }
         };
 
         public static void Validate(XElement step, string path)
@@ -24,6 +24,8 @@ namespace LogSyncMod.AutoTest.Scenarios
                 if (!allowed.Split(' ').Contains(a.Name.ToString())) ScenarioLoader.Fail(step, path, "parameter is not supported by " + action + ": " + a.Name);
             if (action == "native.addHediff" || action == "native.removeHediff")
                 if (string.IsNullOrWhiteSpace(ScenarioLoader.A(step, "def"))) ScenarioLoader.Fail(step, path, "health action requires def");
+            if (action == "eliteRaidPlus.applyElite" && (step.Attribute("level") == null || ScenarioLoader.I(step, "level") <= 0))
+                ScenarioLoader.Fail(step, path, "eliteRaidPlus.applyElite requires a positive integer level");
             var select = step.Element("Select");
             if (select == null) ScenarioLoader.Fail(step, path, "DebugAction requires exactly one Select");
             var mode = ScenarioLoader.A(select, "mode");

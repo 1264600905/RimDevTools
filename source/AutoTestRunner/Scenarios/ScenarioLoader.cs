@@ -302,7 +302,7 @@ namespace LogSyncMod.AutoTest.Scenarios
             {"Spawn", "id actor"}, {"Equip", "id actor def stuff"}, {"AddHediff", "id actor def severity part durationTicks"}, {"RemoveHediff", "id actor def part"},
             {"CreateThing", "id def stuff x z count"}, {"DropEquipment", "id actor"},
             {"Destroy", "id actor"}, {"Kill", "id actor"}, {"Pause", "id"},
-            {"DebugAction", "id actionId value def severity part durationTicks"}, {"Select", "mode actor minX minZ maxX maxZ filter relativeTo"},
+            {"DebugAction", "id actionId value def severity part durationTicks level"}, {"Select", "mode actor minX minZ maxX maxZ filter relativeTo"},
             {"HealthPercent", "actor min max quantifier equals observation"}, {"NeedLevel", "actor def min max quantifier equals"}, {"ResourceLevel", "actor def min max quantifier equals"}, {"ComponentState", "actor component state min max"},
             {"Apparel", "mode"}, {"Equipment", "mode"}, {"Traits", "mode"}, {"Skills", "mode"}, {"Hediffs", "mode"}, {"Abilities", "mode"},
             {"Add", "def stuff quality color"}, {"Replace", "matchDef matchLayer withDef stuff quality color onMissing"}, {"Remove", "def part"}, {"SetPrimary", "def stuff quality color"},

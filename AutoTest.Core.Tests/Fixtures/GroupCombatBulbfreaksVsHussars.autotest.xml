@@ -8,6 +8,10 @@
       <basePawnKind>Bulbfreak</basePawnKind>
       <Hediffs mode="replace" />
     </PawnTemplate>
+    <PawnTemplate id="thrumbo">
+      <basePawnKind>Thrumbo</basePawnKind>
+      <Hediffs mode="replace" />
+    </PawnTemplate>
     <PawnTemplate id="hussar-knight">
       <basePawnKind>Colonist</basePawnKind>
       <minGenerationAge>25</minGenerationAge>
@@ -73,6 +77,54 @@
     </Actors>
     <Patches>
       <SetAttribute xpath="Teams/Team[@id='A']" name="name" value="恶臭瘤兽" />
+    </Patches>
+  </Case>
+  <Case id="thrumbos" extends="bulbfreaks" name="10敲击兽对20钢血骑士甲骠骑电荷步枪手">
+    <testDefName>Thrumbos10VsHussars20_ChargeRifle</testDefName>
+    <Actors>
+      <PawnGroup id="left" template="thrumbo" count="10" />
+    </Actors>
+    <Patches>
+      <SetAttribute xpath="Teams/Team[@id='A']" name="name" value="敲击兽" />
+      <SetAttribute xpath="Steps/Require[@id='roster-and-loadout']/All/ActorCount[@group='left']" name="equals" value="10" />
+    </Patches>
+  </Case>
+  <Case id="elite-case1" extends="arena-base" name="一级精英骠骑电荷步枪手1对2">
+    <testDefName>EliteL1Hussar1VsHussars2_ChargeRifle</testDefName>
+    <Requirements>
+      <Mod packageId="trigger.eliteraidplus" />
+    </Requirements>
+    <Actors>
+      <PawnGroup id="left" template="hussar-knight" count="1" />
+      <PawnGroup id="hussars" count="2" />
+    </Actors>
+    <Steps>
+      <DebugAction id="apply-elite" actionId="eliteRaidPlus.applyElite" level="1">
+        <Select mode="single" actor="left[0]" />
+      </DebugAction>
+      <Require id="elite-loadout">
+        <All>
+          <HasXenotype actor="left" def="Hussar" />
+          <Equipped actor="left" def="Gun_ChargeRifle" />
+          <HasHediff actor="left" def="Metalblood" quantifier="all" />
+        </All>
+      </Require>
+    </Steps>
+    <Patches>
+      <SetAttribute xpath="Teams/Team[@id='A']" name="name" value="一级精英骠骑电荷步枪手" />
+      <SetAttribute xpath="Steps/Require[@id='roster-and-loadout']/All/ActorCount[@group='left']" name="equals" value="1" />
+      <SetAttribute xpath="Steps/Require[@id='roster-and-loadout']/All/ActorCount[@group='hussars']" name="equals" value="2" />
+    </Patches>
+  </Case>
+  <Case id="elite-case2" extends="elite-case1" name="二级精英骠骑电荷步枪手1对4">
+    <testDefName>EliteL2Hussar1VsHussars4_ChargeRifle</testDefName>
+    <Actors>
+      <PawnGroup id="hussars" count="4" />
+    </Actors>
+    <Patches>
+      <SetAttribute xpath="Teams/Team[@id='A']" name="name" value="二级精英骠骑电荷步枪手" />
+      <SetAttribute xpath="Steps/DebugAction[@id='apply-elite']" name="level" value="2" />
+      <SetAttribute xpath="Steps/Require[@id='roster-and-loadout']/All/ActorCount[@group='hussars']" name="equals" value="4" />
     </Patches>
   </Case>
 </TestSuite>
