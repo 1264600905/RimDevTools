@@ -19,8 +19,12 @@ namespace LogSyncMod.AutoTest
         private AutoTestResult scenarioResult;
         private XElement scenarioCapture;
         private int scenarioCaptureFrame;
+        private float scenarioCaptureStartedRealtime;
         private bool scenarioCaptured;
         private bool pollingScenario;
+        private XElement scenarioView;
+        private int scenarioViewIndex;
+        private readonly List<string> scenarioViewImages = new List<string>();
         private ScenarioPlan externalPlan;
         private ScenarioSelection externalSelection;
         private bool HasPendingScenarios => scenarioQueue != null && (scenarioQueue.Count > 0 || scenarioExecution != null);
@@ -123,9 +127,10 @@ namespace LogSyncMod.AutoTest
                     if (scenarioQueue.Count == 0) return;
                     var definition = scenarioQueue.Dequeue();
                     scenarioResult = new AutoTestResult { PackageId = targetPackageId, CaseId = definition.CaseId, CaseType = definition.CaseType, Scope = "ExternalScenario", Category = "Scenario", DefType = "TestRule", DefName = definition.TestDefName, Label = definition.Name, Status = "running", Stage = "prepare" };
+                    if (manualOptions != null) { scenarioResult.Scope = "View"; scenarioResult.Category = "LoadoutView"; scenarioResult.DefType = "PawnKindDef"; scenarioResult.DefName = manualOptions.Choice.NativeDefName; }
                     RegisterSemanticCase(scenarioResult);
                     scenarioBackend = new ScenarioGameBackend(map, pocketMapService, QueueScenarioScreenshot,
-                        (stage, details) => scenarioExecution?.Mark(stage, Find.TickManager.TicksGame, details));
+                        (stage, details) => scenarioExecution?.Mark(stage, Find.TickManager.TicksGame, details), CreateScenarioViewStudio);
                     scenarioExecution = new ScenarioExecution(definition, scenarioBackend, evidenceClock);
                     ScenarioGameBackend.NativeObservation = () => {
                         try { scenarioExecution?.Observe(Find.TickManager.TicksGame); }
@@ -162,7 +167,7 @@ namespace LogSyncMod.AutoTest
                     outcome.Error = scenarioResult.ErrorMessage;
                     results.Add(scenarioResult);
                     Log.Message("[LogSyncAutoTest] Scenario finished " + outcome.TestDefName + " status=" + outcome.Status + " code=" + outcome.ErrorCode);
-                    scenarioExecution = null; scenarioBackend = null; scenarioCapture = null; scenarioCaptured = false;
+                    scenarioExecution = null; scenarioBackend = null; scenarioCapture = null; scenarioCaptured = false; scenarioView = null; scenarioViewImages.Clear();
                     if (cancelRequested)
                     {
                         foreach (var remaining in scenarioQueue.Concat(deferredScenarioQueue))
@@ -179,16 +184,18 @@ namespace LogSyncMod.AutoTest
 
         private bool QueueScenarioScreenshot(XElement step)
         {
+            if (step.Name == "View") return QueueScenarioView(step);
             if (scenarioCapture == null)
             {
                 scenarioCapture = step;
                 scenarioCaptureFrame = Time.frameCount;
+                scenarioCaptureStartedRealtime = Time.realtimeSinceStartup;
                 scenarioCaptured = false;
                 var focus = ScenarioLoader.A(step, "focus");
                 Current.Game.CurrentMap = scenarioBackend.Map;
                 Find.World.renderer.wantedMode = WorldRenderMode.None;
-                var cell = focus == null ? scenarioBackend.Map.Center : scenarioBackend.One(focus).Position;
-                Find.CameraDriver.SetRootPosAndSize(new Vector3(cell.x + .5f, 0, cell.z + .5f), 12f);
+                var cell = scenarioBackend.CaptureCell(focus);
+                Find.CameraDriver.SetRootPosAndSize(new Vector3(cell.x + .5f, 0, cell.z + .5f), (float)ScenarioLoader.D(step, "cameraSize", 12));
                 return false;
             }
             if (!scenarioCaptured) return false;
@@ -198,17 +205,95 @@ namespace LogSyncMod.AutoTest
 
         private void CaptureScenarioUi()
         {
-            if (scenarioCapture == null || scenarioCaptured || Time.frameCount - scenarioCaptureFrame < 3 || Event.current.type != EventType.Repaint) return;
+            if (scenarioView != null && !scenarioCaptured) scenarioBackend.MaintainViewFrame();
+            if (scenarioView != null) { AutoTestScreenshotOverlay.Request(scenarioResult); AutoTestScreenshotOverlay.DrawOverlay(); }
+            if (scenarioCapture == null || scenarioCaptured || Time.frameCount - scenarioCaptureFrame < ScenarioLoader.I(scenarioCapture, "stableFrames", 3) || Event.current.type != EventType.Repaint) return;
+            if (scenarioView != null && Time.realtimeSinceStartup - scenarioCaptureStartedRealtime < 1f) return;
             if (Find.CurrentMap != scenarioBackend.Map) return;
             if (!AutoTestScreenshotService.PrepareCaptureFrame()) return;
             var focus = ScenarioLoader.A(scenarioCapture, "focus");
             if (focus != null)
             {
-                var target = scenarioBackend.One(focus);
-                if (!target.Spawned || target.Position.Fogged(target.Map)) throw new InvalidOperationException("Screenshot target is not visible");
+                var cell = scenarioBackend.CaptureCell(focus);
+                if (!cell.InBounds(scenarioBackend.Map) || cell.Fogged(scenarioBackend.Map)) throw new InvalidOperationException("Screenshot target is not visible");
             }
+            if (scenarioView != null) scenarioBackend.ValidateViewFrame(ScenarioViews.Directions(scenarioView)[scenarioViewIndex]);
             scenarioCaptured = screenshotService.TryCaptureMap(scenarioResult, true, true, results.Count, ScenarioLoader.A(scenarioCapture, "id"), null);
             if (scenarioCaptured) scenarioExecution.Mark("screenshot.captured", Find.TickManager.TicksGame, scenarioResult.ScreenshotPath);
+        }
+
+        private ScenarioViewStudio CreateScenarioViewStudio(XElement scene)
+        {
+            if (scene.Attribute("generatorDef") != null) throw new ScenarioConfigurationException("View uses the existing main-map studio; generatorDef belongs to map-based behavior tests");
+            var width = ScenarioLoader.I(scene, "sizeX", 50); var height = ScenarioLoader.I(scene, "sizeZ", 50);
+            if (!TryAllocateThreeViewStudioRoot(width, height, out var root, excludeExistingPawns: true))
+            {
+                // Keep the existing studio renderer and preparation policy. A crowded, mountainous
+                // or roofed player map must not make an otherwise valid external view un-runnable.
+                var temporary = new AutoTestMainMap(map, 170031, new IntVec3(Math.Max(90, width + 30), 1, Math.Max(90, height + 30)));
+                var studioRoot = new IntVec3(15, 0, 15);
+                try
+                {
+                    threeViewService.PrepareStudioArea(temporary.Map, studioRoot, width, height);
+                    scenarioExecution?.Mark("studio.host", Find.TickManager.TicksGame, "temporary ordinary main map=" + temporary.Map.uniqueID + "; original=" + map.uniqueID + "; pocketMap=false");
+                    return new ScenarioViewStudio { Map = temporary.Map, Root = studioRoot, Width = width, Height = height, Restore = temporary.Dispose };
+                }
+                catch { temporary.Dispose(); throw; }
+            }
+            var area = new CellRect(root.x, root.z, width, height);
+            if (map.mapPawns.AllPawnsSpawned.Any(p => area.Contains(p.Position))) throw new ScenarioConfigurationException("Studio area contains existing Pawns; they must not be displaced");
+            var snapshot = new StaticViewContext { Map = map, RootCell = root, AnchorCell = root + new IntVec3(width / 2, 0, height / 2) };
+            var previousWeather = map.weatherManager.curWeather; var previousLastWeather = map.weatherManager.lastWeather;
+            var previousCameraPosition = Find.CameraDriver.GetComponent<Camera>().transform.position; var previousCameraSize = Find.CameraDriver.RootSize;
+            var previousSelection = Find.Selector.SelectedObjectsListForReading.OfType<Thing>().ToList();
+            Action restore = () => {
+                map.weatherManager.TransitionTo(previousWeather); map.weatherManager.curWeather = previousWeather; map.weatherManager.lastWeather = previousLastWeather;
+                if (!RestoreStaticViewContext(snapshot, scenarioResult)) throw new InvalidOperationException("Existing three-view studio could not restore its source area");
+                Find.Selector.ClearSelection();
+                foreach (var thing in previousSelection.Where(t => !t.Destroyed && t.Spawned && t.Map == map)) Find.Selector.Select(thing, false, false);
+                Find.CameraDriver.SetRootPosAndSize(previousCameraPosition, previousCameraSize);
+            };
+            if (!TrySnapshotAndClearStaticViewArea(snapshot, width, height, out var error)) { restore(); throw new ScenarioConfigurationException(error); }
+            threeViewService.PrepareStudioArea(map, root, width, height);
+            return new ScenarioViewStudio { Map = map, Root = root, Width = width, Height = height, Restore = restore };
+        }
+
+        private bool QueueScenarioView(XElement step)
+        {
+            var directions = ScenarioViews.Directions(step);
+            if (scenarioView == null)
+            {
+                if (!scenarioBackend.CanBeginView) return false;
+                scenarioView = step; scenarioViewIndex = 0; scenarioViewImages.Clear();
+                scenarioBackend.BeginView(step);
+                scenarioBackend.UpdateView(directions[0]);
+                scenarioResult.OverlayLine1 = scenarioResult.Label;
+                scenarioResult.OverlayLine2 = "Same actor: " + ScenarioLoader.A(step, "actor") + " / " + directions[0];
+                scenarioResult.OverlayLine3 = "Pose: " + ScenarioLoader.A(step, "pose", "standing") + " / loadout: " + ScenarioLoader.A(step, "loadout", "preserve");
+                scenarioResult.OverlayLine4 = scenarioBackend.ViewEquipmentSummary;
+            }
+            if (scenarioCaptured && !AutoTestViewComposite.IsReady(scenarioResult.ScreenshotPath)) return false;
+            var frame = new XElement("Screenshot", new XAttribute("id", ScenarioLoader.A(step, "id") + "_" + directions[scenarioViewIndex]),
+                new XAttribute("focus", ScenarioLoader.A(step, "actor")), new XAttribute("cameraSize", ScenarioLoader.A(step, "cameraSize", "11")), new XAttribute("stableFrames", ScenarioLoader.A(step, "stableFrames", "5")));
+            if (!QueueScenarioScreenshot(frame)) return false;
+            scenarioViewImages.Add(scenarioResult.ScreenshotPath);
+            scenarioCaptured = false;
+            scenarioViewIndex++;
+            if (scenarioViewIndex < directions.Length)
+            {
+                scenarioBackend.UpdateView(directions[scenarioViewIndex]);
+                scenarioResult.OverlayLine2 = "Same actor: " + ScenarioLoader.A(step, "actor") + " / " + directions[scenarioViewIndex];
+                return false;
+            }
+            if (ScenarioLoader.A(step, "composite", "true") == "true")
+            {
+                var path = AutoTestViewComposite.Compose(scenarioViewImages);
+                scenarioResult.ScreenshotPaths.Add(path);
+                scenarioExecution.Mark("view.composite", Find.TickManager.TicksGame, path);
+            }
+            scenarioBackend.CompleteView();
+            scenarioView = null; scenarioViewImages.Clear();
+            return true;
         }
     }
 }

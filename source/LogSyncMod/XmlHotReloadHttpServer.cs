@@ -12,10 +12,12 @@ using Verse;
 
 namespace LogSyncMod
 {
-    internal static class XmlHotReloadHttpServer
+    public static class XmlHotReloadHttpServer
     {
         private const string EndpointPrefix = "RimDevTools.LogSyncMod.XmlHotReload.v1.";
         private const string RequestPath = "/v1/xml/hotreload";
+        private const string ManualPath = "/v1/tests/manual";
+        public static Func<string, string> ManualTestsHandler;
         private const int RequestTimeoutMilliseconds = 10000;
         private static readonly ConcurrentQueue<PendingRequest> requests = new ConcurrentQueue<PendingRequest>();
         private static int started;
@@ -83,6 +85,11 @@ namespace LogSyncMod
                 {
                     try
                     {
+                        if (request.ManualBody != null)
+                        {
+                            request.Complete(ManualTestsHandler == null ? "manual_tests_unavailable" : ManualTestsHandler(request.ManualBody));
+                            continue;
+                        }
                         Log.Message("[LogSyncMod] XML_HOT_RELOAD_REQUESTED");
                         PlayDataLoader.HotReloadDefs();
                         Log.Message("[LogSyncMod] XML_HOT_RELOAD_QUEUED");
@@ -148,7 +155,7 @@ namespace LogSyncMod
             {
                 string requestLine = reader.ReadLine();
                 string[] requestParts = requestLine == null ? new string[0] : requestLine.Split(' ');
-                if (requestParts.Length != 3 || requestParts[0] != "POST" || requestParts[1] != RequestPath)
+                if (requestParts.Length != 3 || requestParts[0] != "POST" || (requestParts[1] != RequestPath && requestParts[1] != ManualPath))
                 {
                     WriteResponse(stream, 404, "Not Found", "unsupported_endpoint");
                     return;
@@ -173,7 +180,7 @@ namespace LogSyncMod
                     string headerValue = headerLine.Substring(separator + 1).Trim();
                     if (headerName.Equals("Authorization", StringComparison.OrdinalIgnoreCase)) authorization = headerValue;
                     else if (headerName.Equals("Content-Length", StringComparison.OrdinalIgnoreCase)
-                        && (!int.TryParse(headerValue, out contentLength) || contentLength != 0))
+                        && (!int.TryParse(headerValue, out contentLength) || contentLength < 0 || contentLength > 65536 || requestParts[1] == RequestPath && contentLength != 0))
                     {
                         WriteResponse(stream, 400, "Bad Request", "request_body_not_supported");
                         return;
@@ -192,10 +199,23 @@ namespace LogSyncMod
                     return;
                 }
 
-                var request = new PendingRequest();
+                string manualBody = null;
+                if (requestParts[1] == ManualPath)
+                {
+                    var body = new StringBuilder();
+                    for (var i = 0; i < contentLength; i++)
+                    {
+                        var character = reader.Read();
+                        if (character < 0 || character > 127) { WriteResponse(stream, 400, "Bad Request", "JSON must use ASCII with escaped Unicode"); return; }
+                        body.Append((char)character);
+                    }
+                    manualBody = body.ToString();
+                }
+                var request = new PendingRequest { ManualBody = manualBody };
                 requests.Enqueue(request);
                 string result = request.WaitForResponse(RequestTimeoutMilliseconds);
-                if (result == "queued") WriteResponse(stream, 202, "Accepted", result);
+                if (requestParts[1] == ManualPath && result.StartsWith("{")) WriteResponse(stream, 200, "OK", result);
+                else if (result == "queued") WriteResponse(stream, 202, "Accepted", result);
                 else if (result == "request_timeout") WriteResponse(stream, 504, "Gateway Timeout", result);
                 else if (result == "reload_failed") WriteResponse(stream, 500, "Internal Server Error", result);
                 else WriteResponse(stream, 409, "Conflict", result);
@@ -232,6 +252,7 @@ namespace LogSyncMod
 
         private sealed class PendingRequest
         {
+            public string ManualBody;
             private readonly TaskCompletionSource<string> completed = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
             private int state;
 
@@ -260,5 +281,12 @@ namespace LogSyncMod
         {
             XmlHotReloadHttpServer.ProcessPendingRequests();
         }
+    }
+
+    [HarmonyPatch(typeof(Root_Play), nameof(Root_Play.Update))]
+    internal static class XmlHotReloadRuntimePumpPatch
+    {
+        [HarmonyPostfix]
+        private static void Postfix() => XmlHotReloadHttpServer.ProcessPendingRequests();
     }
 }

@@ -179,7 +179,7 @@ namespace LogSyncMod.AutoTest
                         forceGenerateNewPawn: true,
                         canGeneratePawnRelations: false,
                         mustBeCapableOfViolence: true);
-                    Pawn candidate = PawnGenerator.GeneratePawn(request);
+                    Pawn candidate = ManualPawnGeneration.Presenter(request);
                     if (candidate == null)
                     {
                         continue;
@@ -204,7 +204,7 @@ namespace LogSyncMod.AutoTest
 
                 IntVec3 spawnPos = new IntVec3(Mathf.RoundToInt(TestMap.Size.x * 0.375f), 0, TestMap.Size.z / 2);
                 GenSpawn.Spawn(ShooterPawn, spawnPos, TestMap);
-                ConfigureTestPawnCombatStats(ShooterPawn);
+                if (!ManualPawnGeneration.IsStaged(ShooterPawn)) ConfigureTestPawnCombatStats(ShooterPawn);
 
                 // 穿上传奇品质的海军装备
                 try
@@ -246,7 +246,7 @@ namespace LogSyncMod.AutoTest
                     return;
                 }
 
-                Thing createdThing = ThingMaker.MakeThing(WeaponDef, owner.ResolveStuff(WeaponDef));
+                Thing createdThing = ManualPawnGeneration.MakeThing(WeaponDef, owner.ResolveStuff(WeaponDef));
                 EquippedWeapon = createdThing as ThingWithComps;
                 if (EquippedWeapon == null)
                 {

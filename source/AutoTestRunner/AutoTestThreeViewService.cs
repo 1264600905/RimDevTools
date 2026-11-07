@@ -67,6 +67,7 @@ namespace LogSyncMod.AutoTest
         public string DefName;
         public string Label;
         public AutoTestScreenshotProfile Profile;
+        public bool UseTemporaryPresenter;
 
     }
 
@@ -74,6 +75,7 @@ namespace LogSyncMod.AutoTest
     {
         public Map Map;
         public IntVec3 AnchorCell;
+        public Vector3? AnchorWorldPosition;
         public AutoTestScreenshotProfile Profile;
         public readonly List<Pawn> Pawns = new List<Pawn>();
         public readonly List<IntVec3> Cells = new List<IntVec3>();
@@ -103,6 +105,7 @@ namespace LogSyncMod.AutoTest
         public bool TargetGeneActive;
         public bool TargetXenotypeMatches;
         public bool TargetXenotypeGeneSetMatches;
+        public bool DisplayWeapon = true;
     }
 
     internal sealed class AutoTestThreeViewAppearanceTemplate
@@ -253,7 +256,9 @@ namespace LogSyncMod.AutoTest
                     Pawn pawn = null;
                     try
                     {
-                        if (!TryGenerateProbePawn(candidate, out pawn) || pawn == null)
+                        if (spec.UseTemporaryPresenter) pawn = ManualPawnGeneration.Presenter(new PawnGenerationRequest(candidate, forceGenerateNewPawn: true, canGeneratePawnRelations: false));
+                        else TryGenerateProbePawn(candidate, out pawn);
+                        if (pawn == null)
                         {
                             lastReason = "presenter_generation_failed:" + candidate.defName;
                             continue;
@@ -750,7 +755,7 @@ namespace LogSyncMod.AutoTest
                     context.Cells[i],
                     context.Rotations[i],
                     context.PresenterBodyType,
-                    context.PresenterGender);
+                    context.PresenterGender, context.DisplayWeapon);
             }
         }
 
@@ -780,7 +785,7 @@ namespace LogSyncMod.AutoTest
                         origin,
                         context.Rotations[i],
                         context.PresenterBodyType,
-                        context.PresenterGender);
+                        context.PresenterGender, context.DisplayWeapon);
                 }
 
                 context.DirectionalWalkPrimed = true;
@@ -814,12 +819,13 @@ namespace LogSyncMod.AutoTest
                     }
 
                     IntVec3 origin = context.Cells[i];
+                    AutoTestThreeViewRenderSuppression.SetStandingPresentation(pawn, true);
                     StabilizePawnForSettle(
                         pawn,
                         origin,
                         context.Rotations[i],
                         context.PresenterBodyType,
-                        context.PresenterGender);
+                        context.PresenterGender, context.DisplayWeapon);
 
                     pawn.Drawer?.renderer?.SetAllGraphicsDirty();
                 }
@@ -856,7 +862,7 @@ namespace LogSyncMod.AutoTest
                         context.Cells[i],
                         context.Rotations[i],
                         context.PresenterBodyType,
-                        context.PresenterGender);
+                        context.PresenterGender, context.DisplayWeapon);
                     pawn.Drawer?.renderer?.SetAllGraphicsDirty();
                 }
                 catch
@@ -916,7 +922,7 @@ namespace LogSyncMod.AutoTest
                 }
 
                 float rootSize = context.Profile?.FixedRootSize ?? context.Profile?.MinRootSize ?? 6f;
-                Vector3 anchor = context.AnchorCell.ToVector3Shifted();
+                Vector3 anchor = context.AnchorWorldPosition ?? context.AnchorCell.ToVector3Shifted();
                 float cameraHeight = context.Profile?.CameraHeight ?? 65f;
                 cameraDriver.SetRootPosAndSize(new Vector3(anchor.x, cameraHeight, anchor.z), rootSize);
                 return true;
@@ -1239,7 +1245,7 @@ namespace LogSyncMod.AutoTest
             PawnKindDef humanPawnKind = ResolveDefaultHumanPawnKind();
 
             foreach (ThingDef apparelDef in DefDatabase<ThingDef>.AllDefsListForReading
-                .Where(def => def != null && def.modContentPack == targetMod && def.IsApparel)
+                .Where(def => def != null && def.modContentPack == targetMod && def.IsApparel && def.destroyable)
                 .OrderBy(def => def.defName))
             {
                 List<BodyTypeDef> explicitBodyTypes = ResolveSupportedApparelBodyTypes(apparelDef);
@@ -1940,7 +1946,7 @@ namespace LogSyncMod.AutoTest
                             dontGiveWeapon: requiresCleanLoadout,
                             forceNoGear: requiresCleanLoadout);
                         generationStage = "generate_pawn";
-                        Pawn candidate = PawnGenerator.GeneratePawn(request);
+                        Pawn candidate = spec.UseTemporaryPresenter ? ManualPawnGeneration.Presenter(request) : PawnGenerator.GeneratePawn(request);
                         if (candidate == null) continue;
 
                         generationStage = "strip_initial_loadout";
@@ -2071,7 +2077,7 @@ namespace LogSyncMod.AutoTest
                 prepareStage = "create_target_apparel";
                 if (spec?.WearAsApparel == true && spec.ItemDef != null)
                 {
-                    Apparel apparel = ThingMaker.MakeThing(spec.ItemDef, ResolveStuff(spec.ItemDef)) as Apparel;
+                    Apparel apparel = ManualPawnGeneration.MakeThing(spec.ItemDef, ResolveStuff(spec.ItemDef)) as Apparel;
                     if (apparel == null)
                     {
                         errorMessage = "Thing could not be created as apparel: " + spec.ItemDef.defName;
@@ -2099,7 +2105,7 @@ namespace LogSyncMod.AutoTest
                 prepareStage = "equip_target_weapon";
                 if (spec?.HoldAsWeapon == true && spec.ItemDef != null)
                 {
-                    ThingWithComps equippedThing = ThingMaker.MakeThing(spec.ItemDef, ResolveStuff(spec.ItemDef)) as ThingWithComps;
+                    ThingWithComps equippedThing = ManualPawnGeneration.MakeThing(spec.ItemDef, ResolveStuff(spec.ItemDef)) as ThingWithComps;
                     if (equippedThing == null)
                     {
                         errorMessage = "Thing could not be created as equippable weapon: " + spec.ItemDef.defName;
@@ -2536,7 +2542,8 @@ namespace LogSyncMod.AutoTest
             IntVec3 cell,
             Rot4 rotation,
             BodyTypeDef presenterBodyType = null,
-            Gender? presenterGender = null)
+            Gender? presenterGender = null,
+            bool displayWeapon = true)
         {
             if (pawn == null || pawn.Destroyed)
             {
@@ -2560,7 +2567,7 @@ namespace LogSyncMod.AutoTest
                     pawn.story.bodyType = presenterBodyType;
                 }
 
-                if (pawn.equipment?.Primary != null && pawn.jobs != null)
+                if (displayWeapon && pawn.equipment?.Primary != null && pawn.jobs != null)
                 {
                     if (pawn.CurJobDef != JobDefOf.Wait_Combat)
                     {

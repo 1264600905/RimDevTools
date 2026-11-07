@@ -12,6 +12,7 @@ namespace LogSyncMod.AutoTest
         Plant,
         Terrain,
         Recipe,
+        RecipeInfoCard,
         RecipeExecution,
         Hediff,
         AnimalInfoCard,
@@ -41,7 +42,8 @@ namespace LogSyncMod.AutoTest
         ApparelCombat,
         AnimalCombat,
         MechanoidCombat,
-        AlienCombat
+        AlienCombat,
+        LoadoutView
     }
 
     internal enum AutoTestCaseType
@@ -82,7 +84,8 @@ namespace LogSyncMod.AutoTest
         ApparelCombat,
         AnimalCombat,
         MechanoidCombat,
-        AlienCombat
+        AlienCombat,
+        LoadoutView
     }
 
     internal sealed class AutoTestWorkItem

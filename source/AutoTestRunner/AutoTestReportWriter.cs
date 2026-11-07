@@ -18,6 +18,7 @@ namespace LogSyncMod.AutoTest
         public string ManifestPath;
         public string EvidencePath;
         public string ScreenshotDirectory;
+        public bool IsManual;
     }
 
     internal static class AutoTestReportWriter

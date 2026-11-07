@@ -144,7 +144,7 @@ namespace LogSyncMod.AutoTest
                         case TurretTestPhase.SpawningTurret:
                             LogMapState("before_spawn_turret");
                             ThingDef turretStuff = owner.ResolveStuff(TurretDef);
-                            Thing turretThing = ThingMaker.MakeThing(TurretDef, turretStuff);
+                            Thing turretThing = ManualPawnGeneration.MakeThing(TurretDef, turretStuff);
                             owner.PrepareBuildingFactionBeforeSpawn(turretThing, AutoTestBuildingContext.InteractiveBuilding, Result);
                             // 布局 3/8
                             IntVec3 turretPos = new IntVec3(Mathf.RoundToInt(TestMap.Size.x * 0.375f), 0, TestMap.Size.z / 2);
@@ -1125,7 +1125,7 @@ namespace LogSyncMod.AutoTest
                         canGeneratePawnRelations: false,
                         mustBeCapableOfViolence: true);
 
-                    Pawn candidate = PawnGenerator.GeneratePawn(request);
+                    Pawn candidate = ManualPawnGeneration.Presenter(request);
                     if (candidate == null)
                     {
                         continue;
@@ -1149,7 +1149,7 @@ namespace LogSyncMod.AutoTest
                 }
 
                 GenSpawn.Spawn(OperatorPawn, spawnPos, TestMap);
-                ConfigureTestPawnCombatStats(OperatorPawn);
+                if (!ManualPawnGeneration.IsStaged(OperatorPawn)) ConfigureTestPawnCombatStats(OperatorPawn);
                 OperatorPawn.Name = new NameSingle("自动测试炮手");
                 Result.Notes = AppendNote(Result.Notes, "OperatorPawnSpawned=True");
             }

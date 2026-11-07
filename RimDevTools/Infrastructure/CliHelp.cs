@@ -497,6 +497,7 @@ public static class CliHelp
           --batch-size <n>            Positive auto random-case limit; defaults to 40.
           --scenario-path <path>      1.7 external XML file or nonrecursive *.autotest.xml folder.
           --scenario-only             Run only external cases; omit to mix with ordinary tests.
+          --quick-start               With manual mode, start a disposable native quick-test game.
           --test-name <name>          Select an external testDefName or unique display name; repeatable.
           --isolated-desktop          Force a private Windows desktop for this run.
           --no-isolated-desktop       Force the current visible desktop for this run.

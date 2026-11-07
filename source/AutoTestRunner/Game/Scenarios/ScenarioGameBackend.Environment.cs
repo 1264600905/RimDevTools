@@ -28,7 +28,7 @@ namespace LogSyncMod.AutoTest
                 Map.weatherManager.curWeather = weather; Map.weatherManager.lastWeather = weather;
             }
             if (env?.Attribute("roof") != null)
-                foreach (var cell in Map.AllCells) Map.roofGrid.SetRoof(cell, A(env, "roof") == "none" ? null : Def<RoofDef>(A(env, "roof")));
+                foreach (var cell in SceneCells) Map.roofGrid.SetRoof(cell, A(env, "roof") == "none" ? null : Def<RoofDef>(A(env, "roof")));
             foreach (var rect in scene.Element("Layout")?.Elements() ?? Enumerable.Empty<XElement>())
                 foreach (var cell in Rectangle(rect))
                 {
@@ -76,7 +76,7 @@ namespace LogSyncMod.AutoTest
                 "temperature" => InRange(Map.mapTemperature.OutdoorTemp, c),
                 "skyGlow" => InRange(Map.skyManager.CurSkyGlow, c),
                 "sunGlow" => InRange(GenCelestial.CurCelestialSunGlow(Map), c),
-                "unfogged" => Map.AllCells.All(cell => !cell.Fogged(Map)),
+                "unfogged" => SceneCells.All(cell => !cell.Fogged(Map)),
                 _ => throw new ScenarioConfigurationException("Unknown environment probe") };
         }
     }

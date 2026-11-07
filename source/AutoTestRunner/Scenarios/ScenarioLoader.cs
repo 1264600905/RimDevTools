@@ -160,7 +160,8 @@ namespace LogSyncMod.AutoTest.Scenarios
             if (type != "ExternalScenario" && !ScenarioTypes.NonUi.Contains(type)) Fail(c, path, "unknown/non-UI caseType " + type);
             if (type == "GroupCombat") Fail(c, path, "GroupCombat requires its independent named benchmark entry");
             var scene = c.Element("Scene");
-            if (A(scene, "type", "pocketMap") != "pocketMap") Fail(scene, path, "only pocketMap is available in batch 1");
+            var view = ScenarioViews.Types.Contains(type);
+            if (A(scene, "type", view ? "studio" : "pocketMap") != (view ? "studio" : "pocketMap")) Fail(scene, path, view ? "View uses the existing main-map studio (type=studio), not a pocket map" : "this behavior backend requires pocketMap");
             if (I(scene, "sizeX", 50) < 30 || I(scene, "sizeX", 50) > 250 || I(scene, "sizeZ", 50) < 30 || I(scene, "sizeZ", 50) > 250) Fail(scene, path, "map dimensions must be 30..250");
             if (A(scene, "revealFog", "all") != "all") Fail(scene, path, "batch 1 requires revealFog=all");
             if (scene.Attribute("id") != null) Fail(scene, path, "Scene id belongs only to ScenePresets");
@@ -180,17 +181,25 @@ namespace LogSyncMod.AutoTest.Scenarios
                 if (A(actor, "team") != null && !teams.Contains(A(actor, "team"))) Fail(actor, path, "unknown team");
                 var count = I(actor, "count", 1);
                 if (count < 1 || count > 100) Fail(actor, path, "count must be 1..100");
+                if (actor.Name != "DefRef")
+                {
+                    var x = I(actor, "x", I(actor, "originX", 20)); var z = I(actor, "z", I(actor, "originZ", 20));
+                    if (x < 0 || z < 0 || x + (actor.Name == "PawnGroup" ? (count - 1) * I(actor, "spacing", 2) : actor.Name == "TerrainArea" ? I(actor, "width") - 1 : 0) >= I(scene, "sizeX", 50) || z + (actor.Name == "TerrainArea" ? I(actor, "height") - 1 : 0) >= I(scene, "sizeZ", 50)) Fail(actor, path, "actor lies outside the configured scene");
+                }
                 for (var n = 0; n < count && actor.Name == "PawnGroup"; n++) if (!actors.Add(id + "[" + n + "]")) Fail(actor, path, "duplicate group member");
                 if (actor.Name == "Corpse" && !actors.Add(id + ".innerPawn")) Fail(actor, path, "duplicate corpse innerPawn");
                 if (actor.Name == "Pawn" || actor.Name == "PawnGroup" || actor.Name == "Corpse")
                     if (string.IsNullOrWhiteSpace(actor.Element("basePawnKind")?.Value)) Fail(actor, path, "basePawnKind is required");
             }
             var steps = new HashSet<string>();
+            if (new[] { "PlantGrowthView", "BuildingView", "TerrainPatchView" }.Contains(type))
+                foreach (var viewStep in c.Element("Steps").Elements("View").Where(v => v.Attribute("directions") == null)) viewStep.SetAttributeValue("directions", "North");
             foreach (var step in c.Element("Steps").Elements()) if (!steps.Add(Required(step, "id", path))) Fail(step, path, "duplicate step id");
             foreach (var step in c.Element("Steps").Elements().Where(s => s.Attribute("output") != null))
                 if (!actors.Add(Required(step, "output", path))) Fail(step, path, "duplicate generated actor id");
             foreach (var element in c.Descendants())
             {
+                ScenarioViews.Validate(element, path);
                 if (element.Name == "ApplyDamage" && (D(element, "amount") <= 0 || D(element, "armorPenetration", 0) < 0)) Fail(element, path, "damage and armor penetration must be nonnegative; damage must be positive");
                 if (element.Attribute("xenogene") != null && !new[] { "true", "false" }.Contains(A(element, "xenogene"))) Fail(element, path, "xenogene must be true/false");
                 foreach (var attribute in new[] { "actor", "target", "group", "focus", "relativeTo", "worktable", "instigator" })
@@ -236,11 +245,12 @@ namespace LogSyncMod.AutoTest.Scenarios
         private static readonly Dictionary<string, string> Children = new Dictionary<string, string> {
             {"TestSuite", "Requirements Templates ScenePresets Case"}, {"Requirements", "Mod DLC"}, {"Templates", "PawnTemplate"}, {"ScenePresets", "Scene"},
             {"Scene", "Environment Layout Validation"}, {"Layout", "TerrainRect RoofRect ThingRect"}, {"Validation", "Reachable"},
-            {"PawnTemplate", "basePawnKind race gender minGenerationAge maxGenerationAge apparelTags apparelMoney weaponTags weaponMoney forcedTraits skills abilities Apparel Equipment Traits Skills Hediffs Abilities Appearance Genes Xenotype"},
+            {"PawnTemplate", "basePawnKind race gender minGenerationAge maxGenerationAge apparelTags apparelMoney weaponTags weaponMoney forcedTraits skills abilities Apparel Equipment Traits Skills Hediffs Abilities Appearance Genes Xenotype Age Resources"},
+            {"Resources", "GeneResource Psyfocus AxolotlQi"},
             {"Case", "testDefName Requirements Scene Teams Actors Steps Success Targets Coverage Matrix"}, {"Targets", "Def"},
             {"Coverage", "Target"}, {"Target", "Evidence"}, {"Matrix", "Row"}, {"Row", "Param"},
             {"Teams", "Team Relation"}, {"Actors", "Pawn PawnGroup Building Thing Corpse DefRef TerrainArea"},
-            {"Steps", "Require Checkpoint Wait Screenshot CastAbility Attack Spawn CreateThing DropEquipment Equip AddHediff RemoveHediff Destroy Kill Pause DebugAction ExecuteRecipe TransferThing DropInventory SetRot Resurrect ApplyDamage BindMech ManTurret"},
+            {"Steps", "Require Checkpoint Wait Screenshot View SetPlantGrowth CastAbility Attack Spawn CreateThing DropEquipment Equip AddHediff RemoveHediff Destroy Kill Pause DebugAction ExecuteRecipe TransferThing DropInventory SetRot Resurrect ApplyDamage BindMech ManTurret"},
             {"DebugAction", "Select"},
             {"ExecuteRecipe", "Ingredients"}, {"Ingredients", "Ingredient"},
             {"Genes", "Add Remove"},
@@ -248,7 +258,7 @@ namespace LogSyncMod.AutoTest.Scenarios
             {"Appearance", "hair bodyType headType hairColor skinColor"}, {"apparelTags", "li"}, {"weaponTags", "li"},
             {"forcedTraits", "li"}, {"skills", "li"}, {"abilities", "li"}, {"li", "def degree skill range passion"}
         };
-        private const string Conditions = "All Any Not HasHediff ThingExists ActorState CorpseState ActorCount Equipped Wearing HasTrait SkillLevel HasAbility StepSucceeded HealthPercent NeedLevel ResourceLevel ComponentState EnvironmentState ActorPosition ModResourceLevel ThingHeld ThingQuantity HasController";
+        private const string Conditions = "All Any Not HasHediff ThingExists ActorState CorpseState ActorCount Equipped Wearing HasTrait SkillLevel HasAbility StepSucceeded HealthPercent NeedLevel ResourceLevel ComponentState EnvironmentState ActorPosition ModResourceLevel ThingHeld ThingQuantity HasController PawnAppearance HasGene HasXenotype PlantGrowth TerrainState ThingStyle";
         private static readonly Dictionary<string, string> Attributes = new Dictionary<string, string> {
             {"TestSuite", "schemaVersion id packageId gameVersion"}, {"Case", "id name seed timeoutRealSeconds caseType"}, {"PawnTemplate", "id extends"},
             {"Coverage", "mode"}, {"Target", "packageId defType defName caseType variant"}, {"Evidence", "step"}, {"Row", "id"}, {"Param", "name value"},
@@ -257,7 +267,12 @@ namespace LogSyncMod.AutoTest.Scenarios
             {"EnvironmentState", "property def min max"},
             {"Def", "defType defName"}, {"Mod", "packageId"}, {"DLC", "packageId"},
             {"Require", "id"}, {"Checkpoint", "id"}, {"Wait", "id timeoutRealSeconds stableTicks durationTicks observation"},
-            {"Screenshot", "id focus"}, {"CastAbility", "id actor def target targetX targetZ force timeoutRealSeconds"}, {"Attack", "id actor target melee timeoutRealSeconds"},
+            {"Screenshot", "id focus cameraSize stableFrames"}, {"View", "id actor directions pose loadout targetDef cameraSize stableFrames composite timeoutRealSeconds"},
+            {"SetPlantGrowth", "id actor value"}, {"PlantGrowth", "actor min max"}, {"TerrainState", "actor def"},
+            {"PawnAppearance", "actor property value"}, {"HasGene", "actor def active xenogene"}, {"HasXenotype", "actor def"},
+            {"ThingStyle", "actor stuff quality color rotation"}, {"Age", "biologicalYears chronologicalYears"},
+            {"GeneResource", "def value"}, {"Psyfocus", "value"}, {"AxolotlQi", "value"},
+            {"CastAbility", "id actor def target targetX targetZ force timeoutRealSeconds"}, {"Attack", "id actor target melee timeoutRealSeconds"},
             {"ActorPosition", "actor x z radius"}, {"ModResourceLevel", "actor resource min max"},
             {"ExecuteRecipe", "id actor recipe worktable accelerate output"}, {"Ingredient", "actor count"}, {"TransferThing", "id actor target"}, {"DropInventory", "id actor target"}, {"SetRot", "id actor state"}, {"Resurrect", "id actor"},
             {"ThingHeld", "actor target"}, {"ThingQuantity", "actor def min max"},
@@ -269,7 +284,7 @@ namespace LogSyncMod.AutoTest.Scenarios
             {"DebugAction", "id actionId value def severity part durationTicks"}, {"Select", "mode actor minX minZ maxX maxZ filter relativeTo"},
             {"HealthPercent", "actor min max quantifier equals observation"}, {"NeedLevel", "actor def min max quantifier equals"}, {"ResourceLevel", "actor def min max quantifier equals"}, {"ComponentState", "actor component state min max"},
             {"Apparel", "mode"}, {"Equipment", "mode"}, {"Traits", "mode"}, {"Skills", "mode"}, {"Hediffs", "mode"}, {"Abilities", "mode"},
-            {"Add", "def stuff quality"}, {"Replace", "matchDef matchLayer withDef stuff quality onMissing"}, {"Remove", "def part"}, {"SetPrimary", "def stuff quality"},
+            {"Add", "def stuff quality color"}, {"Replace", "matchDef matchLayer withDef stuff quality color onMissing"}, {"Remove", "def part"}, {"SetPrimary", "def stuff quality color"},
             {"Set", "def degree level passion"}, {"Ensure", "def severity part durationTicks"},
             {"StepSucceeded", "ref"}, {"ActorCount", "group equals"},
             {"HasHediff", "actor def severityMin severityMax quantifier equals transition since observation"},
@@ -285,14 +300,16 @@ namespace LogSyncMod.AutoTest.Scenarios
                 "Team" => "id factionDef", "Relation" => "a b value", "Def" or "DefRef" => "defType defName",
                 "Mod" or "DLC" => "packageId", "Target" => "defType defName caseType", "Evidence" => "step", "Row" => "id", "Param" => "name value", "CastAbility" => "actor def", "Attack" => "actor target",
                 "Equip" or "AddHediff" or "RemoveHediff" => "actor def", "Spawn" or "DropEquipment" or "Destroy" or "Kill" => "actor",
-                "HasHediff" or "Equipped" or "Wearing" or "HasTrait" or "SkillLevel" or "HasAbility" => "actor def",
+                "HasHediff" or "Equipped" or "Wearing" or "HasTrait" or "SkillLevel" or "HasAbility" or "HasGene" or "HasXenotype" or "TerrainState" => "actor def",
+                "View" or "PlantGrowth" or "ThingStyle" => "actor", "SetPlantGrowth" => "actor value", "PawnAppearance" => "actor property value",
+                "GeneResource" => "def value", "Psyfocus" or "AxolotlQi" => "value",
                 "ActorState" or "CorpseState" => "actor state", "HealthPercent" => "actor", "ActorPosition" => "actor x z", "ModResourceLevel" => "actor resource", "NeedLevel" or "ResourceLevel" => "actor def", "ComponentState" => "actor component", "DebugAction" => "actionId", "ActorCount" => "group equals", "StepSucceeded" => "ref", "Replace" => "withDef",
                 "TerrainArea" or "TerrainRect" or "ThingRect" => "def x z width height", "RoofRect" => "x z width height", "Reachable" => "fromX fromZ toX toZ", "ExecuteRecipe" => "actor recipe worktable accelerate output", "Ingredient" => "actor count", "SetRot" => "actor state", "Resurrect" => "actor", "TransferThing" or "DropInventory" or "ThingHeld" or "BindMech" or "ManTurret" or "HasController" => "actor target", "Xenotype" => "def", "ApplyDamage" => "actor def amount", _ => ""
             };
             foreach (var field in required.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries)) Required(node, field, path);
             var actor = new[] { "Pawn", "PawnGroup", "Corpse" }.Contains(name);
             var thing = new[] { "Thing", "Building" }.Contains(name);
-            var attrs = name == "PawnGroup" ? "id template team count originX originZ spacing formation spawn" : actor ? "id template team x z spawn" : thing ? "id def stuff team x z count quality spawn" : name == "DefRef" ? "id defType defName" : name == "TerrainArea" ? "id def x z width height" : Attributes.TryGetValue(name, out var text) ? text : "";
+            var attrs = name == "PawnGroup" ? "id template team count originX originZ spacing formation spawn" : actor ? "id template team x z spawn" : thing ? "id def stuff team x z count quality color rotation growth spawn" : name == "DefRef" ? "id defType defName" : name == "TerrainArea" ? "id def x z width height" : Attributes.TryGetValue(name, out var text) ? text : "";
             if (name == "Set") attrs = node.Parent?.Name == "Skills" ? "def level passion" : "def degree";
             if (name == "Ensure") attrs = node.Parent?.Name == "Hediffs" ? "def severity part durationTicks" : "def";
             if (name == "Remove") attrs = node.Parent?.Name == "Hediffs" ? "def part" : "def";
@@ -302,14 +319,14 @@ namespace LogSyncMod.AutoTest.Scenarios
             foreach (var e in node.Elements())
             {
                 if (!children.Split(' ').Contains(e.Name.ToString())) Fail(e, path, "unknown/unsupported element: " + e.Name);
-                var multiple = name == "TestSuite" ? e.Name == "Case" : new[] { "Templates", "ScenePresets", "Layout", "Validation", "Actors", "Steps", "Teams", "Requirements", "Targets", "Coverage", "Target", "Matrix", "Row", "Ingredients", "Apparel", "Equipment", "Traits", "Skills", "Hediffs", "Abilities", "Genes", "All", "Any", "Require", "Wait", "Success", "forcedTraits", "skills", "abilities", "apparelTags", "weaponTags" }.Contains(name);
+                var multiple = name == "TestSuite" ? e.Name == "Case" : name == "Resources" ? e.Name == "GeneResource" : new[] { "Templates", "ScenePresets", "Layout", "Validation", "Actors", "Steps", "Teams", "Requirements", "Targets", "Coverage", "Target", "Matrix", "Row", "Ingredients", "Apparel", "Equipment", "Traits", "Skills", "Hediffs", "Abilities", "Genes", "All", "Any", "Require", "Wait", "Success", "forcedTraits", "skills", "abilities", "apparelTags", "weaponTags" }.Contains(name);
                 if (node.Elements(e.Name).Count() > 1 && !multiple) Fail(e, path, "duplicate field " + e.Name);
                 ValidateTree(e, path, allowParameters);
             }
             if (node.HasElements && node.Nodes().OfType<XText>().Any(t => !string.IsNullOrWhiteSpace(t.Value))) Fail(node, path, "mixed text is not supported");
-            foreach (var a in node.Attributes().Where(a => new[] { "x", "z", "count", "sizeX", "sizeZ", "seed", "originX", "originZ", "spacing", "stableTicks", "durationTicks", "degree", "level", "equals", "width", "height", "minX", "minZ", "maxX", "maxZ", "fromX", "fromZ", "toX", "toZ", "targetX", "targetZ" }.Contains(a.Name.LocalName)))
+            foreach (var a in node.Attributes().Where(a => new[] { "x", "z", "count", "sizeX", "sizeZ", "seed", "originX", "originZ", "spacing", "stableTicks", "durationTicks", "stableFrames", "degree", "level", "equals", "width", "height", "minX", "minZ", "maxX", "maxZ", "fromX", "fromZ", "toX", "toZ", "targetX", "targetZ" }.Contains(a.Name.LocalName)))
                 if (!(allowParameters && a.Value.Contains("${")) && !int.TryParse(a.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out _)) Fail(node, path, "invalid integer " + a.Name);
-            foreach (var a in node.Attributes().Where(a => new[] { "timeoutRealSeconds", "severity", "severityMin", "severityMax", "min", "max", "value", "temperature", "radius", "amount", "armorPenetration" }.Contains(a.Name.LocalName) && !(name == "Param" || name == "Relation")))
+            foreach (var a in node.Attributes().Where(a => new[] { "timeoutRealSeconds", "severity", "severityMin", "severityMax", "min", "max", "value", "temperature", "radius", "amount", "armorPenetration", "growth", "cameraSize", "biologicalYears", "chronologicalYears" }.Contains(a.Name.LocalName) && !(name == "Param" || name == "Relation" || name == "PawnAppearance")))
                 if (!(allowParameters && a.Value.Contains("${")) && (!double.TryParse(a.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var d) || double.IsNaN(d) || double.IsInfinity(d))) Fail(node, path, "invalid finite number " + a.Name);
         }
     }

@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TestSuite schemaVersion="1" id="batch3.views" packageId="ludeon.rimworld">
+  <Templates>
+    <PawnTemplate id="presenter">
+      <basePawnKind>SpaceRefugee</basePawnKind>
+      <gender>Male</gender>
+      <Age biologicalYears="25" chronologicalYears="25"/>
+      <Appearance><hair>Shaved</hair><bodyType>Male</bodyType><headType>Male_AverageNormal</headType><hairColor>#241810</hairColor></Appearance>
+      <Apparel mode="replace"><Add def="Apparel_Pants" stuff="Cloth" quality="Good"/><Add def="Apparel_BasicShirt" stuff="Cloth" quality="Good"/><Add def="Apparel_FlakVest" quality="Excellent"/><Add def="Apparel_SimpleHelmet" stuff="Steel" quality="Excellent"/></Apparel>
+      <Equipment><SetPrimary def="Gun_AssaultRifle" quality="Excellent"/></Equipment>
+    </PawnTemplate>
+  </Templates>
+  <Case id="loadout" caseType="LoadoutView" timeoutRealSeconds="90">
+    <testDefName>Batch3_CompleteLoadout</testDefName>
+    <Scene/>
+    <Actors><Pawn id="p" template="presenter" x="25" z="25"/></Actors>
+    <Steps>
+      <Require id="configured"><Equipped actor="p" def="Gun_AssaultRifle"/><Wearing actor="p" def="Apparel_FlakVest"/><PawnAppearance actor="p" property="hair" value="Shaved"/></Require>
+      <View id="loadout" actor="p" directions="South,East,North,West" pose="weaponReady" loadout="preserve" cameraSize="11"/>
+      <Require id="retained"><Equipped actor="p" def="Gun_AssaultRifle"/><Wearing actor="p" def="Apparel_FlakVest"/><Wearing actor="p" def="Apparel_SimpleHelmet"/></Require>
+    </Steps>
+    <Success><StepSucceeded ref="loadout"/><StepSucceeded ref="retained"/></Success>
+  </Case>
+  <Case id="hair" caseType="HairThreeView" timeoutRealSeconds="90">
+    <testDefName>Batch3_ShavedHair</testDefName>
+    <Scene/>
+    <Actors><Pawn id="p" template="presenter" x="25" z="25"><Apparel mode="replace"/></Pawn></Actors>
+    <Steps><Require id="configured"><PawnAppearance actor="p" property="hairColor" value="#241810"/></Require><View id="hair" actor="p" cameraSize="11"/></Steps>
+    <Success><StepSucceeded ref="hair"/></Success>
+  </Case>
+  <Case id="plant" caseType="PlantGrowthView" timeoutRealSeconds="90">
+    <testDefName>Batch3_RiceStages</testDefName>
+    <Scene/>
+    <Actors><Thing id="plant" def="Plant_Rice" growth="0.2" x="25" z="25"/></Actors>
+    <Steps>
+      <Require id="young"><PlantGrowth actor="plant" min="0.19" max="0.21"/></Require><View id="young-image" actor="plant" directions="South" cameraSize="11"/>
+      <SetPlantGrowth id="grow" actor="plant" value="1"/>
+      <Require id="mature"><PlantGrowth actor="plant" min="1" max="1"/></Require><View id="mature-image" actor="plant" directions="South" cameraSize="11"/>
+    </Steps>
+    <Success><StepSucceeded ref="young-image"/><StepSucceeded ref="mature-image"/></Success>
+  </Case>
+  <Case id="terrain" caseType="TerrainPatchView" timeoutRealSeconds="90">
+    <testDefName>Batch3_ConcretePatch</testDefName>
+    <Scene/>
+    <Actors><TerrainArea id="patch" def="Concrete" x="20" z="20" width="6" height="4"/></Actors>
+    <Steps><Require id="configured"><TerrainState actor="patch" def="Concrete"/></Require><View id="patch-image" actor="patch" directions="North" cameraSize="12"/></Steps>
+    <Success><StepSucceeded ref="patch-image"/></Success>
+  </Case>
+  <Case id="human" caseType="HumanoidThreeView" timeoutRealSeconds="90">
+    <testDefName>Batch3_HumanAppearance</testDefName><Scene/>
+    <Actors><Pawn id="p" template="presenter" x="25" z="25"/></Actors>
+    <Steps><Require id="configured"><PawnAppearance actor="p" property="race" value="Human"/><PawnAppearance actor="p" property="gender" value="Male"/></Require><View id="human" actor="p" cameraSize="11"/></Steps>
+    <Success><StepSucceeded ref="human"/></Success>
+  </Case>
+  <Case id="animal" caseType="AnimalThreeView" timeoutRealSeconds="90">
+    <testDefName>Batch3_MuffaloAppearance</testDefName><Scene/>
+    <Actors><Pawn id="p" x="25" z="25"><basePawnKind>Muffalo</basePawnKind><gender>Female</gender><Age biologicalYears="5"/></Pawn></Actors>
+    <Steps><Require id="configured"><PawnAppearance actor="p" property="kind" value="Muffalo"/><PawnAppearance actor="p" property="gender" value="Female"/></Require><View id="animal" actor="p" directions="West,South,North" cameraSize="11"/></Steps>
+    <Success><StepSucceeded ref="animal"/></Success>
+  </Case>
+  <Case id="mech" caseType="MechanoidThreeView" timeoutRealSeconds="90">
+    <testDefName>Batch3_ScytherAppearance</testDefName><Scene/>
+    <Actors><Pawn id="p" x="25" z="25"><basePawnKind>Mech_Scyther</basePawnKind></Pawn></Actors>
+    <Steps><Require id="configured"><PawnAppearance actor="p" property="kind" value="Mech_Scyther"/></Require><View id="mech" actor="p" cameraSize="11"/></Steps>
+    <Success><StepSucceeded ref="mech"/></Success>
+  </Case>
+  <Case id="alien" caseType="AlienThreeView" timeoutRealSeconds="90">
+    <testDefName>Batch3_AxolotlAppearance</testDefName><Scene/>
+    <Requirements><Mod packageId="hentailoliteam.axolotl"/></Requirements>
+    <Actors><Pawn id="p" x="25" z="25"><basePawnKind>Axolotl_Colonist</basePawnKind><gender>Female</gender><Age biologicalYears="25"/></Pawn></Actors>
+    <Steps><Require id="configured"><PawnAppearance actor="p" property="kind" value="Axolotl_Colonist"/></Require><View id="alien" actor="p" directions="South,West,North" cameraSize="11"/></Steps>
+    <Success><StepSucceeded ref="alien"/></Success>
+  </Case>
+  <Case id="apparel" caseType="ApparelThreeView" timeoutRealSeconds="90">
+    <testDefName>Batch3_IsolatedVest</testDefName><Scene/>
+    <Actors><Pawn id="p" template="presenter" x="25" z="25"/></Actors>
+    <Steps><Require id="configured"><Wearing actor="p" def="Apparel_FlakVest"/></Require><View id="apparel" actor="p" loadout="isolate" targetDef="Apparel_FlakVest" cameraSize="11"/><Require id="isolated"><Wearing actor="p" def="Apparel_FlakVest"/><Not><Wearing actor="p" def="Apparel_Pants"/></Not></Require></Steps>
+    <Success><StepSucceeded ref="apparel"/><StepSucceeded ref="isolated"/></Success>
+  </Case>
+  <Case id="weapon" caseType="WeaponThreeView" timeoutRealSeconds="90">
+    <testDefName>Batch3_RifleReadyPose</testDefName><Scene/>
+    <Actors><Pawn id="p" template="presenter" x="25" z="25"/></Actors>
+    <Steps><Require id="configured"><Equipped actor="p" def="Gun_AssaultRifle"/></Require><View id="weapon" actor="p" pose="weaponReady" targetDef="Gun_AssaultRifle" cameraSize="11"/></Steps>
+    <Success><StepSucceeded ref="weapon"/></Success>
+  </Case>
+  <Case id="building" caseType="BuildingView" timeoutRealSeconds="90">
+    <testDefName>Batch3_SteelDoor</testDefName><Scene/>
+    <Actors><Building id="door" def="Door" stuff="Steel" x="25" z="25"/></Actors>
+    <Steps><Require id="configured"><ThingStyle actor="door" stuff="Steel"/></Require><View id="building" actor="door" directions="North" cameraSize="11"/></Steps>
+    <Success><StepSucceeded ref="building"/></Success>
+  </Case>
+  <Case id="life-stage" caseType="PawnLifeStageThreeView" timeoutRealSeconds="90">
+    <testDefName>Batch3_YoungMuffalo</testDefName><Scene/>
+    <Actors><Pawn id="p" x="25" z="25"><basePawnKind>Muffalo</basePawnKind><Age biologicalYears="0.1"/></Pawn></Actors>
+    <Steps><Require id="configured"><PawnAppearance actor="p" property="biologicalYears" value="0.1"/></Require><View id="young" actor="p" cameraSize="11"/></Steps>
+    <Success><StepSucceeded ref="young"/></Success>
+  </Case>
+  <Case id="head" caseType="HeadTypeThreeView" timeoutRealSeconds="90">
+    <testDefName>Batch3_HeadAppearance</testDefName><Scene/>
+    <Actors><Pawn id="p" template="presenter" x="25" z="25"><Apparel mode="replace"/></Pawn></Actors>
+    <Steps><Require id="configured"><PawnAppearance actor="p" property="headType" value="Male_AverageNormal"/></Require><View id="head" actor="p" cameraSize="11"/></Steps>
+    <Success><StepSucceeded ref="head"/></Success>
+  </Case>
+  <Case id="body" caseType="BodyTypeThreeView" timeoutRealSeconds="90">
+    <testDefName>Batch3_FatBodyAppearance</testDefName><Scene/>
+    <Actors><Pawn id="p" template="presenter" x="25" z="25"><Appearance><bodyType>Fat</bodyType></Appearance></Pawn></Actors>
+    <Steps><Require id="configured"><PawnAppearance actor="p" property="bodyType" value="Fat"/></Require><View id="body" actor="p" cameraSize="11"/></Steps>
+    <Success><StepSucceeded ref="body"/></Success>
+  </Case>
+  <Case id="gene" caseType="GeneThreeView" timeoutRealSeconds="90">
+    <testDefName>Batch3_BlueSkinGene</testDefName><Scene/>
+    <Requirements><DLC packageId="ludeon.rimworld.biotech"/></Requirements>
+    <Actors><Pawn id="p" template="presenter" x="25" z="25"><Apparel mode="replace"/><Genes mode="replace"><Add def="Skin_Blue" xenogene="true"/></Genes></Pawn></Actors>
+    <Steps><Require id="configured"><HasGene actor="p" def="Skin_Blue" active="true" xenogene="true"/></Require><View id="gene" actor="p" cameraSize="11"/></Steps>
+    <Success><StepSucceeded ref="gene"/></Success>
+  </Case>
+  <Case id="xenotype" caseType="XenotypeThreeView" timeoutRealSeconds="90">
+    <testDefName>Batch3_HussarXenotype</testDefName><Scene/>
+    <Requirements><DLC packageId="ludeon.rimworld.biotech"/></Requirements>
+    <Actors><Pawn id="p" template="presenter" x="25" z="25"><Xenotype def="Hussar"/></Pawn></Actors>
+    <Steps><Require id="configured"><HasXenotype actor="p" def="Hussar"/></Require><View id="xenotype" actor="p" pose="weaponReady" cameraSize="11"/></Steps>
+    <Success><StepSucceeded ref="xenotype"/></Success>
+  </Case>
+  <Case id="mod-loadout" caseType="LoadoutView" timeoutRealSeconds="90">
+    <testDefName>Batch3_AxolotlCompleteLoadout</testDefName><Scene/>
+    <Requirements><Mod packageId="hentailoliteam.axolotl"/></Requirements>
+    <Actors><Pawn id="p" x="25" z="25"><basePawnKind>Axolotl_Colonist</basePawnKind><gender>Female</gender><Age biologicalYears="25"/><Apparel mode="replace"><Add def="Axolotl_MoeLotlSuit" stuff="Cloth" quality="Excellent"/></Apparel><Equipment><SetPrimary def="Gun_AssaultRifle" quality="Excellent"/></Equipment></Pawn></Actors>
+    <Steps><Require id="configured"><Wearing actor="p" def="Axolotl_MoeLotlSuit"/><Equipped actor="p" def="Gun_AssaultRifle"/></Require><View id="mod-loadout" actor="p" pose="weaponReady" directions="South,East,North,West" cameraSize="11"/><Require id="retained"><Wearing actor="p" def="Axolotl_MoeLotlSuit"/><Equipped actor="p" def="Gun_AssaultRifle"/></Require></Steps>
+    <Success><StepSucceeded ref="mod-loadout"/><StepSucceeded ref="retained"/></Success>
+  </Case>
+</TestSuite>

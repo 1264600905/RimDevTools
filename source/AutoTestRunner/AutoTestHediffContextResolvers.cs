@@ -182,7 +182,7 @@ namespace LogSyncMod.AutoTest
                 .Where(candidate => candidate.Value?.race != null)
                 .ToList();
 
-            foreach (AutoTestHediffPawnCandidate<PawnKindDef> candidate in AutoTestHediffPawnPolicy.Order(candidates))
+            foreach (AutoTestHediffPawnCandidate<PawnKindDef> candidate in AutoTestHediffPawnPolicy.Order(candidates).Take(ManualPawnGeneration.HasTemplate ? 1 : int.MaxValue))
             {
                 string firstFailure = null;
                 for (int attempt = 1; attempt <= 2; attempt++)
@@ -212,7 +212,7 @@ namespace LogSyncMod.AutoTest
                             throw new InvalidOperationException("Presenter pawn was destroyed, died, or failed to enter the map during the stability check.");
 
                         final.Pawn = pawn;
-                        final.PawnKind = candidate.Value;
+                        final.PawnKind = pawn.kindDef;
                         final.Source = candidate.Source.ToString();
                         final.PartResolution = part;
                         final.PassedAfterRetry = attempt == 2;
@@ -305,7 +305,7 @@ namespace LogSyncMod.AutoTest
                 forceBaselinerChance: kind.RaceProps.Humanlike ? 1f : 0f,
                 developmentalStages: DevelopmentalStage.Adult,
                 forceNoGear: true);
-            return PawnGenerator.GeneratePawn(request);
+            return ManualPawnGeneration.Presenter(request);
         }
 
         private static Faction ResolveFaction()

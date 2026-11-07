@@ -1,0 +1,413 @@
+<?xml version='1.0' encoding='utf-8'?>
+<TestSuite schemaVersion="1" id="batch3.views.controlled-failures" packageId="ludeon.rimworld">
+  <Templates>
+    <PawnTemplate id="presenter">
+      <basePawnKind>SpaceRefugee</basePawnKind>
+      <gender>Male</gender>
+      <Age biologicalYears="25" chronologicalYears="25" />
+      <Appearance>
+        <hair>Shaved</hair>
+        <bodyType>Male</bodyType>
+        <headType>Male_AverageNormal</headType>
+        <hairColor>#241810</hairColor>
+      </Appearance>
+      <Apparel mode="replace">
+        <Add def="Apparel_Pants" stuff="Cloth" quality="Good" />
+        <Add def="Apparel_BasicShirt" stuff="Cloth" quality="Good" />
+        <Add def="Apparel_FlakVest" quality="Excellent" />
+        <Add def="Apparel_SimpleHelmet" stuff="Steel" quality="Excellent" />
+      </Apparel>
+      <Equipment>
+        <SetPrimary def="Gun_AssaultRifle" quality="Excellent" />
+      </Equipment>
+    </PawnTemplate>
+  </Templates>
+  <Case id="loadout-negative" caseType="LoadoutView" timeoutRealSeconds="90">
+    <testDefName>Batch3_CompleteLoadout_WrongExpectation</testDefName>
+    <Scene />
+    <Actors>
+      <Pawn id="p" template="presenter" x="25" z="25" />
+    </Actors>
+    <Steps>
+      <Require id="configured">
+        <Equipped actor="p" def="Gun_AssaultRifle" />
+        <Wearing actor="p" def="Apparel_FlakVest" />
+        <PawnAppearance actor="p" property="hair" value="Shaved" />
+      </Require>
+      <View id="loadout" actor="p" directions="South,East,North,West" pose="weaponReady" loadout="preserve" cameraSize="11" />
+      <Require id="retained">
+        <Equipped actor="p" def="Gun_AssaultRifle" />
+        <Wearing actor="p" def="Apparel_FlakVest" />
+        <Wearing actor="p" def="Apparel_SimpleHelmet" />
+      </Require>
+      <Require id="controlled-failure">
+        <ThingExists actor="p" def="ComponentIndustrial" />
+      </Require>
+    </Steps>
+    <Success>
+      <StepSucceeded ref="loadout" />
+      <StepSucceeded ref="retained" />
+    </Success>
+  </Case>
+  <Case id="hair-negative" caseType="HairThreeView" timeoutRealSeconds="90">
+    <testDefName>Batch3_ShavedHair_WrongExpectation</testDefName>
+    <Scene />
+    <Actors>
+      <Pawn id="p" template="presenter" x="25" z="25">
+        <Apparel mode="replace" />
+      </Pawn>
+    </Actors>
+    <Steps>
+      <Require id="configured">
+        <PawnAppearance actor="p" property="hairColor" value="#241810" />
+      </Require>
+      <View id="hair" actor="p" cameraSize="11" />
+      <Require id="controlled-failure">
+        <ThingExists actor="p" def="ComponentIndustrial" />
+      </Require>
+    </Steps>
+    <Success>
+      <StepSucceeded ref="hair" />
+    </Success>
+  </Case>
+  <Case id="plant-negative" caseType="PlantGrowthView" timeoutRealSeconds="90">
+    <testDefName>Batch3_RiceStages_WrongExpectation</testDefName>
+    <Scene />
+    <Actors>
+      <Thing id="plant" def="Plant_Rice" growth="0.2" x="25" z="25" />
+    </Actors>
+    <Steps>
+      <Require id="young">
+        <PlantGrowth actor="plant" min="0.19" max="0.21" />
+      </Require>
+      <View id="young-image" actor="plant" directions="South" cameraSize="11" />
+      <SetPlantGrowth id="grow" actor="plant" value="1" />
+      <Require id="mature">
+        <PlantGrowth actor="plant" min="1" max="1" />
+      </Require>
+      <View id="mature-image" actor="plant" directions="South" cameraSize="11" />
+      <Require id="controlled-failure">
+        <ThingExists actor="plant" def="ComponentIndustrial" />
+      </Require>
+    </Steps>
+    <Success>
+      <StepSucceeded ref="young-image" />
+      <StepSucceeded ref="mature-image" />
+    </Success>
+  </Case>
+  <Case id="terrain-negative" caseType="TerrainPatchView" timeoutRealSeconds="90">
+    <testDefName>Batch3_ConcretePatch_WrongExpectation</testDefName>
+    <Scene />
+    <Actors>
+      <TerrainArea id="patch" def="Concrete" x="20" z="20" width="6" height="4" />
+    </Actors>
+    <Steps>
+      <Require id="configured">
+        <TerrainState actor="patch" def="Concrete" />
+      </Require>
+      <View id="patch-image" actor="patch" directions="North" cameraSize="12" />
+      <Require id="controlled-failure">
+        <TerrainState actor="patch" def="Soil" />
+      </Require>
+    </Steps>
+    <Success>
+      <StepSucceeded ref="patch-image" />
+    </Success>
+  </Case>
+  <Case id="human-negative" caseType="HumanoidThreeView" timeoutRealSeconds="90">
+    <testDefName>Batch3_HumanAppearance_WrongExpectation</testDefName>
+    <Scene />
+    <Actors>
+      <Pawn id="p" template="presenter" x="25" z="25" />
+    </Actors>
+    <Steps>
+      <Require id="configured">
+        <PawnAppearance actor="p" property="race" value="Human" />
+        <PawnAppearance actor="p" property="gender" value="Male" />
+      </Require>
+      <View id="human" actor="p" cameraSize="11" />
+      <Require id="controlled-failure">
+        <ThingExists actor="p" def="ComponentIndustrial" />
+      </Require>
+    </Steps>
+    <Success>
+      <StepSucceeded ref="human" />
+    </Success>
+  </Case>
+  <Case id="animal-negative" caseType="AnimalThreeView" timeoutRealSeconds="90">
+    <testDefName>Batch3_MuffaloAppearance_WrongExpectation</testDefName>
+    <Scene />
+    <Actors>
+      <Pawn id="p" x="25" z="25">
+        <basePawnKind>Muffalo</basePawnKind>
+        <gender>Female</gender>
+        <Age biologicalYears="5" />
+      </Pawn>
+    </Actors>
+    <Steps>
+      <Require id="configured">
+        <PawnAppearance actor="p" property="kind" value="Muffalo" />
+        <PawnAppearance actor="p" property="gender" value="Female" />
+      </Require>
+      <View id="animal" actor="p" directions="West,South,North" cameraSize="11" />
+      <Require id="controlled-failure">
+        <ThingExists actor="p" def="ComponentIndustrial" />
+      </Require>
+    </Steps>
+    <Success>
+      <StepSucceeded ref="animal" />
+    </Success>
+  </Case>
+  <Case id="mech-negative" caseType="MechanoidThreeView" timeoutRealSeconds="90">
+    <testDefName>Batch3_ScytherAppearance_WrongExpectation</testDefName>
+    <Scene />
+    <Actors>
+      <Pawn id="p" x="25" z="25">
+        <basePawnKind>Mech_Scyther</basePawnKind>
+      </Pawn>
+    </Actors>
+    <Steps>
+      <Require id="configured">
+        <PawnAppearance actor="p" property="kind" value="Mech_Scyther" />
+      </Require>
+      <View id="mech" actor="p" cameraSize="11" />
+      <Require id="controlled-failure">
+        <ThingExists actor="p" def="ComponentIndustrial" />
+      </Require>
+    </Steps>
+    <Success>
+      <StepSucceeded ref="mech" />
+    </Success>
+  </Case>
+  <Case id="alien-negative" caseType="AlienThreeView" timeoutRealSeconds="90">
+    <testDefName>Batch3_AxolotlAppearance_WrongExpectation</testDefName>
+    <Scene />
+    <Requirements>
+      <Mod packageId="hentailoliteam.axolotl" />
+    </Requirements>
+    <Actors>
+      <Pawn id="p" x="25" z="25">
+        <basePawnKind>Axolotl_Colonist</basePawnKind>
+        <gender>Female</gender>
+        <Age biologicalYears="25" />
+      </Pawn>
+    </Actors>
+    <Steps>
+      <Require id="configured">
+        <PawnAppearance actor="p" property="kind" value="Axolotl_Colonist" />
+      </Require>
+      <View id="alien" actor="p" directions="South,West,North" cameraSize="11" />
+      <Require id="controlled-failure">
+        <ThingExists actor="p" def="ComponentIndustrial" />
+      </Require>
+    </Steps>
+    <Success>
+      <StepSucceeded ref="alien" />
+    </Success>
+  </Case>
+  <Case id="apparel-negative" caseType="ApparelThreeView" timeoutRealSeconds="90">
+    <testDefName>Batch3_IsolatedVest_WrongExpectation</testDefName>
+    <Scene />
+    <Actors>
+      <Pawn id="p" template="presenter" x="25" z="25" />
+    </Actors>
+    <Steps>
+      <Require id="configured">
+        <Wearing actor="p" def="Apparel_FlakVest" />
+      </Require>
+      <View id="apparel" actor="p" loadout="isolate" targetDef="Apparel_FlakVest" cameraSize="11" />
+      <Require id="isolated">
+        <Wearing actor="p" def="Apparel_FlakVest" />
+        <Not>
+          <Wearing actor="p" def="Apparel_Pants" />
+        </Not>
+      </Require>
+      <Require id="controlled-failure">
+        <ThingExists actor="p" def="ComponentIndustrial" />
+      </Require>
+    </Steps>
+    <Success>
+      <StepSucceeded ref="apparel" />
+      <StepSucceeded ref="isolated" />
+    </Success>
+  </Case>
+  <Case id="weapon-negative" caseType="WeaponThreeView" timeoutRealSeconds="90">
+    <testDefName>Batch3_RifleReadyPose_WrongExpectation</testDefName>
+    <Scene />
+    <Actors>
+      <Pawn id="p" template="presenter" x="25" z="25" />
+    </Actors>
+    <Steps>
+      <Require id="configured">
+        <Equipped actor="p" def="Gun_AssaultRifle" />
+      </Require>
+      <View id="weapon" actor="p" pose="weaponReady" targetDef="Gun_AssaultRifle" cameraSize="11" />
+      <Require id="controlled-failure">
+        <ThingExists actor="p" def="ComponentIndustrial" />
+      </Require>
+    </Steps>
+    <Success>
+      <StepSucceeded ref="weapon" />
+    </Success>
+  </Case>
+  <Case id="building-negative" caseType="BuildingView" timeoutRealSeconds="90">
+    <testDefName>Batch3_SteelDoor_WrongExpectation</testDefName>
+    <Scene />
+    <Actors>
+      <Building id="door" def="Door" stuff="Steel" x="25" z="25" />
+    </Actors>
+    <Steps>
+      <Require id="configured">
+        <ThingStyle actor="door" stuff="Steel" />
+      </Require>
+      <View id="building" actor="door" directions="North" cameraSize="11" />
+      <Require id="controlled-failure">
+        <ThingExists actor="door" def="ComponentIndustrial" />
+      </Require>
+    </Steps>
+    <Success>
+      <StepSucceeded ref="building" />
+    </Success>
+  </Case>
+  <Case id="life-stage-negative" caseType="PawnLifeStageThreeView" timeoutRealSeconds="90">
+    <testDefName>Batch3_YoungMuffalo_WrongExpectation</testDefName>
+    <Scene />
+    <Actors>
+      <Pawn id="p" x="25" z="25">
+        <basePawnKind>Muffalo</basePawnKind>
+        <Age biologicalYears="0.1" />
+      </Pawn>
+    </Actors>
+    <Steps>
+      <Require id="configured">
+        <PawnAppearance actor="p" property="biologicalYears" value="0.1" />
+      </Require>
+      <View id="young" actor="p" cameraSize="11" />
+      <Require id="controlled-failure">
+        <ThingExists actor="p" def="ComponentIndustrial" />
+      </Require>
+    </Steps>
+    <Success>
+      <StepSucceeded ref="young" />
+    </Success>
+  </Case>
+  <Case id="head-negative" caseType="HeadTypeThreeView" timeoutRealSeconds="90">
+    <testDefName>Batch3_HeadAppearance_WrongExpectation</testDefName>
+    <Scene />
+    <Actors>
+      <Pawn id="p" template="presenter" x="25" z="25">
+        <Apparel mode="replace" />
+      </Pawn>
+    </Actors>
+    <Steps>
+      <Require id="configured">
+        <PawnAppearance actor="p" property="headType" value="Male_AverageNormal" />
+      </Require>
+      <View id="head" actor="p" cameraSize="11" />
+      <Require id="controlled-failure">
+        <ThingExists actor="p" def="ComponentIndustrial" />
+      </Require>
+    </Steps>
+    <Success>
+      <StepSucceeded ref="head" />
+    </Success>
+  </Case>
+  <Case id="body-negative" caseType="BodyTypeThreeView" timeoutRealSeconds="90">
+    <testDefName>Batch3_FatBodyAppearance_WrongExpectation</testDefName>
+    <Scene />
+    <Actors>
+      <Pawn id="p" template="presenter" x="25" z="25">
+        <Appearance>
+          <bodyType>Fat</bodyType>
+        </Appearance>
+      </Pawn>
+    </Actors>
+    <Steps>
+      <Require id="configured">
+        <PawnAppearance actor="p" property="bodyType" value="Fat" />
+      </Require>
+      <View id="body" actor="p" cameraSize="11" />
+      <Require id="controlled-failure">
+        <ThingExists actor="p" def="ComponentIndustrial" />
+      </Require>
+    </Steps>
+    <Success>
+      <StepSucceeded ref="body" />
+    </Success>
+  </Case>
+  <Case id="gene-negative" caseType="GeneThreeView" timeoutRealSeconds="90">
+    <testDefName>Batch3_BlueSkinGene_WrongExpectation</testDefName>
+    <Scene />
+    <Requirements>
+      <DLC packageId="ludeon.rimworld.biotech" />
+    </Requirements>
+    <Actors>
+      <Pawn id="p" template="presenter" x="25" z="25">
+        <Apparel mode="replace" />
+        <Genes mode="replace">
+          <Add def="Skin_Blue" xenogene="true" />
+        </Genes>
+      </Pawn>
+    </Actors>
+    <Steps>
+      <Require id="configured">
+        <HasGene actor="p" def="Skin_Blue" active="true" xenogene="true" />
+      </Require>
+      <View id="gene" actor="p" cameraSize="11" />
+      <Require id="controlled-failure">
+        <ThingExists actor="p" def="ComponentIndustrial" />
+      </Require>
+    </Steps>
+    <Success>
+      <StepSucceeded ref="gene" />
+    </Success>
+  </Case>
+  <Case id="xenotype-negative" caseType="XenotypeThreeView" timeoutRealSeconds="90">
+    <testDefName>Batch3_HussarXenotype_WrongExpectation</testDefName>
+    <Scene />
+    <Requirements>
+      <DLC packageId="ludeon.rimworld.biotech" />
+    </Requirements>
+    <Actors>
+      <Pawn id="p" template="presenter" x="25" z="25">
+        <Xenotype def="Hussar" />
+      </Pawn>
+    </Actors>
+    <Steps>
+      <Require id="configured">
+        <HasXenotype actor="p" def="Hussar" />
+      </Require>
+      <View id="xenotype" actor="p" pose="weaponReady" cameraSize="11" />
+      <Require id="controlled-failure">
+        <ThingExists actor="p" def="ComponentIndustrial" />
+      </Require>
+    </Steps>
+    <Success>
+      <StepSucceeded ref="xenotype" />
+    </Success>
+  </Case>
+  <Case id="recovery" caseType="LoadoutView" timeoutRealSeconds="90">
+    <testDefName>Batch3_ViewRecovery</testDefName>
+    <Scene />
+    <Actors>
+      <Pawn id="p" template="presenter" x="25" z="25" />
+    </Actors>
+    <Steps>
+      <Require id="configured">
+        <Equipped actor="p" def="Gun_AssaultRifle" />
+        <Wearing actor="p" def="Apparel_FlakVest" />
+        <PawnAppearance actor="p" property="hair" value="Shaved" />
+      </Require>
+      <View id="loadout" actor="p" directions="South,East,North,West" pose="weaponReady" loadout="preserve" cameraSize="11" />
+      <Require id="retained">
+        <Equipped actor="p" def="Gun_AssaultRifle" />
+        <Wearing actor="p" def="Apparel_FlakVest" />
+        <Wearing actor="p" def="Apparel_SimpleHelmet" />
+      </Require>
+    </Steps>
+    <Success>
+      <StepSucceeded ref="loadout" />
+      <StepSucceeded ref="retained" />
+    </Success>
+  </Case>
+</TestSuite>

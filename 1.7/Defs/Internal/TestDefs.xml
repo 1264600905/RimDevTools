@@ -1,5 +1,17 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <Defs>
+  <WorldObjectDef>
+    <defName>LogSync_AutoTestStudioParent</defName>
+    <label>RimDevTools test studio</label>
+    <worldObjectClass>MapParent</worldObjectClass>
+    <texture>World/WorldObjects/Ambush</texture>
+    <mapGenerator>LogSync_AutoTestStudioMap</mapGenerator>
+  </WorldObjectDef>
+  <MapGeneratorDef>
+    <defName>LogSync_AutoTestStudioMap</defName>
+    <label>RimDevTools ordinary test studio</label>
+    <genSteps><li>ElevationFertility</li><li>LogSync_AutoTestFlatSoil</li><li>Fog</li></genSteps>
+  </MapGeneratorDef>
 
   <!-- 测试专用：空口袋地图生成器 -->
   <MapGeneratorDef>

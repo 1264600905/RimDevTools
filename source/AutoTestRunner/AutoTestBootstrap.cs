@@ -32,17 +32,20 @@ namespace LogSyncMod.AutoTest
         private static bool? lastObservedForcePausedState;
         private static string lastObservedSmartSpeedState;
         private static bool temporaryPauseBypass;
+        internal static bool TemporaryPauseBypass => temporaryPauseBypass;
         private static readonly AutoTestSmartSpeedBridge SmartSpeedBridge = new AutoTestSmartSpeedBridge();
         private static AutoTestRunner runner;
 
         static AutoTestBootstrap()
         {
+            global::LogSyncMod.XmlHotReloadHttpServer.ManualTestsHandler = ManualTestNativeApi.Handle;
             new Harmony(HarmonyId).PatchAll();
             LongEventHandler.ExecuteWhenFinished(() => startupReady = true);
         }
 
         public static void Tick()
         {
+            ManualTestService.Tick();
             global::LogSyncMod.TestAudioController.MaintainMuted("autotest_tick");
             if (!startupReady) return;
 
@@ -155,6 +158,7 @@ namespace LogSyncMod.AutoTest
 
         public static void PollPocketMapCleanupWatchdog()
         {
+            ManualTestService.Frame();
             runner?.PollPocketMapCleanupWatchdog();
         }
 
@@ -168,13 +172,14 @@ namespace LogSyncMod.AutoTest
             }
 
             runner?.ProcessUi();
+            ManualTestService.OnGui();
         }
 
         public static bool ShouldForceAbilityForAutoTest(RimWorld.Ability ability)
         {
             if (runner == null || ability == null)
             {
-                return false;
+                return ability != null && ManualTestService.ShouldForceAbility(ability);
             }
 
             try
@@ -382,7 +387,7 @@ namespace LogSyncMod.AutoTest
         internal static AutoTestRunRequestResultDto RequestRuntimeRun(AutoTestRunRequestDto request)
         {
             request = request ?? new AutoTestRunRequestDto();
-            if (runner != null || (global::LogSyncMod.LogSyncMod.settings?.autoTestEnabled ?? false))
+            if (ManualTestService.Busy || runner != null || (global::LogSyncMod.LogSyncMod.settings?.autoTestEnabled ?? false))
                 return new AutoTestRunRequestResultDto { Accepted = false, ErrorCode = "autotest.run_already_active", Message = "An auto-test run is already active or queued." };
             string packageId = (request.PackageId ?? string.Empty).Trim().ToLowerInvariant();
             if (string.IsNullOrEmpty(packageId)) return new AutoTestRunRequestResultDto { Accepted = false, ErrorCode = "autotest.package_id_required", Message = "packageId is required." };

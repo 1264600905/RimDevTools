@@ -51,12 +51,11 @@ namespace LogSyncMod.AutoTest
                         developmentalStages: DevelopmentalStage.Adult,
                         forceNoBackstory: true,
                         forceNoGear: true);
-                    worker = PawnGenerator.GeneratePawn(request);
+                    worker = ManualPawnGeneration.Presenter(request);
                     if (worker == null) throw new InvalidOperationException("PawnGenerator.GeneratePawn returned null for recipe worker.");
                     if (worker.health == null) throw new InvalidOperationException("Generated recipe worker has no health tracker.");
 
-                    worker.health.RemoveAllHediffs();
-                    PrepareSkills(worker, recipe);
+                    if (!ManualPawnGeneration.IsStaged(worker)) { worker.health.RemoveAllHediffs(); PrepareSkills(worker, recipe); }
                     worker.workSettings?.EnableAndInitialize();
 
                     IntVec3 cell = allocateSpawnCell == null ? IntVec3.Invalid : allocateSpawnCell();

@@ -12,7 +12,14 @@ namespace LogSyncMod
         private static readonly Type LogWindowType = AccessTools.TypeByName("LudeonTK.EditWindow_Log");
         private static readonly FieldInfo AutoOpenField = AccessTools.Field("LudeonTK.EditWindow_Log:canAutoOpen");
         private static bool? originalAutoOpen;
-        public static bool Active => LogSyncMod.settings != null && (LogSyncMod.settings.testSessionActive || LogSyncMod.settings.autoTestEnabled);
+        private static int externalSessions;
+        public static bool Active => externalSessions > 0 || LogSyncMod.settings != null && (LogSyncMod.settings.testSessionActive || LogSyncMod.settings.autoTestEnabled);
+        public static IDisposable RegisterExternalSession() { externalSessions++; return new SessionLease(); }
+        private sealed class SessionLease : IDisposable
+        {
+            private bool disposed;
+            public void Dispose() { if (!disposed) { disposed = true; externalSessions--; } }
+        }
         public static bool IsLogWindow(Window window) => window != null && (LogWindowType?.IsInstanceOfType(window) == true || window.GetType().Name == "EditWindow_Log");
 
         public static void Maintain()

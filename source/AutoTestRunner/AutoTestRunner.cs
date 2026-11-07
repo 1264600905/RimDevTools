@@ -157,9 +157,12 @@ namespace LogSyncMod.AutoTest
         private AutoTestLogCaptureSubscription logCaptureSubscription;
         private IDisposable runContextScope;
         private volatile bool cancelRequested;
+        private readonly ManualRunnerOptions manualOptions;
+        private bool discoveryOnly;
 
-        public AutoTestRunner(LogSyncSettings settings, Map map, AutoTestReadinessSnapshot initialReadiness = null)
+        public AutoTestRunner(LogSyncSettings settings, Map map, AutoTestReadinessSnapshot initialReadiness = null, ManualRunnerOptions manualOptions = null)
         {
+            this.manualOptions = manualOptions;
             this.settings = settings;
             this.map = map;
             this.initialReadiness = initialReadiness;
@@ -220,7 +223,7 @@ namespace LogSyncMod.AutoTest
             logCaptureSubscription = new AutoTestLogCaptureSubscription(runId, logJournal);
             operationJournal.RecordEvent("run.started", runId, null, null, null, "autotest.run", "Auto-test run started.", evidenceClock.UtcNow);
             outputDirectory = ResolveOutputDirectory(settings);
-            runArtifacts = AutoTestReportWriter.CreateRunArtifacts(outputDirectory, targetPackageId, runId);
+            runArtifacts = manualOptions?.Artifacts ?? AutoTestReportWriter.CreateRunArtifacts(outputDirectory, targetPackageId, runId);
             screenshotService = new AutoTestScreenshotService(runArtifacts, AppendNote, TrimForNote);
             targetMod = LoadedModManager.RunningMods.FirstOrDefault(mod =>
                 string.Equals(mod.PackageIdPlayerFacing, targetPackageId, StringComparison.OrdinalIgnoreCase));
@@ -242,12 +245,29 @@ namespace LogSyncMod.AutoTest
             }
 
             if (!LoadScenarioPlan()) return;
+            if (manualOptions?.Choice.CaseType == "LoadoutView") { InitializeManualLoadout(); return; }
             if (externalPlan?.ScenarioOnly == true)
             {
                 InitializeScenarios();
                 return;
             }
 
+            DiscoverOrdinaryCases();
+            if (manualOptions != null) RetainManualCases();
+
+            if (externalPlan != null) InitializeScenarios();
+            else if (manualOptions == null) ApplyBatchLimit();
+            if (completed) return;
+            MaterializeImmediateResults();
+            if (externalPlan == null) BuildPlannedManifest();
+
+            int totalPending = pendingItems.Count + pendingTurretDefs.Count + pendingRangedWeaponDefs.Count + pendingMeleeWeaponDefs.Count + pendingSkillAbilityDefs.Count + pendingAbilityGizmoDefs.Count + pendingStaticViewTargets.Count + pendingThreeViewTargets.Count + pendingCombatPawnTargets.Count;
+            Log.Message("[RimDevTools] " + (manualOptions == null ? "Automatic" : "Manual") + " selection frozen: package=" + targetPackageId + "; pending=" + totalPending);
+            if (totalPending == 0 && !HasPendingScenarios && !TryActivateDeferredScenarios()) Finish();
+        }
+
+        private void DiscoverOrdinaryCases()
+        {
             RebuildTurretMountedGunDefs();
 
             nextTerrainX = Math.Max(map.Size.x / 2, 10);
@@ -266,7 +286,7 @@ namespace LogSyncMod.AutoTest
 
             if (settings.ShouldTestRecipes())
             {
-                UnlockAllResearch();
+                if (!discoveryOnly && manualOptions == null) UnlockAllResearch();
                 EnqueueRecipeDefs();
             }
 
@@ -294,6 +314,9 @@ namespace LogSyncMod.AutoTest
             {
                 BeginStaticViewTestSession();
                 BeginThreeViewTestSession();
+                if (discoveryOnly || manualOptions != null)
+                    foreach (var kind in DefDatabase<PawnKindDef>.AllDefsListForReading.Where(k => k.modContentPack == targetMod && MatchesTargetDefNameFilter(k)))
+                        RegisterDiscoveredCase(AutoTestCaseType.LoadoutView, "PawnKindDef", kind.defName, kind.label);
             }
 
             if (settings.ShouldTestSkillPocketMaps())
@@ -307,39 +330,6 @@ namespace LogSyncMod.AutoTest
                 BeginCombatPawnTestSession();
             }
 
-            if (externalPlan != null) InitializeScenarios();
-            else ApplyBatchLimit();
-            if (completed) return;
-            MaterializeImmediateResults();
-            if (externalPlan == null) BuildPlannedManifest();
-
-            int totalPending = pendingItems.Count + pendingTurretDefs.Count + pendingRangedWeaponDefs.Count + pendingMeleeWeaponDefs.Count + pendingSkillAbilityDefs.Count + pendingAbilityGizmoDefs.Count + pendingStaticViewTargets.Count + pendingThreeViewTargets.Count + pendingCombatPawnTargets.Count;
-            int pocketMapMaxConcurrent = settings.GetPocketMapMaxConcurrent();
-            Log.Message(string.Format(
-                "[LogSyncAutoTest] START packageId={0} map={1} scope={2} pending={3} pocketMapMaxConcurrent={4}",
-                targetPackageId,
-                map.info?.parent?.LabelCap ?? map.ToString(),
-                string.Join(",", settings.EffectiveAutoTestScopes()),
-                totalPending,
-                pocketMapMaxConcurrent));
-            Log.Message(string.Format(
-                "[LogSyncAutoTest] ENABLED modules: content={0}, recipes={1}, hediffs={2}, turrets={3}, ranged={4}, melee={5}, threeViews={6}, combatPawns={7}, skillPocketMaps={8}",
-                settings.ShouldTestContent(),
-                settings.ShouldTestRecipes(),
-                settings.ShouldTestHediffs(),
-                settings.ShouldTestTurrets(),
-                settings.ShouldTestRangedWeapons(),
-                settings.ShouldTestMeleeWeapons(),
-                settings.ShouldTestThreeViews(),
-                settings.ShouldTestCombatPawns(),
-                settings.ShouldTestSkillPocketMaps()));
-            Log.Message("[LogSyncAutoTest] TARGET DefNames: " + (settings.autoTestTargetDefNames.Count == 0 ? "<all>" : string.Join(",", settings.autoTestTargetDefNames)));
-
-            if (totalPending == 0 && !HasPendingScenarios)
-            {
-                Log.Warning("[LogSyncAutoTest] No matching auto-test targets were found for " + targetPackageId);
-                if (!TryActivateDeferredScenarios()) Finish();
-            }
         }
 
         private void RebuildTurretMountedGunDefs()
@@ -792,6 +782,19 @@ namespace LogSyncMod.AutoTest
             CleanupSelectionAndWindows();
 
             foreach (AutoTestResult result in results) NormalizeResultStatus(result);
+            if (manualOptions != null)
+            {
+                foreach (var result in results) result.Notes = AppendNote(result.Notes, "ManualInvocation=True; TemporaryPawnHash=" + (manualOptions.PawnSnapshot?.Sha256 ?? "none") + "; StagedPawnsGenerated=" + (manualOptions.GeneratedPawns.Count + (manualOptions.BuiltinUsesPawnSnapshot ? result.Scenario?.Trace.Count(t => t.Stage == "pawn.configured") ?? 0 : 0)));
+                foreach (var thing in manualOptions.GeneratedObjects.Distinct())
+                {
+                    try
+                    {
+                        if (thing is Pawn pawn && Find.WorldPawns.Contains(pawn)) Find.WorldPawns.RemovePawn(pawn);
+                        if (!thing.Destroyed) thing.Destroy(DestroyMode.Vanish);
+                    }
+                    catch (Exception ex) { results.Add(new AutoTestResult { CaseId = runId + "/staged-cleanup/" + thing.thingIDNumber, CaseType = "ManualCleanup", Status = "failed", ErrorMessage = ex.ToString() }); }
+                }
+            }
             runSummary = BuildRunSummary();
             AutoTestEvidenceManifest completedEvidence = null;
             try
@@ -802,7 +805,8 @@ namespace LogSyncMod.AutoTest
                 logCaptureSubscription?.Dispose();
                 logCaptureSubscription = null;
                 completedEvidence = evidenceBuilder?.Complete(operationJournal, logJournal);
-                AutoTestReportWriter.Write(runArtifacts, targetPackageId ?? "unknown", runId, results, targetMod?.Name ?? "Unknown", discoveredManifest, plannedManifest, runSummary, completedEvidence);
+                if (manualOptions == null) AutoTestReportWriter.Write(runArtifacts, targetPackageId ?? "unknown", runId, results, targetMod?.Name ?? "Unknown", discoveredManifest, plannedManifest, runSummary, completedEvidence);
+                else manualOptions.Completed(results, completedEvidence);
             }
             finally
             {
@@ -811,6 +815,7 @@ namespace LogSyncMod.AutoTest
                 runContextScope = null;
                 global::LogSyncMod.TestAudioController.Restore("autotest_runner_finally");
             }
+            if (manualOptions != null) { Log.Message("[RimDevToolsManual] Task finished: " + runId + "; results=" + results.Count); return; }
             Log.Message(string.Format(
                 "[LogSyncAutoTest] COMPLETED runId={0} packageId={1} total={2} passed={3} failed={4} discovered={5} planned={6} missing={7} missingDefNames={8}",
                 runId,
@@ -953,6 +958,8 @@ namespace LogSyncMod.AutoTest
                     return AutoTestCaseType.RecipeBillUi;
                 case AutoTestKind.RecipeExecution:
                     return AutoTestCaseType.RecipeExecution;
+                case AutoTestKind.RecipeInfoCard:
+                    return AutoTestCaseType.RecipeInfoCard;
                 case AutoTestKind.Hediff:
                     return AutoTestCaseType.HediffInfoCard;
                 case AutoTestKind.AnimalInfoCard:
@@ -1150,7 +1157,7 @@ namespace LogSyncMod.AutoTest
 
         private string BuildCaseId(AutoTestCaseType caseType, string defName)
         {
-            return (targetPackageId ?? "unknown") + "|" + caseType + "|" + (defName ?? string.Empty);
+            return (manualOptions == null ? "" : runId + "|") + (targetPackageId ?? "unknown") + "|" + caseType + "|" + (defName ?? string.Empty);
         }
 
         private AutoTestManifestEntry RegisterDiscoveredCase(AutoTestCaseType caseType, string defType, string defName, string label)

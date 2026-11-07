@@ -39,6 +39,7 @@ namespace LogSyncMod
         public bool enableSmokeTest = false;
         public bool testMuteAudio = false;
         public bool testSessionActive = false;
+        public string testSessionKind = "";
         public bool autoTestEnabled = false;
         public string autoTestTargetPackageId = "";
         public string autoTestRunId = "";
@@ -81,6 +82,7 @@ namespace LogSyncMod
             Scribe_Values.Look(ref enableSmokeTest, "enableSmokeTest", false);
             Scribe_Values.Look(ref testMuteAudio, "testMuteAudio", false);
             Scribe_Values.Look(ref testSessionActive, "testSessionActive", false);
+            Scribe_Values.Look(ref testSessionKind, "testSessionKind", "");
             Scribe_Values.Look(ref autoTestEnabled, "autoTestEnabled", false);
             Scribe_Values.Look(ref autoTestTargetPackageId, "autoTestTargetPackageId", "");
             Scribe_Values.Look(ref autoTestRunId, "autoTestRunId", "");

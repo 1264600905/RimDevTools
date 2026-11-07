@@ -1388,6 +1388,13 @@ internal sealed partial class TestSuite
             LogArchive.Rotate(log, 3);
         }
         Assert(Directory.EnumerateFiles(directory, "精选日志*.log").Count() == 3 && File.ReadAllText(log) == "", "log rotation enforces retention and clears current log");
+        var project = NewDirectory("manual-session-retention");
+        var manual = LogSyncMod.AutoTest.TestArtifactDirectory.Allocate(project, "manual", "game-launch-one");
+        var automatic = LogSyncMod.AutoTest.TestArtifactDirectory.Allocate(project);
+        var automaticLater = LogSyncMod.AutoTest.TestArtifactDirectory.Allocate(project);
+        LogArchive.PruneTestRunDirectories(Path.Combine(project, ".tools", "log"), 1);
+        Assert(Directory.Exists(manual.DirectoryPath) && LogSyncMod.AutoTest.TestArtifactDirectory.IsManual(manual.DirectoryPath)
+            && new[] { automatic.DirectoryPath, automaticLater.DirectoryPath }.Count(Directory.Exists) == 1, "automatic retention preserves manual game-launch sessions while pruning only ordinary test runs");
     }
 
     private async Task TestDoctorIsReadOnlyAsync()

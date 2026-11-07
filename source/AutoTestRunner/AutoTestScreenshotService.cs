@@ -152,7 +152,7 @@ namespace LogSyncMod.AutoTest
                 string screenshotDirectory = ResolveScreenshotDirectory(request);
                 Directory.CreateDirectory(screenshotDirectory);
 
-                string fileName = BuildScreenshotFileName(request);
+                string fileName = BuildScreenshotFileName(request, runArtifacts.IsManual);
                 string screenshotPath = Path.Combine(screenshotDirectory, fileName);
 
                 AutoTestScreenshotOverlay.Request(result);
@@ -278,6 +278,7 @@ namespace LogSyncMod.AutoTest
                 case "BodyTypeThreeView":
                 case "GeneThreeView":
                 case "XenotypeThreeView":
+                case "LoadoutView":
                     return "View";
 
                 case "SkillPocketMap":
@@ -288,7 +289,7 @@ namespace LogSyncMod.AutoTest
             }
         }
 
-        private static string BuildScreenshotFileName(AutoTestScreenshotRequest request)
+        private static string BuildScreenshotFileName(AutoTestScreenshotRequest request, bool manual = false)
         {
             AutoTestResult result = request?.Result;
             string defName = SanitizeFileName(result?.DefName);
@@ -298,6 +299,11 @@ namespace LogSyncMod.AutoTest
                 ? null
                 : SanitizeFileName(request.StageSuffix);
             string identity = defName + "(" + label + ")";
+            if (manual)
+            {
+                using var sha = System.Security.Cryptography.SHA256.Create();
+                identity = BitConverter.ToString(sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes(result?.CaseId ?? ""))).Replace("-", "").Substring(0, 20) + "_" + identity;
+            }
             return string.IsNullOrWhiteSpace(suffix)
                 ? string.Format("{0:D4}_{1}.png", request?.ResultIndex ?? 0, identity)
                 : string.Format("{0:D4}_{1}_{2}.png", request?.ResultIndex ?? 0, identity, suffix);

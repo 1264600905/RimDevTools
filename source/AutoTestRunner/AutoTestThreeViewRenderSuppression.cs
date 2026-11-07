@@ -9,6 +9,16 @@ namespace LogSyncMod.AutoTest
     {
         private static readonly object Gate = new object();
         private static readonly HashSet<int> RegisteredPawnIds = new HashSet<int>();
+        private static readonly HashSet<int> StandingPresenters = new HashSet<int>();
+
+        internal static void SetStandingPresentation(Pawn pawn, bool enabled)
+        {
+            if (pawn == null) return;
+            lock (Gate) { if (enabled) StandingPresenters.Add(pawn.thingIDNumber); else StandingPresenters.Remove(pawn.thingIDNumber); }
+        }
+
+        internal static bool UsesStandingPresentation(Pawn pawn)
+        { lock (Gate) return pawn != null && StandingPresenters.Contains(pawn.thingIDNumber); }
 
         public static int RegisteredCount
         {
@@ -46,6 +56,7 @@ namespace LogSyncMod.AutoTest
             lock (Gate)
             {
                 RegisteredPawnIds.Remove(pawn.thingIDNumber);
+                StandingPresenters.Remove(pawn.thingIDNumber);
             }
 
             ClearWoundCache(pawn);
@@ -75,6 +86,17 @@ namespace LogSyncMod.AutoTest
             }
         }
     }
+
+    [HarmonyPatch(typeof(PawnUtility), nameof(PawnUtility.GetPosture))]
+    internal static class AutoTestThreeViewPresentationPosturePatch
+    {
+        private static void Postfix(Pawn p, ref PawnPosture __result)
+        {
+            // Photo presentation only: real health, Downed and age/life-stage data stay intact.
+            if (AutoTestThreeViewRenderSuppression.UsesStandingPresentation(p)) __result = PawnPosture.Standing;
+        }
+    }
+
 
     [HarmonyPatch(typeof(FleshTypeDef), nameof(FleshTypeDef.ChooseWoundOverlay))]
     internal static class FleshTypeDef_ChooseWoundOverlay_AutoTestThreeViewPatch

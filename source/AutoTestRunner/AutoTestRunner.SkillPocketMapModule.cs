@@ -89,9 +89,9 @@ namespace LogSyncMod.AutoTest
                 this.owner = owner;
             }
 
-            private Pawn GenerateSessionPawn(PawnGenerationRequest request)
+            private Pawn GenerateSessionPawn(PawnGenerationRequest request, bool useTemporaryPresenter = false)
             {
-                var pawn = PawnGenerator.GeneratePawn(request);
+                var pawn = useTemporaryPresenter ? ManualPawnGeneration.Presenter(request) : PawnGenerator.GeneratePawn(request);
                 if (GizmoOnly && pawn != null) ownedUiPawns.Add(pawn);
                 return pawn;
             }
@@ -246,7 +246,7 @@ namespace LogSyncMod.AutoTest
                     forceGenerateNewPawn: true,
                     canGeneratePawnRelations: false,
                     mustBeCapableOfViolence: false);
-                Pawn pawn = GenerateSessionPawn(request);
+                Pawn pawn = GenerateSessionPawn(request, true);
                 if (pawn == null)
                 {
                     Result.Status = "failed_caster_spawn";
@@ -339,7 +339,7 @@ namespace LogSyncMod.AutoTest
                     forceGenerateNewPawn: true,
                     canGeneratePawnRelations: false,
                     mustBeCapableOfViolence: true);
-                Pawn pawn = GenerateSessionPawn(request);
+                Pawn pawn = GenerateSessionPawn(request, true);
                 if (pawn == null)
                 {
                     Result.Status = "failed_fallback_caster_spawn";
@@ -351,7 +351,7 @@ namespace LogSyncMod.AutoTest
 
                 try
                 {
-                    EquipFallbackTesterLoadout(pawn);
+                    if (!ManualPawnGeneration.IsStaged(pawn)) EquipFallbackTesterLoadout(pawn);
                     EnsureFallbackAbility(pawn);
                 }
                 catch (System.Exception ex)

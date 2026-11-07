@@ -75,7 +75,7 @@ namespace LogSyncMod.AutoTest
                             forceGenerateNewPawn: true,
                             canGeneratePawnRelations: false,
                             mustBeCapableOfViolence: false);
-                        Pawn candidate = PawnGenerator.GeneratePawn(request);
+                        Pawn candidate = spec.WearAsApparel ? ManualPawnGeneration.Presenter(request) : PawnGenerator.GeneratePawn(request);
                         if (candidate == null)
                         {
                             continue;
@@ -182,7 +182,7 @@ namespace LogSyncMod.AutoTest
             List<PawnKindDef> alienPawnKinds = ResolvePreferredAlienPawnKinds(targetMod);
 
             foreach (ThingDef apparelDef in DefDatabase<ThingDef>.AllDefsListForReading
-                .Where(def => def != null && def.modContentPack == targetMod && def.IsApparel)
+                .Where(def => def != null && def.modContentPack == targetMod && def.IsApparel && def.destroyable)
                 .OrderBy(def => def.defName))
             {
                 List<BodyTypeDef> supportedBodyTypes = ResolveSupportedApparelBodyTypes(apparelDef);
@@ -288,19 +288,19 @@ namespace LogSyncMod.AutoTest
                     pawn.story.bodyType = spec.ForcedBodyType;
                 }
 
-                if (spec?.StripAllApparel == true)
+                if (spec?.StripAllApparel == true && !ManualPawnGeneration.IsStaged(pawn))
                 {
                     pawn.apparel?.DestroyAll();
                 }
 
-                if (spec?.StripAllEquipment == true)
+                if (spec?.StripAllEquipment == true && !ManualPawnGeneration.IsStaged(pawn))
                 {
                     pawn.equipment?.DestroyAllEquipment();
                 }
 
                 if (spec?.WearAsApparel == true && spec.ItemDef != null)
                 {
-                    Apparel apparel = ThingMaker.MakeThing(spec.ItemDef, ResolveStuff(spec.ItemDef)) as Apparel;
+                    Apparel apparel = ManualPawnGeneration.MakeThing(spec.ItemDef, ResolveStuff(spec.ItemDef)) as Apparel;
                     if (apparel == null)
                     {
                         errorMessage = "Thing could not be created as apparel: " + spec.ItemDef.defName;

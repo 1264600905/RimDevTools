@@ -39,7 +39,7 @@ namespace LogSyncMod.AutoTest
             ScenarioDebugActions.Validate(step, "runtime");
             var action = A(step, "actionId");
             var targets = DebugTargets(step.Element("Select"));
-            string SourceState() => string.Join("|", source.mapPawns.AllPawnsSpawned.OrderBy(p => p.thingIDNumber).Select(p => Describe(p) + "; needs=" + string.Join(",", p.needs?.AllNeeds.Select(n => n.def.defName + "=" + n.CurLevel) ?? Enumerable.Empty<string>())));
+            string SourceState() => string.Join("|", source.mapPawns.AllPawnsSpawned.Where(p => !owned.Contains(p)).OrderBy(p => p.thingIDNumber).Select(p => Describe(p) + "; needs=" + string.Join(",", p.needs?.AllNeeds.Select(n => n.def.defName + "=" + n.CurLevel) ?? Enumerable.Empty<string>())));
             var sourceBefore = SourceState();
             foreach (var t in targets)
             {
@@ -97,11 +97,39 @@ namespace LogSyncMod.AutoTest
             return comp;
         }
 
-        private static float ReadAxolotlQi(Pawn pawn, out float max)
+        internal static float ReadAxolotlQi(Pawn pawn, out float max)
         {
             var comp = AxolotlEnergy(pawn);
             max = (float)comp.GetType().GetProperty("EnergyMax", BindingFlags.Instance | BindingFlags.Public).GetValue(comp);
             return (float)comp.GetType().GetProperty("Energy", BindingFlags.Instance | BindingFlags.Public).GetValue(comp);
+        }
+
+        private void ApplyPawnResources(Pawn pawn, XElement resources)
+        {
+            foreach (var resource in resources?.Elements() ?? Enumerable.Empty<XElement>())
+            {
+                var value = (float)ScenarioLoader.D(resource, "value");
+                float actual;
+                if (resource.Name == "GeneResource")
+                {
+                    var gene = pawn.genes?.GetGene(Def<GeneDef>(A(resource, "def"))) as Gene_Resource;
+                    if (gene == null || !gene.Active) throw new ScenarioConfigurationException("Template requires an active Gene_Resource: " + A(resource, "def"));
+                    gene.Value = value; actual = gene.Value;
+                }
+                else if (resource.Name == "Psyfocus")
+                {
+                    if (pawn.psychicEntropy == null || pawn.GetPsylinkLevel() < 1) throw new ScenarioConfigurationException("Template Psyfocus requires a native psylink");
+                    pawn.psychicEntropy.OffsetPsyfocusDirectly(value - pawn.psychicEntropy.CurrentPsyfocus); actual = pawn.psychicEntropy.CurrentPsyfocus;
+                }
+                else if (resource.Name == "AxolotlQi")
+                {
+                    var comp = AxolotlEnergy(pawn); comp.GetType().GetProperty("Energy", BindingFlags.Instance | BindingFlags.Public).SetValue(comp, value);
+                    actual = ReadAxolotlQi(pawn, out _);
+                }
+                else throw new ScenarioConfigurationException("Unregistered Pawn template resource");
+                if (Math.Abs(value - actual) > .001f) throw new ScenarioConfigurationException("Native resource rejected template value: " + resource.Name + "; requested=" + value + "; actual=" + actual);
+                trace("pawn.resource", resource.Name + "; def=" + A(resource, "def") + "; value=" + actual);
+            }
         }
 
         private static bool SampleComponent(Thing thing, XElement c)

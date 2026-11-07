@@ -233,6 +233,7 @@ public static class TestCommand
         var logSyncSettingsPath = GameEnvironment.LogSyncSettingsPath(context)!;
 
         var mode = CliArgs.Value(args, "--mode")?.ToLowerInvariant() ?? "quick";
+        if (CliArgs.Has(args, "--quick-start") && mode != "manual") return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "INVALID_ARGUMENT", "--quick-start 只适用于 manual 测试", context.Root);
         if (mode is not ("quick" or "manual" or "auto"))
             return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "MODE_INVALID", $"不支持的测试模式: {mode}", context.Root);
         ScenarioPlan? scenarioPlan = null;
@@ -341,7 +342,7 @@ public static class TestCommand
             await SettingsEditor.UpdateAsync(context, mode, transaction, runId, targetPackageId, muteAudio: mode != "manual", scopes: selection.Scopes, hasExplicitScopes: selection.HasExplicitScopes, defNames: selection.DefNames, batchSize: batchSize, artifacts: artifacts, scenarioPlan: scenarioPlan);
 
             var gameArguments = new List<string> { "-popupwindow" };
-            if (mode == "auto") gameArguments.Add("quicktest");
+            if (mode == "auto" || mode == "manual" && CliArgs.Has(args, "--quick-start")) gameArguments.Add("quicktest");
             if (verifyWorkshopAssets)
             {
                 assetScope = await WorkshopAssetVerificationScope.BeginAsync(context, runId, cancellationToken);
@@ -890,20 +891,8 @@ public sealed record TestArtifactPaths(string DirectoryPath, string SyncLogPath,
 
     public static TestArtifactPaths Create(ProjectContext context)
     {
-        var root = LogRoot(context);
-        Directory.CreateDirectory(root);
-        var prefix = DateTime.Now.ToString("[yyyy-MM, HH-mm]");
-        for (var index = 0; index < 1000; index++)
-        {
-            var name = index == 0 ? prefix : $"{prefix}_{index:00}";
-            var directory = Path.Combine(root, name);
-            if (Directory.Exists(directory)) continue;
-            Directory.CreateDirectory(directory);
-            var syncLogPath = Path.Combine(directory, "精选日志.log");
-            File.WriteAllText(syncLogPath, string.Empty);
-            return new TestArtifactPaths(directory, syncLogPath, Path.Combine(directory, "AutoTestOutput"));
-        }
-        throw new IOException($"无法为测试创建唯一日志目录: {prefix}");
+        var paths = LogSyncMod.AutoTest.TestArtifactDirectory.Allocate(context.Root);
+        return new TestArtifactPaths(paths.DirectoryPath, paths.SyncLogPath, paths.AutoTestOutputPath);
     }
 }
 
@@ -955,6 +944,7 @@ public static class SettingsEditor
         changed |= Set(settings, "autoTestUseFastSpeed", "True");
         changed |= Set(settings, "testMuteAudio", muteAudio == true ? "True" : "False");
         changed |= Set(settings, "testSessionActive", string.IsNullOrWhiteSpace(runId) ? "False" : "True");
+        changed |= Set(settings, "testSessionKind", string.IsNullOrWhiteSpace(runId) ? "" : mode);
 
         if (!changed) return false;
         var content = document.ToString(SaveOptions.None);
@@ -1141,6 +1131,7 @@ public static class LogArchive
         if (!Directory.Exists(logRoot)) return;
         var directories = Directory.EnumerateDirectories(logRoot)
             .Where(path => Regex.IsMatch(Path.GetFileName(path), @"^\[\d{4}-\d{2}, \d{2}-\d{2}\](?:_\d{2})?$", RegexOptions.CultureInvariant))
+            .Where(path => !LogSyncMod.AutoTest.TestArtifactDirectory.IsManual(path))
             .OrderByDescending(Directory.GetLastWriteTimeUtc)
             .ToArray();
         foreach (var obsolete in directories.Skip(Math.Max(1, keepCount)))

@@ -38,6 +38,7 @@ namespace LogSyncMod.AutoTest
                     break;
                 case AutoTestKind.GeneInfoCard:
                 case AutoTestKind.XenotypeInfoCard:
+                case AutoTestKind.RecipeInfoCard:
                     StartDefInfoCardSession(item);
                     break;
             }
@@ -62,7 +63,7 @@ namespace LogSyncMod.AutoTest
             {
                 ThingDef def = item.ThingDef;
                 ThingDef stuff = ResolveStuff(def);
-                Thing thing = ThingMaker.MakeThing(def, stuff);
+                Thing thing = ManualPawnGeneration.MakeThing(def, stuff);
                 if (def.useHitPoints && thing.HitPoints <= 0)
                 {
                     thing.HitPoints = thing.MaxHitPoints;
@@ -494,6 +495,7 @@ namespace LogSyncMod.AutoTest
                 .Where(IsTargetRecipeDef)
                 .OrderBy(recipe => recipe.defName))
             {
+                if (manualOptions != null || discoveryOnly) pendingItems.Enqueue(CreateWorkItem(AutoTestKind.RecipeInfoCard, recipeDef: recipe));
                 ThingDef productDef = ResolvePrimaryRecipeProduct(recipe);
                 AutoTestRecipeClassification classification = ClassifyRecipe(recipe, ResolveRecipeWorktable(recipe));
                 if (productDef == null && classification.Kind != AutoTestRecipeExecutionKind.MechResurrection && recipe.specialProducts?.Contains(SpecialProductType.StoneBlocks) != true)
@@ -531,6 +533,7 @@ namespace LogSyncMod.AutoTest
                     recipeItems.Add(CreateWorkItem(AutoTestKind.RecipeExecution, thingDef: productDef, recipeDef: recipe, worktableDef: worktableDef));
             }
 
+            if (discoveryOnly) { foreach (var item in recipeItems) pendingItems.Enqueue(item); return; }
             PlaceRecipeWorktables(requiredWorktables);
 
             foreach (AutoTestWorkItem item in recipeItems)

@@ -29,7 +29,8 @@ namespace LogSyncMod.AutoTest
                 "HediffEffect" => c.Descendants("HasHediff").Any(),
                 "CorpseLifecycle" => actors.Values.SelectMany(v => v).Any(t => t is Corpse) || steps.Any(e => e.Name == "Kill"),
                 "ThingBehavior" => steps.Any(e => new[] { "CreateThing", "Destroy", "TransferThing", "DropInventory", "Equip", "DropEquipment" }.Contains(e.Name.LocalName)),
-                _ => throw new ScenarioConfigurationException("Dedicated adapter for " + type + " is not delivered yet; view adapters belong to batch 3, group combat to batch 4") };
+                _ when ScenarioViews.Types.Contains(type) => steps.Where(e => e.Name == "View").Any(e => IsTypedView(type, e, c)),
+                _ => throw new ScenarioConfigurationException("Dedicated adapter for " + type + " is not delivered yet") };
             if (!ok) throw new ScenarioConfigurationException(type + " requires its actual typed actors and native execution steps; changing the caseType label alone does not define that test");
             if (type != "ExternalScenario") trace("capability.validated", type + "; custom actors/actions/predicates from XML, no legacy preparation policy applied");
         }

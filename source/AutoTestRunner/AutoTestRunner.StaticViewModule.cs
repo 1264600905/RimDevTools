@@ -597,7 +597,7 @@ namespace LogSyncMod.AutoTest
                 throw new InvalidOperationException("BuildingView target was not a ThingDef.");
             }
 
-            Thing building = ThingMaker.MakeThing(buildingDef, ResolveStuff(buildingDef));
+            Thing building = ManualPawnGeneration.MakeThing(buildingDef, ResolveStuff(buildingDef));
             if (building == null)
             {
                 throw new InvalidOperationException("ThingMaker returned null for building " + buildingDef.defName + ".");

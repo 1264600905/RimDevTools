@@ -89,7 +89,7 @@ namespace LogSyncMod.AutoTest
 
         private void StartDefInfoCardSession(AutoTestWorkItem item)
         {
-            Def targetDef = (Def)item.GeneDef ?? item.XenotypeDef;
+            Def targetDef = (Def)item.GeneDef ?? (Def)item.XenotypeDef ?? item.RecipeDef;
             AutoTestResult result = CreateResult(item.ManifestEntry, targetDef?.GetType().Name ?? nameof(Def), targetDef?.defName, targetDef?.label);
             results.Add(result);
 
@@ -97,7 +97,7 @@ namespace LogSyncMod.AutoTest
             InfoCardOperationAdapter adapter = new InfoCardOperationAdapter(runId, caseId, operationRunner, operationJournal, logJournal, evidenceBuilder, evidenceClock);
             IDisposable caseScope = adapter.BeginCase();
 
-            if (!ModsConfig.BiotechActive)
+            if (item.Kind != AutoTestKind.RecipeInfoCard && !ModsConfig.BiotechActive)
             {
                 result.Status = "skipped";
                 result.Stage = "capability";
@@ -186,7 +186,7 @@ namespace LogSyncMod.AutoTest
                                 forceGenerateNewPawn: true,
                                 canGeneratePawnRelations: false,
                                 mustBeCapableOfViolence: false);
-                            preparedPawn = PawnGenerator.GeneratePawn(request);
+                            preparedPawn = ManualPawnGeneration.InstancePawn ? ManualPawnGeneration.Presenter(request) : PawnGenerator.GeneratePawn(request);
                             if (preparedPawn != null) usedResolution = resolution;
                         }
                         catch (Exception ex)

@@ -448,7 +448,14 @@ namespace LogSyncMod.AutoTest
                     continue;
                 }
 
-                if (!threeViewService.TryResolveAppearancePresenter(spec, out string appearanceSkipReason))
+                if (!discoveryOnly && ManualPawnGeneration.HasTemplate && (ManualPawnGeneration.InstancePawn || spec.WearAsApparel || spec.HoldAsWeapon || spec.TargetHairDef != null || spec.TargetHeadTypeDef != null || spec.TargetBodyTypeDef != null || spec.TargetGeneDef != null || spec.TargetXenotypeDef != null))
+                {
+                    spec.UseTemporaryPresenter = true; spec.PawnKindDef = ManualPawnGeneration.BaseKind; spec.RaceDef = spec.PawnKindDef.race;
+                    spec.PresenterCandidates = new List<PawnKindDef> { spec.PawnKindDef };
+                    spec.PawnRaceDefName = spec.RaceDef.defName; spec.PawnRaceLabel = spec.RaceDef.label;
+                }
+
+                if (!discoveryOnly && !threeViewService.TryResolveAppearancePresenter(spec, out string appearanceSkipReason))
                 {
                     spec.SkipReason = string.IsNullOrWhiteSpace(appearanceSkipReason)
                         ? "no_compatible_presenter"
@@ -483,7 +490,7 @@ namespace LogSyncMod.AutoTest
             return aliases.Any(alias => !string.IsNullOrWhiteSpace(alias) && settings.MatchesAutoTestTargetDefName(alias));
         }
 
-        private bool TryAllocateThreeViewStudioRoot(int width, int height, out IntVec3 rootCell)
+        private bool TryAllocateThreeViewStudioRoot(int width, int height, out IntVec3 rootCell, bool excludeExistingPawns = false)
         {
             int safeWidth = Math.Max(1, width);
             int safeHeight = Math.Max(1, height);
@@ -495,6 +502,7 @@ namespace LogSyncMod.AutoTest
                 for (int x = 10; x <= maxX; x += 2)
                 {
                     IntVec3 candidate = new IntVec3(x, 0, z);
+                    if (excludeExistingPawns && map.mapPawns.AllPawnsSpawned.Any(p => new CellRect(x, z, safeWidth, safeHeight).Contains(p.Position))) continue;
                     if (IsThreeViewStudioAreaUsable(candidate, safeWidth, safeHeight))
                     {
                         rootCell = candidate;
