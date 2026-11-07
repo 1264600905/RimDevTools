@@ -112,12 +112,22 @@ internal static class GroupCombatTests
             var inset = GroupCombatPresentation.PanelWidth(resolution.Item1) + 22;
             assert(positions.All(p => (p.Item1 - frame.x) / (2 * halfWidth) + .5f >= inset / resolution.Item1 && (p.Item1 - frame.x) / (2 * halfWidth) + .5f <= 1 - inset / resolution.Item1 && (p.Item2 - frame.z) / (2 * frame.size) + .5f >= 90 / resolution.Item2 && (p.Item2 - frame.z) / (2 * frame.size) + .5f <= 1 - 94 / resolution.Item2), "dedicated wide camera contains the crowd between panels at " + resolution);
         }
+        var wideFrame = GroupCombatPresentation.Frame(new[] { (22f, 40f), (71f, 52f) }, 1920, 1080, true);
+        var closeFrame = GroupCombatPresentation.Frame(new[] { (40f, 40f), (50f, 48f) }, 1920, 1080, true);
+        var wideZoom = GroupCombatPresentation.ZoomTarget(0, wideFrame.size);
+        var closeZoom = GroupCombatPresentation.ZoomTarget(wideZoom, closeFrame.size);
+        assert(closeZoom < wideZoom && closeZoom >= closeFrame.size, "converging armies shrink the camera target instead of retaining the opening view");
+        assert(GroupCombatPresentation.ZoomTarget(closeZoom, closeFrame.size + .2f) == closeZoom && GroupCombatPresentation.ZoomTarget(closeZoom, closeFrame.size - .2f) == closeZoom, "small formation movements keep the zoom target stable in both directions");
+        assert(GroupCombatPresentation.ZoomTarget(closeZoom, wideFrame.size) >= wideFrame.size, "spreading armies expand the camera target again");
         var motion = new GroupCombatCameraMotion();
         motion.Step(0, 0, 24, 0);
         motion.Step(100, 50, 40, 1f / 60);
         assert(motion.X > 0 && motion.X < 5 && motion.Size > 24 && motion.Size < 25, "camera position and zoom move toward a new target without teleporting");
         for (var i = 0; i < 600; i++) motion.Step(100, 50, 40, 1f / 60);
         assert(Math.Abs(motion.X - 100) < .001 && Math.Abs(motion.Z - 50) < .001 && Math.Abs(motion.Size - 40) < .001, "smoothed camera converges without overshoot or persistent oscillation");
+        var inward = new GroupCombatCameraMotion(); inward.Step(wideFrame.x, wideFrame.z, wideZoom, 0);
+        inward.Step(closeFrame.x, closeFrame.z, closeZoom, 1f / 60);
+        assert(inward.Size < wideZoom && inward.Size > closeZoom, "converging armies zoom in gradually instead of jumping to a close-up");
         var before = motion.X; motion.Step(-100, -50, 60, 20);
         assert(motion.X < before && motion.X > 50 && motion.Size < 43, "long focus gaps preserve a gradual position and zoom transition");
 

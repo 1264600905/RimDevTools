@@ -10,7 +10,7 @@ namespace LogSyncMod.AutoTest.Scenarios
         public static float PanelWidth(float width) => Math.Clamp(width * .22f, 172f, 330f);
 
         public static (float x, float z, float size) Frame(IEnumerable<(float x, float z)> positions,
-            float width, float height, bool overlay, float minimumSize = 24)
+            float width, float height, bool overlay, float minimumSize = 12)
         {
             var points = positions.ToList();
             if (points.Count == 0) throw new ArgumentException("Camera requires at least one position");
@@ -24,6 +24,14 @@ namespace LogSyncMod.AutoTest.Scenarios
             var size = Math.Max(minimumSize, Math.Max((maxX - minX + 6) * height / (2 * usableWidth), (maxZ - minZ + 6) * height / (2 * usableHeight)));
             // The safe region is vertically offset when the header and bottom controls differ.
             return ((minX + maxX) / 2, (minZ + maxZ) / 2 + (top - bottom) * size / height, size);
+        }
+
+        public static float ZoomTarget(float currentSize, float requiredSize)
+        {
+            // Retain a one-unit reserve and a two-unit dead band. Both expansion and
+            // contraction are allowed; small movements cannot repeatedly reverse zoom.
+            return currentSize <= 0 || requiredSize > currentSize || requiredSize < currentSize - 2
+                ? requiredSize + 1 : currentSize;
         }
     }
 }

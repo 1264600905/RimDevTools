@@ -281,7 +281,12 @@ namespace LogSyncMod.AutoTest
             Need(p.skills, "Skills"); if (level < 0 || level > 20) throw new ScenarioConfigurationException("Skill level must be 0..20");
             var skill = p.skills.GetSkill(Def<SkillDef>(name));
             if (skill.TotallyDisabled) throw new ScenarioConfigurationException("Skill disabled by native pawn constraints: " + name);
-            skill.Level = level; if (passion != null) skill.passion = Enum.Parse<Passion>(passion, true);
+            // Level's setter writes the base value, while its getter includes genetic
+            // aptitude. XML requests the effective level (e.g. Shooting 10 for a Hussar).
+            skill.DirtyAptitudes();
+            var baseLevel = level - skill.Aptitude;
+            if (baseLevel < 0 || baseLevel > 20) throw new ScenarioConfigurationException("Requested effective skill level cannot be reached with this pawn's aptitude: " + name + "=" + level);
+            skill.Level = baseLevel; if (passion != null) skill.passion = Enum.Parse<Passion>(passion, true);
             if (skill.Level != level) throw new InvalidOperationException("Skill rejected: " + name);
         }
         private void Equip(Pawn p, XElement item)

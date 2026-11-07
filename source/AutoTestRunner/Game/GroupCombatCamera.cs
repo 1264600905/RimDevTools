@@ -11,7 +11,7 @@ namespace LogSyncMod.AutoTest
     {
         private static CameraMapConfig previousConfig;
         private static CameraMapConfig combatConfig;
-        private static float fixedSize;
+        private static float targetProjectionSize;
         private static float rootSize;
         private static float previousFrameTime;
         private static GroupCombatCameraMotion motion;
@@ -23,7 +23,7 @@ namespace LogSyncMod.AutoTest
             previousConfig = Find.CameraDriver.config;
             combatConfig = new CameraMapConfig_Normal { dollyRateKeys = 0, dollyRateScreenEdge = 0, zoomSpeed = 0, moveSpeedScale = 0 };
             Find.CameraDriver.config = combatConfig;
-            fixedSize = 24; rootSize = 0;
+            targetProjectionSize = 0; rootSize = 0;
             motion = new GroupCombatCameraMotion(); previousFrameTime = Time.realtimeSinceStartup;
             Postfix();
         }
@@ -41,20 +41,21 @@ namespace LogSyncMod.AutoTest
             if (!Active || GroupCombatService.Map == null || Find.CurrentMap != GroupCombatService.Map) return;
             var pawns = GroupCombatService.Pawns.Values.Where(p => p.Spawned && p.Map == GroupCombatService.Map && !p.Dead).ToList();
             if (pawns.Count == 0) return; // Hold the last view for mutual elimination/final capture.
-            var frame = GroupCombatPresentation.Frame(pawns.Select(p => (p.DrawPos.x, p.DrawPos.z)), UI.screenWidth, UI.screenHeight, GroupCombatService.OverlayEnabled, fixedSize);
+            var frame = GroupCombatPresentation.Frame(pawns.Select(p => (p.DrawPos.x, p.DrawPos.z)), UI.screenWidth, UI.screenHeight, GroupCombatService.OverlayEnabled);
             var position = new Vector3(frame.x, 0, frame.z);
-            if (rootSize == 0 || frame.size > fixedSize)
+            var nextProjectionSize = GroupCombatPresentation.ZoomTarget(targetProjectionSize, frame.size);
+            if (rootSize == 0 || nextProjectionSize != targetProjectionSize)
             {
-                fixedSize = frame.size + 2f; // Reserve avoids zoom corrections for every small movement.
+                targetProjectionSize = nextProjectionSize;
                 // Camera mods can map RootSize nonlinearly to the actual projection. Fit
                 // the real orthographic size instead of assuming RootSize is world units.
-                var low = .01f; var high = Mathf.Max(60, fixedSize * 2);
+                var low = .01f; var high = Mathf.Max(60, targetProjectionSize * 2);
                 combatConfig.sizeRange = new FloatRange(.01f, high + 10);
                 for (var i = 0; i < 18; i++)
                 {
                     var candidate = (low + high) / 2;
                     Find.CameraDriver.SetRootPosAndSize(position, candidate);
-                    if (Find.CameraDriver.MyCamera.orthographicSize < fixedSize) low = candidate; else high = candidate;
+                    if (Find.CameraDriver.MyCamera.orthographicSize < targetProjectionSize) low = candidate; else high = candidate;
                 }
                 rootSize = high;
             }
