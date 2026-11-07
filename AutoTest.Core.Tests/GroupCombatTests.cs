@@ -110,8 +110,11 @@ internal static class GroupCombatTests
             var frame = GroupCombatPresentation.Frame(positions, resolution.Item1, resolution.Item2, true);
             var halfWidth = frame.size * resolution.Item1 / resolution.Item2;
             var inset = GroupCombatPresentation.PanelWidth(resolution.Item1) + 22;
-            assert(positions.All(p => (p.Item1 - frame.x) / (2 * halfWidth) + .5f >= inset / resolution.Item1 && (p.Item1 - frame.x) / (2 * halfWidth) + .5f <= 1 - inset / resolution.Item1 && (p.Item2 - frame.z) / (2 * frame.size) + .5f >= 90 / resolution.Item2 && (p.Item2 - frame.z) / (2 * frame.size) + .5f <= 1 - 94 / resolution.Item2), "dedicated wide camera contains the crowd between panels at " + resolution);
+            assert(positions.All(p => (p.Item1 - frame.x) / (2 * halfWidth) + .5f >= inset / resolution.Item1 && (p.Item1 - frame.x) / (2 * halfWidth) + .5f <= 1 - inset / resolution.Item1 && (p.Item2 - frame.z) / (2 * frame.size) + .5f >= 90 / resolution.Item2 && (p.Item2 - frame.z) / (2 * frame.size) + .5f <= 1 - (GroupCombatPresentation.PanelTop + 6) / resolution.Item2), "dedicated wide camera contains the crowd between panels at " + resolution);
+            assert(GroupCombatPresentation.PanelWidth(resolution.Item1) * 2 < resolution.Item1 && GroupCombatPresentation.PanelTop + GroupCombatPresentation.PanelHeight(resolution.Item2) <= resolution.Item2 - 90, "enlarged panels leave a central battlefield and native time controls at " + resolution);
         }
+        assert(GroupCombatPresentation.PanelWidth(1920) == 495 && GroupCombatPresentation.ContentScale(495, GroupCombatPresentation.PanelHeight(1080)) == 1.5f, "full HD panels and contents expand to one and a half times the original width and scale");
+        assert(new[] { 0f, .99f, 1f, 2f, 3f, GroupCombatPresentation.IntroDuration }.Select(GroupCombatPresentation.CountdownLabel).SequenceEqual(new[] { "3", "3", "2", "1", "开始", "" }), "real-time intro shows each countdown stage before releasing combat");
         var wideFrame = GroupCombatPresentation.Frame(new[] { (22f, 40f), (71f, 52f) }, 1920, 1080, true);
         var closeFrame = GroupCombatPresentation.Frame(new[] { (40f, 40f), (50f, 48f) }, 1920, 1080, true);
         var wideZoom = GroupCombatPresentation.ZoomTarget(0, wideFrame.size);

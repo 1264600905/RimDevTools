@@ -48,6 +48,9 @@ namespace LogSyncMod.AutoTest
         private static string pendingCapture, outputPath;
         private static bool captureRequested, polling, cancel;
         private static bool verifyTickFailure;
+        private static float introStartedRealtime;
+        private static string lastCountdownLabel;
+        private static readonly Dictionary<Pawn, Rot4> introFacing = new Dictionary<Pawn, Rot4>();
         private static readonly JsonSerializerOptions Json = new JsonSerializerOptions { WriteIndented = true };
         internal static bool Busy => report != null && report.CompletedAtUtc == null;
         internal static bool Measuring => phase == "running";
@@ -57,6 +60,8 @@ namespace LogSyncMod.AutoTest
         internal static GroupCombatRoundResult Display => current;
         internal static string Phase => phase;
         internal static bool OverlayEnabled => overlayEnabled;
+        internal static bool ShowingIntro => phase is "prepared" or "countdown";
+        internal static string CountdownLabel => ShowingIntro ? GroupCombatPresentation.CountdownLabel(phase == "prepared" ? 0 : Time.realtimeSinceStartup - introStartedRealtime) : "";
         internal static object Status => new { busy = Busy, phase, runId = report?.RunId, caseId = input?.CaseId, mapId = Map?.uniqueID, elapsedTicks = current?.ElapsedTicks, totalEvents = current?.TotalEvents, speed = Find.TickManager?.CurTimeSpeed.ToString(), paused = Find.TickManager?.Paused, pausedRealtime, screen = new { width = Screen.width, height = Screen.height, windowWidth = Screen.windowWidth, windowHeight = Screen.windowHeight, fullScreen = Screen.fullScreen, mode = Screen.fullScreenMode.ToString() }, camera = GroupCombatCamera.Status, overlayInput = GroupCombatOverlay.InputVerification, artifacts = new { autoTestOutputPath = outputPath }, teamAi, actors = pawns.Select(p => new { id = p.Key, x = p.Value.Position.x, z = p.Value.Position.z, dead = p.Value.Dead, downed = p.Value.Downed, job = p.Value.CurJob?.def.defName, duty = p.Value.mindState?.duty?.def.defName }), rounds = report?.Rounds.Select(r => new { r.CaseId, r.ExecutionStatus, r.CleanupComplete, r.EndReason, r.Error }) };
         internal static void Cancel() { if (Busy) cancel = true; }
         internal static void SetVerificationSpeed(string speed)
@@ -111,8 +116,30 @@ namespace LogSyncMod.AutoTest
                 if (Measuring && Find.TickManager.Paused) pausedRealtime += Math.Max(0, now - lastFrameRealtime);
                 lastFrameRealtime = now;
                 if (phase != "finishing" && now - roundStartedRealtime - pausedRealtime >= ScenarioLoader.D(roundConfig, "timeoutRealSeconds", 600)) Freeze("timeout", "realtimeLimit", "Group combat realtime deadline exceeded");
+                if (ShowingIntro)
+                {
+                    Find.TickManager.CurTimeSpeed = TimeSpeed.Paused;
+                    FaceOpponents();
+                }
                 if (phase == "prepared" && CaptureFinished())
                 {
+                    phase = "countdown"; introStartedRealtime = now; lastCountdownLabel = null;
+                    Trace("group.intro_facing", "total=" + introFacing.Count + "; correct=" + introFacing.Count(p => p.Key.Rotation == p.Value));
+                }
+                if (phase == "countdown")
+                {
+                    var label = CountdownLabel;
+                    if (label != lastCountdownLabel && label.Length > 0)
+                    {
+                        lastCountdownLabel = label;
+                        Trace("group.countdown", "label=" + label + "; elapsedTicks=" + current.ElapsedTicks + "; events=" + current.TotalEvents + "; paused=" + Find.TickManager.Paused);
+                    }
+                }
+                if (phase == "countdown" && now - introStartedRealtime >= GroupCombatPresentation.IntroDuration)
+                {
+                    // Release the display-only jobs before any simulation tick can run.
+                    foreach (var pawn in introFacing.Keys) pawn.jobs?.StopAll();
+                    introFacing.Clear();
                     phase = "running"; startTick = Find.TickManager.TicksGame; current.ExecutionStatus = "running";
                     var settingsNode = roundConfig.Element("GroupCombat");
                     Find.TickManager.CurTimeSpeed = ScenarioLoader.A(settingsNode, "timeSpeed", "normal") switch { "fast" => TimeSpeed.Fast, "superfast" => TimeSpeed.Superfast, _ => TimeSpeed.Normal };
@@ -194,8 +221,35 @@ namespace LogSyncMod.AutoTest
                 Trace("group.ai", "team=" + id + "; ai=" + ai + "; nativeLordJob=" + job?.GetType().Name + "; simultaneousStart=true");
             }
             current.Environment = "tile=" + Map.Tile + "; weather=" + Map.weatherManager.curWeather.defName + "; temperature=" + Map.mapTemperature.OutdoorTemp + "; sunGlow=" + GenCelestial.CurCelestialSunGlow(Map) + "; ai=" + string.Join(",", teamAi.Select(p => p.Key + "=" + p.Value));
+            foreach (var pawn in pawns.Values)
+            {
+                var opponents = pawns.Values.Where(p => p.Faction != pawn.Faction).ToList();
+                var enemyCenter = new Vector3((float)opponents.Average(p => p.Position.x), 0, (float)opponents.Average(p => p.Position.z));
+                var facing = Rot4.FromAngleFlat((enemyCenter - pawn.Position.ToVector3()).AngleFlat());
+                introFacing.Add(pawn, facing);
+                pawn.jobs.StopAll(); pawn.pather?.StopDead();
+                // The three-view settle logic uses the same display job and facing override.
+                var displayJob = JobMaker.MakeJob(JobDefOf.Wait_Combat, pawn.Position);
+                displayJob.expiryInterval = int.MaxValue; displayJob.canUseRangedWeapon = false; displayJob.overrideFacing = facing;
+                pawn.jobs.StartJob(displayJob, JobCondition.InterruptForced);
+                // Gear changes are normally rebuilt on a later tick. The paused intro
+                // needs the configured outfit immediately, including its cached portrait.
+                AutoTestThreeViewService.RefreshPawnGraphics(pawn);
+            }
+            FaceOpponents();
             GroupCombatCamera.Begin();
             phase = "prepared"; Refresh(0); RequestCapture("initial"); Write();
+        }
+
+        private static void FaceOpponents()
+        {
+            foreach (var pair in introFacing)
+            {
+                if (!pair.Key.Spawned || pair.Key.Dead) continue;
+                pair.Key.pather?.StopDead();
+                pair.Key.rotationTracker?.FaceCell(pair.Key.Position + pair.Value.FacingCell);
+                pair.Key.Rotation = pair.Value;
+            }
         }
 
         internal static void Tick()
@@ -301,7 +355,7 @@ namespace LogSyncMod.AutoTest
 
         private static void FinishRound()
         {
-            phase = "cleaning";
+            phase = "cleaning"; introFacing.Clear();
             GroupCombatCamera.End();
             var errors = new List<string>();
             try { backend?.Cleanup(); } catch (Exception ex) { errors.Add(ex.ToString()); }

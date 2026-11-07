@@ -3404,7 +3404,7 @@ namespace LogSyncMod.AutoTest
             return existing + ";" + next;
         }
 
-        private static void RefreshPawnGraphics(Pawn pawn)
+        internal static void RefreshPawnGraphics(Pawn pawn)
         {
             try
             {
