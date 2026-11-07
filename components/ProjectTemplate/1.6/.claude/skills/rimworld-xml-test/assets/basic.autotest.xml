@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TestSuite schemaVersion="1" id="example.basic" packageId="ludeon.rimworld" gameVersion="1.7">
+  <Templates>
+    <PawnTemplate id="human">
+      <basePawnKind>SpaceRefugee</basePawnKind>
+      <minGenerationAge>25</minGenerationAge>
+      <maxGenerationAge>25</maxGenerationAge>
+    </PawnTemplate>
+  </Templates>
+  <Case id="alive" seed="12345" timeoutRealSeconds="60">
+    <testDefName>Example_PawnAlive</testDefName>
+    <Targets><Def defType="PawnKindDef" defName="SpaceRefugee"/></Targets>
+    <Scene type="pocketMap" sizeX="50" sizeZ="50" revealFog="all"/>
+    <Actors><Pawn id="pawn" template="human" x="20" z="20"/></Actors>
+    <Steps>
+      <Require id="ready"><ActorState actor="pawn" state="alive"/></Require>
+      <Screenshot id="portrait" focus="pawn"/>
+    </Steps>
+    <Success><All><StepSucceeded ref="ready"/><StepSucceeded ref="portrait"/></All></Success>
+  </Case>
+</TestSuite>

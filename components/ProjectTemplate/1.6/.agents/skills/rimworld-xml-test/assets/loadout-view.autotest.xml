@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TestSuite schemaVersion="1" id="example.loadout" packageId="ludeon.rimworld" gameVersion="1.7">
+  <Templates>
+    <PawnTemplate id="presenter">
+      <basePawnKind>SpaceRefugee</basePawnKind>
+      <gender>Male</gender>
+      <Age biologicalYears="25" chronologicalYears="25"/>
+      <Apparel mode="replace">
+        <Add def="Apparel_Pants" stuff="Cloth" quality="Good"/>
+        <Add def="Apparel_BasicShirt" stuff="Cloth" quality="Good"/>
+        <Add def="Apparel_FlakVest" quality="Excellent"/>
+      </Apparel>
+      <Equipment mode="replace"><SetPrimary def="Gun_AssaultRifle" quality="Excellent"/></Equipment>
+    </PawnTemplate>
+  </Templates>
+  <Case id="loadout" caseType="LoadoutView" seed="12345" timeoutRealSeconds="90">
+    <testDefName>Example_CompleteLoadout</testDefName>
+    <Scene type="studio"/>
+    <Actors><Pawn id="presenter" template="presenter" x="25" z="25"/></Actors>
+    <Steps>
+      <Require id="ready"><All>
+        <Equipped actor="presenter" def="Gun_AssaultRifle"/>
+        <Wearing actor="presenter" def="Apparel_FlakVest"/>
+      </All></Require>
+      <View id="outfit" actor="presenter" directions="South,East,North,West"
+            pose="weaponReady" loadout="preserve" cameraSize="11" stableFrames="5"/>
+      <Require id="retained"><All>
+        <Equipped actor="presenter" def="Gun_AssaultRifle"/>
+        <Wearing actor="presenter" def="Apparel_FlakVest"/>
+      </All></Require>
+    </Steps>
+    <Success><All><StepSucceeded ref="outfit"/><StepSucceeded ref="retained"/></All></Success>
+  </Case>
+</TestSuite>

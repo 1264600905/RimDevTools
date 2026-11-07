@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TestSuite schemaVersion="1" id="example.ranged" packageId="ludeon.rimworld" gameVersion="1.7">
+  <Templates>
+    <PawnTemplate id="shooter">
+      <basePawnKind>SpaceRefugee</basePawnKind>
+      <minGenerationAge>25</minGenerationAge>
+      <maxGenerationAge>25</maxGenerationAge>
+      <Skills mode="patch"><Set def="Shooting" level="20"/></Skills>
+    </PawnTemplate>
+  </Templates>
+  <Case id="weapon-damage" caseType="RangedWeaponPocketMap" seed="31981" timeoutRealSeconds="90">
+    <testDefName>Example_RangedDamage</testDefName>
+    <Matrix>
+      <Row id="autopistol"><Param name="weapon" value="Gun_Autopistol"/></Row>
+      <Row id="revolver"><Param name="weapon" value="Gun_Revolver"/></Row>
+    </Matrix>
+    <!-- 默认补充；只在用户希望承接精确普通功能键时改为 replace。 -->
+    <Coverage mode="supplement">
+      <Target defType="ThingDef" defName="${weapon}" caseType="RangedWeaponPocketMap">
+        <Evidence step="damage"/>
+      </Target>
+    </Coverage>
+    <Scene type="pocketMap" sizeX="50" sizeZ="50" revealFog="all"/>
+    <Teams><Team id="ours" factionDef="player"/><Team id="enemy" factionDef="AncientsHostile"/></Teams>
+    <Actors>
+      <Pawn id="shooter" template="shooter" team="ours" x="15" z="20">
+        <Equipment mode="replace"><SetPrimary def="${weapon}" quality="Normal"/></Equipment>
+      </Pawn>
+      <Building id="target" def="Wall" stuff="Steel" team="enemy" x="21" z="20"/>
+    </Actors>
+    <Steps>
+      <DebugAction id="fill-needs" actionId="native.fillNeeds"><Select mode="single" actor="shooter"/></DebugAction>
+      <Require id="ready"><All>
+        <Equipped actor="shooter" def="${weapon}"/>
+        <HealthPercent actor="target" min="1"/>
+      </All></Require>
+      <Attack id="shoot" actor="shooter" target="target"/>
+      <Wait id="damage" timeoutRealSeconds="30"><HealthPercent actor="target" max="0.99"/></Wait>
+      <Screenshot id="hit" focus="target"/>
+    </Steps>
+    <Success><All><StepSucceeded ref="damage"/><StepSucceeded ref="hit"/></All></Success>
+  </Case>
+</TestSuite>
