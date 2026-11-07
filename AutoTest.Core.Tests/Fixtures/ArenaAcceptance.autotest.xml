@@ -1,0 +1,34 @@
+<ArenaSuite schemaVersion="1" id="arena.acceptance" gameVersion="1.7">
+  <Tournament id="two" name="擂台：20狼对20雇佣兵" seed="12345">
+    <testDefName>Arena_Count20</testDefName>
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all"><Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/></Scene>
+    <Roster mode="count" count="20"/>
+    <Entrants><Entrant id="wolves" pawnKind="Wolf_Timber"/><Entrant id="mercenaries" pawnKind="Mercenary_Gunner"/></Entrants>
+    <Battle timeSpeed="superfast" durationSeconds="180" timeoutRealSeconds="300" confirmationTicks="300"/>
+    <Output width="1920" height="1080"/>
+  </Tournament>
+  <Tournament id="five" name="擂台：五队3000战力淘汰赛" seed="12345">
+    <testDefName>Arena_BudgetFive</testDefName>
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all"><Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/></Scene>
+    <Roster mode="combatPower" budget="3000"/>
+    <Entrants><Entrant id="wolves" pawnKind="Wolf_Timber"/><Entrant id="mercenaries" pawnKind="Mercenary_Gunner"/><Entrant id="scythers" pawnKind="Mech_Scyther"/><Entrant id="bears" pawnKind="Bear_Polar"/><Entrant id="wargs" pawnKind="Warg"/></Entrants>
+    <Battle timeSpeed="superfast" durationSeconds="180" timeoutRealSeconds="300"/>
+    <Output width="1920" height="1080"/>
+  </Tournament>
+  <Tournament id="six" name="擂台：六队3000战力淘汰赛" seed="12345">
+    <testDefName>Arena_BudgetSix</testDefName>
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all"><Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/></Scene>
+    <Roster mode="combatPower" budget="3000"/>
+    <Entrants><Entrant id="wolves" pawnKind="Wolf_Timber"/><Entrant id="mercenaries" pawnKind="Mercenary_Gunner"/><Entrant id="scythers" pawnKind="Mech_Scyther"/><Entrant id="bears" pawnKind="Bear_Polar"/><Entrant id="wargs" pawnKind="Warg"/><Entrant id="cougars" pawnKind="Cougar"/></Entrants>
+    <Battle timeSpeed="superfast" durationSeconds="180" timeoutRealSeconds="300"/>
+    <Output width="1920" height="1080"/>
+  </Tournament>
+  <Tournament id="five-count" name="擂台：五队固定20人淘汰赛" seed="12345">
+    <testDefName>Arena_CountFive</testDefName>
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all"><Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/></Scene>
+    <Roster mode="count" count="20"/>
+    <Entrants><Entrant id="wolves" pawnKind="Wolf_Timber"/><Entrant id="mercenaries" pawnKind="Mercenary_Gunner"/><Entrant id="scythers" pawnKind="Mech_Scyther"/><Entrant id="bears" pawnKind="Bear_Polar"/><Entrant id="wargs" pawnKind="Warg"/></Entrants>
+    <Battle timeSpeed="superfast" durationSeconds="180" timeoutRealSeconds="300"/>
+    <Output width="1920" height="1080"/>
+  </Tournament>
+</ArenaSuite>

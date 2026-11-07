@@ -43,7 +43,7 @@ namespace LogSyncMod.AutoTest.Scenarios
                 XElement root;
                 try { root = XDocument.Load(reader, LoadOptions.SetLineInfo).Root; }
                 catch (XmlException ex) { throw new ScenarioConfigurationException(input.Path + ":" + ex.LineNumber + ": " + ex.Message); }
-                if (root == null || root.Name != "TestSuite") Fail(root, input.Path, "expected TestSuite");
+                if (root == null || root.Name != "TestSuite") Fail(root, input.Path, "expected TestSuite; ArenaSuite requires --mode arena");
                 foreach (var e in root.DescendantsAndSelf()) e.AddAnnotation(new SourceLine { Line = ((IXmlLineInfo)e).LineNumber });
                 ExpandBattleCases(root, input.Path, groupCombat);
                 ValidateTree(root, input.Path, allowParameters: true);
@@ -193,6 +193,12 @@ namespace LogSyncMod.AutoTest.Scenarios
                 var id = Required(actor, "id", path);
                 if (!actors.Add(id)) Fail(actor, path, "duplicate actor id " + id);
                 if (A(actor, "team") != null && !teams.Contains(A(actor, "team"))) Fail(actor, path, "unknown team");
+                if (actor.Attribute("combatPowerBudget") != null)
+                {
+                    if (!groupCombat || actor.Name != "PawnGroup") Fail(actor, path, "combatPowerBudget requires a groupcombat PawnGroup");
+                    if (actor.Attribute("count") != null) Fail(actor, path, "count and combatPowerBudget are mutually exclusive");
+                    CombatRoster.Positive(A(actor, "combatPowerBudget"));
+                }
                 var count = I(actor, "count", 1);
                 if (count < 1 || count > 100) Fail(actor, path, "count must be 1..100");
                 if (actor.Name != "DefRef")
@@ -336,7 +342,7 @@ namespace LogSyncMod.AutoTest.Scenarios
             foreach (var field in required.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries)) Required(node, field, path);
             var actor = new[] { "Pawn", "PawnGroup", "Corpse" }.Contains(name);
             var thing = new[] { "Thing", "Building" }.Contains(name);
-            var attrs = name == "PawnGroup" ? "id template team count originX originZ spacing formation columns spawn" : actor ? "id template team x z spawn" : thing ? "id def stuff team x z count quality color rotation growth spawn" : name == "DefRef" ? "id defType defName" : name == "TerrainArea" ? "id def x z width height" : Attributes.TryGetValue(name, out var text) ? text : "";
+            var attrs = name == "PawnGroup" ? "id template team count combatPowerBudget originX originZ spacing formation columns spawn" : actor ? "id template team x z spawn" : thing ? "id def stuff team x z count quality color rotation growth spawn" : name == "DefRef" ? "id defType defName" : name == "TerrainArea" ? "id def x z width height" : Attributes.TryGetValue(name, out var text) ? text : "";
             if (name == "Set") attrs = node.Parent?.Name == "Skills" ? "def level passion" : "def degree";
             if (name == "Ensure") attrs = node.Parent?.Name == "Hediffs" ? "def severity part durationTicks" : "def";
             if (name == "Remove") attrs = node.Parent?.Name == "Hediffs" ? "def part" : "def";

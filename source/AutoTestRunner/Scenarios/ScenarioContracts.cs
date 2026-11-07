@@ -19,6 +19,7 @@ namespace LogSyncMod.AutoTest.Scenarios
         public int SchemaVersion { get; set; } = 1;
         public string Purpose { get; set; } = "regression";
         public bool ScenarioOnly { get; set; }
+        public ArenaPlan Arena { get; set; }
         public List<string> SelectedTestDefNames { get; set; } = new List<string>();
         public List<string> SelectedCaseIds { get; set; } = new List<string>();
         public List<ScenarioInput> Inputs { get; set; } = new List<ScenarioInput>();
@@ -85,7 +86,8 @@ namespace LogSyncMod.AutoTest.Scenarios
 
     public sealed class ScenarioConfigurationException : Exception
     {
-        public ScenarioConfigurationException(string message) : base(message) { }
+        public string Code { get; }
+        public ScenarioConfigurationException(string message, string code = null) : base(message) { Code = code; }
     }
 
     public sealed class ScenarioProbeException : Exception

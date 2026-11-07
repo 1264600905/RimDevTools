@@ -488,9 +488,10 @@ public static class CliHelp
           --sync-source               Include source/; requires --deploy.
           --verify-workshop-assets    1.7 quick test: temporarily remove the five known sample sources,
                                       require this run's package-reading signal, and restore sources.
-          --mode <value>              quick (default), manual, auto, or groupcombat (1.7).
+          --mode <value>              quick (default), manual, auto, groupcombat, or arena (1.7).
           --active-mods-file <path>   External ModsConfig XML activeMods list.
-          --timeout-seconds <n>       Positive wait limit; defaults to timeouts.max_wait.
+          --timeout-seconds <n>       Positive wait limit; arena estimates a bounded tournament deadline,
+                                      other modes default to timeouts.max_wait.
           --target-package-id <id>    Auto target; defaults to current project.
           --scope <value>             Repeatable auto scope; defaults to Standard.
           --defname <value>           Repeatable auto-mode DefName allowlist.
@@ -499,8 +500,8 @@ public static class CliHelp
           --scenario-only             Run only external cases; omit to mix with ordinary tests.
           --quick-start               With manual mode, start a disposable native quick-test game.
           --test-name <name>          Select an external testDefName, full caseId, or unique display name; repeatable.
-                                      Groupcombat requires both --scenario-path and --test-name.
-                                      Group rules never run in auto.
+                                      Groupcombat/arena require both --scenario-path and --test-name.
+                                      Group and arena rules never run in auto.
           --isolated-desktop          Force a private Windows desktop for this run.
           --no-isolated-desktop       Force the current visible desktop for this run.
           --verbose                  Include the active mod list, additions, and deploy diagnostics.
@@ -519,6 +520,7 @@ public static class CliHelp
           RimDevTools.exe test run --mode quick --timeout-seconds 120
           RimDevTools.exe test run --mode auto --scope combat --scope view --defname MyMod_ArmorCoat
           RimDevTools.exe test run --mode groupcombat --scenario-path benchmark.xml --test-name MyMod_HumanGroups
+          RimDevTools.exe test run --mode arena --scenario-path arena.autotest.xml --test-name Arena_3000CP
 
         Scope values:
           standard, ui, combat, view, misc.

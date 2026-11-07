@@ -90,6 +90,8 @@ namespace LogSyncMod
                             request.Complete(ManualTestsHandler == null ? "manual_tests_unavailable" : ManualTestsHandler(request.ManualBody));
                             continue;
                         }
+                        if (LogSyncMod.settings is { testSessionActive: true, testSessionKind: "arena" })
+                        { request.Complete("arena_session_active"); continue; }
                         Log.Message("[LogSyncMod] XML_HOT_RELOAD_REQUESTED");
                         PlayDataLoader.HotReloadDefs();
                         Log.Message("[LogSyncMod] XML_HOT_RELOAD_QUEUED");

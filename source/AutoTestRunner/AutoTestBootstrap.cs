@@ -45,7 +45,7 @@ namespace LogSyncMod.AutoTest
 
         public static void Tick()
         {
-            GroupCombatService.Tick();
+            CombatFightService.Tick();
             ManualTestService.Tick();
             global::LogSyncMod.TestAudioController.MaintainMuted("autotest_tick");
             if (!startupReady) return;
@@ -160,6 +160,8 @@ namespace LogSyncMod.AutoTest
         public static void PollPocketMapCleanupWatchdog()
         {
             GroupCombatService.Frame();
+            ArenaService.Frame();
+            CombatFightService.Frame();
             ManualTestService.Frame();
             runner?.PollPocketMapCleanupWatchdog();
         }
@@ -175,7 +177,8 @@ namespace LogSyncMod.AutoTest
 
             runner?.ProcessUi();
             ManualTestService.OnGui();
-            GroupCombatService.OnGui();
+            CombatFightService.OnGui();
+            ArenaService.OnGui();
         }
 
         public static bool ShouldForceAbilityForAutoTest(RimWorld.Ability ability)

@@ -1,0 +1,41 @@
+<ArenaSuite schemaVersion="1" id="arena.boundary" gameVersion="1.7">
+  <Tournament id="draw" name="平局重赛边界" seed="12345">
+    <testDefName>Arena_DrawReplay</testDefName>
+    <Scene type="mainMap" sizeX="100" sizeZ="100"/>
+    <Roster mode="count" count="1"/>
+    <Entrants><Entrant id="wolves" pawnKind="Wolf_Timber"/><Entrant id="mercenaries" pawnKind="Mercenary_Gunner"/></Entrants>
+    <Battle durationSeconds="0.01" timeSpeed="superfast" timeoutRealSeconds="60"/>
+    <TieBreak onDraw="replay" maxReplays="2"/>
+    <Output width="800" height="600"/>
+  </Tournament>
+  <Tournament id="small" name="预算不足边界">
+    <testDefName>Arena_BudgetTooSmall</testDefName>
+    <Scene type="mainMap" sizeX="100" sizeZ="100"/>
+    <Roster mode="combatPower" budget="1"/>
+    <Entrants><Entrant id="wolves" pawnKind="Wolf_Timber"/><Entrant id="mercenaries" pawnKind="Mercenary_Gunner"/></Entrants>
+  </Tournament>
+  <Tournament id="medium" name="1280输出擂台" seed="12345">
+    <testDefName>Arena_Output1280</testDefName>
+    <Scene type="mainMap" sizeX="100" sizeZ="100"><Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/></Scene>
+    <Roster mode="count" count="20"/>
+    <Entrants><Entrant id="wolves" pawnKind="Wolf_Timber"/><Entrant id="mercenaries" pawnKind="Mercenary_Gunner"/></Entrants>
+    <Battle durationSeconds="180" timeSpeed="superfast" timeoutRealSeconds="300"/>
+    <Output width="1280" height="720"/>
+  </Tournament>
+  <Tournament id="timeout" name="单场现实超时边界">
+    <testDefName>Arena_RealTimeout</testDefName>
+    <Scene type="mainMap" sizeX="100" sizeZ="100"/>
+    <Roster mode="count" count="1"/>
+    <Entrants><Entrant id="wolves" pawnKind="Wolf_Timber"/><Entrant id="mercenaries" pawnKind="Mercenary_Gunner"/></Entrants>
+    <Battle durationSeconds="180" timeoutRealSeconds="1"/>
+  </Tournament>
+  <Tournament id="large" name="十队可滚动天梯展示边界" seed="12345">
+    <testDefName>Arena_LargeBracket</testDefName>
+    <Scene type="mainMap" sizeX="100" sizeZ="100"/>
+    <Roster mode="count" count="1"/>
+    <Entrants><Entrant id="wolves" pawnKind="Wolf_Timber"/><Entrant id="mercenaries" pawnKind="Mercenary_Gunner"/><Entrant id="scythers" pawnKind="Mech_Scyther"/><Entrant id="bears" pawnKind="Bear_Polar"/><Entrant id="wargs" pawnKind="Warg"/><Entrant id="cougars" pawnKind="Cougar"/><Entrant id="deer" pawnKind="Deer"/><Entrant id="muffalo" pawnKind="Muffalo"/><Entrant id="elephants" pawnKind="Elephant"/><Entrant id="rats" pawnKind="Rat"/></Entrants>
+    <Battle durationSeconds="0.01" timeSpeed="superfast" timeoutRealSeconds="60"/>
+    <TieBreak onDraw="replay" maxReplays="0"/>
+    <Output width="1920" height="1080"/>
+  </Tournament>
+</ArenaSuite>

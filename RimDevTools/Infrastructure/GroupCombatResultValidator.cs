@@ -23,7 +23,7 @@ public static class GroupCombatResultValidator
             if (report.Rounds.Any(r => r.RequireCompleteAttribution && !r.MeasurementRequirementsMet)) return new(false, "GROUPCOMBAT_MEASUREMENT_REQUIREMENTS_NOT_MET", "群战已执行并清理，但未达到显式的完整归属测量要求", new { path });
             return new(true, "", "群战数值评测完成", new { path, reportPath = Path.Combine(outputPath, "groupcombat_" + runId + "_Report.md"), rounds = report.Rounds.Count, results = report.Rounds.Select(r => new { r.CaseId, r.TestDefName, r.ElapsedTicks, r.EndReason, r.MeasurementQuality, r.MeasurementRequirementsMet, r.TotalEvents, r.CleanupComplete, teams = r.Teams.Select(t => new { t.Id, t.Outcome, t.Initial, t.Joined, t.Total, t.Alive, t.Dead, t.Downed, t.EnemyDamage, t.Dps, t.MeanDps, t.MeanOutput, t.DamageTaken }) }) });
         }
-        catch (Exception ex) when (ex is IOException or JsonException) { return new(false, "GROUPCOMBAT_RESULT_INVALID", ex.Message, new { path }); }
+        catch (Exception ex) when (ex is IOException or JsonException or InvalidOperationException or NullReferenceException or ArgumentException or OverflowException) { return new(false, "GROUPCOMBAT_RESULT_INVALID", ex.Message, new { path }); }
     }
 
     public static string? ValidateIntegrity(GroupCombatRunReport report, ScenarioPlan? expectedPlan = null)
@@ -37,6 +37,16 @@ public static class GroupCombatResultValidator
             {
                 var actual = report.Rounds.SingleOrDefault(r => r.CaseId == expected.CaseId);
                 if (actual == null || actual.TestDefName != expected.TestDefName || actual.InputHash != expected.InputHash || actual.Seed != expected.Seed || actual.Swapped != expected.Swapped) return "群战结果定义、输入哈希或重复实验参数与 CLI 固定输入不符";
+                var groups = System.Xml.Linq.XElement.Parse(expected.Xml).Element("Actors")!.Elements("PawnGroup").Where(g => g.Attribute("combatPowerBudget") != null).ToList();
+                if (actual.ResolvedRosters.Count != groups.Count) return "群战预算编组快照缺失或多余";
+                foreach (var group in groups)
+                {
+                    var resolved = actual.ResolvedRosters.SingleOrDefault(r => r.Id == ScenarioLoader.A(group, "id"));
+                    var budget = CombatRoster.Positive(ScenarioLoader.A(group, "combatPowerBudget"));
+                    if (resolved == null || resolved.PawnKind != group.Element("basePawnKind")!.Value || resolved.Team != ScenarioLoader.A(group, "team") || resolved.UnitCombatPower <= 0 || resolved.RequestedBudget != budget || resolved.Mode != "combatPower" || resolved.ResolvedCount < 1 || resolved.ResolvedCount > 100 || resolved.ActualCombatPower > budget || budget - resolved.ActualCombatPower >= resolved.UnitCombatPower) return "群战预算配兵算术或身份不符";
+                    var generated = actual.Units.Where(u => !u.JoinedDuringBattle && u.Id.StartsWith(resolved.Id + "[", StringComparison.Ordinal)).ToList();
+                    if (generated.Count != resolved.ResolvedCount || generated.Any(u => u.Team != resolved.Team || u.Kind != resolved.PawnKind)) return "群战预算配兵与实际生成数量不符";
+                }
             }
         }
         foreach (var round in report.Rounds)

@@ -45,6 +45,7 @@ namespace LogSyncMod
         public string autoTestRunId = "";
         public string autoTestScenarioPlan = "";
         public string groupCombatPlan = "";
+        public string arenaPlan = "";
         public string autoTestProjectRoot = "";
         public string autoTestOutputPath = "D:/RimWorldAutoTest";
         public AutoTestScope autoTestScope = AutoTestScope.Standard;
@@ -89,6 +90,7 @@ namespace LogSyncMod
             Scribe_Values.Look(ref autoTestRunId, "autoTestRunId", "");
             Scribe_Values.Look(ref autoTestScenarioPlan, "autoTestScenarioPlan", "");
             Scribe_Values.Look(ref groupCombatPlan, "groupCombatPlan", "");
+            Scribe_Values.Look(ref arenaPlan, "arenaPlan", "");
             Scribe_Values.Look(ref autoTestProjectRoot, "autoTestProjectRoot", "");
             Scribe_Values.Look(ref autoTestOutputPath, "autoTestOutputPath", "D:/RimWorldAutoTest");
             Scribe_Values.Look(ref autoTestScope, "autoTestScope", AutoTestScope.Standard);

@@ -31,7 +31,7 @@ namespace LogSyncMod.AutoTest
         }
 
         public static bool IsManual(string directory) => SessionKind(directory) == "manual";
-        public static bool IsIndependent(string directory) => SessionKind(directory) is "manual" or "groupcombat";
+        public static bool IsIndependent(string directory) => SessionKind(directory) is "manual" or "groupcombat" or "arena";
 
         private static string SessionKind(string directory)
         {

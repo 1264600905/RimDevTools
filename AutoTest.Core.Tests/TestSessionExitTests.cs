@@ -2,7 +2,7 @@ internal static class TestSessionExitTests
 {
     internal static void Run(Action<bool, string> check)
     {
-        foreach (var kind in new[] { "quick", "auto", "groupcombat", "manual" })
+        foreach (var kind in new[] { "quick", "auto", "groupcombat", "arena", "manual" })
         {
             var gate = new LogSyncMod.TestSessionExitPolicy();
             check(gate.Request(kind, "run", true, kind, "run", 100, 4) && !gate.ShouldExit(true, kind, "run", 1099, 5) && gate.ShouldExit(true, kind, "run", 1100, 5) && !gate.ShouldExit(true, kind, "run", 1200, 6), "CLI " + kind + " completion exits once after a later main-thread heartbeat and artifact flush grace");

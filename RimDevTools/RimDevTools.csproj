@@ -28,5 +28,8 @@
     <Compile Include="..\source\AutoTestRunner\Scenarios\TemporaryPawnData.cs" Link="Shared\TemporaryPawnData.cs" />
     <Compile Include="..\source\AutoTestRunner\Scenarios\GroupCombatContracts.cs" Link="Shared\GroupCombatContracts.cs" />
     <Compile Include="..\source\AutoTestRunner\Scenarios\GroupCombatLoader.cs" Link="Shared\GroupCombatLoader.cs" />
+    <Compile Include="..\source\AutoTestRunner\Scenarios\CombatRoster.cs" Link="Shared\CombatRoster.cs" />
+    <Compile Include="..\source\AutoTestRunner\Scenarios\ArenaContracts.cs" Link="Shared\ArenaContracts.cs" />
+    <Compile Include="..\source\AutoTestRunner\Scenarios\ArenaLoader.cs" Link="Shared\ArenaLoader.cs" />
   </ItemGroup>
 </Project>

@@ -7,6 +7,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\RimDevTools\RimDevTools.csproj" />
+    <Compile Include="..\source\AutoTestRunner\Scenarios\GroupCombatLedger.cs" Link="Shared\GroupCombatLedger.cs" />
     <None Update="Fixtures\**" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

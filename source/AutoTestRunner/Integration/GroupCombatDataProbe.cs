@@ -21,7 +21,7 @@ namespace LogSyncMod.AutoTest
         internal static object LastResult;
         internal static object RunUniqueMap()
         {
-            if (global::LogSyncMod.LogSyncMod.settings is not { testSessionActive: true, testSessionKind: "manual" } || ManualTestService.Busy || GroupCombatService.Busy)
+            if (global::LogSyncMod.LogSyncMod.settings is not { testSessionActive: true, testSessionKind: "manual" } || ManualTestService.Busy || CombatFightService.Busy)
                 throw new InvalidOperationException("Unique-map verification requires an idle CLI manual test process");
             var source = Find.CurrentMap;
             if (source == null || Find.Maps.Count != 1) throw new InvalidOperationException("Unique-map verification requires exactly one command-owned quicktest source map");
@@ -37,7 +37,7 @@ namespace LogSyncMod.AutoTest
         }
         internal static object Run()
         {
-            if (global::LogSyncMod.LogSyncMod.settings is not { testSessionActive: true, testSessionKind: "manual" } || ManualTestService.Busy || GroupCombatService.Busy) throw new InvalidOperationException("Native group data verification requires an idle CLI manual test process");
+            if (global::LogSyncMod.LogSyncMod.settings is not { testSessionActive: true, testSessionKind: "manual" } || ManualTestService.Busy || CombatFightService.Busy) throw new InvalidOperationException("Native group data verification requires an idle CLI manual test process");
             var source = Find.CurrentMap; var originalSpeed = Find.TickManager.CurTimeSpeed;
             var originalMaps = Find.Maps.Select(m => m.uniqueID).OrderBy(id => id).ToList();
             var owned = new List<Thing>(); var checks = new Dictionary<string, bool>(); var facts = new Dictionary<string, object>();

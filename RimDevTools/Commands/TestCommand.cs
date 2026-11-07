@@ -234,23 +234,35 @@ public static class TestCommand
 
         var mode = CliArgs.Value(args, "--mode")?.ToLowerInvariant() ?? "quick";
         if (CliArgs.Has(args, "--quick-start") && mode != "manual") return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "INVALID_ARGUMENT", "--quick-start 只适用于 manual 测试", context.Root);
-        if (mode is not ("quick" or "manual" or "auto" or "groupcombat"))
+        if (mode is not ("quick" or "manual" or "auto" or "groupcombat" or "arena"))
             return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "MODE_INVALID", $"不支持的测试模式: {mode}", context.Root);
         ScenarioPlan? scenarioPlan = null;
         var scenarioPath = CliArgs.Value(args, "--scenario-path");
-        if (mode == "groupcombat" && (string.IsNullOrWhiteSpace(scenarioPath) || CliArgs.Values(args, "--test-name").Count == 0))
-            return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "GROUPCOMBAT_NAME_REQUIRED", "群战必须同时提供 --scenario-path 和 --test-name，显式指名测试定义", context.Root);
-        if (mode == "groupcombat" && CliArgs.Has(args, "--scenario-only"))
-            return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "INVALID_ARGUMENT", "--scenario-only 属于普通回归入口；群战本身为独立评测", context.Root);
+        if (mode is "groupcombat" or "arena" && (string.IsNullOrWhiteSpace(scenarioPath) || CliArgs.Values(args, "--test-name").Count == 0))
+            return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, mode == "arena" ? "ARENA_NAME_REQUIRED" : "GROUPCOMBAT_NAME_REQUIRED", "群战/擂台必须同时提供 --scenario-path 和 --test-name，显式指名测试定义", context.Root);
+        if (mode is "groupcombat" or "arena" && CliArgs.Has(args, "--scenario-only"))
+            return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "INVALID_ARGUMENT", "--scenario-only 属于普通回归入口；群战/擂台本身为独立评测", context.Root);
         if (scenarioPath is not null || CliArgs.Has(args, "--scenario-only") || CliArgs.Has(args, "--test-name"))
         {
-            if (mode is not ("auto" or "groupcombat") || context.Config.GameVersion != "1.7")
-                return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "SCENARIO_BACKEND_UNSUPPORTED", "外部场景首版仅支持 1.7 的 auto/groupcombat 模式", context.Root);
+            if (mode is not ("auto" or "groupcombat" or "arena") || context.Config.GameVersion != "1.7")
+                return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "SCENARIO_BACKEND_UNSUPPORTED", "外部场景首版仅支持 1.7 的 auto/groupcombat/arena 模式", context.Root);
             if (string.IsNullOrWhiteSpace(scenarioPath))
                 return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "SCENARIO_PATH_REQUIRED", "--scenario-only 必须同时提供 --scenario-path", context.Root);
-            try { scenarioPlan = ScenarioLoader.Load(Path.GetFullPath(scenarioPath, context.Root), mode == "groupcombat"); ScenarioLoader.SelectRules(scenarioPlan, CliArgs.Values(args, "--test-name")); if (mode == "groupcombat") GroupCombatPlan.Expand(scenarioPlan); }
+            try {
+                if (mode == "arena")
+                {
+                    var arena = ArenaLoader.Load(Path.GetFullPath(scenarioPath, context.Root), CliArgs.Values(args, "--test-name"));
+                    scenarioPlan = new ScenarioPlan { Purpose = "arena", Arena = arena, Inputs = arena.Inputs, SelectedTestDefNames = arena.SelectedTestDefNames };
+                }
+                else
+                {
+                    scenarioPlan = ScenarioLoader.Load(Path.GetFullPath(scenarioPath, context.Root), mode == "groupcombat");
+                    ScenarioLoader.SelectRules(scenarioPlan, CliArgs.Values(args, "--test-name"));
+                    if (mode == "groupcombat") GroupCombatPlan.Expand(scenarioPlan);
+                }
+            }
             catch (Exception ex) when (ex is IOException or XmlException or ScenarioConfigurationException or ArgumentException or FormatException or OverflowException)
-            { return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "SCENARIO_INVALID", ex.Message, context.Root); }
+            { return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, (ex as ScenarioConfigurationException)?.Code ?? (mode == "arena" ? "ARENA_CONFIG_INVALID" : "SCENARIO_INVALID"), ex.Message, context.Root); }
             scenarioPlan.ScenarioOnly = CliArgs.Has(args, "--scenario-only");
         }
         var verifyWorkshopAssets = CliArgs.Has(args, "--verify-workshop-assets");
@@ -262,7 +274,7 @@ public static class TestCommand
             return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "INVALID_ARGUMENT", "--batch-size 仅适用于 --mode auto", context.Root);
         if (CliArgs.Has(args, "--sync-source") && !CliArgs.Has(args, "--deploy"))
             return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "SYNC_SOURCE_REQUIRES_DEPLOY", "--sync-source 必须与 --deploy 一起使用", context.Root);
-        if (!CliArgs.TryPositiveInt(args, "--timeout-seconds", context.Config.Timeouts.MaxWait, out var timeout, out var timeoutError))
+        if (!CliArgs.TryPositiveInt(args, "--timeout-seconds", scenarioPlan?.Arena?.DefaultDeadlineSeconds ?? context.Config.Timeouts.MaxWait, out var timeout, out var timeoutError))
             return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "TIMEOUT_INVALID", timeoutError!, context.Root);
         int? batchSize = null;
         if (mode == "auto")
@@ -346,7 +358,7 @@ public static class TestCommand
             await SettingsEditor.UpdateAsync(context, mode, transaction, runId, targetPackageId, muteAudio: mode != "manual", scopes: selection.Scopes, hasExplicitScopes: selection.HasExplicitScopes, defNames: selection.DefNames, batchSize: batchSize, artifacts: artifacts, scenarioPlan: scenarioPlan);
 
             var gameArguments = new List<string> { "-popupwindow" };
-            if (mode is "auto" or "groupcombat" || mode == "manual" && CliArgs.Has(args, "--quick-start")) gameArguments.Add("quicktest");
+            if (mode is "auto" or "groupcombat" or "arena" || mode == "manual" && CliArgs.Has(args, "--quick-start")) gameArguments.Add("quicktest");
             if (verifyWorkshopAssets)
             {
                 assetScope = await WorkshopAssetVerificationScope.BeginAsync(context, runId, cancellationToken);
@@ -434,7 +446,7 @@ public static class TestCommand
             var keepCount = mode == "auto"
                 ? Math.Min(context.Config.Retention.MaxLogFiles, context.Config.Retention.MaxAutoTestRuns)
                 : context.Config.Retention.MaxLogFiles;
-            if (mode != "groupcombat") LogArchive.PruneTestRunDirectories(TestArtifactPaths.LogRoot(context), keepCount);
+            if (mode is not ("groupcombat" or "arena")) LogArchive.PruneTestRunDirectories(TestArtifactPaths.LogRoot(context), keepCount);
         }
         catch (Exception ex)
         {
@@ -464,13 +476,15 @@ public static class TestCommand
         {
             runId,
             mode,
+            timeoutSeconds = timeout,
+            skippedScenarioFiles = scenarioPlan?.Arena?.SkippedFiles,
             artifacts = artifactPaths,
             logSummary,
             targetPackageId,
             scopes = selection.Scopes,
             defNames = verbose ? selection.DefNames : null,
             batchSize,
-            captureScreenshots = mode is "auto" or "groupcombat",
+            captureScreenshots = mode is "auto" or "groupcombat" or "arena",
             isolatedDesktop = isolation.Enabled,
             isolatedDesktopSource = isolation.Source,
             activeModCount = modList.Mods.Count,
@@ -504,7 +518,7 @@ public static class TestCommand
         DateTime? lastHeartbeatAt = null;
         long observedHeartbeatSequence = 0;
         const string quickSignal = "[LogSyncMod] RUNTIME_READY_TO_CLOSE";
-        var autoSignal = mode == "groupcombat" ? $"[LogSyncGroupCombat] COMPLETED runId={runId}" : $"[LogSyncAutoTest] COMPLETED runId={runId}";
+        var autoSignal = mode == "arena" ? $"[LogSyncArena] COMPLETED runId={runId}" : mode == "groupcombat" ? $"[LogSyncGroupCombat] COMPLETED runId={runId}" : $"[LogSyncAutoTest] COMPLETED runId={runId}";
         var scanner = new IncrementalTestLogScanner(runId, quickSignal, autoSignal);
         while (DateTime.UtcNow < deadline)
         {
@@ -534,10 +548,10 @@ public static class TestCommand
                     if (scanner.AutoCompleted) return TestOutcome.Failure(ExitCodes.GameFailed, validation.Code, validation.Message, validation.Details);
                 }
             }
-            if (mode == "groupcombat" && (scanner.AutoCompleted || game.HasExited))
+            if (mode is "groupcombat" or "arena" && (scanner.AutoCompleted || game.HasExited))
             {
-                var validation = GroupCombatResultValidator.Validate(outputPath, runId, scenarioPlan);
-                if (validation.Ok) return TestOutcome.Success("groupcombat completed", validation.Details);
+                var validation = mode == "arena" ? ArenaResultValidator.Validate(outputPath, runId, scenarioPlan?.Arena) : GroupCombatResultValidator.Validate(outputPath, runId, scenarioPlan);
+                if (validation.Ok) return TestOutcome.Success(mode + " completed", validation.Details);
                 if (scanner.AutoCompleted) return TestOutcome.Failure(ExitCodes.GameFailed, validation.Code, validation.Message, validation.Details);
             }
 
@@ -926,7 +940,7 @@ public static class SettingsEditor
         var effectiveArtifacts = artifacts;
         changed |= Set(settings, "logPath", effectiveArtifacts?.SyncLogPath ?? SyncLogPath(context));
         changed |= SetList(settings, "keywords", context.Config.LogKeywords);
-        if (mode is "quick" or "auto")
+        if (mode is "quick" or "auto" or "groupcombat" or "arena")
         {
             changed |= Set(settings, "syncWarning", "True");
             changed |= Set(settings, "syncError", "True");
@@ -939,6 +953,7 @@ public static class SettingsEditor
         // Scribe interprets string escape sequences; an opaque base64 envelope preserves XML/JSON bytes.
         changed |= Set(settings, "autoTestScenarioPlan", scenarioPlan is null || mode != "auto" ? "" : Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(JsonSerializer.Serialize(scenarioPlan))));
         changed |= Set(settings, "groupCombatPlan", scenarioPlan is null || mode != "groupcombat" ? "" : Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(JsonSerializer.Serialize(scenarioPlan))));
+        changed |= Set(settings, "arenaPlan", mode == "arena" && scenarioPlan?.Arena != null ? Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(JsonSerializer.Serialize(scenarioPlan.Arena))) : "");
         changed |= Set(settings, "autoTestProjectRoot", auto ? Path.GetFullPath(context.Root) : "");
         changed |= Set(settings, "autoTestOutputPath", effectiveArtifacts?.AutoTestOutputPath ?? AutoTestOutputPath(context));
         var effectiveScopes = scopes is { Count: > 0 } ? DistinctValues(scopes) : ["Standard"];
@@ -952,8 +967,8 @@ public static class SettingsEditor
             : Remove(settings, "autoTestTargetDefNames");
         if (auto && batchSize.HasValue) changed |= Set(settings, "autoTestBatchSize", Math.Max(1, batchSize.Value).ToString());
         changed |= Set(settings, "autoTestCaptureScreenshots", "True");
-        changed |= Set(settings, "autoTestPreventPause", mode == "groupcombat" ? "False" : "True");
-        changed |= Set(settings, "autoTestUseFastSpeed", mode == "groupcombat" ? "False" : "True");
+        changed |= Set(settings, "autoTestPreventPause", mode is "groupcombat" or "arena" ? "False" : "True");
+        changed |= Set(settings, "autoTestUseFastSpeed", mode is "groupcombat" or "arena" ? "False" : "True");
         changed |= Set(settings, "testMuteAudio", muteAudio == true ? "True" : "False");
         changed |= Set(settings, "testSessionActive", string.IsNullOrWhiteSpace(runId) ? "False" : "True");
         changed |= Set(settings, "testSessionKind", string.IsNullOrWhiteSpace(runId) ? "" : mode);

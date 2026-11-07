@@ -1,0 +1,13 @@
+<TestSuite schemaVersion="1" id="groupcombat.budget" gameVersion="1.7">
+  <Case id="budget" kind="groupCombat" name="群战：双方3000 combatPower" seed="12345" timeoutRealSeconds="300">
+    <testDefName>GroupCombat_Budget3000</testDefName>
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100"><Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/></Scene>
+    <Teams><Team id="wolves"/><Team id="mercenaries"/></Teams>
+    <Actors>
+      <PawnGroup id="wolves" team="wolves" combatPowerBudget="3000" originX="18" originZ="34" formation="grid" columns="10" spacing="2"><basePawnKind>Wolf_Timber</basePawnKind></PawnGroup>
+      <PawnGroup id="mercenaries" team="mercenaries" combatPowerBudget="3000" originX="62" originZ="34" formation="grid" columns="10" spacing="2"><basePawnKind>Mercenary_Gunner</basePawnKind></PawnGroup>
+    </Actors>
+    <GroupCombat timeSpeed="superfast" durationSeconds="180"><Experiments swapSides="true"/></GroupCombat>
+    <Output width="1920" height="1080"/>
+  </Case>
+</TestSuite>

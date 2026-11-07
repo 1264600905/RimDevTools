@@ -13,6 +13,7 @@ namespace LogSyncMod.AutoTest.Scenarios
         public int Seed { get; set; }
         public bool Swapped { get; set; }
         public string Xml { get; set; }
+        public List<ResolvedCombatRoster> ResolvedRosters { get; set; } = new();
         public string Source { get; set; }
         public string InputHash { get; set; }
     }
@@ -137,6 +138,7 @@ namespace LogSyncMod.AutoTest.Scenarios
         public bool Swapped { get; set; }
         public string Source { get; set; }
         public string InputHash { get; set; }
+        public List<ResolvedCombatRoster> ResolvedRosters { get; set; } = new();
         public string ExecutionStatus { get; set; } = "preparing";
         public string EndReason { get; set; }
         public string Error { get; set; }

@@ -28,13 +28,18 @@ namespace LogSyncMod.AutoTest
                 {
                     case "verify-groupcombat-data": try { result = GroupCombatDataProbe.Run(); } finally { global::LogSyncMod.TestSessionCompletion.Complete("manual", global::LogSyncMod.LogSyncMod.settings?.autoTestRunId); } break;
                     case "verify-groupcombat-unique-map": try { result = GroupCombatDataProbe.RunUniqueMap(); } finally { global::LogSyncMod.TestSessionCompletion.Complete("manual", global::LogSyncMod.LogSyncMod.settings?.autoTestRunId); } break;
-                    case "groupcombat-status": result = GroupCombatService.Status; break;
+                    case "arena-status": result = new { arena = ArenaService.Status, fight = CombatFightService.Status }; break;
+                    case "arena-cancel": ArenaService.Cancel(); result = new { requested = true }; break;
+                    case "verify-arena-execution-fault":
+                        if (!CombatFightService.IsArena) throw new InvalidOperationException("Execution-failure verification requires an arena fight");
+                        CombatFightService.VerifyExecutionFailure(); result = new { requested = true }; break;
+                    case "groupcombat-status": result = CombatFightService.Status; break;
                     case "verify-groupcombat-overlay":
-                        if (!GroupCombatService.Measuring) throw new InvalidOperationException("Overlay verification requires a running groupcombat round");
+                        if (!CombatFightService.Measuring) throw new InvalidOperationException("Overlay verification requires a running groupcombat round");
                         GroupCombatOverlay.RequestInputVerification(); result = new { requested = true }; break;
-                    case "verify-groupcombat-speed": GroupCombatService.SetVerificationSpeed(Text("speed")); result = GroupCombatService.Status; break;
-                    case "groupcombat-cancel": GroupCombatService.Cancel(); result = new { requested = true }; break;
-                    case "verify-groupcombat-execution-fault": GroupCombatService.VerifyExecutionFailure(); result = new { requested = true }; break;
+                    case "verify-groupcombat-speed": CombatFightService.SetVerificationSpeed(Text("speed")); result = CombatFightService.Status; break;
+                    case "groupcombat-cancel": CombatFightService.Cancel(); result = new { requested = true }; break;
+                    case "verify-groupcombat-execution-fault": CombatFightService.VerifyExecutionFailure(); result = new { requested = true }; break;
                     case "verify-pawn-data": try { result = TemporaryPawnDataProbe.Run(); } finally { global::LogSyncMod.TestSessionCompletion.Complete("manual", global::LogSyncMod.LogSyncMod.settings?.autoTestRunId); } break;
                     case "status":
                         result = new { busy = ManualTestService.Busy, progress = ManualTestService.Progress, readiness, dataVerification = TemporaryPawnDataProbe.LastResult, gameLaunchId = ManualTestService.GameLaunchId, manualSessionId = ManualTestService.ManualSessionId, artifacts = ManualTestService.Artifacts, invocations = ManualTestService.Invocations.Select(i => new { i.InvocationId, i.Status, resultCount = i.Results.Count, i.Error }) }; break;

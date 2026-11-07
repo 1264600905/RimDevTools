@@ -18,15 +18,16 @@ namespace LogSyncMod.AutoTest
             internal Dictionary<Faction, string> Teams;
             internal ProbeContext(Map map, GroupCombatLedger ledger, Dictionary<Thing, string> ids, Dictionary<Faction, string> teams)
             {
-                if (probe != null || GroupCombatService.Busy) throw new InvalidOperationException("Another group combat measurement is active");
+                if (probe != null || CombatFightService.Busy) throw new InvalidOperationException("Another group combat measurement is active");
                 Map = map; Ledger = ledger; Ids = ids; Teams = teams; Clear(); probe = this;
             }
             public void Dispose() { if (probe == this) probe = null; Clear(); }
         }
         private static ProbeContext probe;
-        private static GroupCombatLedger ActiveLedger => probe?.Ledger ?? GroupCombatService.Ledger;
-        private static string Id(Thing thing) => thing != null && probe?.Ids.TryGetValue(thing, out var value) == true ? value : GroupCombatService.RosterId(thing);
-        private static string Team(Faction faction) => faction != null && probe?.Teams.TryGetValue(faction, out var value) == true ? value : GroupCombatService.Team(faction);
+        internal static bool ProbeActive => probe != null;
+        private static GroupCombatLedger ActiveLedger => probe?.Ledger ?? CombatFightService.Ledger;
+        private static string Id(Thing thing) => thing != null && probe?.Ids.TryGetValue(thing, out var value) == true ? value : CombatFightService.RosterId(thing);
+        private static string Team(Faction faction) => faction != null && probe?.Teams.TryGetValue(faction, out var value) == true ? value : CombatFightService.Team(faction);
         internal sealed class Invocation
         {
             internal GroupCombatLedger Ledger;
@@ -38,9 +39,9 @@ namespace LogSyncMod.AutoTest
         internal static void Clear() { stack?.Clear(); }
         internal static Invocation Begin(Thing victim, DamageInfo info)
         {
-            if (probe == null) { GroupCombatService.NotifySpawn(victim as Pawn); GroupCombatService.NotifySpawn(info.Instigator as Pawn); }
+            if (probe == null) { CombatFightService.NotifySpawn(victim as Pawn); CombatFightService.NotifySpawn(info.Instigator as Pawn); }
             var ledger = ActiveLedger;
-            if (ledger == null || victim.MapHeld != (probe?.Map ?? GroupCombatService.Map) && Id(victim) == null) return null;
+            if (ledger == null || victim.MapHeld != (probe?.Map ?? CombatFightService.Map) && Id(victim) == null) return null;
             stack ??= new Stack<Invocation>();
             var call = new Invocation { Ledger = ledger, Event = new GroupCombatDamageEvent {
                 Id = ledger.NextEventId(), ParentId = stack.Count == 0 ? null : stack.Peek().Event.Id, Tick = Find.TickManager.TicksGame,
@@ -57,7 +58,7 @@ namespace LogSyncMod.AutoTest
             call.Completed = true;
             if (call.ChildResults.Any(child => ReferenceEquals(child, result)))
             {
-                GroupCombatService.DamageDiagnostic("damage.forwarded_result: a nested invocation returned the same DamageResult; recorded only once");
+                CombatFightService.DamageDiagnostic("damage.forwarded_result: a nested invocation returned the same DamageResult; recorded only once");
                 return;
             }
             // A mod can wrap a child result in an aggregate result. Exact shared injury objects
@@ -66,7 +67,7 @@ namespace LogSyncMod.AutoTest
             var overlaps = call.ChildResults.Where(child => child.hediffs != null && result.hediffs != null && child.hediffs.Any(h => result.hediffs.Contains(h))).ToList();
             if (overlaps.Count > 0)
             {
-                GroupCombatService.DamageDiagnostic("damage.aggregate_overlap: nested aggregate shares injury objects; parent omitted, measurement incomplete for this handler");
+                CombatFightService.DamageDiagnostic("damage.aggregate_overlap: nested aggregate shares injury objects; parent omitted, measurement incomplete for this handler");
                 return;
             }
             call.Event.Amount = result.totalDamageDealt;
@@ -77,8 +78,8 @@ namespace LogSyncMod.AutoTest
         {
             if (call == null) return;
             if (stack?.Count > 0 && stack.Peek() == call) stack.Pop();
-            else { stack?.Clear(); GroupCombatService.DamageDiagnostic("damage.stack_mismatch: nested native damage invocations were not balanced"); }
-            if (error != null) GroupCombatService.DamageDiagnostic("damage.exception: native TakeDamage did not return a settled result: " + error.Message);
+            else { stack?.Clear(); CombatFightService.DamageDiagnostic("damage.stack_mismatch: nested native damage invocations were not balanced"); }
+            if (error != null) CombatFightService.DamageDiagnostic("damage.exception: native TakeDamage did not return a settled result: " + error.Message);
         }
         internal static void NativeShieldAbsorbed(DamageInfo info, bool absorbed)
         {
@@ -115,41 +116,41 @@ namespace LogSyncMod.AutoTest
     internal static class GroupCombat_Spawn_Patch
     {
         [HarmonyPostfix]
-        private static void Postfix(Pawn __instance) => GroupCombatService.NotifySpawn(__instance);
+        private static void Postfix(Pawn __instance) => CombatFightService.NotifySpawn(__instance);
     }
 
     [HarmonyPatch(typeof(Pawn), nameof(Pawn.SetFaction))]
     internal static class GroupCombat_Faction_Patch
     {
         [HarmonyPostfix]
-        private static void Postfix(Pawn __instance) => GroupCombatService.NotifySpawn(__instance);
+        private static void Postfix(Pawn __instance) => CombatFightService.NotifySpawn(__instance);
     }
 
     [HarmonyPatch(typeof(ResurrectionUtility), nameof(ResurrectionUtility.TryResurrect))]
     internal static class GroupCombat_Resurrect_Patch
     {
         [HarmonyPostfix]
-        private static void Postfix(Pawn pawn, bool __result) { if (__result) GroupCombatService.NotifySpawn(pawn); }
+        private static void Postfix(Pawn pawn, bool __result) { if (__result) CombatFightService.NotifySpawn(pawn); }
     }
 
     [HarmonyPatch(typeof(Pawn_HealthTracker), "MakeDowned")]
     internal static class GroupCombat_Downed_Patch
     {
         [HarmonyPostfix]
-        private static void Postfix(Pawn ___pawn) { if (___pawn.Downed) GroupCombatService.NotifyDowned(___pawn); }
+        private static void Postfix(Pawn ___pawn) { if (___pawn.Downed) CombatFightService.NotifyDowned(___pawn); }
     }
 
     [HarmonyPatch(typeof(Pawn), nameof(Pawn.Kill))]
     internal static class GroupCombat_Dead_Patch
     {
         [HarmonyPostfix]
-        private static void Postfix(Pawn __instance) { if (__instance.Dead) GroupCombatService.NotifyDead(__instance); }
+        private static void Postfix(Pawn __instance) { if (__instance.Dead) CombatFightService.NotifyDead(__instance); }
     }
 
     [HarmonyPatch(typeof(Pawn), "ExitMap")]
     internal static class GroupCombat_ExitMap_Patch
     {
         [HarmonyPrefix]
-        private static void Prefix(Pawn __instance) => GroupCombatService.NotifyExit(__instance);
+        private static void Prefix(Pawn __instance) => CombatFightService.NotifyExit(__instance);
     }
 }

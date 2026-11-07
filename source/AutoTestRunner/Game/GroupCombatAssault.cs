@@ -29,7 +29,7 @@ namespace LogSyncMod.AutoTest
     {
         private static void Postfix(Pawn pawn, ref Color __result)
         {
-            if (GroupCombatService.Busy && GroupCombatService.RosterId(pawn) != null)
+            if (CombatFightService.Busy && CombatFightService.RosterId(pawn) != null)
                 __result = GroupCombatOverlay.NameColor(pawn.Dead ? "dead" : pawn.Downed ? "downed" : "standing");
         }
     }

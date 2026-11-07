@@ -37,6 +37,7 @@ internal sealed class CoreTestSuite
         TemporaryPawnDataTests.Run(Assert);
         ManualTestPlanTests.Run(Assert);
         GroupCombatTests.Run(Assert);
+        ArenaTests.Run(Assert);
         TestSessionExitTests.Run(Assert);
         TestRuntimeQueue();
         TestRuntimeHistory();

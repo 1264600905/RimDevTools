@@ -1,496 +1,118 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Xml.Linq;
-using HarmonyLib;
 using LogSyncMod.AutoTest.Scenarios;
 using RimWorld;
-using RimWorld.Planet;
-using UnityEngine;
 using Verse;
-using Verse.AI;
-using Verse.AI.Group;
 
 namespace LogSyncMod.AutoTest
 {
+    // Original group benchmark scheduler. Native fight state belongs to CombatFightService.
     internal static class GroupCombatService
     {
-        private static string consumedRunId;
+        private static string consumedRunId, outputPath;
         private static GroupCombatRunReport report;
         private static Queue<GroupCombatRoundInput> pending;
-        private static GroupCombatRoundInput input;
-        private static XElement roundConfig;
-        private static GroupCombatRoundResult current;
-        private static GroupCombatLedger ledger;
-        private static GroupCombatEndRule endRule;
-        private static AutoTestMainMap arena;
-        private static ScenarioGameBackend backend;
-        private static readonly Dictionary<string, Faction> factions = new Dictionary<string, Faction>();
-        private static readonly Dictionary<string, string> teamAi = new Dictionary<string, string>();
-        private static readonly Dictionary<string, Lord> teamLords = new Dictionary<string, Lord>();
-        private static List<Faction> preexistingFactions;
-        private static string preexistingRelations;
-        private static readonly Dictionary<string, Pawn> pawns = new Dictionary<string, Pawn>();
-        private static readonly Dictionary<Pawn, string> rosterIds = new Dictionary<Pawn, string>();
-        private static readonly HashSet<Pawn> exited = new HashSet<Pawn>();
-        private static readonly List<Pawn> lifecyclePawns = new List<Pawn>();
         private static IDisposable logGuard;
-        private static TimeSpeed originalSpeed;
-        private static int originalScreenWidth, originalScreenHeight, requestedWidth, requestedHeight;
-        private static FullScreenMode originalScreenMode;
-        private static int startTick, durationTicks, preparedFrame, roundIndex;
-        private static float roundStartedRealtime, phaseStartedRealtime, lastFrameRealtime, pausedRealtime;
-        private static bool overlayEnabled = true;
-        private static string aiPolicy;
-        private static string phase;
-        private static string pendingCapture, outputPath;
-        private static bool captureRequested, polling, cancel;
-        private static bool verifyTickFailure;
-        private static float introStartedRealtime;
-        private static float settlementStartedRealtime;
-        private static int settlementStartTick;
-        private static string lastCountdownLabel;
-        private static readonly Dictionary<Pawn, Rot4> introFacing = new Dictionary<Pawn, Rot4>();
-        private static readonly JsonSerializerOptions Json = new JsonSerializerOptions { WriteIndented = true };
-        internal static bool Busy => report != null && report.CompletedAtUtc == null;
-        internal static bool Measuring => phase == "running";
-        internal static Map Map => arena?.Map;
-        internal static GroupCombatLedger Ledger => Measuring ? ledger : null;
-        internal static IReadOnlyDictionary<string, Pawn> Pawns => pawns;
-        internal static IEnumerable<Pawn> CameraPawns => pawns.Where(p => p.Value.Spawned && p.Value.Map == Map && !p.Value.Dead && !p.Value.Downed && ledger?.IsCameraTarget(p.Key) == true).Select(p => p.Value);
-        internal static GroupCombatRoundResult Display => current;
-        internal static string Phase => phase;
-        internal static bool OverlayEnabled => overlayEnabled;
-        internal static bool ShowingIntro => phase is "prepared" or "countdown";
-        internal static bool ShowingSettlement => phase == "finishing" && current?.ExecutionStatus == "completed";
-        internal static string CountdownLabel => ShowingIntro ? GroupCombatPresentation.CountdownLabel(phase == "prepared" ? 0 : Time.realtimeSinceStartup - introStartedRealtime) : "";
-        internal static object Status => new { busy = Busy, phase, runId = report?.RunId, caseId = input?.CaseId, mapId = Map?.uniqueID, elapsedTicks = current?.ElapsedTicks, totalEvents = current?.TotalEvents, speed = Find.TickManager?.CurTimeSpeed.ToString(), paused = Find.TickManager?.Paused, pausedRealtime, screen = new { width = Screen.width, height = Screen.height, windowWidth = Screen.windowWidth, windowHeight = Screen.windowHeight, fullScreen = Screen.fullScreen, mode = Screen.fullScreenMode.ToString() }, camera = GroupCombatCamera.Status, overlayInput = GroupCombatOverlay.InputVerification, artifacts = new { autoTestOutputPath = outputPath }, teamAi, actors = pawns.Select(p => new { id = p.Key, x = p.Value.Position.x, z = p.Value.Position.z, dead = p.Value.Dead, downed = p.Value.Downed, job = p.Value.CurJob?.def.defName, duty = p.Value.mindState?.duty?.def.defName }), rounds = report?.Rounds.Select(r => new { r.CaseId, r.ExecutionStatus, r.CleanupComplete, r.EndReason, r.Error }) };
-        internal static void Cancel() { if (Busy) cancel = true; }
-        internal static void SetVerificationSpeed(string speed)
-        {
-            if (!Measuring || global::LogSyncMod.LogSyncMod.settings is not { testSessionActive: true, testSessionKind: "groupcombat" })
-                throw new InvalidOperationException("Speed verification requires a running CLI groupcombat round");
-            Find.TickManager.CurTimeSpeed = speed switch { "paused" => TimeSpeed.Paused, "normal" => TimeSpeed.Normal, "fast" => TimeSpeed.Fast, "superfast" => TimeSpeed.Superfast, _ => throw new ArgumentException("Unknown verification speed") };
-        }
-        internal static void VerifyExecutionFailure()
-        {
-            if (!Measuring || global::LogSyncMod.LogSyncMod.settings is not { testSessionActive: true, testSessionKind: "groupcombat" })
-                throw new InvalidOperationException("Execution-failure verification requires a running CLI groupcombat round");
-            verifyTickFailure = true;
-        }
-        internal static void NotifyExit(Pawn pawn) { if (rosterIds.ContainsKey(pawn)) exited.Add(pawn); }
-        internal static void NotifyDowned(Pawn pawn) { if (rosterIds.TryGetValue(pawn, out var id)) ledger?.MarkDowned(id); }
-        internal static void NotifyDead(Pawn pawn) { if (rosterIds.TryGetValue(pawn, out var id)) ledger?.MarkDead(id); }
-        internal static string RosterId(Thing thing) => thing is Pawn pawn && rosterIds.TryGetValue(pawn, out var id) ? id : null;
-        internal static string Team(Faction faction) => factions.FirstOrDefault(f => f.Value == faction).Key;
-
-        internal static void NotifySpawn(Pawn pawn)
-        {
-            if (!Measuring || pawn == null || pawn.MapHeld != Map) return;
-            if (rosterIds.ContainsKey(pawn)) { exited.Remove(pawn); return; }
-            var team = Team(pawn.Faction) ?? Team(pawn.GetLord()?.faction) ?? Team(GroupCombatLifecycleAdapters.OwnerFaction(pawn));
-            if (team == null) return;
-            var ticks = Math.Max(0, Find.TickManager.TicksGame - startTick);
-            var id = "joined/" + pawn.GetUniqueLoadID();
-            var unit = new GroupCombatUnit { Id = id, NativeId = pawn.GetUniqueLoadID(), Team = team, Group = "native/" + pawn.kindDef.defName, GroupName = "战斗新增", Kind = pawn.kindDef.defName, KindLabel = pawn.kindDef.LabelCap, Name = pawn.LabelShort, X = pawn.PositionHeld.x, Z = pawn.PositionHeld.z, State = pawn.Dead ? "dead" : pawn.Downed ? "downed" : "standing", WasDowned = pawn.Downed, WasDead = pawn.Dead };
-            ledger.AddUnit(unit, ticks);
-            pawns.Add(id, pawn); rosterIds.Add(pawn, id);
-            SyncUnitNames();
-            pawn.relations?.ClearAllRelations();
-            Trace("group.join", "id=" + id + "; team=" + team + "; kind=" + unit.Kind + "; tick=" + ticks);
-        }
-
-        private static void SyncUnitNames()
-        {
-            foreach (var pair in pawns)
-            {
-                var name = ledger.UnitName(pair.Key);
-                var pawn = pair.Value;
-                if (pawn.LabelShort == name) continue;
-                pawn.Name = pawn.Name is NameTriple full ? new NameTriple(full.First, name, full.Last) : new NameSingle(name);
-            }
-        }
-
-        private static void DiscoverParticipants()
-        {
-            ThingOwnerUtility.GetAllThingsRecursively(Map, ThingRequest.ForGroup(ThingRequestGroup.Pawn), lifecyclePawns);
-            foreach (var pawn in lifecyclePawns.ToList()) NotifySpawn(pawn);
-            // Native split workers can add a Lord after SpawnSetup; wait until the tick
-            // ends before filling in missing membership, avoiding double AddPawn calls.
-            foreach (var pair in pawns.ToList())
-            {
-                var pawn = pair.Value;
-                if (!pawn.Dead && pawn.MapHeld == Map && pawn.GetLord() == null && teamLords.TryGetValue(Team(pawn.Faction) ?? "", out var lord)) lord.AddPawn(pawn);
-            }
-        }
-
+        private static bool waiting;
+        internal static IEnumerable<GroupCombatRoundResult> Rounds => report?.Rounds ?? Enumerable.Empty<GroupCombatRoundResult>();
+        private static readonly JsonSerializerOptions Json = new() { WriteIndented = true };
         internal static void Frame()
         {
-            if (polling) return;
-            polling = true;
             try
             {
                 var settings = global::LogSyncMod.LogSyncMod.settings;
-                if (!Busy)
+                if (report == null || report.CompletedAtUtc != null)
                 {
-                    if (settings is not { testSessionActive: true, testSessionKind: "groupcombat" } || settings.autoTestRunId == consumedRunId || Current.ProgramState != ProgramState.Playing || LongEventHandler.AnyEventNowOrWaiting || Find.CurrentMap == null) return;
-                    consumedRunId = settings.autoTestRunId;
-                    outputPath = settings.autoTestOutputPath;
+                    if (settings is not { testSessionActive: true, testSessionKind: "groupcombat" } || settings.autoTestRunId == consumedRunId || Current.ProgramState != ProgramState.Playing || LongEventHandler.AnyEventNowOrWaiting || Find.CurrentMap == null || CombatFightService.Busy || GroupCombatDamageCapture.ProbeActive) return;
+                    consumedRunId = settings.autoTestRunId; outputPath = settings.autoTestOutputPath;
                     report = new GroupCombatRunReport { RunId = consumedRunId, StartedAtUtc = DateTime.UtcNow.ToString("O"), GameVersion = VersionControl.CurrentVersionStringWithRev, LoadedMods = LoadedModManager.RunningMods.Select(m => m.PackageIdPlayerFacing + "@" + m.ModMetaData?.ModVersion).ToList() };
-                    originalSpeed = Find.TickManager.CurTimeSpeed;
-                    originalScreenWidth = Screen.width; originalScreenHeight = Screen.height; originalScreenMode = Screen.fullScreenMode;
-                    Screen.fullScreenMode = FullScreenMode.FullScreenWindow;
-                    logGuard = global::LogSyncMod.TestLogWindowGuard.RegisterExternalSession();
-                    cancel = false; roundIndex = 0;
+                    logGuard = global::LogSyncMod.TestLogWindowGuard.RegisterExternalSession(); waiting = false;
                     var frozen = JsonSerializer.Deserialize<ScenarioPlan>(Encoding.UTF8.GetString(Convert.FromBase64String(settings.groupCombatPlan)));
                     if (frozen?.Purpose != "groupcombat" || frozen.SchemaVersion != 1) throw new ScenarioConfigurationException("Invalid frozen group combat plan");
                     var compiled = ScenarioLoader.Compile(frozen.Inputs, groupCombat: true);
                     ScenarioLoader.SelectRules(compiled, frozen.SelectedCaseIds?.Count > 0 ? frozen.SelectedCaseIds : frozen.SelectedTestDefNames);
-                    report.Inputs = frozen.Inputs; report.PlannedRounds = GroupCombatPlan.Expand(compiled);
-                    pending = new Queue<GroupCombatRoundInput>(report.PlannedRounds);
-                    Write();
+                    report.Inputs = frozen.Inputs; ResolveGroupBudgets(compiled);
+                    pending = new Queue<GroupCombatRoundInput>(report.PlannedRounds); Write();
                 }
-                if (input == null)
-                {
-                    if (cancel || pending == null || pending.Count == 0) { FinishRun(); return; }
-                    StartRound(pending.Dequeue()); return;
-                }
-                if (cancel && phase != "finishing") Freeze("cancelled", "cancelled", null);
-                var now = Time.realtimeSinceStartup;
-                if (Measuring && Find.TickManager.Paused) pausedRealtime += Math.Max(0, now - lastFrameRealtime);
-                lastFrameRealtime = now;
-                if (phase != "finishing" && now - roundStartedRealtime - pausedRealtime >= ScenarioLoader.D(roundConfig, "timeoutRealSeconds", 600)) Freeze("timeout", "realtimeLimit", "Group combat realtime deadline exceeded");
-                if (ShowingIntro)
-                {
-                    Find.TickManager.CurTimeSpeed = TimeSpeed.Paused;
-                    FaceOpponents();
-                }
-                if (phase == "prepared" && CaptureFinished())
-                {
-                    phase = "countdown"; introStartedRealtime = now; lastCountdownLabel = null;
-                    Trace("group.intro_facing", "total=" + introFacing.Count + "; correct=" + introFacing.Count(p => p.Key.Rotation == p.Value));
-                }
-                if (phase == "countdown")
-                {
-                    var label = CountdownLabel;
-                    if (label != lastCountdownLabel && label.Length > 0)
-                    {
-                        lastCountdownLabel = label;
-                        Trace("group.countdown", "label=" + label + "; elapsedTicks=" + current.ElapsedTicks + "; events=" + current.TotalEvents + "; paused=" + Find.TickManager.Paused);
-                    }
-                }
-                if (phase == "countdown" && now - introStartedRealtime >= GroupCombatPresentation.IntroDuration)
-                {
-                    // Release the display-only jobs before any simulation tick can run.
-                    foreach (var pawn in introFacing.Keys) pawn.jobs?.StopAll();
-                    introFacing.Clear();
-                    phase = "running"; startTick = Find.TickManager.TicksGame; current.ExecutionStatus = "running";
-                    var settingsNode = roundConfig.Element("GroupCombat");
-                    Find.TickManager.CurTimeSpeed = ScenarioLoader.A(settingsNode, "timeSpeed", "normal") switch { "fast" => TimeSpeed.Fast, "superfast" => TimeSpeed.Superfast, _ => TimeSpeed.Normal };
-                    Trace("group.start", "configuredSpeed=" + ScenarioLoader.A(settingsNode, "timeSpeed", "normal") + "; actualSpeed=" + Find.TickManager.CurTimeSpeed + "; pauseAllowed=true");
-                    ScheduleAttacks(true);
-                    Log.Message("[LogSyncGroupCombat] START caseId=" + input.CaseId + " map=" + Map.uniqueID + " participants=" + pawns.Count);
-                }
-                else if (phase == "finishing")
-                {
-                    Find.TickManager.CurTimeSpeed = TimeSpeed.Paused;
-                    if (CaptureFinished() && (!ShowingSettlement || now - settlementStartedRealtime >= GroupCombatPresentation.SettlementDuration)) FinishRound();
-                }
+                if (waiting || CombatFightService.Busy) return;
+                if (report.Error != null || pending.Count == 0) { Finish(); return; }
+                waiting = true;
+                CombatFightService.BeginGroupFight(report.RunId, outputPath, pending.Dequeue(), report.Rounds.Count + 1, OnFightCompleted, Write);
             }
             catch (Exception ex)
             {
                 Log.Error("[LogSyncGroupCombat] " + ex);
-                if (input != null && phase != "finishing") Freeze("error", "exception", ex.ToString());
-                else { if (report != null) report.Error = ex.ToString(); FinishRun(); }
+                if (report != null) report.Error = ex.ToString();
+                if (CombatFightService.Busy) CombatFightService.Cancel(); else Finish();
             }
-            finally { polling = false; }
+        }
+        private static void OnFightCompleted(GroupCombatRoundResult result)
+        {
+            waiting = false; report.Rounds.Add(result);
+            if (result.ExecutionStatus != "completed" || !result.CleanupComplete)
+            {
+                report.Status = result.ExecutionStatus == "cancelled" ? "cancelled" : "error";
+                report.Error ??= result.Error ?? "Group combat execution or cleanup failed"; pending.Clear();
+            }
+            Write();
+        }
+        private static void ResolveGroupBudgets(ScenarioPlan compiled)
+        {
+            var rosters = new Dictionary<string, List<ResolvedCombatRoster>>();
+            var inputs = new List<ScenarioInput>();
+            // Resolve the entire selected plan before any map or Pawn is created.
+            foreach (var definition in compiled.Cases)
+            {
+                var xml = XElement.Parse(definition.Xml);
+                rosters[definition.CaseId] = CombatRoster.ResolveGroups(xml, kind => (DefDatabase<PawnKindDef>.GetNamedSilentFail(kind) ?? throw new ScenarioConfigurationException("Unknown loaded PawnKind: " + kind, "COMBAT_POWER_INVALID")).combatPower, definition.Source);
+                var package = (string)xml.Attribute("packageId"); xml.Attribute("packageId")?.Remove();
+                var suite = new XElement("TestSuite", new XAttribute("schemaVersion", "1"), new XAttribute("id", "resolved"), new XAttribute("packageId", package ?? "ludeon.rimworld"), xml);
+                inputs.Add(new ScenarioInput { Path = definition.Source, Sha256 = definition.InputHash, Xml = suite.ToString(SaveOptions.DisableFormatting) });
+            }
+            // Preserve matrix identities; validate each resolved Case without recompiling its IDs.
+            for (int i = 0; i < compiled.Cases.Count; i++)
+            {
+                if (rosters[compiled.Cases[i].CaseId].Count == 0) continue;
+                ScenarioLoader.Compile(new[] { inputs[i] }, true);
+                compiled.Cases[i].Xml = XElement.Parse(inputs[i].Xml).Element("Case").ToString(SaveOptions.DisableFormatting);
+            }
+            report.PlannedRounds = GroupCombatPlan.Expand(compiled);
+            foreach (var round in report.PlannedRounds) round.ResolvedRosters = rosters[compiled.Cases.Single(c => round.CaseId.StartsWith(c.CaseId + "/round-", StringComparison.Ordinal)).CaseId];
         }
 
-        private static void StartRound(GroupCombatRoundInput next)
-        {
-            input = next; roundIndex++; phase = "preparing"; roundStartedRealtime = Time.realtimeSinceStartup;
-            lastFrameRealtime = roundStartedRealtime; pausedRealtime = 0;
-            current = new GroupCombatRoundResult { CaseId = input.CaseId, TestDefName = input.TestDefName, Name = input.Name, Seed = input.Seed, Swapped = input.Swapped, Source = input.Source, InputHash = input.InputHash };
-            preexistingFactions = Find.FactionManager.AllFactions.ToList();
-            preexistingRelations = RelationFingerprint();
-            Find.TickManager.CurTimeSpeed = TimeSpeed.Paused;
-            var c = roundConfig = XElement.Parse(input.Xml); var scene = c.Element("Scene"); var settings = c.Element("GroupCombat");
-            overlayEnabled = ScenarioLoader.A(settings.Element("Overlay"), "enabled", "true") == "true";
-            aiPolicy = ScenarioLoader.A(settings, "aiPolicy", "battle");
-            durationTicks = (int)Math.Ceiling(ScenarioLoader.D(settings, "durationSeconds", 180) * 60);
-            var output = c.Element("Output"); requestedWidth = ScenarioLoader.I(output, "width", 0); requestedHeight = ScenarioLoader.I(output, "height", 0);
-            arena = new AutoTestMainMap(Find.CurrentMap, input.Seed, new IntVec3(ScenarioLoader.I(scene, "sizeX", 50), 1, ScenarioLoader.I(scene, "sizeZ", 50)), ScenarioLoader.A(scene, "generatorDef", "LogSync_AutoTestStudioMap"));
-            current.MapId = Map.uniqueID; current.IsPocketMap = Map.Parent is PocketMapParent; current.GeneratorDef = Map.generatorDef.defName;
-            foreach (var team in c.Element("Teams").Elements("Team"))
-            {
-                var faction = new Faction { def = DefDatabase<FactionDef>.GetNamed("LogSync_GroupCombatFaction"), loadID = Find.UniqueIDsManager.GetNextFactionID(), Name = ScenarioLoader.A(team, "name", ScenarioLoader.A(team, "id")), temporary = true, hidden = true };
-                faction.ideos = new FactionIdeosTracker(faction);
-                // Use the current session's already initialized ideology as a read-only basis;
-                // no new ideology or leader is added to the player's world for a benchmark.
-                if (Faction.OfPlayer?.ideos?.PrimaryIdeo != null) faction.ideos.SetPrimary(Faction.OfPlayer.ideos.PrimaryIdeo);
-                // Only relations involving an owned faction are created; preexisting pairs stay untouched.
-                foreach (var other in Find.FactionManager.AllFactions.ToList())
-                {
-                    var hostile = factions.Values.Contains(other) || factions.Count == 0 && other == Faction.OfPlayer;
-                    faction.SetRelation(new FactionRelation { other = other, kind = hostile ? FactionRelationKind.Hostile : FactionRelationKind.Neutral, baseGoodwill = hostile ? -100 : 0 });
-                    other.RelationWith(faction).baseGoodwill = hostile ? -100 : 0;
-                }
-                factions.Add(ScenarioLoader.A(team, "id"), faction); Find.FactionManager.Add(faction);
-            }
-            foreach (var a in factions.Values) foreach (var b in factions.Values.Where(f => f != a)) if (!a.HostileTo(b) || !b.HostileTo(a)) throw new InvalidOperationException("Temporary factions did not become mutually hostile");
-            if (!factions.Values.First().HostileTo(Faction.OfPlayer) || !Faction.OfPlayer.HostileTo(factions.Values.First())) throw new InvalidOperationException("The left team must be hostile to the player");
-            Trace("group.player_relation", "left=" + factions.Keys.First() + "; playerRelation=Hostile; bothDirections=true");
-            backend = new ScenarioGameBackend(arena.Original, null, null, Trace);
-            backend.PrepareGroupCombat(input, Map, factions);
-            // Clear after the entire roster exists, including links added by mod generation.
-            var generated = backend.GroupActors.Values.SelectMany(g => g).OfType<Pawn>().Distinct().ToList();
-            var relationCount = generated.Sum(p => p.relations?.DirectRelations.Count ?? 0);
-            foreach (var pawn in generated) pawn.relations?.ClearAllRelations();
-            Trace("group.social_reset", "pawns=" + generated.Count + "; directBefore=" + relationCount + "; directAfter=" + generated.Sum(p => p.relations?.DirectRelations.Count ?? 0) + "; thinkTreesReplaced=false");
-            var roster = new List<GroupCombatUnit>();
-            foreach (var actor in c.Element("Actors").Elements().Where(a => a.Name == "Pawn" || a.Name == "PawnGroup"))
-            {
-                var actorId = ScenarioLoader.A(actor, "id"); var members = backend.GroupActors[actorId].Cast<Pawn>().ToList();
-                for (var i = 0; i < members.Count; i++)
-                {
-                    var pawn = members[i]; var id = actorId + "[" + i + "]";
-                    pawns.Add(id, pawn); rosterIds.Add(pawn, id);
-                    roster.Add(new GroupCombatUnit { Id = id, NativeId = pawn.GetUniqueLoadID(), Team = ScenarioLoader.A(actor, "team"), Group = GroupCombatPlan.DisplayGroupKey(actor), GroupName = actorId, Kind = pawn.kindDef.defName, KindLabel = pawn.kindDef.LabelCap, Name = pawn.LabelShort, X = pawn.Position.x, Z = pawn.Position.z });
-                }
-            }
-            ledger = new GroupCombatLedger(roster, c.Element("Teams").Elements("Team").Select(t => new KeyValuePair<string, string>(ScenarioLoader.A(t, "id"), ScenarioLoader.A(t, "name", ScenarioLoader.A(t, "id")))), ScenarioLoader.I(settings.Element("Metrics"), "detailLimit", 10000));
-            SyncUnitNames();
-            foreach (var unit in roster) unit.InitialSnapshot = TemporaryPawnData.Serialize(TemporaryPawnCapture.Capture(pawns[unit.Id]));
-            endRule = new GroupCombatEndRule(ScenarioLoader.I(settings.Element("End"), "confirmationTicks", 300));
-            foreach (var node in c.Element("Teams").Elements("Team"))
-            {
-                var id = ScenarioLoader.A(node, "id"); var faction = factions[id]; var members = pawns.Values.Where(p => p.Faction == faction).ToList();
-                var ai = ScenarioLoader.A(node, "ai", aiPolicy); teamAi.Add(id, ai);
-                LordJob job = ai switch {
-                    "battle" => new LordJob_GroupCombatAssault(),
-                    "assaultThings" or "seekAndAttack" => new LordJob_AssaultThings(faction, pawns.Values.Where(p => p.Faction != faction).Cast<Thing>().ToList(), damageFraction: 1f),
-                    "assaultColony" or "native" => new LordJob_AssaultColony(faction, canKidnap: false, canTimeoutOrFlee: false, canSteal: false),
-                    "defendPoint" => new LordJob_DefendPoint(new IntVec3(ScenarioLoader.I(node, "defendX", (int)members.Average(p => p.Position.x)), 0, ScenarioLoader.I(node, "defendZ", (int)members.Average(p => p.Position.z))), defendRadius: (float)ScenarioLoader.D(node, "defendRadius", 28), addFleeToil: false),
-                    _ => null
-                };
-                if (job != null) teamLords.Add(id, LordMaker.MakeNewLord(faction, job, Map, members));
-                Trace("group.ai", "team=" + id + "; ai=" + ai + "; nativeLordJob=" + job?.GetType().Name + "; allowSelfTend=" + members.FirstOrDefault()?.GetLord()?.CurLordToil?.AllowSelfTend + "; simultaneousStart=true");
-            }
-            current.Environment = "tile=" + Map.Tile + "; weather=" + Map.weatherManager.curWeather.defName + "; temperature=" + Map.mapTemperature.OutdoorTemp + "; sunGlow=" + GenCelestial.CurCelestialSunGlow(Map) + "; ai=" + string.Join(",", teamAi.Select(p => p.Key + "=" + p.Value));
-            foreach (var pawn in pawns.Values)
-            {
-                var opponents = pawns.Values.Where(p => p.Faction != pawn.Faction).ToList();
-                var enemyCenter = new Vector3((float)opponents.Average(p => p.Position.x), 0, (float)opponents.Average(p => p.Position.z));
-                var facing = Rot4.FromAngleFlat((enemyCenter - pawn.Position.ToVector3()).AngleFlat());
-                introFacing.Add(pawn, facing);
-                pawn.jobs.StopAll(); pawn.pather?.StopDead();
-                // The three-view settle logic uses the same display job and facing override.
-                var displayJob = JobMaker.MakeJob(JobDefOf.Wait_Combat, pawn.Position);
-                displayJob.expiryInterval = int.MaxValue; displayJob.canUseRangedWeapon = false; displayJob.overrideFacing = facing;
-                pawn.jobs.StartJob(displayJob, JobCondition.InterruptForced);
-                // Gear changes are normally rebuilt on a later tick. The paused intro
-                // needs the configured outfit immediately, including its cached portrait.
-                AutoTestThreeViewService.RefreshPawnGraphics(pawn);
-            }
-            FaceOpponents();
-            GroupCombatCamera.Begin();
-            phase = "prepared"; Refresh(0); RequestCapture("initial"); Write();
-        }
-
-        private static void FaceOpponents()
-        {
-            foreach (var pair in introFacing)
-            {
-                if (!pair.Key.Spawned || pair.Key.Dead) continue;
-                pair.Key.pather?.StopDead();
-                pair.Key.rotationTracker?.FaceCell(pair.Key.Position + pair.Value.FacingCell);
-                pair.Key.Rotation = pair.Value;
-            }
-        }
-
-        internal static void Tick()
-        {
-            if (!Measuring) return;
-            try
-            {
-                if (verifyTickFailure) { verifyTickFailure = false; throw new InvalidOperationException("Controlled native groupcombat tick failure for termination-path verification"); }
-                var ticks = Math.Max(0, Find.TickManager.TicksGame - startTick);
-                DiscoverParticipants();
-                // This callback runs after the entire native simulation tick, so simultaneous
-                // knockouts in that tick are evaluated together.
-                Refresh(ticks);
-                if (endRule.Evaluate(current, durationTicks)) { Freeze("completed", current.EndReason, null); return; }
-                if (ticks % 60 == 0) ScheduleAttacks(false);
-            }
-            catch (Exception ex) { Freeze("error", "exception", ex.ToString()); }
-        }
-
-        private static void ScheduleAttacks(bool initial)
-        {
-            foreach (var pawn in pawns.Values.Where(p => p.Spawned && p.Map == Map && !p.Dead && !p.Downed).ToList())
-            {
-                if (teamAi[Team(pawn.Faction)] != "seekAndAttack") continue;
-                var target = pawns.Values.Where(p => p != pawn && p.Spawned && p.Map == Map && !p.Dead && !p.Downed && p.HostileTo(pawn)).OrderBy(p => p.Position.DistanceToSquared(pawn.Position)).ThenBy(p => RosterId(p), StringComparer.Ordinal).FirstOrDefault();
-                if (target == null) continue;
-                if (!initial && pawn.CurJob is Job active)
-                {
-                    if (new[] { JobDefOf.AttackMelee, JobDefOf.AttackStatic, JobDefOf.CastAbilityOnThing, JobDefOf.CastAbilityOnWorldTile }.Contains(active.def) && active.targetA.Thing is Pawn targetPawn && targetPawn.Spawned && !targetPawn.Dead && !targetPawn.Downed) continue;
-                    if (active.def == JobDefOf.Goto && Find.TickManager.TicksGame - active.startTick < 600 && pawn.mindState.enemyTarget is Pawn old && old.Spawned && !old.Dead && !old.Downed) continue;
-                }
-                pawn.mindState.enemyTarget = target;
-                var abilityJob = JobGiver_AIFightEnemy.GetAbilityJob(pawn, target);
-                if (abilityJob != null) { pawn.jobs.TryTakeOrderedJob(abilityJob, JobTag.Misc); continue; }
-                var verb = pawn.TryGetAttackVerb(target);
-                if (verb == null) continue;
-                Job job;
-                if (verb.verbProps.IsMeleeAttack) job = JobMaker.MakeJob(JobDefOf.AttackMelee, target);
-                else if (verb.CanHitTarget(target)) { job = JobMaker.MakeJob(JobDefOf.AttackStatic, target); job.maxNumStaticAttacks = int.MaxValue; }
-                else if (CastPositionFinder.TryFindCastPosition(new CastPositionRequest { caster = pawn, target = target, verb = verb, maxRangeFromTarget = verb.verbProps.range, wantCoverFromTarget = true }, out var position)) job = JobMaker.MakeJob(JobDefOf.Goto, position);
-                else { var diagnostic = "group.ai_unreachable: " + pawn.GetUniqueLoadID(); if (!current.Diagnostics.Contains(diagnostic)) current.Diagnostics.Add(diagnostic); continue; }
-                // Do not restart a long warmup or a burst every three seconds. The native job
-                // ends when its target is invalid; periodic scheduling only replaces idle work.
-                job.expiryInterval = job.def == JobDefOf.Goto ? 600 : 1800; job.checkOverrideOnExpire = false; pawn.jobs.TryTakeOrderedJob(job, JobTag.Misc);
-            }
-        }
-
-        private static void Refresh(int ticks, bool includeEventDetails = false)
-        {
-            if (ledger == null) return;
-            foreach (var pair in pawns)
-            {
-                var p = pair.Value;
-                ledger.SetState(pair.Key, p.Dead ? "dead" : exited.Contains(p) ? "escaped" : p.Destroyed || p.MapHeld != Map ? "removed" : p.Downed ? "downed" : "standing", ticks);
-                var nativeRevival = p.Dead && !p.Destroyed && p.Corpse?.MapHeld == Map && p.health.hediffSet.hediffs.OfType<Hediff_DeathRefusal>().Any(h => h.InProgress || h.AIEnabled && !h.PlayerControlled && h.UsesLeft > 0);
-                ledger.SetPendingRevival(pair.Key, nativeRevival || GroupCombatLifecycleAdapters.PendingRevival(p));
-            }
-            var sample = ledger.Snapshot(ticks, includeEventDetails);
-            sample.CaseId = current.CaseId; sample.TestDefName = current.TestDefName; sample.Name = current.Name; sample.Seed = current.Seed; sample.Swapped = current.Swapped; sample.Source = current.Source; sample.InputHash = current.InputHash; sample.MapId = current.MapId; sample.IsPocketMap = current.IsPocketMap; sample.GeneratorDef = current.GeneratorDef; sample.Environment = current.Environment;
-            sample.ScreenshotWidth = current.ScreenshotWidth; sample.ScreenshotHeight = current.ScreenshotHeight;
-            sample.Diagnostics.AddRange(current.Diagnostics); sample.Screenshots = current.Screenshots; sample.ExecutionStatus = current.ExecutionStatus;
-            sample.MeasurementLimits.Add("Main metric is native DamageResult.totalDamageDealt for Pawn damage, not raw weapon damage or capped absolute health loss.");
-            sample.MeasurementLimits.Add("Direct Hediff edits, bleeding and damage bypassing Thing.TakeDamage are not attributed; no last-attacker inference. Native CompShield fully absorbed input is a separate shield channel, never main DPS. Other shield implementations have unknown absorbed quantity. Armor/item and building channels remain separate.");
-            sample.MeasurementQuality = sample.Diagnostics.Any(d => d.StartsWith("damage.") && !d.StartsWith("damage.forwarded_result")) ? "incomplete" : "partial";
-            sample.RequireCompleteAttribution = ScenarioLoader.A(roundConfig.Element("GroupCombat").Element("Metrics"), "requireCompleteAttribution", "false") == "true";
-            sample.MeasurementRequirementsMet &= sample.MeasurementQuality != "incomplete" && (!sample.RequireCompleteAttribution || sample.MeasurementQuality == "complete");
-            current = sample;
-        }
-
-        private static void Freeze(string executionStatus, string reason, string error)
-        {
-            if (phase == "finishing") return;
-            if (ledger != null) { Refresh(phase == "running" ? Math.Max(0, Find.TickManager.TicksGame - startTick) : 0, includeEventDetails: true); if (executionStatus == "completed") endRule.Evaluate(current, durationTicks); }
-            current.ExecutionStatus = executionStatus; current.EndReason = reason; current.Error = error;
-            Trace("group.final_clock", "pausedRealSeconds=" + pausedRealtime.ToString("F3", CultureInfo.InvariantCulture));
-            if (GroupCombatCamera.Active) Trace("group.camera", JsonSerializer.Serialize(GroupCombatCamera.Status));
-            phase = "finishing"; settlementStartedRealtime = Time.realtimeSinceStartup; settlementStartTick = Find.TickManager.TicksGame;
-            Find.TickManager.CurTimeSpeed = TimeSpeed.Paused; RequestCapture("final"); Write();
-        }
-
-        private static void RequestCapture(string label)
-        {
-            var directory = Path.Combine(outputPath, "groupcombat_" + report.RunId + "_Screenshots"); Directory.CreateDirectory(directory);
-            pendingCapture = Path.Combine(directory, roundIndex.ToString("D4") + "_" + label + ".png");
-            captureRequested = false; preparedFrame = Time.frameCount; phaseStartedRealtime = Time.realtimeSinceStartup;
-        }
-        private static bool CaptureFinished()
-        {
-            if (captureRequested && AutoTestViewComposite.IsReady(pendingCapture)) return true;
-            if (Time.realtimeSinceStartup - phaseStartedRealtime < 20) return false;
-            var error = "Screenshot did not become ready: " + pendingCapture;
-            current.Diagnostics.Add(error);
-            if (phase == "prepared") { Freeze("error", "captureFailure", error); return false; }
-            if (current.ExecutionStatus == "completed") { current.ExecutionStatus = "error"; current.Error = error; }
-            return true;
-        }
-        internal static void OnGui()
-        {
-            if (!Busy || input == null || Map == null) return;
-            GroupCombatOverlay.Draw();
-            if (Event.current.type != EventType.Repaint || captureRequested || pendingCapture == null || Time.frameCount - preparedFrame < 3 || Time.realtimeSinceStartup - phaseStartedRealtime < 1 || !Screen.fullScreen || !AutoTestScreenshotService.PrepareCaptureFrame()) return;
-            current.ScreenshotWidth = requestedWidth > 0 ? requestedWidth : Screen.width; current.ScreenshotHeight = requestedHeight > 0 ? requestedHeight : Screen.height;
-            if (current.ScreenshotWidth == Screen.width && current.ScreenshotHeight == Screen.height) ScreenCapture.CaptureScreenshot(pendingCapture);
-            else Find.CameraDriver.StartCoroutine(GroupCombatScreenshot.Capture(pendingCapture, current.ScreenshotWidth, current.ScreenshotHeight));
-            current.Screenshots.Add(pendingCapture); captureRequested = true;
-        }
-
-        private static void FinishRound()
-        {
-            if (ShowingSettlement) Trace("group.settlement", "realSeconds=" + (Time.realtimeSinceStartup - settlementStartedRealtime).ToString("F3", CultureInfo.InvariantCulture) + "; simulationTicks=" + (Find.TickManager.TicksGame - settlementStartTick));
-            phase = "cleaning"; introFacing.Clear(); teamLords.Clear(); lifecyclePawns.Clear();
-            GroupCombatCamera.End();
-            var errors = new List<string>();
-            try { backend?.Cleanup(); } catch (Exception ex) { errors.Add(ex.ToString()); }
-            try { arena?.Dispose(); } catch (Exception ex) { errors.Add(ex.ToString()); }
-            foreach (var faction in factions.Values)
-            {
-                try { AccessTools.Method(typeof(FactionManager), "Remove").Invoke(Find.FactionManager, new object[] { faction }); ((List<Faction>)AccessTools.Field(typeof(FactionManager), "toRemove").GetValue(Find.FactionManager)).Remove(faction); }
-                catch (Exception ex) { errors.Add(ex.ToString()); }
-            }
-            if (preexistingFactions != null)
-            {
-                try
-                {
-                    if (preexistingRelations != RelationFingerprint()) errors.Add("Preexisting faction relations changed during the benchmark");
-                    if (preexistingFactions.Any(f => factions.Values.Any(owned => f.RelationWith(owned, true) != null))) errors.Add("Temporary faction relation survived native faction removal");
-                    current.Diagnostics.Add("group.cleanup_relations: preexistingUnchanged=" + (preexistingRelations == RelationFingerprint()) + "; temporaryRelationsRemoved=" + !preexistingFactions.Any(f => factions.Values.Any(owned => f.RelationWith(owned, true) != null)));
-                }
-                catch (Exception ex) { errors.Add(ex.ToString()); }
-            }
-            // Native map unloading may temporarily pass corpse inner pawns to WorldPawns.
-            // Discard only this round's roster again after the map has gone.
-            foreach (var pawn in pawns.Values)
-            {
-                try { if (Find.WorldPawns.Contains(pawn)) Find.WorldPawns.RemovePawn(pawn); if (!pawn.Destroyed) pawn.Destroy(DestroyMode.Vanish); if (Find.WorldPawns.Contains(pawn)) Find.WorldPawns.RemovePawn(pawn); }
-                catch (Exception ex) { errors.Add(ex.ToString()); }
-            }
-            current.CleanupComplete = errors.Count == 0 && (arena?.Map == null || !Find.Maps.Contains(arena.Map)) && !factions.Values.Any(f => Find.FactionManager.AllFactions.Contains(f)) && pawns.Values.All(p => p.Destroyed && !Find.WorldPawns.Contains(p));
-            if (!current.CleanupComplete) { current.ExecutionStatus = "cleanup_error"; current.Error = string.Join("\n", errors) + "; mapRegistered=" + (arena?.Map != null && Find.Maps.Contains(arena.Map)) + "; factionResidual=" + factions.Values.Count(f => Find.FactionManager.AllFactions.Contains(f)) + "; pawnResidual=" + string.Join(",", pawns.Where(p => !p.Value.Destroyed || Find.WorldPawns.Contains(p.Value)).Select(p => p.Key)); report.Error = "Group combat cleanup failed; remaining rounds will not reuse residual state"; pending.Clear(); }
-            report.Rounds.Add(current); Log.Message("[LogSyncGroupCombat] ROUND caseId=" + current.CaseId + " status=" + current.ExecutionStatus + " ticks=" + current.ElapsedTicks + " events=" + current.TotalEvents + " cleanup=" + current.CleanupComplete);
-            ledger = null; arena = null; backend = null; input = null; verifyTickFailure = false; pawns.Clear(); rosterIds.Clear(); exited.Clear(); factions.Clear(); teamAi.Clear(); pendingCapture = null; GroupCombatOverlay.Clear(); GroupCombatDamageCapture.Clear();
-            Find.TickManager.CurTimeSpeed = originalSpeed; Write();
-        }
-
-        private static void FinishRun()
+        private static void Finish()
         {
             if (report == null || report.CompletedAtUtc != null) return;
-            if (input != null) { if (current != null && current.ExecutionStatus is "preparing" or "running") { current.ExecutionStatus = "error"; current.Error = report.Error; } FinishRound(); }
-            report.Status = cancel ? "cancelled" : report.Error != null || report.Rounds.Any(r => r.ExecutionStatus != "completed" || !r.CleanupComplete) || report.Rounds.Count != report.PlannedRounds.Count ? "error" : "completed";
-            report.CompletedAtUtc = DateTime.UtcNow.ToString("O"); phase = "complete";
-            if (Screen.width != originalScreenWidth || Screen.height != originalScreenHeight || Screen.fullScreenMode != originalScreenMode) Screen.SetResolution(originalScreenWidth, originalScreenHeight, originalScreenMode);
-            Find.TickManager.CurTimeSpeed = originalSpeed; logGuard?.Dispose(); logGuard = null;
+            report.Status = report.Status == "cancelled" ? "cancelled" : report.Error != null || report.Rounds.Count != report.PlannedRounds.Count ? "error" : "completed";
+            report.CompletedAtUtc = DateTime.UtcNow.ToString("O");
             try { Write(); }
             finally
             {
+                logGuard?.Dispose(); logGuard = null; pending = null;
                 global::LogSyncMod.TestAudioController.Restore("groupcombat_completed");
                 Log.Message("[LogSyncGroupCombat] COMPLETED runId=" + report.RunId + " status=" + report.Status);
                 global::LogSyncMod.TestSessionCompletion.Complete("groupcombat", report.RunId);
             }
         }
-        private static void Trace(string stage, string details) { current?.Diagnostics.Add(stage + ": " + details); }
-        private static string RelationFingerprint() => string.Join(";", preexistingFactions.SelectMany(a => preexistingFactions.Where(b => b != a).Select(b =>
-        {
-            var relation = a.RelationWith(b, true);
-            return a.loadID + ">" + b.loadID + ":" + (relation == null ? "none" : relation.kind + "/" + relation.baseGoodwill);
-        })));
-        internal static void DamageDiagnostic(string message) { if (current != null && !current.Diagnostics.Contains(message)) current.Diagnostics.Add(message); }
         private static void Write()
         {
             if (report == null || outputPath == null) return;
             Directory.CreateDirectory(outputPath);
             report.Experiments = GroupCombatExperimentSummary.Calculate(report.Rounds);
-            report.ActiveRound = input != null ? current : null;
+            report.ActiveRound = waiting ? CombatFightService.Display : null;
             var stem = Path.Combine(outputPath, "groupcombat_" + report.RunId);
             AtomicWrite(stem + "_Result.json", JsonSerializer.Serialize(report, Json));
             AtomicWrite(stem + "_Report.md", GroupCombatReport.Write(report));
         }
-        private static void AtomicWrite(string path, string text)
+        private static void AtomicWrite(string path, string value)
         {
             var temporary = path + ".tmp";
-            try { File.WriteAllText(temporary, text, new UTF8Encoding(false)); File.Move(temporary, path, true); }
+            try { File.WriteAllText(temporary, value, new UTF8Encoding(false)); File.Move(temporary, path, true); }
             finally { if (File.Exists(temporary)) File.Delete(temporary); }
         }
     }

@@ -34,7 +34,7 @@ namespace LogSyncMod
                 ScheduleWindowModeLog();
 
                 // AutoTestRunner 在完成信号前恢复；只有 quick 使用 ready timer。
-                if (settings == null || !settings.autoTestEnabled && settings.testSessionKind != "groupcombat")
+                if (settings == null || !settings.autoTestEnabled && settings.testSessionKind != "groupcombat" && settings.testSessionKind != "arena")
                 {
                     var timer = new System.Timers.Timer(10000);
                     timer.Elapsed += (s, e) =>

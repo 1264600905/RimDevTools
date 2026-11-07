@@ -869,6 +869,7 @@ namespace LogSyncMod
         {
             return text.StartsWith("[LogSyncAutoTest] COMPLETED", StringComparison.Ordinal) ||
                    text.StartsWith("[LogSyncGroupCombat] COMPLETED", StringComparison.Ordinal) ||
+                   text.StartsWith("[LogSyncArena] COMPLETED", StringComparison.Ordinal) ||
                    text.StartsWith("[LogSyncMod] CLI_TEST_EXIT", StringComparison.Ordinal) ||
                    text.StartsWith("[LogSyncAutoTest] HEARTBEAT", StringComparison.Ordinal) ||
                    text.StartsWith("[LogSyncMod] RUNTIME_READY_TO_CLOSE", StringComparison.Ordinal);

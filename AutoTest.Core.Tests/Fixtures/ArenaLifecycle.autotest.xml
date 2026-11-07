@@ -1,0 +1,18 @@
+<ArenaSuite schemaVersion="1" id="arena.lifecycle" gameVersion="1.7">
+  <Tournament id="split" name="原生肉兽分裂增援擂台" seed="12345">
+    <testDefName>Arena_NativeSplit</testDefName>
+    <Scene type="mainMap" sizeX="100" sizeZ="100"><Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/></Scene>
+    <Roster mode="count" count="20"/>
+    <Entrants><Entrant id="bulbfreaks" pawnKind="Bulbfreak" count="5"/><Entrant id="mercenaries" pawnKind="Mercenary_Gunner"/></Entrants>
+    <Battle durationSeconds="180" timeoutRealSeconds="300" timeSpeed="superfast" confirmationTicks="300"/>
+    <Output width="1920" height="1080"/>
+  </Tournament>
+  <Tournament id="revival" name="原生拒死者复活擂台" seed="12345">
+    <testDefName>Arena_NativeRevival</testDefName>
+    <Scene type="mainMap" sizeX="100" sizeZ="100"><Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/></Scene>
+    <Roster mode="count" count="20"/>
+    <Entrants><Entrant id="horaxians" pawnKind="Horaxian_Gunner"/><Entrant id="mercenaries" pawnKind="Mercenary_Gunner"/></Entrants>
+    <Battle durationSeconds="180" timeoutRealSeconds="300" timeSpeed="superfast" confirmationTicks="300"/>
+    <Output width="1920" height="1080"/>
+  </Tournament>
+</ArenaSuite>

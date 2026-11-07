@@ -26,10 +26,10 @@ namespace LogSyncMod.AutoTest
         }
         internal static void Draw()
         {
-            if (!GroupCombatService.OverlayEnabled || GroupCombatService.Display == null) return;
-            if (Time.realtimeSinceStartup >= nextRefresh || GroupCombatService.Phase != "running")
+            if (!CombatFightService.OverlayEnabled || CombatFightService.Display == null) return;
+            if (Time.realtimeSinceStartup >= nextRefresh || CombatFightService.Phase != "running")
             {
-                snapshot = GroupCombatService.Display; nextRefresh = Time.realtimeSinceStartup + .25f;
+                snapshot = CombatFightService.Display; nextRefresh = Time.realtimeSinceStartup + .25f;
                 // Keep every initial human portrait, including members who enter the Top10
                 // only after death or destruction. Native portrait cache entries can expire.
                 foreach (var unit in snapshot.Units) CachePortrait(unit);
@@ -43,16 +43,16 @@ namespace LogSyncMod.AutoTest
                 var panelHeight = GroupCombatPresentation.PanelHeight(height);
                 Widgets.DrawWindowBackground(new Rect(8, 34, width - 16, 70));
                 DrawText(new Rect(150, 36, width - 300, 38), snapshot.Name, width >= 1280 ? 24 : 18, TextAnchor.MiddleCenter);
-                DrawText(new Rect(150, 73, width - 300, 24), snapshot.SimulatedSeconds.ToString("F1") + " 模拟秒  ·  " + (GroupCombatService.Measuring && Find.TickManager.Paused ? "已暂停" : Label(GroupCombatService.Phase)), 16, TextAnchor.MiddleCenter);
+                DrawText(new Rect(150, 73, width - 300, 24), snapshot.SimulatedSeconds.ToString("F1") + " 模拟秒  ·  " + (CombatFightService.Measuring && Find.TickManager.Paused ? "已暂停" : Label(CombatFightService.Phase)), 16, TextAnchor.MiddleCenter);
                 Text.Font = GameFont.Small;
-                if (Widgets.ButtonText(new Rect(width - 142, 54, 120, 32), "取消群战")) GroupCombatService.Cancel();
+                if (Widgets.ButtonText(new Rect(width - 142, 54, 120, 32), CombatFightService.IsArena ? "取消擂台" : "取消群战")) { if (CombatFightService.IsArena) ArenaService.Cancel(); else CombatFightService.Cancel(); }
                 for (var i = 0; i < snapshot.Teams.Count; i++)
                 {
                     var x = i == 0 ? 8 : width - panelWidth - 8;
                     DrawTeam(new Rect(x, GroupCombatPresentation.PanelTop, panelWidth, panelHeight), snapshot.Teams[i], i);
                 }
-                if (GroupCombatService.ShowingIntro) DrawIntro(width, height, panelWidth);
-                if (GroupCombatService.ShowingSettlement) DrawSettlement(width, height, panelWidth);
+                if (CombatFightService.ShowingIntro) DrawIntro(width, height, panelWidth);
+                if (CombatFightService.ShowingSettlement) DrawSettlement(width, height, panelWidth);
                 if (verifyInput && Event.current.type == EventType.Repaint)
                 {
                     verifyInput = false;
@@ -172,7 +172,7 @@ namespace LogSyncMod.AutoTest
         }
         private static void DrawIntro(float width, float height, float panelWidth)
         {
-            var label = GroupCombatService.CountdownLabel;
+            var label = CombatFightService.CountdownLabel;
             var size = label == "开始" ? 88 : 138;
             var center = new Rect(width / 2 - 180, height / 2 - 110, 360, 200);
             var previousColor = GUI.color;
@@ -244,7 +244,7 @@ namespace LogSyncMod.AutoTest
         private static void DrawPortrait(Rect rect, GroupCombatUnit unit)
         {
             if (portraits.TryGetValue(unit.Id, out var texture)) { GUI.DrawTexture(rect, texture); return; }
-            if (!GroupCombatService.Pawns.TryGetValue(unit.Id, out var pawn)) return;
+            if (!CombatFightService.Pawns.TryGetValue(unit.Id, out var pawn)) return;
             if (!pawn.RaceProps.Humanlike)
             {
                 if (pawn.Destroyed) Widgets.DefIcon(rect, pawn.def); else Widgets.ThingIcon(rect, pawn);
@@ -252,7 +252,7 @@ namespace LogSyncMod.AutoTest
         }
         private static void CachePortrait(GroupCombatUnit unit)
         {
-            if (!GroupCombatService.Pawns.TryGetValue(unit.Id, out var pawn) || pawn.Destroyed || !pawn.RaceProps.Humanlike) return;
+            if (!CombatFightService.Pawns.TryGetValue(unit.Id, out var pawn) || pawn.Destroyed || !pawn.RaceProps.Humanlike) return;
             var state = pawn.story?.hairDef?.defName + "|" + pawn.story?.bodyType?.defName + "|" + string.Join(",", pawn.apparel?.WornApparel.Select(a => a.GetUniqueLoadID() + ":" + a.DrawColor) ?? Enumerable.Empty<string>()) + "|" + pawn.equipment?.Primary?.GetUniqueLoadID() + "|" + pawn.health.hediffSet.hediffs.Count;
             if (portraitStates.TryGetValue(unit.Id, out var old) && old == state) return;
             PortraitsCache.SetDirty(pawn);

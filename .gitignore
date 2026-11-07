@@ -12,6 +12,7 @@
 /obj/
 /artifacts/
 /.rimdev/
+/.tools/RimDevTools.exe
 /.tools/ProjectData/
 /.tools/log/
 RimDevTools/packages.lock.json
