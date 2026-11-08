@@ -87,6 +87,9 @@ namespace LogSyncMod.AutoTest
         internal static IReadOnlyDictionary<string, Pawn> Pawns => pawns;
         internal static IEnumerable<Pawn> CameraPawns => pawns.Where(p => p.Value.Spawned && p.Value.Map == Map && !p.Value.Dead && !p.Value.Downed && ledger?.IsCameraTarget(p.Key) == true).Select(p => p.Value);
         internal static GroupCombatRoundResult Display => current;
+        internal static bool UsesTestCombatAi(Pawn pawn) => Measuring && pawn?.Spawned == true && pawn.Map == Map
+            && RosterId(pawn) != null && teamAi.TryGetValue(Team(pawn.Faction) ?? "", out var ai) && (ai == "battle" || ai == "seekAndAttack");
+        internal static void TraceAi(string stage, string details) => Trace(stage, details);
         internal static string Phase => phase;
         internal static bool OverlayEnabled => overlayEnabled;
         internal static bool ShowingIntro => phase is "prepared" or "countdown" or "roster";
@@ -236,6 +239,7 @@ namespace LogSyncMod.AutoTest
             lastFrameRealtime = roundStartedRealtime; pausedRealtime = 0;
             current = new GroupCombatRoundResult { CaseId = input.CaseId, TestDefName = input.TestDefName, Name = input.Name, Seed = input.Seed, Swapped = input.Swapped, Source = input.Source, InputHash = input.InputHash, ResolvedRosters = input.ResolvedRosters };
             current.StartupTiming = CombatStartupProbe.Reset();
+            GroupCombatTactics.Reset();
             preexistingFactions = Find.FactionManager.AllFactions.ToList();
             preexistingRelations = RelationFingerprint();
             Find.TickManager.CurTimeSpeed = TimeSpeed.Paused;
@@ -292,14 +296,14 @@ namespace LogSyncMod.AutoTest
                 var id = ScenarioLoader.A(node, "id"); var faction = factions[id]; var members = pawns.Values.Where(p => p.Faction == faction).ToList();
                 var ai = ScenarioLoader.A(node, "ai", aiPolicy); teamAi.Add(id, ai);
                 LordJob job = ai switch {
-                    "battle" => new LordJob_GroupCombatAssault(),
-                    "assaultThings" or "seekAndAttack" => new LordJob_AssaultThings(faction, pawns.Values.Where(p => p.Faction != faction).Cast<Thing>().ToList(), damageFraction: 1f),
+                    "battle" or "seekAndAttack" => new LordJob_GroupCombatAssault(),
+                    "assaultThings" => new LordJob_AssaultThings(faction, pawns.Values.Where(p => p.Faction != faction).Cast<Thing>().ToList(), damageFraction: 1f),
                     "assaultColony" or "native" => new LordJob_AssaultColony(faction, canKidnap: false, canTimeoutOrFlee: false, canSteal: false),
                     "defendPoint" => new LordJob_DefendPoint(new IntVec3(ScenarioLoader.I(node, "defendX", (int)members.Average(p => p.Position.x)), 0, ScenarioLoader.I(node, "defendZ", (int)members.Average(p => p.Position.z))), defendRadius: (float)ScenarioLoader.D(node, "defendRadius", 28), addFleeToil: false),
                     _ => null
                 };
                 if (job != null) teamLords.Add(id, LordMaker.MakeNewLord(faction, job, Map, members));
-                Trace("group.ai", "team=" + id + "; ai=" + ai + "; nativeLordJob=" + job?.GetType().Name + "; allowSelfTend=" + members.FirstOrDefault()?.GetLord()?.CurLordToil?.AllowSelfTend + "; simultaneousStart=true");
+                Trace("group.ai", "team=" + id + "; ai=" + ai + "; controller=" + (ai == "battle" || ai == "seekAndAttack" ? "RimDevTools" : "native") + "; nativeLordJob=" + job?.GetType().Name + "; duty=" + members.FirstOrDefault()?.mindState.duty?.def.defName + "; allowSelfTend=" + members.FirstOrDefault()?.GetLord()?.CurLordToil?.AllowSelfTend + "; simultaneousStart=true");
             }
             current.Environment = "tile=" + Map.Tile + "; weather=" + Map.weatherManager.curWeather.defName + "; temperature=" + Map.mapTemperature.OutdoorTemp + "; sunGlow=" + GenCelestial.CurCelestialSunGlow(Map) + "; ai=" + string.Join(",", teamAi.Select(p => p.Key + "=" + p.Value));
             foreach (var pawn in pawns.Values)
@@ -345,7 +349,7 @@ namespace LogSyncMod.AutoTest
                 // knockouts in that tick are evaluated together.
                 Refresh(ticks);
                 if (EvaluateEnd()) { Freeze("completed", current.EndReason, null); return; }
-                if (ticks % 60 == 0) ScheduleAttacks(false);
+                if (ticks % 30 == 0) ScheduleAttacks(false);
             }
             catch (Exception ex) { Freeze("error", "exception", ex.ToString()); }
         }
@@ -354,27 +358,9 @@ namespace LogSyncMod.AutoTest
         {
             foreach (var pawn in pawns.Values.Where(p => p.Spawned && p.Map == Map && !p.Dead && !p.Downed).ToList())
             {
-                if (teamAi[Team(pawn.Faction)] != "seekAndAttack") continue;
-                var target = pawns.Values.Where(p => p != pawn && p.Spawned && p.Map == Map && !p.Dead && !p.Downed && p.HostileTo(pawn)).OrderBy(p => p.Position.DistanceToSquared(pawn.Position)).ThenBy(p => RosterId(p), StringComparer.Ordinal).FirstOrDefault();
-                if (target == null) continue;
-                if (!initial && pawn.CurJob is Job active)
-                {
-                    if (new[] { JobDefOf.AttackMelee, JobDefOf.AttackStatic, JobDefOf.CastAbilityOnThing, JobDefOf.CastAbilityOnWorldTile }.Contains(active.def) && active.targetA.Thing is Pawn targetPawn && targetPawn.Spawned && !targetPawn.Dead && !targetPawn.Downed) continue;
-                    if (active.def == JobDefOf.Goto && Find.TickManager.TicksGame - active.startTick < 600 && pawn.mindState.enemyTarget is Pawn old && old.Spawned && !old.Dead && !old.Downed) continue;
-                }
-                pawn.mindState.enemyTarget = target;
-                var abilityJob = JobGiver_AIFightEnemy.GetAbilityJob(pawn, target);
-                if (abilityJob != null) { pawn.jobs.TryTakeOrderedJob(abilityJob, JobTag.Misc); continue; }
-                var verb = pawn.TryGetAttackVerb(target);
-                if (verb == null) continue;
-                Job job;
-                if (verb.verbProps.IsMeleeAttack) job = JobMaker.MakeJob(JobDefOf.AttackMelee, target);
-                else if (verb.CanHitTarget(target)) { job = JobMaker.MakeJob(JobDefOf.AttackStatic, target); job.maxNumStaticAttacks = int.MaxValue; }
-                else if (CastPositionFinder.TryFindCastPosition(new CastPositionRequest { caster = pawn, target = target, verb = verb, maxRangeFromTarget = verb.verbProps.range, wantCoverFromTarget = true }, out var position)) job = JobMaker.MakeJob(JobDefOf.Goto, position);
-                else { var diagnostic = "group.ai_unreachable: " + pawn.GetUniqueLoadID(); if (!current.Diagnostics.Contains(diagnostic)) current.Diagnostics.Add(diagnostic); continue; }
-                // Do not restart a long warmup or a burst every three seconds. The native job
-                // ends when its target is invalid; periodic scheduling only replaces idle work.
-                job.expiryInterval = job.def == JobDefOf.Goto ? 600 : 1800; job.checkOverrideOnExpire = false; pawn.jobs.TryTakeOrderedJob(job, JobTag.Misc);
+                if (!UsesTestCombatAi(pawn) || !initial && GroupCombatTactics.KeepCurrentJob(pawn)) continue;
+                var job = GroupCombatTactics.CreateJob(pawn);
+                if (job != null) pawn.jobs.TryTakeOrderedJob(job, JobTag.Misc);
             }
         }
 
@@ -484,7 +470,7 @@ namespace LogSyncMod.AutoTest
             current.CleanupComplete = errors.Count == 0 && (arena?.Map == null || !Find.Maps.Contains(arena.Map)) && !factions.Values.Any(f => Find.FactionManager.AllFactions.Contains(f)) && pawns.Values.All(p => p.Destroyed && !Find.WorldPawns.Contains(p));
             if (!current.CleanupComplete) { current.ExecutionStatus = "cleanup_error"; current.Error = string.Join("\n", errors) + "; mapRegistered=" + (arena?.Map != null && Find.Maps.Contains(arena.Map)) + "; factionResidual=" + factions.Values.Count(f => Find.FactionManager.AllFactions.Contains(f)) + "; pawnResidual=" + string.Join(",", pawns.Where(p => !p.Value.Destroyed || Find.WorldPawns.Contains(p.Value)).Select(p => p.Key)); }
             Log.Message("[LogSyncGroupCombat] ROUND caseId=" + current.CaseId + " status=" + current.ExecutionStatus + " ticks=" + current.ElapsedTicks + " events=" + current.TotalEvents + " cleanup=" + current.CleanupComplete);
-            ledger = null; arena = null; backend = null; input = null; verifyTickFailure = false; pawns.Clear(); rosterIds.Clear(); exited.Clear(); factions.Clear(); teamAi.Clear(); pendingCapture = null; GroupCombatOverlay.Clear(); GroupCombatDamageCapture.Clear();
+            ledger = null; arena = null; backend = null; input = null; verifyTickFailure = false; pawns.Clear(); rosterIds.Clear(); exited.Clear(); factions.Clear(); teamAi.Clear(); pendingCapture = null; GroupCombatOverlay.Clear(); GroupCombatDamageCapture.Clear(); GroupCombatTactics.Reset();
             Find.TickManager.CurTimeSpeed = originalSpeed;
             var callback = completed; var result = current;
             if (Screen.width != originalScreenWidth || Screen.height != originalScreenHeight || Screen.fullScreenMode != originalScreenMode) Screen.SetResolution(originalScreenWidth, originalScreenHeight, originalScreenMode);

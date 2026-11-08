@@ -2,6 +2,8 @@
 
 首版支持 RimWorld 1.7。擂台使用独立 `arena` 入口，普通 `auto` 不执行擂台；`groupcombat` 继续运行原有群战。袭击点、战力均指游戏加载继承及模组补丁后的 `PawnKindDef.combatPower`。
 
+擂台明确启用 RimDevTools 自己的 `seekAndAttack` 测试战斗 AI，通过独立 `LogSync_TestCombat` 职责选择目标、技能、射击及移动位置。远程单位进入可射击位置即停下攻击，无法开火时寻找射击位置，不因射程不足而直接冲上去近战；贴身无法开火时允许反击。近战单位正常接敌。攻击预热、连射、技能效果与伤害仍由游戏原生管线执行。普通群战默认 `battle` 也使用同一测试调度器，原生 AI 对照须显式选择 `native` 等策略。
+
 ## 运行
 
 在项目根目录执行。本地工具已生成在 `.tools/RimDevTools.exe`，可直接执行 `./.tools/RimDevTools.exe test run ...`。源码仓库也可使用下列命令；发布工具时将 `dotnet RimDevTools/bin/Release/net10.0/RimDevTools.dll` 替换为 `RimDevTools.exe`。

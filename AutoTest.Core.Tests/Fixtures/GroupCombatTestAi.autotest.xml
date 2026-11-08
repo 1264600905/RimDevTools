@@ -1,0 +1,54 @@
+<TestSuite schemaVersion="1" id="groupcombat.test-ai" gameVersion="1.7">
+  <Templates>
+    <PawnTemplate id="rifleman">
+      <basePawnKind>Mercenary_Gunner</basePawnKind>
+      <Skills mode="patch"><Set def="Shooting" level="12"/><Set def="Melee" level="8"/></Skills>
+      <Equipment mode="replace"><SetPrimary def="Gun_AssaultRifle" quality="Normal"/></Equipment>
+    </PawnTemplate>
+    <PawnTemplate id="axolotl">
+      <basePawnKind>AxolotlSoldierStandard</basePawnKind>
+      <Skills mode="patch"><Set def="Shooting" level="12"/><Set def="Melee" level="8"/></Skills>
+    </PawnTemplate>
+  </Templates>
+  <ScenePresets>
+    <Scene id="arena" type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all">
+      <Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/>
+    </Scene>
+  </ScenePresets>
+  <Case id="humans" kind="groupCombat" name="测试AI：远距离人类交火" seed="12345" timeoutRealSeconds="180">
+    <testDefName>TestAi_HumanRanged</testDefName><Scene preset="arena"/>
+    <Teams><Team id="A" name="左步枪队"/><Team id="B" name="右步枪队"/></Teams>
+    <Actors>
+      <PawnGroup id="left" template="rifleman" team="A" count="3" originX="20" originZ="46" spacing="3"/>
+      <PawnGroup id="right" template="rifleman" team="B" count="3" originX="80" originZ="46" spacing="3"/>
+    </Actors>
+    <GroupCombat durationSeconds="60" timeSpeed="superfast"/>
+  </Case>
+  <Case id="axolotl" kind="groupCombat" name="测试AI：萌螈与人类交火" seed="12345" timeoutRealSeconds="180">
+    <testDefName>TestAi_AxolotlRanged</testDefName><Scene preset="arena"/>
+    <Teams><Team id="A" name="萌螈猎户" ai="seekAndAttack"/><Team id="B" name="人类步枪手" ai="seekAndAttack"/></Teams>
+    <Actors>
+      <PawnGroup id="left" template="axolotl" team="A" count="3" originX="20" originZ="46" spacing="3"/>
+      <PawnGroup id="right" template="rifleman" team="B" count="3" originX="80" originZ="46" spacing="3"/>
+    </Actors>
+    <GroupCombat durationSeconds="60" timeSpeed="superfast"/>
+  </Case>
+  <Case id="charge" kind="groupCombat" name="测试AI：步枪手应对狼群接近" seed="12345" timeoutRealSeconds="180">
+    <testDefName>TestAi_RangedVsMelee</testDefName><Scene preset="arena"/>
+    <Teams><Team id="A" name="步枪手"/><Team id="B" name="森林狼"/></Teams>
+    <Actors>
+      <PawnGroup id="left" template="rifleman" team="A" count="3" originX="20" originZ="46" spacing="3"/>
+      <PawnGroup id="right" team="B" count="3" originX="80" originZ="46" spacing="3"><basePawnKind>Wolf_Timber</basePawnKind></PawnGroup>
+    </Actors>
+    <GroupCombat durationSeconds="60" timeSpeed="superfast"/>
+  </Case>
+  <Case id="melee" kind="groupCombat" name="测试AI：动物近战" seed="12345" timeoutRealSeconds="180">
+    <testDefName>TestAi_AnimalMelee</testDefName><Scene preset="arena"/>
+    <Teams><Team id="A" name="森林狼"/><Team id="B" name="灰熊"/></Teams>
+    <Actors>
+      <PawnGroup id="left" team="A" count="3" originX="20" originZ="46" spacing="3"><basePawnKind>Wolf_Timber</basePawnKind></PawnGroup>
+      <PawnGroup id="right" team="B" count="2" originX="80" originZ="46" spacing="3"><basePawnKind>Bear_Grizzly</basePawnKind></PawnGroup>
+    </Actors>
+    <GroupCombat durationSeconds="60" timeSpeed="superfast"/>
+  </Case>
+</TestSuite>

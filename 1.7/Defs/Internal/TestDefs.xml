@@ -1,5 +1,10 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <Defs>
+  <DutyDef>
+    <defName>LogSync_TestCombat</defName>
+    <alwaysShowWeapon>true</alwaysShowWeapon>
+    <thinkNode Class="LogSyncMod.AutoTest.JobGiver_GroupCombatAttack"/>
+  </DutyDef>
   <FactionDef>
     <defName>LogSync_GroupCombatFaction</defName>
     <label>RimDevTools benchmark team</label>

@@ -3,12 +3,12 @@ using System.Collections.Generic;
 using RimWorld;
 using UnityEngine;
 using Verse;
+using Verse.AI;
 using Verse.AI.Group;
 
 namespace LogSyncMod.AutoTest
 {
-    // Assign the native assault duty without replacing a pawn's race/mod think trees.
-    // A single toil also avoids the colony raid's non-hostile-to-player exit transition.
+    // The race/mod think trees stay intact; their duty hook runs our combat decisions.
     internal sealed class LordJob_GroupCombatAssault : LordJob
     {
         public override bool AddFleeToil => false;
@@ -20,9 +20,28 @@ namespace LogSyncMod.AutoTest
         }
     }
 
-    internal sealed class LordToil_GroupCombatAssault : LordToil_AssaultColony
+    internal sealed class LordToil_GroupCombatAssault : LordToil
     {
         public override bool AllowSelfTend => false;
+        public override bool AllowSatisfyLongNeeds => false;
+        public override bool ForceHighStoryDanger => true;
+
+        public override void UpdateAllDuties()
+        {
+            var duty = DefDatabase<DutyDef>.GetNamed("LogSync_TestCombat");
+            foreach (var pawn in lord.ownedPawns)
+            {
+                if (pawn.mindState.duty?.def == duty) continue;
+                pawn.mindState.duty = new PawnDuty(duty);
+                pawn.TryGetComp<CompCanBeDormant>()?.WakeUp();
+                pawn.jobs.EndCurrentJob(JobCondition.InterruptForced);
+            }
+        }
+    }
+
+    public sealed class JobGiver_GroupCombatAttack : ThinkNode_JobGiver
+    {
+        protected override Job TryGiveJob(Pawn pawn) => GroupCombatTactics.CreateJob(pawn);
     }
 
     [HarmonyPatch(typeof(PawnNameColorUtility), nameof(PawnNameColorUtility.PawnNameColorOf))]
