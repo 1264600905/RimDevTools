@@ -1,0 +1,86 @@
+<ArenaSuite schemaVersion="1" id="arena.startTiming" gameVersion="1.7">
+  <Tournament id="Normal1" name="开场耗时测量 Normal1" seed="12345">
+    <testDefName>Arena_StartTiming_Normal1</testDefName>
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all">
+      <Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/>
+    </Scene>
+    <Roster mode="combatPower" budget="3000"/>
+    <Entrants>
+      <Entrant id="Elephant" pawnKind="Elephant" name="象"/>
+      <Entrant id="Rhinoceros" pawnKind="Rhinoceros" name="犀牛"/>
+    </Entrants>
+    <Battle timeSpeed="normal" durationSeconds="180" timeoutRealSeconds="300" confirmationTicks="300"/>
+    <Presentation bracketSeconds="5" settlementSeconds="3"/>
+    <Output width="1920" height="1080"/>
+  </Tournament>
+  <Tournament id="Fast1" name="开场耗时测量 Fast1" seed="12345">
+    <testDefName>Arena_StartTiming_Fast1</testDefName>
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all">
+      <Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/>
+    </Scene>
+    <Roster mode="combatPower" budget="3000"/>
+    <Entrants>
+      <Entrant id="Elephant" pawnKind="Elephant" name="象"/>
+      <Entrant id="Rhinoceros" pawnKind="Rhinoceros" name="犀牛"/>
+    </Entrants>
+    <Battle timeSpeed="fast" durationSeconds="180" timeoutRealSeconds="300" confirmationTicks="300"/>
+    <Presentation bracketSeconds="5" settlementSeconds="3"/>
+    <Output width="1920" height="1080"/>
+  </Tournament>
+  <Tournament id="Superfast1" name="开场耗时测量 Superfast1" seed="12345">
+    <testDefName>Arena_StartTiming_Superfast1</testDefName>
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all">
+      <Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/>
+    </Scene>
+    <Roster mode="combatPower" budget="3000"/>
+    <Entrants>
+      <Entrant id="Elephant" pawnKind="Elephant" name="象"/>
+      <Entrant id="Rhinoceros" pawnKind="Rhinoceros" name="犀牛"/>
+    </Entrants>
+    <Battle timeSpeed="superfast" durationSeconds="180" timeoutRealSeconds="300" confirmationTicks="300"/>
+    <Presentation bracketSeconds="5" settlementSeconds="3"/>
+    <Output width="1920" height="1080"/>
+  </Tournament>
+  <Tournament id="Superfast2" name="开场耗时测量 Superfast2" seed="12345">
+    <testDefName>Arena_StartTiming_Superfast2</testDefName>
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all">
+      <Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/>
+    </Scene>
+    <Roster mode="combatPower" budget="3000"/>
+    <Entrants>
+      <Entrant id="Elephant" pawnKind="Elephant" name="象"/>
+      <Entrant id="Rhinoceros" pawnKind="Rhinoceros" name="犀牛"/>
+    </Entrants>
+    <Battle timeSpeed="superfast" durationSeconds="180" timeoutRealSeconds="300" confirmationTicks="300"/>
+    <Presentation bracketSeconds="5" settlementSeconds="3"/>
+    <Output width="1920" height="1080"/>
+  </Tournament>
+  <Tournament id="Fast2" name="开场耗时测量 Fast2" seed="12345">
+    <testDefName>Arena_StartTiming_Fast2</testDefName>
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all">
+      <Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/>
+    </Scene>
+    <Roster mode="combatPower" budget="3000"/>
+    <Entrants>
+      <Entrant id="Elephant" pawnKind="Elephant" name="象"/>
+      <Entrant id="Rhinoceros" pawnKind="Rhinoceros" name="犀牛"/>
+    </Entrants>
+    <Battle timeSpeed="fast" durationSeconds="180" timeoutRealSeconds="300" confirmationTicks="300"/>
+    <Presentation bracketSeconds="5" settlementSeconds="3"/>
+    <Output width="1920" height="1080"/>
+  </Tournament>
+  <Tournament id="Normal2" name="开场耗时测量 Normal2" seed="12345">
+    <testDefName>Arena_StartTiming_Normal2</testDefName>
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all">
+      <Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/>
+    </Scene>
+    <Roster mode="combatPower" budget="3000"/>
+    <Entrants>
+      <Entrant id="Elephant" pawnKind="Elephant" name="象"/>
+      <Entrant id="Rhinoceros" pawnKind="Rhinoceros" name="犀牛"/>
+    </Entrants>
+    <Battle timeSpeed="normal" durationSeconds="180" timeoutRealSeconds="300" confirmationTicks="300"/>
+    <Presentation bracketSeconds="5" settlementSeconds="3"/>
+    <Output width="1920" height="1080"/>
+  </Tournament>
+</ArenaSuite>

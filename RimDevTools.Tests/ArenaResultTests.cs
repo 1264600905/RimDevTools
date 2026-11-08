@@ -45,22 +45,28 @@ internal static class ArenaResultTests
         Reject(r => r.Tournaments[0].Matches[0].Attempts[0].EndReason = "timeLimitRatio", "arena rejects time-limit decisions before the configured simulated deadline");
         var budget = Build(5, true);
         check(ArenaResultValidator.ValidateIntegrity(budget, budget.Plan, false) == null, "arena budget tournament validates maximal allocation from loaded combatPower snapshots");
+        var mixedBudget = Build(25, true, entrantBudget: 3200);
+        check(mixedBudget.Tournaments[0].Rosters[0].RequestedBudget == 3200 && mixedBudget.Tournaments[0].Rosters.Skip(1).All(r => r.RequestedBudget == 3000)
+            && ArenaResultValidator.ValidateIntegrity(mixedBudget, mixedBudget.Plan, false) == null,
+            "arena validates 25 entrants with an individual budget override and inherited budgets");
+        mixedBudget.Tournaments[0].Rosters[0].RequestedBudget = 3000;
+        check(ArenaResultValidator.ValidateIntegrity(mixedBudget, mixedBudget.Plan, false) != null, "arena rejects a roster that ignores its frozen individual budget override");
         var extreme = Build(2, true, decimal.MaxValue);
         check(ArenaResultValidator.ValidateIntegrity(extreme, extreme.Plan, false) == null, "arena accepts affordable extreme combatPower when the next unit would overflow decimal");
         budget.Tournaments[0].Rosters[0].UnitCombatPower = 1000;
         check(ArenaResultValidator.ValidateIntegrity(budget, budget.Plan, false) != null, "arena rejects claimed combatPower inconsistent with maximal budget count");
     }
-    private static ArenaRunReport Build(int count, bool budget = false, decimal? extremePower = null)
+    private static ArenaRunReport Build(int count, bool budget = false, decimal? extremePower = null, decimal? entrantBudget = null)
     {
         var xml = new XElement("ArenaSuite", new XAttribute("schemaVersion", 1), new XAttribute("id", "fixture"),
             new XElement("Tournament", new XAttribute("id", "main"), new XElement("testDefName", "ArenaFixture"), new XElement("Scene", new XAttribute("type", "mainMap"), new XAttribute("sizeX", 100), new XAttribute("sizeZ", 100)),
             budget ? new XElement("Roster", new XAttribute("mode", "combatPower"), new XAttribute("budget", extremePower ?? 3000)) : new XElement("Roster", new XAttribute("mode", "count"), new XAttribute("count", 2)),
-            new XElement("Entrants", Enumerable.Range(0, count).Select(i => new XElement("Entrant", new XAttribute("id", "e" + i), new XAttribute("pawnKind", "Kind" + i)))),
+            new XElement("Entrants", Enumerable.Range(0, count).Select(i => new XElement("Entrant", new XAttribute("id", "e" + i), new XAttribute("pawnKind", "Kind" + i), i == 0 && entrantBudget.HasValue ? new XAttribute("budget", entrantBudget.Value) : null))),
             new XElement("Battle", new XAttribute("confirmationTicks", 0))));
         var plan = ArenaLoader.Compile(new[] { new ScenarioInput { Path = "fixture.xml", Sha256 = "frozen", Xml = xml.ToString(SaveOptions.DisableFormatting) } }, new[] { "ArenaFixture" });
         var input = plan.Tournaments.Single();
         var t = new ArenaTournamentResult { Input = input };
-        foreach (var e in input.Entrants) t.Rosters.Add(CombatRoster.Resolve(e.Id, e.PawnKind, extremePower ?? (budget ? 100 + int.Parse(e.Id[1..]) : 100), input.Budget, input.Count));
+        foreach (var e in input.Entrants) t.Rosters.Add(CombatRoster.Resolve(e.Id, e.PawnKind, extremePower ?? (budget ? 100 + int.Parse(e.Id[1..]) : 100), e.Budget ?? input.Budget, input.Count));
         var schedule = new ArenaScheduler(t);
         ArenaMatch m;
         while ((m = schedule.Next()) != null)

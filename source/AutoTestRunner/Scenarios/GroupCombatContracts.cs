@@ -142,6 +142,7 @@ namespace LogSyncMod.AutoTest.Scenarios
         public string ExecutionStatus { get; set; } = "preparing";
         public string EndReason { get; set; }
         public string Error { get; set; }
+        public CombatStartupTiming StartupTiming { get; set; }
         public int ElapsedTicks { get; set; }
         public double SimulatedSeconds { get; set; }
         public string MeasurementQuality { get; set; } = "partial";
@@ -163,6 +164,38 @@ namespace LogSyncMod.AutoTest.Scenarios
         public int ScreenshotWidth { get; set; }
         public int ScreenshotHeight { get; set; }
         public List<string> Screenshots { get; set; } = new List<string>();
+    }
+
+    public sealed class CombatStartupTiming
+    {
+        public string ConfiguredSpeed { get; set; }
+        public float TickRateMultiplier { get; set; }
+        public int UpdateThreadId { get; set; }
+        public int UiThreadId { get; set; }
+        public int TickThreadId { get; set; }
+        public double? InitialCaptureRequestedSeconds { get; set; }
+        public double InitialCaptureCallSeconds { get; set; }
+        public double? InitialCaptureReadySeconds { get; set; }
+        public double? SpeedSwitchSeconds { get; set; }
+        public double StartMeasurementSeconds { get; set; }
+        public double? FirstTickSeconds { get; set; }
+        public double? FirstMovementSeconds { get; set; }
+        public double? FirstRepaintAfterSpeedSeconds { get; set; }
+        public double ObservedRunningSeconds { get; set; }
+        public CombatStartupWindow Waiting { get; set; } = new();
+        public CombatStartupWindow Running { get; set; } = new();
+    }
+
+    public sealed class CombatStartupWindow
+    {
+        public int Updates { get; set; }
+        public int Repaints { get; set; }
+        public int Ticks { get; set; }
+        public double MaxUpdateGapSeconds { get; set; }
+        public double MaxRepaintGapSeconds { get; set; }
+        public double MaxUpdateSeconds { get; set; }
+        public double MaxUiSeconds { get; set; }
+        public double MaxTickSeconds { get; set; }
     }
 
     public sealed class GroupCombatExperimentSummary

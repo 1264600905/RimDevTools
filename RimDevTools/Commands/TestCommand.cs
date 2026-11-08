@@ -355,7 +355,7 @@ public static class TestCommand
                 runId,
                 [modsConfigPath, logSyncSettingsPath]);
             await transaction.WriteAllTextAsync(modsConfigPath, ModListParser.Render(modsConfigPath, modList.Mods));
-            await SettingsEditor.UpdateAsync(context, mode, transaction, runId, targetPackageId, muteAudio: mode != "manual", scopes: selection.Scopes, hasExplicitScopes: selection.HasExplicitScopes, defNames: selection.DefNames, batchSize: batchSize, artifacts: artifacts, scenarioPlan: scenarioPlan);
+            await SettingsEditor.UpdateAsync(context, mode, transaction, runId, targetPackageId, muteAudio: mode is not ("manual" or "arena"), scopes: selection.Scopes, hasExplicitScopes: selection.HasExplicitScopes, defNames: selection.DefNames, batchSize: batchSize, artifacts: artifacts, scenarioPlan: scenarioPlan);
 
             var gameArguments = new List<string> { "-popupwindow" };
             if (mode is "auto" or "groupcombat" or "arena" || mode == "manual" && CliArgs.Has(args, "--quick-start")) gameArguments.Add("quicktest");

@@ -33,9 +33,10 @@ public static class ArenaResultValidator
             foreach (var e in input.Entrants)
             {
                 var r = t.Rosters.SingleOrDefault(r => r.Id == e.Id);
-                if (r == null || r.PawnKind != e.PawnKind || r.UnitCombatPower <= 0 || r.Mode != input.RosterMode || r.RequestedBudget != input.Budget || r.ResolvedCount < 1 || r.ResolvedCount > 100) return "配兵身份或 combatPower 快照无效";
-                var count = input.Budget.HasValue ? decimal.Floor(input.Budget.Value / r.UnitCombatPower) : e.Count ?? input.Count;
-                if (r.ResolvedCount != count || input.Budget.HasValue && (r.ActualCombatPower > input.Budget || input.Budget.Value - r.ActualCombatPower >= r.UnitCombatPower)) return "预算配兵不满足最大整数人数";
+                var budget = e.Budget ?? input.Budget;
+                if (r == null || r.PawnKind != e.PawnKind || r.UnitCombatPower <= 0 || r.Mode != input.RosterMode || r.RequestedBudget != budget || r.ResolvedCount < 1 || r.ResolvedCount > 100) return "配兵身份或 combatPower 快照无效";
+                var count = budget.HasValue ? decimal.Floor(budget.Value / r.UnitCombatPower) : e.Count ?? input.Count;
+                if (r.ResolvedCount != count || budget.HasValue && (r.ActualCombatPower > budget || budget.Value - r.ActualCombatPower >= r.UnitCombatPower)) return "预算配兵不满足最大整数人数";
             }
             var alive = t.Rosters.Select(r => r.Id).ToList();
             var scores = new Dictionary<string, decimal>(StringComparer.Ordinal);

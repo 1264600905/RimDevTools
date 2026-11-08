@@ -1,12 +1,12 @@
 <ArenaSuite schemaVersion="1" id="arena.animals3000" gameVersion="1.7">
-  <Tournament id="animals20" name="二十种动物与虫族：3000点擂台" seed="12345">
+  <Tournament id="animals25" name="二十五种动物与虫族：3000点擂台（阿尔法敲击兽3200点）" seed="12345">
     <testDefName>Arena_Animals20_Budget3000</testDefName>
     <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all">
       <Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/>
     </Scene>
     <Roster mode="combatPower" budget="3000"/>
     <Entrants>
-      <Entrant id="AlphaThrumbo" pawnKind="AlphaThrumbo" name="阿尔法敲击兽"/>
+      <Entrant id="AlphaThrumbo" pawnKind="AlphaThrumbo" name="阿尔法敲击兽" budget="3200"/>
       <Entrant id="HiveQueen" pawnKind="HiveQueen" name="虫后"/>
       <Entrant id="Thrumbo" pawnKind="Thrumbo" name="敲击兽"/>
       <Entrant id="Mastodon" pawnKind="Mastodon" name="乳齿象"/>
@@ -26,6 +26,11 @@
       <Entrant id="Cougar" pawnKind="Cougar" name="美洲狮"/>
       <Entrant id="Panther" pawnKind="Panther" name="黑豹"/>
       <Entrant id="Caribou" pawnKind="Caribou" name="驯鹿"/>
+      <Entrant id="Chimera" pawnKind="Chimera" name="合成兽"/>
+      <Entrant id="Boomalope" pawnKind="Boomalope" name="爆炸羊"/>
+      <Entrant id="Squirrel" pawnKind="Squirrel" name="松鼠"/>
+      <Entrant id="Boomrat" pawnKind="Boomrat" name="爆炸鼠"/>
+      <Entrant id="Porcupine" pawnKind="Porcupine" name="刺猬"/>
     </Entrants>
     <Battle timeSpeed="superfast" durationSeconds="180" timeoutRealSeconds="300" confirmationTicks="300"/>
     <Scoring survivalWeight="100" speedWeight="20" timeReferenceSeconds="180"/>

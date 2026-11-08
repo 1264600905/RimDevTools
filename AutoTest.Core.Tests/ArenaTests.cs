@@ -53,6 +53,14 @@ internal static class ArenaTests
         ArenaPlan Parse(string text) => ArenaLoader.Compile(new[] { new ScenarioInput { Path = "arena.xml", Sha256 = "h", Xml = text } }, new[] { "ArenaTest" });
         var plan = Parse(xml);
         check(plan.Purpose == "arena" && plan.Tournaments[0].Budget == 3000 && plan.Tournaments[0].MaxReplays == 2 && plan.DefaultDeadlineSeconds > 600, "arena has independent parser, frozen defaults and bounded tournament deadline");
+        var mixedBudget = Parse(xml.Replace("id='a' pawnKind", "id='a' budget='3200' pawnKind")).Tournaments.Single();
+        check(mixedBudget.Budget == 3000 && mixedBudget.Entrants[0].Budget == 3200 && mixedBudget.Entrants[1].Budget == null
+            && CombatRoster.Resolve("a", "AlphaThrumbo", 800, mixedBudget.Entrants[0].Budget ?? mixedBudget.Budget).ResolvedCount == 4
+            && CombatRoster.Resolve("b", "Thrumbo", 500, mixedBudget.Entrants[1].Budget ?? mixedBudget.Budget).ResolvedCount == 6,
+            "arena per-entrant budget overrides allocate four 800CP units while other entrants inherit 3000CP");
+        foreach (var invalidBudget in new[] { "0", "-1", "NaN", "Infinity", "" })
+            Reject(() => Parse(xml.Replace("id='a' pawnKind", "id='a' budget='" + invalidBudget + "' pawnKind")), "arena rejects invalid entrant budget: " + invalidBudget);
+        Reject(() => Parse(xml.Replace("mode='combatPower' budget='3000'", "mode='count' count='20'").Replace("id='a' pawnKind", "id='a' budget='3200' pawnKind")), "arena count mode rejects entrant budget overrides");
         check(Parse(xml.Replace("mode='combatPower' budget='3000'", "mode='count' count='20'").Replace("id='a' pawnKind", "id='a' count='3' pawnKind")).Tournaments[0].Entrants[0].Count == 3, "arena count mode supports per-entrant counts");
         Reject(() => Parse(xml.Replace("id='a' pawnKind", "id='a' count='3' pawnKind")), "arena budget mode rejects count overrides");
         Reject(() => Parse(xml.Replace("Mercenary_Gunner", "Wolf_Timber")), "arena rejects duplicate PawnKinds");

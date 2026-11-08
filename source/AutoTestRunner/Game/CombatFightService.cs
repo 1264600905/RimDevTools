@@ -203,14 +203,17 @@ namespace LogSyncMod.AutoTest
 
         private static void StartMeasurement()
         {
+            var measurementBegan = CombatStartupProbe.Now;
             foreach (var pawn in introFacing.Keys) pawn.jobs?.StopAll();
             introFacing.Clear();
             phase = "running"; startTick = Find.TickManager.TicksGame; current.ExecutionStatus = "running";
             var settingsNode = roundConfig.Element("GroupCombat");
             Find.TickManager.CurTimeSpeed = ScenarioLoader.A(settingsNode, "timeSpeed", "normal") switch { "fast" => TimeSpeed.Fast, "superfast" => TimeSpeed.Superfast, _ => TimeSpeed.Normal };
+            CombatStartupProbe.SpeedSwitch(ScenarioLoader.A(settingsNode, "timeSpeed", "normal"), pawns.Values);
             Trace("group.start", "configuredSpeed=" + ScenarioLoader.A(settingsNode, "timeSpeed", "normal") + "; actualSpeed=" + Find.TickManager.CurTimeSpeed + "; pauseAllowed=true");
             ScheduleAttacks(true);
             Log.Message("[LogSyncGroupCombat] START caseId=" + input.CaseId + " map=" + Map.uniqueID + " participants=" + pawns.Count);
+            CombatStartupProbe.MeasurementStarted(measurementBegan);
         }
 
         private static void StartRound(GroupCombatRoundInput next)
@@ -218,6 +221,7 @@ namespace LogSyncMod.AutoTest
             input = next; roundIndex++; phase = "preparing"; roundStartedRealtime = Time.realtimeSinceStartup;
             lastFrameRealtime = roundStartedRealtime; pausedRealtime = 0;
             current = new GroupCombatRoundResult { CaseId = input.CaseId, TestDefName = input.TestDefName, Name = input.Name, Seed = input.Seed, Swapped = input.Swapped, Source = input.Source, InputHash = input.InputHash, ResolvedRosters = input.ResolvedRosters };
+            current.StartupTiming = CombatStartupProbe.Reset();
             preexistingFactions = Find.FactionManager.AllFactions.ToList();
             preexistingRelations = RelationFingerprint();
             Find.TickManager.CurTimeSpeed = TimeSpeed.Paused;
@@ -373,6 +377,7 @@ namespace LogSyncMod.AutoTest
             var sample = ledger.Snapshot(ticks, includeEventDetails);
             sample.CaseId = current.CaseId; sample.TestDefName = current.TestDefName; sample.Name = current.Name; sample.Seed = current.Seed; sample.Swapped = current.Swapped; sample.Source = current.Source; sample.InputHash = current.InputHash; sample.MapId = current.MapId; sample.IsPocketMap = current.IsPocketMap; sample.GeneratorDef = current.GeneratorDef; sample.Environment = current.Environment;
             sample.ResolvedRosters = current.ResolvedRosters;
+            sample.StartupTiming = current.StartupTiming;
             sample.ScreenshotWidth = current.ScreenshotWidth; sample.ScreenshotHeight = current.ScreenshotHeight;
             sample.Diagnostics.AddRange(current.Diagnostics); sample.Screenshots = current.Screenshots; sample.ExecutionStatus = current.ExecutionStatus;
             sample.MeasurementLimits.Add("Main metric is native DamageResult.totalDamageDealt for Pawn damage, not raw weapon damage or capped absolute health loss.");
@@ -399,10 +404,15 @@ namespace LogSyncMod.AutoTest
             var directory = Path.Combine(outputPath, ArtifactPrefix + "_" + activeRunId + "_Screenshots"); Directory.CreateDirectory(directory);
             pendingCapture = Path.Combine(directory, roundIndex.ToString("D4") + "_" + label + ".png");
             captureRequested = false; preparedFrame = Time.frameCount; phaseStartedRealtime = Time.realtimeSinceStartup;
+            if (label == "initial") CombatStartupProbe.CaptureRequested();
         }
         private static bool CaptureFinished()
         {
-            if (captureRequested && AutoTestViewComposite.IsReady(pendingCapture)) return true;
+            if (captureRequested && AutoTestViewComposite.IsReady(pendingCapture))
+            {
+                if (phase == "roster") CombatStartupProbe.CaptureReady();
+                return true;
+            }
             if (Time.realtimeSinceStartup - phaseStartedRealtime < 20) return false;
             var error = "Screenshot did not become ready: " + pendingCapture;
             current.Diagnostics.Add(error);
@@ -416,15 +426,19 @@ namespace LogSyncMod.AutoTest
             // Both modes use the existing roster/countdown presentation before
             // combat. Tournament trees are shown only after settlement.
             GroupCombatOverlay.Draw();
+            if (Event.current.type == EventType.Repaint) CombatStartupProbe.Repaint(CountdownLabel);
             if (Event.current.type != EventType.Repaint || captureRequested || pendingCapture == null || Time.frameCount - preparedFrame < 3 || Time.realtimeSinceStartup - phaseStartedRealtime < 1 || !Screen.fullScreen || !AutoTestScreenshotService.PrepareCaptureFrame()) return;
             current.ScreenshotWidth = requestedWidth > 0 ? requestedWidth : Screen.width; current.ScreenshotHeight = requestedHeight > 0 ? requestedHeight : Screen.height;
+            var captureBegan = CombatStartupProbe.Now;
             if (current.ScreenshotWidth == Screen.width && current.ScreenshotHeight == Screen.height) ScreenCapture.CaptureScreenshot(pendingCapture);
             else Find.CameraDriver.StartCoroutine(GroupCombatScreenshot.Capture(pendingCapture, current.ScreenshotWidth, current.ScreenshotHeight));
+            if (phase == "roster") CombatStartupProbe.CaptureCall(captureBegan);
             current.Screenshots.Add(pendingCapture); captureRequested = true;
         }
 
         private static void FinishRound()
         {
+            CombatStartupProbe.Stop();
             if (ShowingSettlement) Trace("group.settlement", "realSeconds=" + (Time.realtimeSinceStartup - settlementStartedRealtime).ToString("F3", CultureInfo.InvariantCulture) + "; simulationTicks=" + (Find.TickManager.TicksGame - settlementStartTick));
             phase = "cleaning"; introFacing.Clear(); teamLords.Clear(); lifecyclePawns.Clear();
             GroupCombatCamera.End();

@@ -11,12 +11,22 @@ namespace LogSyncMod
         private static float previousPrefsVolumeMaster;
         private static float previousListenerVolume;
         private static int correctionCount;
+        private static bool arenaAudio;
+
+        private static bool IsArenaSession => LogSyncMod.settings?.testSessionActive == true && LogSyncMod.settings.testSessionKind == "arena";
+        public static object Status => new { armed, arenaAudio, master = Prefs.VolumeMaster, game = Prefs.VolumeGame, music = Prefs.VolumeMusic, ambient = Prefs.VolumeAmbient, ui = Prefs.VolumeUI, listener = AudioListener.volume, correctionCount };
+
+        private static void ApplyArenaVolume()
+        {
+            Prefs.VolumeMaster = 1f;
+            AudioListener.volume = 1f;
+        }
 
         public static void ArmIfRequested()
         {
             lock (Sync)
             {
-                if (armed || LogSyncMod.settings == null || !LogSyncMod.settings.testMuteAudio)
+                if (armed || LogSyncMod.settings == null || !LogSyncMod.settings.testMuteAudio && !IsArenaSession)
                 {
                     return;
                 }
@@ -25,12 +35,20 @@ namespace LogSyncMod
                 {
                     previousPrefsVolumeMaster = Prefs.VolumeMaster;
                     previousListenerVolume = AudioListener.volume;
-                    Prefs.VolumeMaster = 0f;
-                    AudioListener.volume = 0f;
+                    arenaAudio = IsArenaSession;
+                    if (arenaAudio)
+                    {
+                        ApplyArenaVolume();
+                    }
+                    else
+                    {
+                        Prefs.VolumeMaster = 0f;
+                        AudioListener.volume = 0f;
+                    }
                     correctionCount = 0;
                     armed = true;
                     Log.Message(
-                        "[LogSyncMod] Test audio muted. reason=arm" +
+                        (arenaAudio ? "[LogSyncMod] Arena master volume set to 100%. reason=arm" : "[LogSyncMod] Test audio muted. reason=arm") +
                         " previousPrefsVolumeMaster=" + previousPrefsVolumeMaster.ToString("R") +
                         " previousAudioListenerVolume=" + previousListenerVolume.ToString("R") +
                         " currentPrefsVolumeMaster=" + Prefs.VolumeMaster.ToString("R") +
@@ -39,12 +57,12 @@ namespace LogSyncMod
                 catch (Exception ex)
                 {
                     armed = false;
-                    Log.Warning("[LogSyncMod] Failed to mute test audio: " + ex.Message);
+                    Log.Warning("[LogSyncMod] Failed to apply test audio settings: " + ex.Message);
                 }
             }
         }
 
-        public static void MaintainMuted(string reason)
+        public static void Maintain(string reason)
         {
             lock (Sync)
             {
@@ -55,6 +73,14 @@ namespace LogSyncMod
 
                 try
                 {
+                    if (arenaAudio)
+                    {
+                        if (Prefs.VolumeMaster == 1f && AudioListener.volume == 1f) return;
+                        ApplyArenaVolume();
+                        correctionCount++;
+                        Log.Message("[LogSyncMod] Arena master volume restored to 100%. reason=" + (reason ?? "unknown") + " correctionCount=" + correctionCount);
+                        return;
+                    }
                     float prefsVolume = Prefs.VolumeMaster;
                     float listenerVolume = AudioListener.volume;
                     if (Math.Abs(prefsVolume) <= 0.0001f && Math.Abs(listenerVolume) <= 0.0001f)
@@ -73,7 +99,7 @@ namespace LogSyncMod
                 }
                 catch (Exception ex)
                 {
-                    Log.Warning("[LogSyncMod] Failed to maintain test audio mute. reason=" + (reason ?? "unknown") + " error=" + ex.Message);
+                    Log.Warning("[LogSyncMod] Failed to maintain test audio settings. reason=" + (reason ?? "unknown") + " error=" + ex.Message);
                 }
             }
         }

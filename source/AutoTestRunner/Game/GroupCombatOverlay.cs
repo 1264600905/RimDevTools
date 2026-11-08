@@ -88,6 +88,27 @@ namespace LogSyncMod.AutoTest
             var previous = GUI.color; GUI.color = NameColor(state);
             DrawText(rect, value, size); GUI.color = previous;
         }
+        private static string ComparedValue(double value, double? other, string format = "F1")
+        {
+            var text = value.ToString(format);
+            if (!other.HasValue || value == other.Value) return text;
+            var color = ColorUtility.ToHtmlStringRGBA(value > other.Value ? NameColor("standing") : NameColor("dead"));
+            return "<color=#" + color + ">" + text + "</color>";
+        }
+        private static string[] SettlementLines(GroupCombatTeamResult team)
+        {
+            var other = snapshot.Teams.FirstOrDefault(t => t.Id != team.Id);
+            var living = GroupCombatPresentation.SurvivorTotals(snapshot.Units.Where(u => u.Team == team.Id));
+            var otherLiving = GroupCombatPresentation.SurvivorTotals(snapshot.Units.Where(u => u.Team == other?.Id));
+            return new[] {
+                "存活 " + ComparedValue(team.Alive, other?.Alive, "F0") + "/" + ComparedValue(team.Total, other?.Total, "F0")
+                    + " · 倒地 " + ComparedValue(team.Downed, other?.Downed, "F0") + " · 死亡 " + ComparedValue(team.Dead, other?.Dead, "F0"),
+                "全队累计输出  " + ComparedValue(team.EnemyDamage, other?.EnemyDamage),
+                "全队累计承伤  " + ComparedValue(team.DamageTaken, other?.DamageTaken),
+                "存活成员输出  " + ComparedValue(living.output, other == null ? null : otherLiving.output),
+                "存活成员承伤  " + ComparedValue(living.taken, other == null ? null : otherLiving.taken)
+            };
+        }
         internal static void DrawText(Rect rect, string value, float size, TextAnchor anchor = TextAnchor.UpperLeft)
         {
             var fontSize = Mathf.RoundToInt(size);
@@ -95,7 +116,7 @@ namespace LogSyncMod.AutoTest
             if (!textStyles.TryGetValue(key, out var style))
             {
                 // Clone the native dynamic font; do not mutate global RimWorld text styles.
-                style = new GUIStyle(Text.fontStyles[1]) { fontSize = fontSize, alignment = anchor, wordWrap = false, clipping = TextClipping.Clip };
+                style = new GUIStyle(Text.fontStyles[1]) { fontSize = fontSize, alignment = anchor, wordWrap = false, clipping = TextClipping.Clip, richText = true };
                 textStyles.Add(key, style);
             }
             GUI.Label(rect, value, style);
@@ -138,8 +159,9 @@ namespace LogSyncMod.AutoTest
                 Ranking(0, rankWidth, y, rowHeight, scale, "累计输出 Top10", members, u => u.EnemyDamage, new Color(.25f, .65f, .9f), snapshot.Units.Max(u => u.EnemyDamage));
                 Ranking(rankWidth + 8 * scale, rankWidth, y, rowHeight, scale, "承伤 Top10", members, u => u.DamageTaken, new Color(.9f, .45f, .25f), snapshot.Units.Max(u => u.DamageTaken));
                 var footer = height - 60 * scale;
-                DrawText(new Rect(0, footer, width, 20 * scale), "平均输出 " + team.MeanOutput.ToString("F1") + "   存活人均承伤 " + team.MeanDamageTaken.ToString("F1"), 12 * scale);
-                DrawText(new Rect(0, footer + 20 * scale, width, 20 * scale), "累计输出 " + team.EnemyDamage.ToString("F1") + "   总承伤 " + team.DamageTaken.ToString("F1"), 12 * scale);
+                var other = snapshot.Teams.FirstOrDefault(t => t.Id != team.Id);
+                DrawText(new Rect(0, footer, width, 20 * scale), "平均输出 " + ComparedValue(team.MeanOutput, other?.MeanOutput) + "   存活人均承伤 " + ComparedValue(team.MeanDamageTaken, other?.MeanDamageTaken), 12 * scale);
+                DrawText(new Rect(0, footer + 20 * scale, width, 20 * scale), "累计输出 " + ComparedValue(team.EnemyDamage, other?.EnemyDamage) + "   总承伤 " + ComparedValue(team.DamageTaken, other?.DamageTaken), 12 * scale);
                 DrawText(new Rect(0, footer + 40 * scale, width, 20 * scale), Label(team.Outcome) + "  ·  排名按存活期间累计伤害", 11 * scale);
             }
             finally { GUI.EndGroup(); }
@@ -223,20 +245,13 @@ namespace LogSyncMod.AutoTest
             {
                 var team = snapshot.Teams[i];
                 var members = snapshot.Units.Where(u => u.Team == team.Id).ToList();
-                var living = GroupCombatPresentation.SurvivorTotals(members);
                 var x = rect.x + 14 + i * cardWidth / 2;
                 var w = cardWidth / 2 - 28;
                 var previous = GUI.color; GUI.color = team.Outcome == "win" ? NameColor("standing") : team.Outcome == "loss" ? NameColor("dead") : Color.white;
                 DrawText(new Rect(x, rect.y + 88, w, 32), TeamLabel(i) + " · " + Label(team.Outcome), font * 1.3f, TextAnchor.MiddleCenter); GUI.color = previous;
                 var representative = members.OrderByDescending(u => u.EnemyDamage).FirstOrDefault();
                 if (representative != null) DrawPortrait(new Rect(x + (w - 52) / 2, rect.y + 126, 52, 52), representative);
-                var lines = new[] {
-                    "存活 " + team.Alive + "/" + team.Total + " · 倒地 " + team.Downed + " · 死亡 " + team.Dead,
-                    "全队累计输出  " + team.EnemyDamage.ToString("F1"),
-                    "全队累计承伤  " + team.DamageTaken.ToString("F1"),
-                    "存活成员输出  " + living.output.ToString("F1"),
-                    "存活成员承伤  " + living.taken.ToString("F1")
-                };
+                var lines = SettlementLines(team);
                 for (var row = 0; row < lines.Length; row++)
                     DrawText(new Rect(x, rect.y + 188 + row * 31, w, 28), lines[row], font, TextAnchor.MiddleCenter);
             }
@@ -281,20 +296,12 @@ namespace LogSyncMod.AutoTest
                 for (var i = 0; i < snapshot.Teams.Count; i++)
                 {
                     var team = snapshot.Teams[i];
-                    var members = snapshot.Units.Where(u => u.Team == team.Id).ToList();
-                    var living = GroupCombatPresentation.SurvivorTotals(members);
                     var x = rect.x + 14 + i * cardWidth / 2;
                     var w = cardWidth / 2 - 28;
                     GUI.color = team.Outcome == "win" ? gold : Color.white;
                     DrawText(new Rect(x, rect.y + 250 * scale, w, 32 * scale), TeamLabel(i) + " · " + Label(team.Outcome), 22 * scale, TextAnchor.MiddleCenter);
                     GUI.color = previous;
-                    var lines = new[] {
-                        "存活 " + team.Alive + "/" + team.Total + " · 倒地 " + team.Downed + " · 死亡 " + team.Dead,
-                        "全队累计输出  " + team.EnemyDamage.ToString("F1"),
-                        "全队累计承伤  " + team.DamageTaken.ToString("F1"),
-                        "存活成员输出  " + living.output.ToString("F1"),
-                        "存活成员承伤  " + living.taken.ToString("F1")
-                    };
+                    var lines = SettlementLines(team);
                     for (var row = 0; row < lines.Length; row++)
                         DrawText(new Rect(x, rect.y + (292 + row * 30) * scale, w, 28 * scale), lines[row], Mathf.Min(19 * scale, w / 17), TextAnchor.MiddleCenter);
                 }

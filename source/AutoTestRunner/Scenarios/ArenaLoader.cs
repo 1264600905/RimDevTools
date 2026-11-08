@@ -59,9 +59,10 @@ namespace LogSyncMod.AutoTest.Scenarios
                     var result = new ArenaTournamentInput { Id = id, Name = ScenarioLoader.A(t, "name", testName), TestDefName = testName, Seed = ScenarioLoader.I(t, "seed", 12345), Xml = t.ToString(SaveOptions.DisableFormatting), Source = input.Path, InputHash = input.Sha256, RosterMode = mode, Budget = mode == "combatPower" ? CombatRoster.Positive(Required(roster, "budget", input.Path)) : null, Count = Integer(roster, "count", 20, 1, 100, input.Path) };
                     foreach (var e in entrants.Elements("Entrant"))
                     {
-                        Check(e, "id pawnKind name count", "", input.Path);
+                        Check(e, "id pawnKind name count budget", "", input.Path);
                         if (mode == "combatPower" && e.Attribute("count") != null) ScenarioLoader.Fail(e, input.Path, "budget mode forbids entrant count overrides");
-                        result.Entrants.Add(new ArenaEntrant { Id = Required(e, "id", input.Path), PawnKind = Required(e, "pawnKind", input.Path), Name = ScenarioLoader.A(e, "name"), Count = e.Attribute("count") == null ? null : Integer(e, "count", 20, 1, 100, input.Path) });
+                        if (mode == "count" && e.Attribute("budget") != null) ScenarioLoader.Fail(e, input.Path, "count mode forbids entrant budget overrides");
+                        result.Entrants.Add(new ArenaEntrant { Id = Required(e, "id", input.Path), PawnKind = Required(e, "pawnKind", input.Path), Name = ScenarioLoader.A(e, "name"), Count = e.Attribute("count") == null ? null : Integer(e, "count", 20, 1, 100, input.Path), Budget = e.Attribute("budget") == null ? null : CombatRoster.Positive(Required(e, "budget", input.Path)) });
                     }
                     if (result.Entrants.Count < 2 || result.Entrants.Count > 64 || result.Entrants.Select(e => e.Id).Distinct(StringComparer.Ordinal).Count() != result.Entrants.Count || result.Entrants.Select(e => e.PawnKind).Distinct(StringComparer.Ordinal).Count() != result.Entrants.Count) ScenarioLoader.Fail(entrants, input.Path, "requires 2..64 distinct entrant IDs and PawnKinds");
                     var battle = t.Element("Battle"); Check(battle, "durationSeconds timeoutRealSeconds timeSpeed confirmationTicks", "", input.Path);

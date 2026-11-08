@@ -62,7 +62,7 @@ namespace LogSyncMod.AutoTest
                         {
                             var kind = DefDatabase<PawnKindDef>.GetNamedSilentFail(entrant.PawnKind);
                             if (kind == null) throw new ScenarioConfigurationException("Unknown loaded PawnKind: " + entrant.PawnKind, "COMBAT_POWER_INVALID");
-                            var roster = CombatRoster.Resolve(entrant.Id, entrant.PawnKind, CombatRoster.Power(kind.combatPower), input.Budget, entrant.Count ?? input.Count);
+                            var roster = CombatRoster.Resolve(entrant.Id, entrant.PawnKind, CombatRoster.Power(kind.combatPower), entrant.Budget ?? input.Budget, entrant.Count ?? input.Count);
                             roster.DisplayName = entrant.Name ?? kind.LabelCap.ToString(); roster.Source = input.Source;
                             result.Rosters.Add(roster);
                         }

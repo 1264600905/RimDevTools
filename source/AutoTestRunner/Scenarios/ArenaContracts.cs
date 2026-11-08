@@ -49,6 +49,7 @@ namespace LogSyncMod.AutoTest.Scenarios
         public string PawnKind { get; set; }
         public string Name { get; set; }
         public int? Count { get; set; }
+        public decimal? Budget { get; set; }
     }
     public sealed class ArenaScore
     {
