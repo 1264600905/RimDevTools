@@ -17,6 +17,11 @@ namespace LogSyncMod.AutoTest
         private static readonly string[] Labels = { "战力 · CP", "血量", "攻击伤害", "攻击速度", "利器护甲", "钝器护甲" };
         private static readonly Color Muted = new(.57f, .64f, .73f);
         private static readonly Color Gold = new(1f, .79f, .4f);
+        private static readonly Color[] GradeColors = {
+            new(.56f, .60f, .65f), new(.9f, .93f, .97f), new(.34f, .84f, .49f),
+            new(.31f, .65f, 1f), new(.73f, .48f, .98f), new(1f, .62f, .22f)
+        };
+        private static readonly string[] GradeLabels = { "粗糙 <20%", "普通 20–40%", "优秀 40–60%", "稀有 60–80%", "史诗 80–95%", "传说 ≥95%" };
 
         internal static void Begin(ArenaTournamentResult value)
         {
@@ -123,8 +128,9 @@ namespace LogSyncMod.AutoTest
                     for (var row = 0; row < Labels.Length; row++)
                     {
                         var metricY = y + 252 + row * 46;
-                        var metricColor = row == 0 ? Gold : new Color(.76f, .81f, .88f);
-                        TextAt(R(x + 23, metricY, 95, 23), Labels[row], 15 * scale, metricColor);
+                        var fill = ArenaShowcase.Fill(values[row], maxima[row]);
+                        var gradeColor = GradeColors[ArenaShowcase.ProgressTier(fill)];
+                        TextAt(R(x + 23, metricY, 95, 23), Labels[row], 15 * scale, new Color(.76f, .81f, .88f));
                         var number = row switch {
                             0 => values[row].ToString("0.##", CultureInfo.InvariantCulture),
                             1 => values[row].ToString("0.#", CultureInfo.InvariantCulture),
@@ -132,18 +138,22 @@ namespace LogSyncMod.AutoTest
                             3 => values[row].ToString("0.00", CultureInfo.InvariantCulture) + " 次/秒",
                             _ => (values[row] * 100).ToString("0.#", CultureInfo.InvariantCulture) + "%"
                         };
-                        TextAt(R(x + 119, metricY, cardWidth - 142, 23), number, 14 * scale, metricColor, TextAnchor.MiddleRight);
+                        TextAt(R(x + 119, metricY, cardWidth - 142, 23), number, 14 * scale, gradeColor, TextAnchor.MiddleRight);
                         var bar = R(x + 23, metricY + 29, cardWidth - 46, 8);
                         Widgets.DrawBoxSolid(bar, new Color(.025f, .037f, .06f));
-                        var fill = (float)ArenaShowcase.Fill(values[row], maxima[row]);
-                        if (fill > 0) Widgets.DrawBoxSolid(new Rect(bar.x, bar.y, Mathf.Max(2 * scale, bar.width * fill * reveal), bar.height), row == 0 ? Gold : color);
+                        if (fill > 0) Widgets.DrawBoxSolid(new Rect(bar.x, bar.y, Mathf.Max(2 * scale, bar.width * (float)fill * reveal), bar.height), gradeColor);
                         for (var segment = 1; segment < 10; segment++)
                             Widgets.DrawBoxSolid(new Rect(bar.x + bar.width * segment / 10, bar.y, scale, bar.height), new Color(.055f, .075f, .1f, .65f));
                     }
                 }
 
                 var pages = tournament.Input.ShowcasePages.Count;
-                TextAt(R(72, 817, 1150, 28), "单体成年基础能力  ·  数字为实际属性  ·  条长以本届同项最高值为满格", 15 * scale, Muted);
+                TextAt(R(72, 805, 1150, 26), "单体成年基础能力  ·  数字为实际属性  ·  条长以本届同项最高值为满格", 14 * scale, Muted);
+                for (var i = 0; i < GradeColors.Length; i++)
+                {
+                    Widgets.DrawBoxSolid(R(72 + i * 193, 841, 7, 7), GradeColors[i]);
+                    TextAt(R(86 + i * 193, 832, 179, 24), GradeLabels[i], 12.5f * scale, GradeColors[i]);
+                }
                 TextAt(R(1300, 814, 228, 32), (page + 1).ToString("D2") + "  /  " + pages.ToString("D2"), 22 * scale, Color.white, TextAnchor.MiddleRight);
                 var segmentWidth = (1456f - (pages - 1) * 8) / pages;
                 for (var i = 0; i < pages; i++)

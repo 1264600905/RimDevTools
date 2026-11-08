@@ -98,6 +98,13 @@ internal static class ArenaTests
             && ArenaShowcase.Fill(0, 0) == 0 && ArenaShowcase.Fill(-1, 40) == 0 && ArenaShowcase.Fill(50, 40) == 1
             && ArenaShowcase.Fill(double.NaN, 40) == 0,
             "entrant bars share a tournament-wide scale and safely handle zero armor and unavailable metrics");
+        check(new[] { 0d, .199999, .2, .399999, .4, .599999, .6, .799999, .8, .949999, .95, 1 }
+                .Select(ArenaShowcase.ProgressTier).SequenceEqual(new[] { 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5 })
+            && ArenaShowcase.ProgressTier(double.NaN) == 0,
+            "showcase bars use six consistent rarity tiers, promoting at each threshold and handling zero metrics");
+        check(ArenaShowcase.ProgressTier(ArenaShowcase.Fill(50, 100)) == ArenaShowcase.ProgressTier(ArenaShowcase.Fill(5, 10))
+            && ArenaShowcase.ProgressTier(ArenaShowcase.Fill(47, 62)) == ArenaShowcase.ProgressTier(ArenaShowcase.Fill(470, 620)),
+            "the same relative progress always receives the same tier across entrants and metric scales");
         check(plan.Purpose == "arena" && plan.Tournaments[0].Budget == 3000 && plan.Tournaments[0].MaxReplays == 2 && plan.DefaultDeadlineSeconds > 600, "arena has independent parser, frozen defaults and bounded tournament deadline");
         check(plan.Tournaments[0].BracketSeconds == 3 && plan.Tournaments[0].AdvanceStartSeconds == 3,
             "arena defaults to a three-second countdown and prepares its start from the beginning");

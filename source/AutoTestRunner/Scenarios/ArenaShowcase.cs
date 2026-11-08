@@ -51,5 +51,13 @@ namespace LogSyncMod.AutoTest.Scenarios
         public static double Duration(int count) => PageCount(count) * PageSeconds;
         public static double Fill(double value, double maximum) => double.IsFinite(value) && double.IsFinite(maximum) && maximum > 0
             ? Math.Clamp(value / maximum, 0, 1) : 0;
+        public static int ProgressTier(double progress)
+        {
+            if (!double.IsFinite(progress) || progress < .2) return 0;
+            if (progress < .4) return 1;
+            if (progress < .6) return 2;
+            if (progress < .8) return 3;
+            return progress < .95 ? 4 : 5;
+        }
     }
 }
