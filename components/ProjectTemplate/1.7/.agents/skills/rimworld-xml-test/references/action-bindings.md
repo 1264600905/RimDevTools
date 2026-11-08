@@ -37,11 +37,11 @@ Steps 中调用：
 | 节点 | 字段及规则 |
 | --- | --- |
 | ActionBinding | id/packageId/type/method 全必填；id 不可覆盖 native.fillNeeds 等内置动作；type 是限定类名，method 是一个方法标识符，不是调用表达式 |
-| Parameters/Parameter | name/type 必填且 name 唯一；执行器支持 int/float/double/bool/string 和已加载公开枚举，但外部 XML 字面量有下述静态校验限制；min/max 只适用于数字，min ≤ max；每个参数都必须被 Arguments 使用 |
+| Parameters/Parameter | name/type 必填且 name 唯一；支持 int/float/double/bool/string 和已加载公开枚举；min/max 只适用于数字，min ≤ max；每个参数都必须被 Arguments 使用 |
 | Arguments/Argument | type 必填；source/parameter/value/def **恰好一个**，按方法参数顺序列出；无参方法也必须写空 Arguments |
 | source | 仅 selected，将当前选择对象传给匹配的类型，如 Verse.Pawn |
 | parameter | 引用 Parameters 中的名字，两处 type 必须一致，由调用时 Arg 提供值 |
-| value | 执行器按声明类型解析标量/枚举，数字必须有限，枚举须为已声明的名称；外部 XML 还受下述通用数字校验限制，不能只按执行器能力编写 |
+| value | 执行器按声明类型解析标量/枚举，数字必须有限，枚举须为已声明的名称；静态阶段按已知标量类型校验，枚举类型与成员在游戏加载后验证 |
 | def | 按 Argument.type 查实际已加载 Def，并校验类型；不是任意对象或字段路径 |
 | DebugAction/Arg | name/value 必填；每个声明参数恰好传一次，不接受未知/重复/缺失参数；固定内置动作不接受 Arg |
 | Result | 可选，出现时 equals 必填；核对方法真实返回值；void 方法省略 Result |
@@ -50,11 +50,11 @@ Steps 中调用：
 
 准备时只解析公开可见、非开放泛型/指针/by-ref 类型；方法须声明在所属 packageId 的类中，满足 **精确 public static 签名**，不接受实例、泛型、ref/out 或自动放宽参数类型。返回值只允许 void、受支持标量或枚举。Def、选中对象类型、标量范围及属性 getter 都在调用前校验；方法异常、返回值不符或后置断言失败保留为失败。
 
-## 当前外部 XML 的静态校验限制
+## 静态校验与游戏验证
 
-当前 ScenarioLoader.ValidateTree 会把 `Argument.value` 和 `DebugAction/Arg.value` 也按有限数字检查。因此尽管绑定执行器支持 bool/string/枚举，外部 XML 的 `value="true"`、`value="ready"` 或具名枚举值仍会在启动前报 `invalid finite number value`；整数/有限数字参数可正常通过。仅验证 ScenarioBoundAction 的直接调用不能证明这些字面量可经过整个 CLI XML 加载链。
+`Argument.value`、`DebugAction/Arg.value` 按绑定声明的类型校验，不统一按数字检查；bool 的 `true/false`、字符串和具名枚举字面量可经过 XML 加载。已知 int/float/double/bool 参数的格式和声明范围可在 `--validate-only` 时发现；枚举成员、Def、公开方法精确签名及包归属仍在游戏中核对。
 
-`Result.equals`、`ExpectHediff.equals` 已排除通用整数检查，可使用与实际返回/属性类型匹配的枚举名等值；`Argument.def` 和 source=selected 走各自类型入口。不要把此处的前端校验限制误写成模组接口不存在，也不要用数字冒充具名枚举。宿主修正该通用校验后再更新这一限制说明。
+`Result.equals`、`ExpectHediff.equals` 同样按实际返回/属性类型解析，可使用匹配的枚举名；不要用数字冒充具名枚举。静态校验通过只表示配置可编译，真实调用与后置断言仍需实际运行。
 
 `ExpectHediff type` 可限定自定义 Hediff 派生类型，其 property 必须是该类型可读取的公开属性；`def` 形式只定位 HediffDef，不承诺可访问自定义派生类属性。该断言检查调用后的总匹配数，不是“本次新增加了几个”。需要证明新增身份时，在准备完成后另建 Checkpoint，再执行真实动作并用 transition/since 观察。
 

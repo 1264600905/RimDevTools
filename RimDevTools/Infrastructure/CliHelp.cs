@@ -497,6 +497,8 @@ public static class CliHelp
           --defname <value>           Repeatable auto-mode DefName allowlist.
           --batch-size <n>            Positive auto random-case limit; defaults to 40.
           --scenario-path <path>      1.7 external XML file or nonrecursive *.autotest.xml folder.
+          --validate-only             Compile external XML and return diagnostics; no deployment or game launch.
+                                      Requires --scenario-path and --mode auto/groupcombat/arena.
           --scenario-only             Run only external cases; omit to mix with ordinary tests.
           --quick-start               With manual mode, start a disposable native quick-test game.
           --test-name <name>          Select an external testDefName, full caseId, or unique display name; repeatable.
@@ -506,6 +508,16 @@ public static class CliHelp
           --no-isolated-desktop       Force the current visible desktop for this run.
           --verbose                  Include the active mod list, additions, and deploy diagnostics.
           -h, --help                  Show this help.
+
+        XML preflight:
+          External XML is compiled before project-template and game-environment checks.
+          Errors stop the run before deployment or game/config changes. The JSON validation
+          contains diagnostics with source locations when available, correction suggestions,
+          selected rule names/counts, and remaining runtime checks. The compiler stops at
+          the first error; fix it and validate again. Static success does not prove gameplay.
+          --validate-only requires a version-2 project config with game_version=1.7, but
+          needs no configured game, Steam, ModsConfig or test-host installation. It accepts
+          only XML selection options and --verbose; execution flags are rejected.
 
         Deployment behavior:
           test run exits an existing game before deploying and starting tests. --deploy uses
@@ -519,6 +531,7 @@ public static class CliHelp
         Examples:
           RimDevTools.exe test run --mode quick --timeout-seconds 120
           RimDevTools.exe test run --mode auto --scope combat --scope view --defname MyMod_ArmorCoat
+          RimDevTools.exe test run --mode auto --scenario-path scenario.autotest.xml --validate-only
           RimDevTools.exe test run --mode groupcombat --scenario-path benchmark.xml --test-name MyMod_HumanGroups
           RimDevTools.exe test run --mode arena --scenario-path arena.autotest.xml --test-name Arena_3000CP
 
@@ -537,6 +550,11 @@ public static class CliHelp
         Output:
           Default JSON includes runId, mode, target, mod/addition counts, isolation source,
           signal, result, and dependency warnings. --verbose includes full mods/additions.
+          XML runs include result.validation or error.details.validation on XML preflight failure.
+          Validate-only returns result.validation and allocates no run artifacts.
+          Runtime assertion/timeout failures include details.scenarioFailures with original
+          file/line, element, stepId, XML and correction suggestions. The default preview
+          covers 20 cases; scenarioFailuresTruncated reports truncation (--verbose shows all).
           After a run directory is allocated, result.artifacts (success) or
           error.details.artifacts (failure) includes the absolute directoryPath,
           syncLogPath, and autoTestOutputPath. Quick/auto runs also return

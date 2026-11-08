@@ -87,6 +87,11 @@ namespace LogSyncMod.AutoTest.Scenarios
     public sealed class ScenarioConfigurationException : Exception
     {
         public string Code { get; }
+        public string FilePath { get; set; }
+        public int LineNumber { get; set; }
+        public int LinePosition { get; set; }
+        public string ElementPath { get; set; }
+        public string Suggestion { get; set; }
         public ScenarioConfigurationException(string message, string code = null) : base(message) { Code = code; }
     }
 
@@ -139,6 +144,19 @@ namespace LogSyncMod.AutoTest.Scenarios
         public string CoverageMode { get; set; }
         public List<ScenarioCoverageTarget> Coverage { get; set; } = new List<ScenarioCoverageTarget>();
         public List<ScenarioTrace> Trace { get; set; } = new List<ScenarioTrace>();
+        public List<ScenarioFailureDiagnostic> Diagnostics { get; set; } = new List<ScenarioFailureDiagnostic>();
+    }
+
+    public sealed class ScenarioFailureDiagnostic
+    {
+        public string Code { get; set; }
+        public string Message { get; set; }
+        public string File { get; set; }
+        public int? Line { get; set; }
+        public string Element { get; set; }
+        public string StepId { get; set; }
+        public string Xml { get; set; }
+        public string Suggestion { get; set; }
     }
 
     public static class ScenarioTypes

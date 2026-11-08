@@ -23,7 +23,9 @@ namespace LogSyncMod.AutoTest.Scenarios
                 var bytes = File.ReadAllBytes(file);
                 using var stream = new MemoryStream(bytes);
                 using var reader = XmlReader.Create(stream, ScenarioLoader.ReaderSettings());
-                var doc = XDocument.Load(reader, LoadOptions.SetLineInfo);
+                XDocument doc;
+                try { doc = XDocument.Load(reader, LoadOptions.SetLineInfo | LoadOptions.PreserveWhitespace); }
+                catch (XmlException ex) { throw ScenarioLoader.XmlFailure(file, ex); }
                 if (directory && doc.Root?.Name != "ArenaSuite") { skipped++; continue; }
                 using var sha = SHA256.Create();
                 inputs.Add(new ScenarioInput { Path = file, Sha256 = BitConverter.ToString(sha.ComputeHash(bytes)).Replace("-", "").ToLowerInvariant(), Xml = doc.ToString(SaveOptions.DisableFormatting) });
@@ -167,7 +169,9 @@ namespace LogSyncMod.AutoTest.Scenarios
         private static void Check(XElement e, string attrs, string children, string path, bool required = false)
         {
             if (e == null) { if (required) throw new ScenarioConfigurationException(path + ": missing required arena element"); return; }
-            if (e.Name.Namespace != XNamespace.None || e.Attributes().Any(a => !attrs.Split(' ').Contains(a.Name.ToString())) || e.Elements().Any(c => !children.Split(' ').Contains(c.Name.ToString())) || e.Nodes().OfType<XText>().Any(n => !string.IsNullOrWhiteSpace(n.Value) && e.Name != "testDefName")) ScenarioLoader.Fail(e, path, "unknown arena attribute, child or text");
+            foreach (var a in e.Attributes()) if (!attrs.Split(' ').Contains(a.Name.ToString())) ScenarioLoader.UnknownField(e, path, "attribute", a.Name.ToString(), attrs);
+            foreach (var c in e.Elements()) if (!children.Split(' ').Contains(c.Name.ToString())) ScenarioLoader.UnknownField(c, path, "element", c.Name.ToString(), children);
+            if (e.Name.Namespace != XNamespace.None || e.Nodes().OfType<XText>().Any(n => !string.IsNullOrWhiteSpace(n.Value) && e.Name != "testDefName")) ScenarioLoader.Fail(e, path, "unknown arena namespace or text");
             if (e.Name != "ArenaSuite" && e.Name != "Entrants" && e.Name != "Showcase" && e.Name != "Page" && e.Elements().GroupBy(c => c.Name).Any(g => g.Count() > 1)) ScenarioLoader.Fail(e, path, "duplicate arena element");
         }
         private static int Integer(XElement e, string attr, int fallback, int min, int max, string path)

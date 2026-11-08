@@ -59,6 +59,8 @@ internal static class ScenarioTests
         clock = new TestClock(); backend = new Backend { Match = false }; engine = new ScenarioExecution(Compile(waitXml).Cases[0], backend, clock);
         engine.Poll(10); clock.Ms = 2000; engine.Poll(10);
         check(engine.Completed && engine.Outcome.ErrorCode == "scenario.timeout" && backend.Cleaned == 1, "wait times out with paused simulation and cleans up");
+        check(engine.Outcome.Diagnostics.Single().StepId == "ready" && engine.Outcome.Diagnostics.Single().Element.EndsWith("ActorState[0]") && engine.Outcome.Diagnostics.Single().Line == 1,
+            "timeout points to the unsatisfied condition and owning Wait in the frozen source");
         clock = new TestClock(); backend = new Backend { Match = false }; engine = new ScenarioExecution(Compile(waitXml).Cases[0], backend, clock);
         engine.Poll(10); clock.Ms = 2000; backend.Match = true; engine.Poll(11);
         check(engine.Completed && engine.Outcome.ErrorCode == "scenario.timeout", "late success cannot bypass the step deadline");
@@ -73,6 +75,59 @@ internal static class ScenarioTests
         check(engine.Outcome.ErrorCode == "scenario.cleanup" && engine.Outcome.Status == "failed", "cleanup error cannot turn green");
         backend = new Backend { CompletionThrows = true }; engine = new ScenarioExecution(plan.Cases[0], backend, clock); engine.Poll(1); engine.Poll(2);
         check(engine.Outcome.Status == "failed" && engine.Outcome.ErrorCode == "scenario.configuration" && backend.Cleaned == 1, "native completion gate rejects unused coverage before success and still cleans up");
+        var diagnosticXml = Suite(caseBody: """
+            <Scene/>
+            <Actors><Pawn id='p'><basePawnKind>SpaceRefugee</basePawnKind></Pawn></Actors>
+            <Steps><Require id='assert'><All>
+              <ActorState actor='p' state='alive'/>
+              <ActorState actor='p' state='dead'/>
+            </All></Require></Steps>
+            <Success><StepSucceeded ref='assert'/></Success>
+            """);
+        var diagnosticPlan = ScenarioLoader.Compile(new[] { Input(diagnosticXml, @"D:\测试目录\断言.xml") });
+        clock = new TestClock(); backend = new Backend { MatchesCondition = e => ScenarioLoader.A(e, "state") != "dead" };
+        engine = new ScenarioExecution(diagnosticPlan.Cases.Single(), backend, clock); engine.Poll(1);
+        var diagnostic = engine.Outcome.Diagnostics.Single();
+        check(diagnostic.File == @"D:\测试目录\断言.xml" && diagnostic.Line == 5 && diagnostic.Element.EndsWith("All[0]/ActorState[1]") && diagnostic.StepId == "assert" && diagnostic.Xml.Contains("dead"),
+            "nested assertions locate the actual false sibling with Windows path, original line and XML");
+        diagnosticPlan.Cases.Single().SourceLocations.Clear();
+        engine = new ScenarioExecution(diagnosticPlan.Cases.Single(), backend, new TestClock()); engine.Poll(1);
+        check(engine.Outcome.Diagnostics.Single().Line == null && engine.Outcome.Diagnostics.Single().Element.EndsWith("ActorState[1]"),
+            "missing node mappings do not misreport the Case declaration as the assertion line");
+        var anyXml = Suite(caseBody: body.Replace("<ActorState actor='p' state='alive'/>", "<Any><ActorState actor='p' state='dead'/><ActorState actor='p' state='alive'/></Any>")
+            .Replace("</Steps>", "<Wait id='stable' stableTicks='120' timeoutRealSeconds='2'><ActorState actor='p' state='alive'/></Wait></Steps>"));
+        clock = new TestClock(); engine = new ScenarioExecution(Compile(anyXml).Cases.Single(), backend, clock);
+        engine.Poll(1); engine.Poll(2); clock.Ms = 2000; engine.Poll(2);
+        check(engine.Outcome.Diagnostics.Single().StepId == "stable" && engine.Outcome.Diagnostics.Single().Element.EndsWith("Wait[0]"),
+            "a successful Any branch and matched stability wait do not blame a previously false condition");
+        var notXml = Suite(caseBody: body.Replace("<ActorState actor='p' state='alive'/>", "<Not><ActorState actor='p' state='alive'/></Not>"));
+        engine = new ScenarioExecution(Compile(notXml).Cases.Single(), backend, new TestClock()); engine.Poll(1);
+        check(engine.Outcome.Diagnostics.Single().Element.EndsWith("Not[0]"), "failed negation points to Not instead of blaming its true child");
+        var deadlineXml = waitXml.Replace("<Case id=", "<Case timeoutRealSeconds='1' id=");
+        clock = new TestClock(); engine = new ScenarioExecution(Compile(deadlineXml).Cases.Single(), new Backend { Match = false }, clock);
+        engine.Poll(1); clock.Ms = 1000; engine.Poll(1);
+        check(engine.Outcome.Diagnostics.Single().Element == "Case[0]", "case deadline points to Case rather than a stale failed predicate");
+        engine = new ScenarioExecution(plan.Cases.Single(), new Backend { ProbeThrows = true }, new TestClock()); engine.Poll(1);
+        check(engine.Outcome.Diagnostics.Single().Element.EndsWith("ActorState[0]"), "probe exceptions retain the exact sampled condition");
+        engine = new ScenarioExecution(plan.Cases.Single(), new Backend { Match = false, CleanupThrows = true }, new TestClock()); engine.Poll(1);
+        check(engine.Outcome.Diagnostics.Count == 2 && engine.Outcome.Diagnostics[0].StepId == "ready" && engine.Outcome.Diagnostics[1].Code == "scenario.cleanup",
+            "cleanup failure preserves the original assertion diagnostic");
+        var failureFixture = Path.Combine("AutoTest.Core.Tests", "Fixtures", "ScenarioFailures.autotest.xml");
+        if (File.Exists(failureFixture))
+        {
+            var failures = ScenarioLoader.Load(failureFixture);
+            ScenarioLoader.SelectRules(failures, new[] { "Batch1_ExpectedAssertionTimeout" });
+            clock = new TestClock(); engine = new ScenarioExecution(failures.Cases.Single(), new Backend { Match = false }, clock);
+            engine.Poll(1); clock.Ms = 2000; engine.Poll(1);
+            diagnostic = engine.Outcome.Diagnostics.Single();
+            check(diagnostic.File == Path.GetFullPath(failureFixture) && diagnostic.Line == 6 && diagnostic.StepId == "wrong" && diagnostic.Element == "Case[0]/Steps[0]/Wait[0]/HasHediff[0]" && diagnostic.Code == "scenario.timeout",
+                "the real assertion-timeout fixture reports line 6 and its HasHediff node");
+            using var serialized = new MemoryStream();
+            new System.Runtime.Serialization.Json.DataContractJsonSerializer(typeof(ScenarioOutcome)).WriteObject(serialized, engine.Outcome);
+            using var roundTrip = System.Text.Json.JsonDocument.Parse(serialized.ToArray());
+            check(roundTrip.RootElement.GetProperty("Diagnostics")[0].GetProperty("Line").GetInt32() == 6,
+                "game report serialization retains structured runtime diagnostics");
+        }
         var condition = XElement.Parse("<HasHediff quantifier='all'/>");
         check(!ScenarioExecution.Match(condition, new ScenarioSample(), new ScenarioSample()), "all on zero targets does not pass vacuously");
         var old = new ScenarioSample { TargetCount = 1, Matches = new HashSet<string> { "old-item" } };
@@ -100,8 +155,9 @@ internal static class ScenarioTests
     private sealed class Backend : IScenarioBackend, IScenarioCompletionBackend
     {
         public bool Match = true, ProbeThrows, PrepareThrows, CleanupThrows, DebugMakesMatch, CompletionThrows; public int Cleaned;
+        public Func<XElement, bool> MatchesCondition;
         public void Prepare(ScenarioCase c) { if (PrepareThrows) throw new Exception("prepare fault"); }
-        public ScenarioSample Sample(XElement c) { if (ProbeThrows) throw new Exception("probe fault"); return new ScenarioSample { TargetCount = 1, Matches = Match ? new HashSet<string> { "p" } : new HashSet<string>() }; }
+        public ScenarioSample Sample(XElement c) { if (ProbeThrows) throw new Exception("probe fault"); return new ScenarioSample { TargetCount = 1, Matches = (MatchesCondition?.Invoke(c) ?? Match) ? new HashSet<string> { "p" } : new HashSet<string>() }; }
         public bool Execute(XElement step, bool first) { if (step.Name == "DebugAction" && DebugMakesMatch) Match = true; return true; }
         public void Cleanup() { Cleaned++; if (CleanupThrows) throw new Exception("cleanup fault"); }
         public void ValidateCompletion() { if (CompletionThrows) throw new ScenarioConfigurationException("unused coverage target"); }

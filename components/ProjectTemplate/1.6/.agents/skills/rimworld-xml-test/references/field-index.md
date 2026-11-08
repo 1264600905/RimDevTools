@@ -271,7 +271,7 @@ source=faction 必须 GroupMaker；source=custom 必须 Composition；source=gen
 | 擂台 Presentation / Showcase | bracketSeconds=3、settlementSeconds=3（1—60）；advanceStartSeconds=3（0—60）；pageSeconds=5，Page.seconds 继承它（1—60）；caption 默认空且最多 80 个单行字符；每页 1—5 个唯一 ref |
 | 混编 GroupMaker / RaidRules | mode 必填 random/specific，kindDef 仅 Combat，referencePoints=5000（0,10000000]；specific.index 必填非负，fingerprint 可选小写 SHA256；strategyDef 默认 ImmediateAttack，若写 RaidRules 块则须显式给该属性 |
 | 混编 Composition / Xenotypes | Composition.mode 必填 weighted/fixed，allocator 仅 native；weight>0，fixed 总人数 ≤200；Xenotypes 省略等于 inherit，出现时 mode 必填 inherit/fixed/weighted；预算上限 10000000 |
-| 动作绑定 | 参数全部显式传 Arg；min/max 省略表示不加声明界限，仍须符合原生标量范围；ExpectHediff.count=1，为精确匹配数量；Result/ExpectHediff.equals 按声明类型解析，不统一按整数处理。当前 Argument/Arg.value 还受通用有限数字校验，布尔/非数值字符串/具名枚举字面量会被拒绝，详见动作绑定参考 |
+| 动作绑定 | 参数全部显式传 Arg；min/max 省略表示不加声明界限，仍须符合原生标量范围；ExpectHediff.count=1，为精确匹配数量；Result/ExpectHediff.equals 按声明类型解析，不统一按整数处理。Argument/Arg.value 按声明标量类型校验，可使用布尔、字符串和具名枚举；枚举成员及原生签名仍需游戏验证，详见动作绑定参考 |
 
 ## caseType 的完整非 UI 名称
 

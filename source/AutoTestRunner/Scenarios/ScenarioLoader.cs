@@ -26,7 +26,7 @@ namespace LogSyncMod.AutoTest.Scenarios
                 using var reader = XmlReader.Create(stream, ReaderSettings());
                 XDocument doc;
                 try { doc = XDocument.Load(reader, LoadOptions.SetLineInfo | LoadOptions.PreserveWhitespace); }
-                catch (XmlException ex) { throw new ScenarioConfigurationException(file + ":" + ex.LineNumber + ": " + ex.Message); }
+                catch (XmlException ex) { throw XmlFailure(file, ex); }
                 return new ScenarioInput { Path = file, Sha256 = BitConverter.ToString(sha.ComputeHash(bytes)).Replace("-", "").ToLowerInvariant(), Xml = doc.ToString(SaveOptions.DisableFormatting) };
             }).ToList();
             if (groupCombat) ResolveGroupPawnFiles(inputs);
@@ -42,7 +42,7 @@ namespace LogSyncMod.AutoTest.Scenarios
                 using var reader = XmlReader.Create(new StringReader(input.Xml), ReaderSettings());
                 XElement root;
                 try { root = XDocument.Load(reader, LoadOptions.SetLineInfo).Root; }
-                catch (XmlException ex) { throw new ScenarioConfigurationException(input.Path + ":" + ex.LineNumber + ": " + ex.Message); }
+                catch (XmlException ex) { throw XmlFailure(input.Path, ex); }
                 if (root == null || root.Name != "TestSuite") Fail(root, input.Path, "expected TestSuite; ArenaSuite requires --mode arena");
                 foreach (var e in root.DescendantsAndSelf()) e.AddAnnotation(new SourceLine { Line = ((IXmlLineInfo)e).LineNumber });
                 ExpandBattleCases(root, input.Path, groupCombat);
@@ -140,7 +140,19 @@ namespace LogSyncMod.AutoTest.Scenarios
         public static int I(XElement node, string name, int fallback = 0) => int.Parse(A(node, name, fallback.ToString(CultureInfo.InvariantCulture)), CultureInfo.InvariantCulture);
         public static double D(XElement node, string name, double fallback = 0) => double.Parse(A(node, name, fallback.ToString(CultureInfo.InvariantCulture)), CultureInfo.InvariantCulture);
         public static string Location(XElement node, string path) => path + ":" + (node?.Annotation<SourceLine>()?.Line ?? (node as IXmlLineInfo)?.LineNumber ?? 0) + ":" + (node == null ? "" : string.Join("/", node.AncestorsAndSelf().Reverse().Select(e => e.Name.LocalName)));
-        public static void Fail(XElement node, string path, string message) => throw new ScenarioConfigurationException(Location(node, path) + ": " + message);
+        public static void Fail(XElement node, string path, string message, string suggestion = null) => throw new ScenarioConfigurationException(Location(node, path) + ": " + message) {
+            FilePath = path,
+            LineNumber = node?.Annotation<SourceLine>()?.Line ?? (node as IXmlLineInfo)?.LineNumber ?? 0,
+            LinePosition = (node as IXmlLineInfo)?.LinePosition ?? 0,
+            ElementPath = node == null ? null : string.Join("/", node.AncestorsAndSelf().Reverse().Select(e => e.Name.LocalName)),
+            Suggestion = suggestion
+        };
+        public static ScenarioConfigurationException XmlFailure(string path, XmlException ex) => new ScenarioConfigurationException(path + ":" + ex.LineNumber + ": " + ex.Message) {
+            FilePath = path, LineNumber = ex.LineNumber, LinePosition = ex.LinePosition,
+            Suggestion = "检查此位置附近的标签闭合、属性引号、XML 转义和编码声明；不允许 DTD 或外部实体。"
+        };
+        public static void UnknownField(XElement node, string path, string kind, string field, string allowed) =>
+            Fail(node, path, "unknown " + kind + " " + field, "此位置允许的" + (kind == "attribute" ? "属性" : "子节点") + "：" + (string.IsNullOrWhiteSpace(allowed) ? "无" : allowed) + "。名称区分大小写；请检查拼写与所属节点。");
         public static string ElementKey(XElement node) => string.Join("/", node.AncestorsAndSelf().Reverse().Select(e => e.Name.LocalName + "[" + e.ElementsBeforeSelf(e.Name).Count() + "]"));
         private static string Required(XElement node, string attr, string path) { var v = A(node, attr); if (string.IsNullOrWhiteSpace(v)) Fail(node, path, attr + " is required"); return v; }
 
@@ -352,11 +364,11 @@ namespace LogSyncMod.AutoTest.Scenarios
             if (name == "Ensure") attrs = node.Parent?.Name == "Hediffs" ? "def severity part durationTicks" : "def";
             if (name == "Remove") attrs = node.Parent?.Name == "Hediffs" ? "def part" : "def";
             if (name == "Add" && node.Parent?.Name == "Genes") attrs = "def xenogene";
-            foreach (var a in node.Attributes()) if (!attrs.Split(' ').Contains(a.Name.ToString())) Fail(node, path, "unknown attribute " + a.Name);
+            foreach (var a in node.Attributes()) if (!attrs.Split(' ').Contains(a.Name.ToString())) UnknownField(node, path, "attribute", a.Name.ToString(), attrs);
             var children = actor ? Children["PawnTemplate"] + (name == "PawnGroup" ? " SquadTemplate" : "") : name == "li" ? node.Parent?.Name.LocalName switch { "forcedTraits" => "def degree", "skills" => "skill range passion", _ => "" } : Children.TryGetValue(name, out var allowed) ? allowed : new[] { "Require", "Wait", "Success", "All", "Any", "Not" }.Contains(name) ? Conditions : "";
             foreach (var e in node.Elements())
             {
-                if (!children.Split(' ').Contains(e.Name.ToString())) Fail(e, path, "unknown/unsupported element: " + e.Name);
+                if (!children.Split(' ').Contains(e.Name.ToString())) UnknownField(e, path, "element", e.Name.ToString(), children);
                 var multiple = name == "TestSuite" ? e.Name == "Case" : name == "DebugAction" ? e.Name == "Arg" : name == "ActionBinding" ? e.Name == "ExpectHediff" : name == "Resources" ? e.Name == "GeneResource" : new[] { "ActionBindings", "Parameters", "Arguments", "Templates", "ScenePresets", "Experiments", "Layout", "Validation", "Actors", "Steps", "Teams", "Requirements", "Targets", "Coverage", "Target", "Matrix", "Row", "Ingredients", "Apparel", "Equipment", "Traits", "Skills", "Hediffs", "Abilities", "Genes", "All", "Any", "Require", "Wait", "Success", "forcedTraits", "skills", "abilities", "apparelTags", "weaponTags" }.Contains(name);
                 if (node.Elements(e.Name).Count() > 1 && !multiple) Fail(e, path, "duplicate field " + e.Name);
                 ValidateTree(e, path, allowParameters);
@@ -364,7 +376,7 @@ namespace LogSyncMod.AutoTest.Scenarios
             if (node.HasElements && node.Nodes().OfType<XText>().Any(t => !string.IsNullOrWhiteSpace(t.Value))) Fail(node, path, "mixed text is not supported");
             foreach (var a in node.Attributes().Where(a => new[] { "x", "z", "count", "sizeX", "sizeZ", "seed", "originX", "originZ", "spacing", "columns", "stableTicks", "durationTicks", "stableFrames", "confirmationTicks", "degree", "level", "equals", "width", "height", "minX", "minZ", "maxX", "maxZ", "fromX", "fromZ", "toX", "toZ", "targetX", "targetZ" }.Contains(a.Name.LocalName) && !(a.Name == "equals" && (name == "Result" || name == "ExpectHediff"))))
                 if (!(allowParameters && a.Value.Contains("${")) && !int.TryParse(a.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out _)) Fail(node, path, "invalid integer " + a.Name);
-            foreach (var a in node.Attributes().Where(a => new[] { "timeoutRealSeconds", "durationSeconds", "defendRadius", "severity", "severityMin", "severityMax", "min", "max", "value", "temperature", "radius", "amount", "armorPenetration", "growth", "cameraSize", "biologicalYears", "chronologicalYears" }.Contains(a.Name.LocalName) && !(name == "Param" || name == "Relation" || name == "PawnAppearance")))
+            foreach (var a in node.Attributes().Where(a => new[] { "timeoutRealSeconds", "durationSeconds", "defendRadius", "severity", "severityMin", "severityMax", "min", "max", "value", "temperature", "radius", "amount", "armorPenetration", "growth", "cameraSize", "biologicalYears", "chronologicalYears" }.Contains(a.Name.LocalName) && !(name == "Param" || name == "Relation" || name == "PawnAppearance" || name == "Argument" || name == "Arg")))
                 if (!(allowParameters && a.Value.Contains("${")) && (!double.TryParse(a.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var d) || double.IsNaN(d) || double.IsInfinity(d))) Fail(node, path, "invalid finite number " + a.Name);
         }
     }

@@ -70,6 +70,15 @@ if (args.Length == 2 && args[0] == "--arena-result")
     return;
 }
 
+if (args.Length == 1 && args[0] == "--scenario-validation")
+{
+    await ScenarioPreflightTests.RunAsync((passed, message) => {
+        if (!passed) throw new InvalidOperationException("FAIL: " + message);
+        Console.WriteLine("PASS: " + message);
+    });
+    return;
+}
+
 if (args.Length == 1 && args[0] == "--arena-result")
 {
     ArenaResultTests.Run((passed, message) => {
@@ -265,6 +274,7 @@ internal sealed partial class TestSuite
             await TestDeployAsync();
             TestAutoResultValidator();
             ScenarioResultTests.Run(Assert);
+            await ScenarioPreflightTests.RunAsync(Assert);
             GroupCombatResultTests.Run(Assert);
             ArenaResultTests.Run(Assert);
             TestLogArchive();

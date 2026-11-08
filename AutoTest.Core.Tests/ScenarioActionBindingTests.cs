@@ -39,6 +39,20 @@ public static class ScenarioActionBindingTests
             catch (ScenarioConfigurationException ex) { check(contains == null || ex.Message.Contains(contains), message); }
         }
         var plan = Compile(Suite()); var frozen = XElement.Parse(plan.Cases.Single().Xml);
+        foreach (var (type, value) in new[] { ("bool", "true"), ("string", "ready"), (typeof(Outcome).FullName, "Applied") })
+        {
+            var typedXml = XElement.Parse(Suite());
+            var parameter = typedXml.Descendants("Parameter").Single();
+            parameter.SetAttributeValue("type", type); parameter.Attribute("min").Remove(); parameter.Attribute("max").Remove();
+            typedXml.Descendants("Argument").Last().SetAttributeValue("type", type);
+            typedXml.Descendants("Arg").Single().SetAttributeValue("value", value);
+            check(Compile(typedXml.ToString()).Cases.Count == 1, "full XML loading accepts typedXml binding parameter " + type);
+            var argument = typedXml.Descendants("Argument").Last();
+            argument.Attribute("parameter").Remove(); argument.SetAttributeValue("value", value);
+            typedXml.Descendants("Parameters").Remove(); typedXml.Descendants("Arg").Remove(); typedXml.Descendants("ExpectHediff").Remove();
+            check(Compile(typedXml.ToString()).Cases.Count == 1, "full XML loading accepts typedXml binding literal " + type);
+        }
+        Reject(() => Compile(Suite(Binding.Replace("type=\"int\" min=\"1\" max=\"20\"", "type=\"bool\"").Replace("type=\"int\" parameter", "type=\"bool\" parameter"))), "XML binding still rejects an invalid bool value");
         check(frozen.Element("ActionBindings").Elements().Count() == 1 && frozen.Element("Requirements").Element("Mod").Attribute("packageId").Value == "example.mod", "suite action bindings and their mod dependency freeze into the runnable case");
         var unbound = Compile(Suite(content: body.Replace(Step, "")));
         check(XElement.Parse(unbound.Cases.Single().Xml).Element("ActionBindings") == null && XElement.Parse(unbound.Cases.Single().Xml).Element("Requirements") == null, "unused action bindings do not require their mod in unrelated cases");

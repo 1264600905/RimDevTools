@@ -69,7 +69,7 @@ test run [--deploy] [--sync-source] [--mode quick|manual|auto|groupcombat|arena]
          [--active-mods-file <path>] [--timeout-seconds <n>]
          [--target-package-id <id>]
          [--scope <value>]... [--defname <value>]... [--batch-size <n>]
-         [--scenario-path <path>] [--scenario-only] [--test-name <name>]...
+         [--scenario-path <path>] [--validate-only] [--scenario-only] [--test-name <name>]...
          [--isolated-desktop|--no-isolated-desktop]
 ```
 
@@ -78,6 +78,10 @@ test run [--deploy] [--sync-source] [--mode quick|manual|auto|groupcombat|arena]
 quick 是启动冒烟测试。manual 是用户手动的。auto 验证结构化的 AutoTest 结果并默认截图。隔离优先级为显式标志、项目设置，然后是模式默认值。
 
 外部 XML 场景仅支持 game_version=1.7 的 auto/groupcombat/arena。auto 用 TestSuite，可加 `--scenario-only` 仅运行外部回归；groupcombat 用 TestSuite 中的 kind=groupCombat，arena 用独立 ArenaSuite，两者必须同时给 `--scenario-path` 和显式 `--test-name`，禁止 `--scenario-only`。擂台按稳定 testDefName 选择完整 Tournament；CLI 超时涵盖整场赛程，省略时工具估算默认预算。群战/擂台使用独立结果文件和验证器，胜负、测量质量与执行状态分开判断，不并入普通回归通过率。XML 语法、AI、地图、混编配兵及评分见 [rimworld-xml-test](../../rimworld-xml-test/SKILL.md)。
+
+外部 XML 运行会先复用实际执行加载器做静态预校验，失败在部署、游戏配置修改和启动前终止，并在 `error.details.validation.diagnostics` 中给出错误、可用的文件/行号/节点和修改建议。可在相同的 mode/scenario-path/test-name 命令上加 `--validate-only` 独立校验：成功返回 `result.validation`（含选中规则与数量、warning 和 `runtimeChecks`），不创建运行产物。只校验需要项目 config_version=2、game_version=1.7，不要求游戏、Steam、ModsConfig 或测试宿主；不接受 deploy、timeout、batch-size 等执行参数。编译器按首条错误停止，修正后重试。静态通过不代表 Def、反射签名、定制 AI、地图/部队生成或战斗断言已通过游戏验证。
+
+外部回归在游戏中断言失败或等待超时时，CLI 的 `error.details.details.scenarioFailures[].diagnostics` 会携带具体条件的 `file`、可用的 `line`、`element`、`stepId`、`xml` 与 `suggestion`；原始结果保存在 `results[].scenario.Diagnostics`。此信息在 AUTO_EVIDENCE_FAILED 与 AUTO_RESULT_FAILED 两种失败中都会保留，不要只用 Case 的 Source 定位。默认预览至多 20 个带诊断的用例，`scenarioFailuresTruncated` 标记截断；完整内容使用 `--verbose` 或读取工具原始结果。
 
 所有 `test run` 模式都会在启动前将 `ModsConfig.xml` 的 `<version>` 写为已校验的 `game_version`，防止切换版本时游戏重置启用列表。版本号先于事务备份更新；测试结束、失败、取消或中断恢复后保留目标版本号，原模组列表与设置照常恢复。
 

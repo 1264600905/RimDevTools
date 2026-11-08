@@ -222,21 +222,21 @@ public static class TestCommand
         var verbose = CliArgs.Has(args, "--verbose");
         var context = CliApplication.RequireProject(command, out var code);
         if (context is null) return code;
-        var templateError = ProjectTemplatePreflight.Validate(context);
-        if (templateError is not null)
-            return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, templateError.Code, templateError.Message, context.Root, templateError.Details);
-        var modsConfigValidation = GameEnvironment.ValidateModsConfig(context);
-        if (!modsConfigValidation.Ok)
-            return CliResult.WriteFailure(command, ExitCodes.MissingDependency, modsConfigValidation.Code!, modsConfigValidation.Message!, context.Root, modsConfigValidation.Details);
-        var configDirectory = GameEnvironment.ConfigDirectory(context)!;
-        var modsConfigPath = modsConfigValidation.Path!;
-        var logSyncSettingsPath = GameEnvironment.LogSyncSettingsPath(context)!;
-
         var mode = CliArgs.Value(args, "--mode")?.ToLowerInvariant() ?? "quick";
         if (CliArgs.Has(args, "--quick-start") && mode != "manual") return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "INVALID_ARGUMENT", "--quick-start 只适用于 manual 测试", context.Root);
         if (mode is not ("quick" or "manual" or "auto" or "groupcombat" or "arena"))
             return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "MODE_INVALID", $"不支持的测试模式: {mode}", context.Root);
+        var validateOnly = CliArgs.Has(args, "--validate-only");
+        if (validateOnly)
+        {
+            var unsupported = CliArgs.OptionNames(command).Where(o => CliArgs.Has(args, o) && o is not ("--validate-only" or "--mode" or "--scenario-path" or "--scenario-only" or "--test-name" or "--verbose")).ToArray();
+            if (unsupported.Length > 0)
+                return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "INVALID_ARGUMENT", "--validate-only 不接受执行参数：" + string.Join(", ", unsupported), context.Root);
+            if (string.IsNullOrWhiteSpace(CliArgs.Value(args, "--scenario-path")))
+                return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "SCENARIO_PATH_REQUIRED", "--validate-only 必须同时提供 --scenario-path 和匹配的 --mode", context.Root);
+        }
         ScenarioPlan? scenarioPlan = null;
+        ScenarioValidation? scenarioValidation = null;
         var scenarioPath = CliArgs.Value(args, "--scenario-path");
         if (mode is "groupcombat" or "arena" && (string.IsNullOrWhiteSpace(scenarioPath) || CliArgs.Values(args, "--test-name").Count == 0))
             return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, mode == "arena" ? "ARENA_NAME_REQUIRED" : "GROUPCOMBAT_NAME_REQUIRED", "群战/擂台必须同时提供 --scenario-path 和 --test-name，显式指名测试定义", context.Root);
@@ -248,23 +248,26 @@ public static class TestCommand
                 return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "SCENARIO_BACKEND_UNSUPPORTED", "外部场景首版仅支持 1.7 的 auto/groupcombat/arena 模式", context.Root);
             if (string.IsNullOrWhiteSpace(scenarioPath))
                 return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "SCENARIO_PATH_REQUIRED", "--scenario-only 必须同时提供 --scenario-path", context.Root);
-            try {
-                if (mode == "arena")
-                {
-                    var arena = ArenaLoader.Load(Path.GetFullPath(scenarioPath, context.Root), CliArgs.Values(args, "--test-name"));
-                    scenarioPlan = new ScenarioPlan { Purpose = "arena", Arena = arena, Inputs = arena.Inputs, SelectedTestDefNames = arena.SelectedTestDefNames };
-                }
-                else
-                {
-                    scenarioPlan = ScenarioLoader.Load(Path.GetFullPath(scenarioPath, context.Root), mode == "groupcombat");
-                    ScenarioLoader.SelectRules(scenarioPlan, CliArgs.Values(args, "--test-name"));
-                    if (mode == "groupcombat") GroupCombatPlan.Expand(scenarioPlan);
-                }
+            scenarioValidation = ScenarioPreflight.Validate(scenarioPath, mode, CliArgs.Values(args, "--test-name"), out scenarioPlan, context.Root);
+            if (!scenarioValidation.Valid)
+            {
+                var issue = scenarioValidation.Diagnostics.First(d => d.Severity == "error");
+                return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, issue.Code, issue.Message, context.Root, new { validation = scenarioValidation }, scenarioValidation.Warnings);
             }
-            catch (Exception ex) when (ex is IOException or XmlException or ScenarioConfigurationException or ArgumentException or FormatException or OverflowException)
-            { return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, (ex as ScenarioConfigurationException)?.Code ?? (mode == "arena" ? "ARENA_CONFIG_INVALID" : "SCENARIO_INVALID"), ex.Message, context.Root); }
-            scenarioPlan.ScenarioOnly = CliArgs.Has(args, "--scenario-only");
+            scenarioPlan!.ScenarioOnly = CliArgs.Has(args, "--scenario-only");
         }
+        if (validateOnly)
+            return CliResult.WriteSuccess(command, context.Root, new { mode, validation = scenarioValidation }, scenarioValidation?.Warnings);
+        var templateError = ProjectTemplatePreflight.Validate(context);
+        if (templateError is not null)
+            return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, templateError.Code, templateError.Message, context.Root, templateError.Details);
+        var modsConfigValidation = GameEnvironment.ValidateModsConfig(context);
+        if (!modsConfigValidation.Ok)
+            return CliResult.WriteFailure(command, ExitCodes.MissingDependency, modsConfigValidation.Code!, modsConfigValidation.Message!, context.Root, scenarioValidation is null ? modsConfigValidation.Details : new { validation = scenarioValidation, environment = modsConfigValidation.Details }, scenarioValidation?.Warnings);
+        var configDirectory = GameEnvironment.ConfigDirectory(context)!;
+        var modsConfigPath = modsConfigValidation.Path!;
+        var logSyncSettingsPath = GameEnvironment.LogSyncSettingsPath(context)!;
+
         var verifyWorkshopAssets = CliArgs.Has(args, "--verify-workshop-assets");
         if (verifyWorkshopAssets && (mode != "quick" || context.Config.GameVersion != "1.7"))
             return CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "INVALID_ARGUMENT", "--verify-workshop-assets 仅支持 1.7 的 quick 测试", context.Root);
@@ -313,6 +316,7 @@ public static class TestCommand
         var dependencyWarnings = modList.DependencyWarnings
             .Select(ModDependencyInspector.FormatWarning)
             .ToArray();
+        var runWarnings = dependencyWarnings.Concat(scenarioValidation?.Warnings ?? []).ToArray();
         var runId = Guid.NewGuid().ToString("N");
         using var gate = EnvironmentLock.TryAcquire(configDirectory, command, context.Root, runId, out var busyInfo);
         if (gate is null)
@@ -333,7 +337,7 @@ public static class TestCommand
             if (CliArgs.Has(args, "--sync-source")) deployArgs.Add("--sync-source");
             var deploy = await DeployCommand.ExecuteAsync(deployArgs.ToArray(), cancellationToken, environmentPrepared: true, verbose: verbose);
             if (!deploy.Ok)
-                return CliResult.WriteFailure(command, deploy.ExitCode, "DEPLOY_FAILED", "测试前部署失败", context.Root, new { deploy.Error, dependencyWarnings }, dependencyWarnings);
+                return CliResult.WriteFailure(command, deploy.ExitCode, "DEPLOY_FAILED", "测试前部署失败", context.Root, new { deploy.Error, dependencyWarnings }, runWarnings);
         }
 
         var artifacts = TestArtifactPaths.Create(context, mode);
@@ -412,6 +416,7 @@ public static class TestCommand
             {
                 runId,
                 mode,
+                validation = scenarioValidation,
                 artifacts = artifactPaths,
                 logSummary,
                 batchSize,
@@ -422,7 +427,7 @@ public static class TestCommand
                 isolatedDesktop = isolation.Enabled,
                 isolatedDesktopSource = isolation.Source,
                 transactionRetained = transaction is not null
-            }, dependencyWarnings);
+            }, runWarnings);
 
         if (transaction is not null)
         {
@@ -458,6 +463,7 @@ public static class TestCommand
             {
                 runId,
                 mode,
+                validation = scenarioValidation,
                 artifacts = artifactPaths,
                 logSummary,
                 scopes = selection.Scopes,
@@ -470,7 +476,7 @@ public static class TestCommand
                 mods = verbose ? modList.Mods : null,
                 additions = verbose ? modList.Additions : null,
                 outcome.Details
-            }, dependencyWarnings);
+            }, runWarnings);
 
         return CliResult.WriteSuccess(command, context.Root, new
         {
@@ -478,6 +484,7 @@ public static class TestCommand
             mode,
             timeoutSeconds = timeout,
             skippedScenarioFiles = scenarioPlan?.Arena?.SkippedFiles,
+            validation = scenarioValidation,
             artifacts = artifactPaths,
             logSummary,
             targetPackageId,
@@ -495,7 +502,7 @@ public static class TestCommand
             result = outcome.Details,
             recoveredTransaction = recovery.Found,
             workshopAssetsVerified = verifyWorkshopAssets
-        }, dependencyWarnings);
+        }, runWarnings);
     }
 
     private static async Task<TestOutcome> WaitForModeAsync(
@@ -1081,7 +1088,11 @@ public static class AutoResultValidator
                             (evidenceSuccessNode.ValueKind != JsonValueKind.True && evidenceSuccessNode.ValueKind != JsonValueKind.False))
                             return Failure("AUTO_EVIDENCE_INVALID", "Evidence 缺少有效的 success 状态", new { path, evidencePath });
                         if (!evidenceSuccessNode.GetBoolean())
-                            return Failure("AUTO_EVIDENCE_FAILED", "Evidence 报告本轮自动测试失败", new { path, evidencePath });
+                            return Failure("AUTO_EVIDENCE_FAILED", "Evidence 报告本轮自动测试失败", new {
+                                path, evidencePath,
+                                scenarioFailures = ReadScenarioFailures(root, verbose, out var scenarioFailuresTruncated),
+                                scenarioFailuresTruncated
+                            });
                     }
                     catch (JsonException ex)
                     {
@@ -1119,7 +1130,9 @@ public static class AutoResultValidator
                         path,
                         failedCount = failed.Length,
                         truncated = !verbose && failed.Length > failurePreviewLimit,
-                        failed = verbose ? failed : failed.Take(failurePreviewLimit).ToArray()
+                        failed = verbose ? failed : failed.Take(failurePreviewLimit).ToArray(),
+                        scenarioFailures = ReadScenarioFailures(root, verbose, out var scenarioFailuresTruncated),
+                        scenarioFailuresTruncated
                     });
                 }
                 return new AutoResultValidation(true, "", "", new { path, packageId, runId, executed, planned });
@@ -1134,6 +1147,27 @@ public static class AutoResultValidator
             }
         }
         return Failure("AUTO_RESULT_MISMATCH", "本轮结果不属于当前项目或 runId 不匹配", new { expectedPackageId, expectedRunId });
+    }
+
+    private sealed record ScenarioFailurePreview(string? CaseId, string? TestDefName, IReadOnlyList<ScenarioFailureDiagnostic> Diagnostics);
+
+    private static IReadOnlyList<ScenarioFailurePreview> ReadScenarioFailures(JsonElement root, bool verbose, out bool truncated)
+    {
+        truncated = false;
+        var failures = new List<ScenarioFailurePreview>();
+        if (!root.TryGetProperty("results", out var results) || results.ValueKind != JsonValueKind.Array) return failures;
+        foreach (var item in results.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.Object || !item.TryGetProperty("scenario", out var scenario) || scenario.ValueKind != JsonValueKind.Object) continue;
+            if (!scenario.TryGetProperty("Diagnostics", out var diagnostics) && !scenario.TryGetProperty("diagnostics", out diagnostics)) continue;
+            if (diagnostics.ValueKind != JsonValueKind.Array || diagnostics.GetArrayLength() == 0) continue;
+            if (!verbose && failures.Count >= 20) { truncated = true; break; }
+            var entries = JsonSerializer.Deserialize<List<ScenarioFailureDiagnostic>>(diagnostics.GetRawText(), new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? [];
+            var caseId = item.TryGetProperty("caseId", out var id) ? id.GetString() : null;
+            var testName = scenario.TryGetProperty("TestDefName", out var name) || scenario.TryGetProperty("testDefName", out name) ? name.GetString() : null;
+            failures.Add(new(caseId, testName, entries));
+        }
+        return failures;
     }
 
     private static AutoResultFingerprint Fingerprint(string path)
