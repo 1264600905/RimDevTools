@@ -18,7 +18,7 @@ namespace LogSyncMod.AutoTest.Scenarios
         public List<ScenarioInput> Inputs { get; set; } = new();
         public List<string> SelectedTestDefNames { get; set; } = new();
         public List<ArenaTournamentInput> Tournaments { get; set; } = new();
-        public int DefaultDeadlineSeconds => checked(Tournaments.Sum(t => 180 + (t.Entrants.Count - 1) * (t.MaxReplays + 1) * (t.TimeoutRealSeconds + (int)Math.Ceiling(t.BracketSeconds + t.SettlementSeconds + ArenaPresentation.PostBattleSeconds) + 45)));
+        public int DefaultDeadlineSeconds => checked(Tournaments.Sum(t => 180 + (int)Math.Ceiling(t.ShowcasePages.Sum(p => p.Seconds)) + (t.Entrants.Count - 1) * (t.MaxReplays + 1) * (t.TimeoutRealSeconds + (int)Math.Ceiling(t.BracketSeconds + t.SettlementSeconds + ArenaPresentation.PostBattleSeconds) + 45)));
     }
     public sealed class ArenaTournamentInput
     {
@@ -39,6 +39,8 @@ namespace LogSyncMod.AutoTest.Scenarios
         public double BracketSeconds { get; set; } = 3;
         public double AdvanceStartSeconds { get; set; } = 3;
         public double SettlementSeconds { get; set; } = 3;
+        public double ShowcasePageSeconds { get; set; } = ArenaShowcase.PageSeconds;
+        public List<ArenaShowcasePageInput> ShowcasePages { get; set; } = new();
         public decimal SurvivalWeight { get; set; } = 100;
         public decimal SpeedWeight { get; set; } = 20;
         public decimal TimeReferenceSeconds { get; set; } = 180;
@@ -87,6 +89,7 @@ namespace LogSyncMod.AutoTest.Scenarios
     {
         public ArenaTournamentInput Input { get; set; }
         public List<ResolvedCombatRoster> Rosters { get; set; } = new();
+        public ArenaShowcaseResult Showcase { get; set; }
         public List<ArenaMatch> Matches { get; set; } = new();
         public string Status { get; set; } = "running";
         public string Champion { get; set; }

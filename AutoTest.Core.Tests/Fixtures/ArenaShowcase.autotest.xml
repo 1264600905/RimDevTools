@@ -1,0 +1,48 @@
+<ArenaSuite schemaVersion="1" id="arena.showcase" gameVersion="1.7">
+  <Tournament id="custom" name="XML 自定义参赛者展示" seed="12345">
+    <testDefName>Arena_Showcase_Custom</testDefName>
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all">
+      <Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/>
+    </Scene>
+    <Roster mode="count" count="1"/>
+    <Entrants>
+      <Entrant id="Thrumbo" pawnKind="Thrumbo" name="敲击兽"/>
+      <Entrant id="Elephant" pawnKind="Elephant" name="象"/>
+      <Entrant id="Rhinoceros" pawnKind="Rhinoceros" name="犀牛"/>
+      <Entrant id="Bear" pawnKind="Bear_Polar" name="北极熊"/>
+      <Entrant id="Warg" pawnKind="Warg" name="座狼"/>
+      <Entrant id="Panther" pawnKind="Panther" name="黑豹"/>
+      <Entrant id="Squirrel" pawnKind="Squirrel" name="松鼠"/>
+    </Entrants>
+    <Battle timeSpeed="superfast" durationSeconds="180" timeoutRealSeconds="120" confirmationTicks="60"/>
+    <TieBreak maxReplays="1"/>
+    <Presentation>
+      <Showcase pageSeconds="3.5">
+        <Page seconds="2.5" caption="小个头先登场，谁能一路逆袭？">
+          <Entrant ref="Squirrel"/>
+          <Entrant ref="Panther"/>
+          <Entrant ref="Warg"/>
+          <Entrant ref="Bear"/>
+          <Entrant ref="Rhinoceros"/>
+        </Page>
+        <Page seconds="4" caption="压轴登场：象的血量，是全身部位生命值之和。">
+          <Entrant ref="Elephant"/>
+        </Page>
+      </Showcase>
+    </Presentation>
+    <Output width="1920" height="1080"/>
+  </Tournament>
+  <Tournament id="defaults" name="未配置展示时保持默认" seed="12345">
+    <testDefName>Arena_Showcase_Default</testDefName>
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all">
+      <Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/>
+    </Scene>
+    <Roster mode="count" count="1"/>
+    <Entrants>
+      <Entrant id="Thrumbo" pawnKind="Thrumbo" name="敲击兽"/>
+      <Entrant id="Squirrel" pawnKind="Squirrel" name="松鼠"/>
+    </Entrants>
+    <Battle timeSpeed="superfast" durationSeconds="180" timeoutRealSeconds="120" confirmationTicks="60"/>
+    <Output width="1280" height="720"/>
+  </Tournament>
+</ArenaSuite>

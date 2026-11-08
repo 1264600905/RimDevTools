@@ -78,10 +78,11 @@ namespace LogSyncMod.AutoTest.Scenarios
                     var tie = t.Element("TieBreak"); Check(tie, "onDraw maxReplays", "", input.Path);
                     if (ScenarioLoader.A(tie, "onDraw", "replay") != "replay") ScenarioLoader.Fail(tie, input.Path, "onDraw must be replay");
                     result.MaxReplays = Integer(tie, "maxReplays", 2, 0, 10, input.Path);
-                    var presentation = t.Element("Presentation"); Check(presentation, "bracketSeconds settlementSeconds advanceStartSeconds", "", input.Path);
+                    var presentation = t.Element("Presentation"); Check(presentation, "bracketSeconds settlementSeconds advanceStartSeconds", "Showcase", input.Path);
                     result.BracketSeconds = Number(presentation, "bracketSeconds", 3, 1, 60, input.Path);
                     result.AdvanceStartSeconds = Number(presentation, "advanceStartSeconds", 3, 0, 60, input.Path);
                     result.SettlementSeconds = Number(presentation, "settlementSeconds", 3, 1, 60, input.Path);
+                    LoadShowcase(presentation?.Element("Showcase"), result, input.Path);
                     var output = t.Element("Output"); Check(output, "width height", "", input.Path);
                     if ((output?.Attribute("width") != null) != (output?.Attribute("height") != null)) ScenarioLoader.Fail(output, input.Path, "Output width/height must be supplied together");
                     if (output?.Attribute("width") != null) { Integer(output, "width", 1920, 800, 3840, input.Path); Integer(output, "height", 1080, 600, 2160, input.Path); }
@@ -124,13 +125,40 @@ namespace LogSyncMod.AutoTest.Scenarios
             var c = compiled.Cases.Single();
             return new GroupCombatRoundInput { CaseId = (match?.Id ?? input.TestDefName) + "/attempt-" + (attempt + 1), TestDefName = input.TestDefName, Name = input.Name + " · " + (match?.Kind == "qualification" ? "资格赛" : match?.Kind == "extra" ? "低分加赛" : "第 " + (match?.Round ?? 1) + " 轮") + " · " + (attempt == 0 ? "首战" : "重赛 " + attempt), Seed = seed, Source = input.Source, InputHash = input.InputHash, Xml = c.Xml };
         }
+        private static void LoadShowcase(XElement showcase, ArenaTournamentInput input, string path)
+        {
+            Check(showcase, "pageSeconds", "Page", path);
+            input.ShowcasePageSeconds = Number(showcase, "pageSeconds", ArenaShowcase.PageSeconds, 1, 60, path);
+            var used = new HashSet<string>(StringComparer.Ordinal);
+            var ids = new HashSet<string>(input.Entrants.Select(e => e.Id), StringComparer.Ordinal);
+            foreach (var page in showcase?.Elements("Page") ?? Enumerable.Empty<XElement>())
+            {
+                Check(page, "seconds caption", "Entrant", path);
+                var caption = ScenarioLoader.A(page, "caption", "").Trim();
+                if (caption.Length > 80 || caption.Any(char.IsControl)) ScenarioLoader.Fail(page, path, "showcase caption must be a single line of at most 80 characters");
+                var compiled = new ArenaShowcasePageInput { Seconds = Number(page, "seconds", input.ShowcasePageSeconds, 1, 60, path), Caption = caption };
+                foreach (var entrant in page.Elements("Entrant"))
+                {
+                    Check(entrant, "ref", "", path);
+                    var id = Required(entrant, "ref", path);
+                    if (!ids.Contains(id)) ScenarioLoader.Fail(entrant, path, "unknown showcase entrant ref: " + id);
+                    if (!used.Add(id)) ScenarioLoader.Fail(entrant, path, "duplicate showcase entrant ref: " + id);
+                    compiled.EntrantIds.Add(id);
+                }
+                if (compiled.EntrantIds.Count < 1 || compiled.EntrantIds.Count > ArenaShowcase.PageSize) ScenarioLoader.Fail(page, path, "showcase Page requires 1..5 entrant references");
+                input.ShowcasePages.Add(compiled);
+            }
+            var remaining = input.Entrants.Where(e => !used.Contains(e.Id)).Select(e => e.Id).ToList();
+            for (var offset = 0; offset < remaining.Count; offset += ArenaShowcase.PageSize)
+                input.ShowcasePages.Add(new ArenaShowcasePageInput { Seconds = input.ShowcasePageSeconds, EntrantIds = remaining.Skip(offset).Take(ArenaShowcase.PageSize).ToList() });
+        }
         private static string Required(XElement e, string a, string path)
         { var s = ScenarioLoader.A(e, a); if (string.IsNullOrWhiteSpace(s)) ScenarioLoader.Fail(e, path, a + " is required"); return s; }
         private static void Check(XElement e, string attrs, string children, string path, bool required = false)
         {
             if (e == null) { if (required) throw new ScenarioConfigurationException(path + ": missing required arena element"); return; }
             if (e.Name.Namespace != XNamespace.None || e.Attributes().Any(a => !attrs.Split(' ').Contains(a.Name.ToString())) || e.Elements().Any(c => !children.Split(' ').Contains(c.Name.ToString())) || e.Nodes().OfType<XText>().Any(n => !string.IsNullOrWhiteSpace(n.Value) && e.Name != "testDefName")) ScenarioLoader.Fail(e, path, "unknown arena attribute, child or text");
-            if (e.Name != "ArenaSuite" && e.Name != "Entrants" && e.Elements().GroupBy(c => c.Name).Any(g => g.Count() > 1)) ScenarioLoader.Fail(e, path, "duplicate arena element");
+            if (e.Name != "ArenaSuite" && e.Name != "Entrants" && e.Name != "Showcase" && e.Name != "Page" && e.Elements().GroupBy(c => c.Name).Any(g => g.Count() > 1)) ScenarioLoader.Fail(e, path, "duplicate arena element");
         }
         private static int Integer(XElement e, string attr, int fallback, int min, int max, string path)
         { var value = ScenarioLoader.I(e, attr, fallback); if (value < min || value > max) ScenarioLoader.Fail(e, path, attr + " outside " + min + ".." + max); return value; }

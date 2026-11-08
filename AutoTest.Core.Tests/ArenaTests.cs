@@ -52,6 +52,52 @@ internal static class ArenaTests
         const string xml = "<ArenaSuite schemaVersion='1' id='suite'><Tournament id='main'><testDefName>ArenaTest</testDefName><Scene type='mainMap' sizeX='100' sizeZ='100'/><Roster mode='combatPower' budget='3000'/><Entrants><Entrant id='a' pawnKind='Wolf_Timber'/><Entrant id='b' pawnKind='Mercenary_Gunner'/></Entrants></Tournament></ArenaSuite>";
         ArenaPlan Parse(string text) => ArenaLoader.Compile(new[] { new ScenarioInput { Path = "arena.xml", Sha256 = "h", Xml = text } }, new[] { "ArenaTest" });
         var plan = Parse(xml);
+        ArenaTournamentInput WithShowcase(string content) => Parse(xml.Replace("</Tournament>", "<Presentation>" + content + "</Presentation></Tournament>")).Tournaments.Single();
+        var customShowcase = WithShowcase("<Showcase pageSeconds='7'><Page seconds='2.5' caption='先看后排！'><Entrant ref='b'/></Page></Showcase>");
+        check(customShowcase.ShowcasePages.Count == 2 && customShowcase.ShowcasePages[0].EntrantIds.SequenceEqual(new[] { "b" })
+            && customShowcase.ShowcasePages[0].Seconds == 2.5 && customShowcase.ShowcasePages[0].Caption == "先看后排！"
+            && customShowcase.ShowcasePages[1].EntrantIds.SequenceEqual(new[] { "a" }) && customShowcase.ShowcasePages[1].Seconds == 7
+            && customShowcase.Entrants.Select(e => e.Id).SequenceEqual(new[] { "a", "b" }),
+            "XML showcase freezes explicit order, duration and caption, appends omitted entrants and preserves tournament order");
+        check(plan.Tournaments[0].ShowcasePages.Single().EntrantIds.SequenceEqual(new[] { "a", "b" })
+            && plan.Tournaments[0].ShowcasePages[0].Seconds == 5 && WithShowcase("<Showcase pageSeconds='8'/>").ShowcasePages[0].Seconds == 8,
+            "missing XML showcase preserves five-second pages while a global duration applies without explicit pages");
+        var quoted = WithShowcase("<Showcase><Page caption='勇气 &amp; 力量 &lt;并肩&gt;'><Entrant ref='a'/><Entrant ref='b'/></Page></Showcase>");
+        check(quoted.ShowcasePages.Single().Caption == "勇气 & 力量 <并肩>", "XML page captions preserve escaped literal characters");
+        check(WithShowcase("<Showcase><Page><Entrant ref='b'/></Page><Page><Entrant ref='a'/></Page></Showcase>").ShowcasePages.Count == 2,
+            "showcase supports multiple ordered pages with default durations");
+        foreach (var invalid in new[] { "0", "-1", "0.5", "61", "NaN", "Infinity" })
+        {
+            Reject(() => WithShowcase("<Showcase pageSeconds='" + invalid + "'/>"), "XML rejects invalid showcase default duration: " + invalid);
+            Reject(() => WithShowcase("<Showcase><Page seconds='" + invalid + "'><Entrant ref='a'/></Page></Showcase>"), "XML rejects invalid showcase page duration: " + invalid);
+        }
+        foreach (var bad in new[] {
+            "<Showcase><Page/></Showcase>",
+            "<Showcase><Page><Entrant ref='missing'/></Page></Showcase>",
+            "<Showcase><Page><Entrant ref='a'/><Entrant ref='a'/></Page></Showcase>",
+            "<Showcase><Page><Entrant ref='a'/></Page><Page><Entrant ref='a'/></Page></Showcase>",
+            "<Showcase><Page><Entrant/></Page></Showcase>",
+            "<Showcase typo='1'/>",
+            "<Showcase><Page typo='1'><Entrant ref='a'/></Page></Showcase>",
+            "<Showcase><Page><Entrant ref='a' typo='1'/></Page></Showcase>",
+            "<Showcase><Page caption='第一句&#10;第二句'><Entrant ref='a'/></Page></Showcase>",
+            "<Showcase><Page caption='" + new string('字', 81) + "'><Entrant ref='a'/></Page></Showcase>",
+            "<Showcase/><Showcase/>"
+        }) Reject(() => WithShowcase(bad), "XML showcase rejects invalid page references, copy or schema: " + bad);
+        var manyEntrants = xml.Replace("</Entrants>", string.Concat(Enumerable.Range(0, 4).Select(i => "<Entrant id='extra" + i + "' pawnKind='ExtraKind" + i + "'/>")) + "</Entrants>");
+        var sixRefs = "<Page><Entrant ref='a'/><Entrant ref='b'/>" + string.Concat(Enumerable.Range(0, 4).Select(i => "<Entrant ref='extra" + i + "'/>")) + "</Page>";
+        Reject(() => Parse(manyEntrants.Replace("</Tournament>", "<Presentation><Showcase>" + sixRefs + "</Showcase></Presentation></Tournament>")), "XML rejects more than five entrants on one showcase page");
+        check(Parse(manyEntrants).Tournaments[0].ShowcasePages.Select(p => p.EntrantIds.Count).SequenceEqual(new[] { 5, 1 }),
+            "XML omitted page plan automatically partitions a partial last page");
+        var customPlan = Parse(xml.Replace("</Tournament>", "<Presentation><Showcase pageSeconds='60'><Page><Entrant ref='a'/></Page><Page><Entrant ref='b'/></Page></Showcase></Presentation></Tournament>"));
+        check(customPlan.DefaultDeadlineSeconds - plan.DefaultDeadlineSeconds == 115, "arena total deadline includes the sum of configured showcase page durations");
+        check(ArenaShowcase.PageCount(2) == 1 && ArenaShowcase.PageCount(5) == 1 && ArenaShowcase.PageCount(6) == 2
+            && ArenaShowcase.PageCount(25) == 5 && ArenaShowcase.PageCount(64) == 13 && ArenaShowcase.Duration(25) == 25,
+            "entrant showcase displays at most five entrants per page for five seconds, including the partial final page");
+        check(ArenaShowcase.Fill(10, 40) == .25 && ArenaShowcase.Fill(40, 40) == 1 && ArenaShowcase.Fill(0, 40) == 0
+            && ArenaShowcase.Fill(0, 0) == 0 && ArenaShowcase.Fill(-1, 40) == 0 && ArenaShowcase.Fill(50, 40) == 1
+            && ArenaShowcase.Fill(double.NaN, 40) == 0,
+            "entrant bars share a tournament-wide scale and safely handle zero armor and unavailable metrics");
         check(plan.Purpose == "arena" && plan.Tournaments[0].Budget == 3000 && plan.Tournaments[0].MaxReplays == 2 && plan.DefaultDeadlineSeconds > 600, "arena has independent parser, frozen defaults and bounded tournament deadline");
         check(plan.Tournaments[0].BracketSeconds == 3 && plan.Tournaments[0].AdvanceStartSeconds == 3,
             "arena defaults to a three-second countdown and prepares its start from the beginning");

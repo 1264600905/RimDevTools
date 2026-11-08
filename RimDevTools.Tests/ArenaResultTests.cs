@@ -41,6 +41,9 @@ internal static class ArenaResultTests
         Reject(r => r.Tournaments[0].ChampionScreenshot = null!, "arena requires a final champion capture");
         Reject(r => r.Tournaments[0].Rosters[0].UnitCombatPower = 0, "arena count mode still requires positive combatPower");
         Reject(r => r.Tournaments[0].Input.SurvivalWeight++, "arena rejects result-side changes to tournament scoring configuration");
+        Reject(r => r.Tournaments[0].Input.ShowcasePages[0].Caption = "篡改文案", "arena rejects result-side changes to XML showcase copy");
+        Reject(r => r.Tournaments[0].Input.ShowcasePages[0].Seconds++, "arena rejects result-side changes to XML showcase duration");
+        Reject(r => r.Tournaments[0].Input.ShowcasePages[0].EntrantIds.Reverse(), "arena rejects result-side changes to XML showcase order");
         Reject(r => r.Tournaments[0].Rosters[0].ResolvedCount++, "arena rejects actual rosters inconsistent with count mode input");
         Reject(r => r.Tournaments[0].Matches[0].Attempts[0].EndReason = "timeLimitRatio", "arena rejects time-limit decisions before the configured simulated deadline");
         var budget = Build(5, true);
