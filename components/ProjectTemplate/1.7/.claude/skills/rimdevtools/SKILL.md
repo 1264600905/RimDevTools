@@ -83,6 +83,7 @@ RimDevTools 默认只返回摘要和关键字段；所有命令仍将最终结�
 - `quick`：自动启动并等待运行就绪信号；冒烟测试默认模式。此测试速度最快，只会检查游戏启动报错。
 - `manual`：提供人工手动测试的游戏窗口；默认使用当前桌面。
 - `auto`：自动发现测试目标，可使用多个 scope 和精确 DefName 白名单。
+- `groupcombat` / `arena`：1.7 的独立群战评测 / 擂台淘汰赛，必须提供 `--scenario-path` 和显式 `--test-name`，不使用 `--scenario-only`。外部 XML 场景、混编预算、地图和结果语义读取同模板的 [rimworld-xml-test](../rimworld-xml-test/SKILL.md)。
 
 auto 测试参数遵循以下规则：
 

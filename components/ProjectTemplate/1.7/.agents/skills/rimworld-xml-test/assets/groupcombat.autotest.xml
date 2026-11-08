@@ -2,7 +2,7 @@
 <TestSuite schemaVersion="1" id="example.benchmark" gameVersion="1.7">
   <Case id="wolves-bears" kind="groupCombat" name="森林狼对北极熊" seed="12345" timeoutRealSeconds="300">
     <testDefName>Example_WolvesVsBears</testDefName>
-    <Scene type="mainMap" sizeX="100" sizeZ="100" revealFog="all">
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all">
       <Environment weather="Clear" temperature="21" roof="none"/>
     </Scene>
     <Teams><Team id="A" name="森林狼"/><Team id="B" name="北极熊"/></Teams>
@@ -16,7 +16,7 @@
         <minGenerationAge>5</minGenerationAge><maxGenerationAge>5</maxGenerationAge>
       </PawnGroup>
     </Actors>
-    <GroupCombat durationSeconds="180" timeSpeed="fast" aiPolicy="battle">
+    <GroupCombat durationSeconds="180" timeSpeed="fast" aiPolicy="assaultColony">
       <End confirmationTicks="300"/>
       <Metrics detailLimit="10000" requireCompleteAttribution="false"/>
       <Experiments swapSides="true"><Seed value="101"/><Seed value="202"/></Experiments>

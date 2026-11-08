@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ArenaSuite schemaVersion="1" id="example.arena" gameVersion="1.7">
+  <Tournament id="animals" name="五队动物战力预算擂台" seed="12345">
+    <testDefName>Example_AnimalArena</testDefName>
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all">
+      <Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/>
+    </Scene>
+    <Roster mode="combatPower" budget="1200" costMode="pawnKind"/>
+    <Entrants>
+      <Entrant id="wolves" pawnKind="Wolf_Timber" name="森林狼"/>
+      <Entrant id="bears" pawnKind="Bear_Polar" name="北极熊" budget="1500"/>
+      <Entrant id="wargs" pawnKind="Warg" name="座狼"/>
+      <Entrant id="cougars" pawnKind="Cougar" name="美洲狮"/>
+      <Entrant id="grizzlies" pawnKind="Bear_Grizzly" name="灰熊"/>
+    </Entrants>
+    <Battle durationSeconds="180" timeoutRealSeconds="300" timeSpeed="fast" confirmationTicks="300"/>
+    <Scoring survivalWeight="45" suppressionWeight="25" exchangeWeight="20" speedWeight="10" timeReferenceSeconds="180"/>
+    <TieBreak onDraw="replay" maxReplays="2"/>
+    <Presentation bracketSeconds="3" settlementSeconds="3" advanceStartSeconds="3">
+      <Showcase pageSeconds="5">
+        <Page seconds="5" caption="动物战力对比">
+          <Entrant ref="wolves"/><Entrant ref="bears"/><Entrant ref="wargs"/>
+          <Entrant ref="cougars"/><Entrant ref="grizzlies"/>
+        </Page>
+      </Showcase>
+    </Presentation>
+    <Output width="1920" height="1080"/>
+  </Tournament>
+</ArenaSuite>

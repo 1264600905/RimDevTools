@@ -21,23 +21,26 @@
 </Case>
 ```
 
-只支持双方，各队须有成员，初始角色总数最多 300。全部初始角色须生成在本轮普通主地图内，阵型完整位于边界内。默认生成器 `LogSync_AutoTestStudioMap`，可引用适用的已加载 MapGeneratorDef；不是口袋地图。
+只支持双方，各队须有成员，每队初始最多 200 人。共享 `MaxBattleMembers` 常量为 600，但双方各 200 的限制意味着一场最多 400，不能把 600 当成可用人数。全部初始角色须生成在本轮普通主地图内，阵型完整位于边界内。默认生成器 `LogSync_AutoTestStudioMap`，地图规则见 [schema-and-actors.md](schema-and-actors.md#地图与预设)。
+
+`PawnGroup` 可用 `count` 或互斥的 `combatPowerBudget`，混编则引用 Suite 的 `SquadTemplates`；成本与冻结名单见 [squads-and-rosters.md](squads-and-rosters.md)。战斗阵型先沿 Z 填充，再沿 X 展开：grid 的 `columns` 实际是每条纵列的人数，`line` 是沿 Z 的单列。不要按普通回归先 X 后 Z 的阵型估算边界；预算解析后也会重新校验实际占地。擂台自动安排出生阵型，另见 [arena.md](arena.md)。
 
 双方使用新建临时阵营，彼此双向敌对；XML 第一队固定与玩家双向敌对，不借用已有阵营。每轮独立创建并清理地图、世界对象、Pawn、临时阵营，恢复原地图、选择、镜头、速度与分辨率。清理失败停止后续轮次，不能继续复用残留。
 
 ## AI 与准备
 
-Team 的 ai 优先于 GroupCombat.aiPolicy，默认 battle。
+Team 的 `ai` 优先于 `GroupCombat.aiPolicy`，默认 **assaultColony**。当前群战和擂台共用 `CombatFightService`；早先自定义 AI 已在最新实现撤回，不能根据旧 `TestAi_*` 夹具名宣称还在强制索敌或调度攻击 Job。
 
 | AI | 用途 / 限制 |
 | --- | --- |
-| battle | 原生 AssaultColony 进攻职责，关闭群体逃跑转换和原版 NPC 自疗，保留原种族/模组行为树 |
-| assaultColony / native | 原生 AssaultColony，关闭劫掠、超时逃跑、偷窃，保留原生武器/位置/近战决策 |
+| assaultColony | 默认原生即时进攻：继承 LordJob_AssaultColony 与原生 AssaultColony duty，保留原生状态图、索敌、走位、攻击 Job、技能和模组 ThinkTree |
+| battle / seekAndAttack / native | 上项的兼容别名；不再启用独立测试 AI 或远程接敌 Job 调度器 |
 | assaultThings | 原生 AssaultThings 指向对方初始成员；索敌半径小，距离外可能下达近战破坏任务，不适合远程交火对比 |
 | defendPoint | 原生据点防御，defendX/defendZ/defendRadius；省略位置取本队出生均值 |
-| seekAndAttack | 原生战斗 Lord 加原生攻击/技能 Job 调度，处理远处接敌，保留预热与连射 |
 
-生成后原生 ClearAllRelations 清社交关系，但不保证角色以后永不争吵。battle 用 LordToil.AllowSelfTend=false 禁原版 NPC 自疗；模组私有治疗可能忽略此入口。个体仍可逃离，结果单列 escaped，不改写 ThinkTree 掩盖行为。
+即时进攻控制器关闭绑架、偷窃、超时撤退和 AddFleeToil，并移除原生 ExitMap toil 及指向它的转换；只在当前战斗地图的该控制器中以 `LordToil.AllowSelfTend=false` 禁原版 NPC 自疗。这些约束不应泛化到 assaultThings/defendPoint 或模组私有治疗。生成后用原生 ClearAllRelations 清社交关系，不保证以后永不争吵；个体异常逃离仍单列 escaped。
+
+排查不交战时读取本轮原始日志中的 `group.ai`（`controller=native`、`customJobScheduler=false`、duty 等）、`group.ai_native_job` 和 `group.ai_shot`（首次成功发射的武器、距离、射程）。job 诊断每 120 ticks 采样，发射日志不等于命中；结合实际伤害和原生前提判断。XML 不提供任意 C# AI 类入口，也不要另写强制逐 tick 攻击脚本来掩盖原生行为。
 
 Steps 仅同步准备，接受 DebugAction、AddHediff、RemoveHediff、Equip、DropEquipment、ApplyDamage、Kill、Destroy、SetRot、BindMech、Require。准备伤害不纳入战斗统计。错误保留并清理后继续，清理失败停止。
 
@@ -92,7 +95,7 @@ Patches 顺序执行 SetAttribute(xpath/name/value)、SetText(xpath/value)、Add
 | MeanDamageTaken | 同一批当前场上活单位自开战累计承伤的均值，不是每秒承伤 |
 | 排名及完整分布 | 全部初始及新增单位，保留阵亡贡献；个人 DPS 各用自己的存活时间 |
 
-显式指标元数据用 `damageBasis="engineSettled" dpsBasis="unitLifetime" teamDpsBasis="battleWindow" population="registeredRoster" meanPopulation="aliveOnMap"`。旧初始人数均值和 battleWindow 个人 DPS 不再是合法口径。保留原始精度，不从显示四舍五入后的数字重算排名/中位数。
+显式指标元数据用 `damageBasis="engineSettled" dpsBasis="unitLifetime" teamDpsBasis="battleWindow" population="registeredRoster" meanPopulation="aliveOnMap"`。旧 `population="initialRoster"` 输入会归一化为 registeredRoster，不能据此解释成仅统计初始成员；battleWindow 个人 DPS 不再是合法口径。保留原始精度，不从显示四舍五入后的数字重算排名/中位数。
 
 友伤、自伤、环境、未知来源分账，建筑/护甲/护盾通道独立；原生 CompShield 完全吸收量另记 shield，不进主 DPS。第三方护盾、直接 Hediff 修改、流血及绕过 TakeDamage 的持续伤害不猜测量与归因。同 tick 同额的独立调用不去重，共享 DamageResult 的嵌套转发只计一次。detailLimit 为 0—1000000，只裁事件明细，不裁在线累计。
 

@@ -22,7 +22,7 @@
 - Wait/叶子 `observation="current|eventually"`；eventually 保留窗口内发生过的匹配，指定 since 则从对应基线观察，适合瞬时效果。
 - `Wait observation="always" durationTicks="..."` 要求整个窗口始终满足，任一不满足立即失败；不要与“最终曾出现过”混淆。
 - HasHediff/ThingExists 的 `transition="added|removed" since="基线或步骤ID"` 按实例身份判断。改旧 Hediff 严重度不算新增；掉落、转移旧物也不算创建新物。tick 采样与原生事件保留瞬时变化。
-- HasHediff/ThingExists/ActorState 可用 `quantifier="any|all|count"`，默认 any；count 配 equals。空的显式目标集合不能通过 all/Not 空真。
+- HasHediff/ThingExists/ActorState/HealthPercent/NeedLevel/ResourceLevel 可用 `quantifier="any|all|count"`，默认 any；count 配 equals。HasHediff 的 count 计命中的角色数，不是 Hediff 实例数。空的显式目标集合不能通过 all/Not 空真。
 - 技能单独记录 `cast.accepted`、`cast.started`、`cast.completed` 和 `effect.observed`。原生资源、次数、冷却、目标与位置拒绝都应保留失败，不补次数、不清冷却。
 
 ## 步骤索引
@@ -31,10 +31,10 @@
 | --- | --- |
 | Require、Wait | 内含条件；Wait 可设 timeoutRealSeconds/stableTicks/observation/durationTicks |
 | Checkpoint | 保存当前对象与健康基线 |
-| Screenshot | focus 可为单个 actor，通过正式截图服务；截图不是功能证据 |
-| CastAbility | actor/def，target 或 targetX/targetZ 二选一；force 默认 false，原生 job/verb |
-| Attack | actor/target；melee=true 为原生近战任务，否则原生攻击；是否命中须另断言 |
-| ManTurret | actor 操作者、target 炮塔，等待真实操作关系 |
+| Screenshot | id/focus/cameraSize/stableFrames；focus 可省略或为单个 actor，cameraSize 默认 12、stableFrames 默认 3；截图不是功能证据 |
+| CastAbility | actor/def，target 或 targetX/targetZ 二选一；force 只接受 false，可设 timeoutRealSeconds，原生 job/verb |
+| Attack | actor/target，可设 timeoutRealSeconds；melee=true 为原生近战任务，默认 false；是否命中须另断言 |
+| ManTurret | actor 操作者、target 炮塔，可设 timeoutRealSeconds，等待真实操作关系 |
 | BindMech | actor 殖民机械族、target 拥有 Mechlink 的玩家机械师，核对原生监管关系 |
 | ApplyDamage | actor 受击者、def DamageDef、amount 正数，可有 armorPenetration/part/instigator，走 TakeDamage |
 | Spawn | actor，摆放已准备未生成的对象到场景中心，不创建新对象 |
@@ -103,7 +103,7 @@ ExecuteRecipe 校验真实工作台、角色、原生固定筛选、精确材料
 
 single 必须命中本场景拥有且已生成的一个有效对象。rectangle 使用 minX/minZ/maxX/maxZ，只选本场景拥有、已生成且活着的 Pawn（可含倒地）。filter 为 allScenePawns/enemies/allies；后两者必须给 relativeTo，并按真实敌对/盟友关系判断。无命中失败，不遍历源地图选目标。
 
-这些是固定注册动作，不接受 XML 提供类名、字段路径或方法，不直接执行互动菜单。若本地新版本另外提供动作绑定扩展，应先核对其独立契约，不从旧设计稿生成代码入口。
+上述内置动作使用固定适配器，不接受另填类名、字段路径或方法，也不执行互动菜单。当前已实现独立的 `ActionBindings`：可在 Suite/Case 显式声明所属包的精确 public static 方法、类型化 Arguments、调用 Arg、Result 和 ExpectHediff 后置断言，详见 [action-bindings.md](action-bindings.md)。不要将内置动作属性写法与绑定参数写法混用。
 
 准备性调试若修改被观察的对象/Hediff 身份，会记录 `debug.interference`，不能把旧基线后的变化归因于技能。完成准备后建立新的 Checkpoint，再实际施放；仍须具备经脉、功法、基因等真实前提。
 

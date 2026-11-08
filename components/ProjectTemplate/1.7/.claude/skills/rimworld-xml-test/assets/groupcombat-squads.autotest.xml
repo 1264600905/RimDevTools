@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TestSuite schemaVersion="1" id="example.squads" gameVersion="1.7">
+  <SquadTemplates>
+    <SquadTemplate id="nativeRaid" source="faction" factionDef="Pirate">
+      <GroupMaker mode="random" kindDef="Combat" referencePoints="1500"/>
+      <RaidRules strategyDef="ImmediateAttack"/>
+      <Xenotypes mode="inherit"/>
+    </SquadTemplate>
+    <SquadTemplate id="customRaid" source="custom" factionDef="Pirate">
+      <Composition mode="weighted" allocator="native">
+        <Option pawnKind="Mercenary_Gunner" weight="3"/>
+        <Option pawnKind="Mercenary_Heavy" weight="1"/>
+      </Composition>
+      <Xenotypes mode="inherit"/>
+    </SquadTemplate>
+  </SquadTemplates>
+  <Case id="mixed" kind="groupCombat" name="原生派系编队对自定义混编" seed="12345" timeoutRealSeconds="300">
+    <testDefName>Example_SquadBattle</testDefName>
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all">
+      <Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/>
+    </Scene>
+    <Teams><Team id="A" name="原生编队"/><Team id="B" name="自定义混编"/></Teams>
+    <Actors>
+      <PawnGroup id="native" team="A" squad="nativeRaid" count="6" costMode="native" originX="20" originZ="40" formation="grid" columns="3" spacing="2"/>
+      <PawnGroup id="custom" team="B" squad="customRaid" count="6" costMode="native" originX="76" originZ="40" formation="grid" columns="3" spacing="2"/>
+    </Actors>
+    <Steps>
+      <Require id="nativeCount"><ActorCount group="native" equals="6"/></Require>
+      <Require id="customCount"><ActorCount group="custom" equals="6"/></Require>
+    </Steps>
+    <GroupCombat durationSeconds="180" timeSpeed="fast" aiPolicy="assaultColony">
+      <End confirmationTicks="300"/>
+      <Experiments swapSides="true"><Seed value="12345"/></Experiments>
+    </GroupCombat>
+    <Output width="1920" height="1080"/>
+  </Case>
+</TestSuite>

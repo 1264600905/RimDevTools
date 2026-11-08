@@ -11,7 +11,7 @@
 ```
 
 - `--scenario-path` 接受一个文件或目录；目录只读当前层 `*.autotest.xml`，按文件名排序。不要让同一枚举范围包含 GroupCombat。
-- `--scenario-only` 仅运行外部回归，不能用于 groupcombat。
+- `--scenario-only` 仅运行外部回归，不能用于 groupcombat/arena。
 - `--test-name` 可重复；普通外部回归接受稳定 testDefName 或唯一显示名，未知/重名报错。稳定名选中其矩阵实例作为候选，并不保证所有候选都逃过批量限制。完整 caseId 的精确选择在群战入口有明确契约，不假设普通入口也支持。
 - `--defname` 用于普通目标，不是测试规则名；多值重复传参，不写逗号列表。
 - `--scope`、`--defname`、`--batch-size` 可与外部回归混用。早期第一批文档中的禁止混用是历史限制。

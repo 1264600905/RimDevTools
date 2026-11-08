@@ -44,7 +44,7 @@ RimSage 不读取当前项目或第三方模组。当前项目直接读取工作
 
 - `rimsage`：官方 Def、XML 与 C# 研究。
 - `rimdevtools`：项目检查、部署、参考模组、测试和工具 Mod 安装。
-- `rimworld-xml-test`：高度自定义 XML 场景、角色配装、效果断言、参数矩阵、视图与独立群战；含可复用 XML 模板，当前场景后端仅支持 1.7，随 1.6 模板附带不代表已回迁。
+- `rimworld-xml-test`：高度自定义 XML 场景、角色配装、效果断言、参数矩阵、地图、混编群战与擂台淘汰赛；含完整字段索引、动作绑定说明及可复用 XML 模板，当前场景后端仅支持 1.7，随 1.6 模板附带不代表已回迁。
 - `rimworld-development-engineer`：从证据到实现和验证。
 - `rimworld-plan-engineer`：只产出基于证据的实施计划。
 - `about-write-description`：基于已实现功能更新双语 Workshop 描述。

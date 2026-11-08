@@ -14,7 +14,7 @@
 - directions 为 1—4 个不重复原生方向；Pawn 默认正/侧/背，静态对象默认一张。不可旋转对象用单张，单格门保留原生连接朝向。
 - pose 是 standing/weaponReady/auto。展示站姿不清除真实倒地、年龄或健康；weaponReady 需要真实武器与站立条件。
 - `loadout="preserve"` 保留整套装备；`isolate` 必须写 targetDef，只展示指定单件。隔离会改变展示配装，不能再宣称展示的是原完整配装。
-- cameraSize 范围 11—100；stableFrames 范围 3—120，同时保留拍摄前实际时间稳定窗口。
+- View.cameraSize 默认 11（范围 11—100），stableFrames 默认 5（范围 3—120）；timeoutRealSeconds 默认 15，覆盖整个多方向 View 步骤。同时保留拍摄前实际时间稳定窗口。
 - 同一 Pawn 逐方向拍摄并核对身份、外观和配装，默认原图加横排合成图；`composite="false"` 只输出原图。PNG 完成写入并释放编码器后才合成。
 - 实际在画面外、迷雾中或地形被裁切不能因有文件而通过。核对截图内容、方向、可见性与装备清单，不能仅看路径。
 

@@ -70,10 +70,11 @@ mod dependents <query> [--version <value>] [--fuzzy] [--verbose]
 
 ```text
 test settings [--verbose]
-test run [--deploy] [--sync-source] [--mode quick|manual|auto]
+test run [--deploy] [--sync-source] [--mode quick|manual|auto|groupcombat|arena]
          [--active-mods-file <path>] [--timeout-seconds <n>]
          [--target-package-id <id>]
          [--scope <value>]... [--defname <value>]... [--batch-size <n>]
+         [--scenario-path <path>] [--scenario-only] [--test-name <name>]...
          [--isolated-desktop|--no-isolated-desktop] [--verbose]
 test cleanup [--dry-run] [--status] [--verbose]
 ```
@@ -81,6 +82,8 @@ test cleanup [--dry-run] [--status] [--verbose]
 `test settings` 是持久化 LogSync 设置命令，不会启动测试。它会等待已有 RimWorld 退出、取得共享环境锁，然后把日志路径设置为当前项目本轮目录中的精选日志（以返回的 `artifacts.syncLogPath` 为准），把 `mod_config.jsonc.log_keywords` 写入 LogSync，并更新自动测试输出路径、开关和筛选设置。写入不会像 `test run` 一样在结束后自动恢复，适合准备一次由用户手动启动的 RimWorld 会话；正常自动测试应使用 `test run`，由事务临时应用并恢复设置。
 
 quick 是启动冒烟测试。manual 是用户手动的。auto 验证结构化的 AutoTest 结果并默认截图。隔离优先级为显式标志、项目设置，然后是模式默认值。`test run` 不接受 `--xml-hot`；`test run --deploy` 会先关闭已有 RimWorld，再在启动测试进程前执行普通构建和逐文件事务部署。
+
+外部 XML 场景仅支持 game_version=1.7 的 auto/groupcombat/arena。auto 用 TestSuite，可加 `--scenario-only` 仅运行外部回归；groupcombat 用 TestSuite 中的 kind=groupCombat，arena 用独立 ArenaSuite，两者必须同时给 `--scenario-path` 和显式 `--test-name`，禁止 `--scenario-only`。擂台按稳定 testDefName 选择完整 Tournament；CLI 超时涵盖整场赛程，省略时工具估算默认预算。群战/擂台使用独立结果文件和验证器，胜负、测量质量与执行状态分开判断，不并入普通回归通过率。XML 语法、AI、地图、混编配兵及评分见 [rimworld-xml-test](../../rimworld-xml-test/SKILL.md)。
 
 所有 `test run` 模式都会在启动前将 `ModsConfig.xml` 的 `<version>` 写为已校验的 `game_version`，防止切换版本时游戏重置启用列表。版本号先于事务备份更新；测试结束、失败、取消或中断恢复后保留目标版本号，原模组列表与设置照常恢复。
 

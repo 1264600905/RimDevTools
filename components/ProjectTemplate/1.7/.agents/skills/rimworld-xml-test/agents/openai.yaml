@@ -1,4 +1,4 @@
 interface:
   display_name: "RimWorld 自定义 XML 测试"
-  short_description: "编写自定义场景、角色配装、效果断言、视图与群战 XML 测试"
+  short_description: "编写效果回归、地图、混编群战与擂台淘汰赛 XML 测试"
   default_prompt: "使用 $rimworld-xml-test，根据当前项目定义设计可复用的自定义 XML 测试，并按请求验证结果。"
