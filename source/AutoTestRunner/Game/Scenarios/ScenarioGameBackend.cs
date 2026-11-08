@@ -172,7 +172,11 @@ namespace LogSyncMod.AutoTest
             var explicitSkills = (actor.Element("Skills")?.Elements("Set").Select(e => A(e, "def")) ?? Enumerable.Empty<string>()).Concat(actor.Element("skills")?.Elements("li").Select(e => e.Element("skill")?.Value) ?? Enumerable.Empty<string>()).Select(Def<SkillDef>).ToList();
             float? age = actor.Element("minGenerationAge") != null && actor.Element("maxGenerationAge") != null ? Rand.Range((float)kind.minGenerationAge, kind.maxGenerationAge) : (float?)null;
             var pawn = PawnGenerator.GeneratePawn(new PawnGenerationRequest(kind, faction, forceGenerateNewPawn: true, canGeneratePawnRelations: false,
-                fixedBiologicalAge: age, validatorPreGear: p => explicitSkills.All(s => p.skills != null && !p.skills.GetSkill(s).TotallyDisabled)));
+                fixedBiologicalAge: age, validatorPreGear: p =>
+                {
+                    TestPawnWorkRestrictions.Remove(p);
+                    return explicitSkills.All(s => p.skills != null && !p.skills.GetSkill(s).TotallyDisabled);
+                }));
             if (pawn == null) throw new InvalidOperationException("PawnGenerator returned null");
             owned.Add(pawn);
             // The generated pawn retains its native registered kind when race was not overridden.
@@ -187,6 +191,7 @@ namespace LogSyncMod.AutoTest
 
         private void ApplyPawnConfig(Pawn pawn, XElement a, bool restoreColorState = false)
         {
+            TestPawnWorkRestrictions.Remove(pawn);
             ApplyAge(pawn, a.Element("Age"));
             if (a.Element("Xenotype") != null)
             {

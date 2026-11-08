@@ -183,9 +183,14 @@ namespace LogSyncMod.AutoTest
         internal static Pawn GenerateMember(ResolvedSquadMember member, Faction faction, PlanetTile tile, RaidStrategyDef strategy = null, float points = 5000)
         {
             Rand.PushState(member.Seed);
-            try { return PawnGenerator.GeneratePawn(new PawnGenerationRequest(Kind(member.PawnKind), faction, PawnGenerationContext.NonPlayer, tile,
+            try
+            {
+                var pawn = PawnGenerator.GeneratePawn(new PawnGenerationRequest(Kind(member.PawnKind), faction, PawnGenerationContext.NonPlayer, tile,
                 forceGenerateNewPawn: true, canGeneratePawnRelations: false, mustBeCapableOfViolence: true,
-                forcedXenotype: Xeno(member.Xenotype), validatorPostGear: strategy == null ? null : p => strategy.Worker.CanUsePawn(points, p, new List<Pawn>()))); }
+                forcedXenotype: Xeno(member.Xenotype), validatorPostGear: strategy == null ? null : p => strategy.Worker.CanUsePawn(points, p, new List<Pawn>())));
+                TestPawnWorkRestrictions.Remove(pawn);
+                return pawn;
+            }
             finally { Rand.PopState(); }
         }
         internal static void Destroy(Pawn pawn)

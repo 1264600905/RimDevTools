@@ -68,6 +68,7 @@ namespace LogSyncMod.AutoTest
                                 canGeneratePawnRelations: false, fixedBiologicalAge: age,
                                 forcedXenotype: xenotype == null ? null : DefDatabase<XenotypeDef>.GetNamed(xenotype)));
                         }
+                        TestPawnWorkRestrictions.Remove(pawn);
                         previewPawns.Add(sampleId, pawn);
                         samples.Add((sampleId, groups.Count > 0 ? groups[type].Count() : roster.ResolvedCount,
                             groups.Count > 0 ? groups[type].Sum(m => m.Cost) : roster.ActualCombatPower));

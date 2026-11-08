@@ -26,6 +26,7 @@ namespace LogSyncMod.AutoTest
             string stagedHash = null, stagedKind = null;
             try
             {
+                VerifyWorkRestrictions(checks, objects);
                 var source = ScenarioGameBackend.GenerateTemporaryPawn(TemporaryPawnData.Create(template, "native-data-probe", null, null), null, null, out var sourceObjects); objects.AddRange(sourceObjects);
                 sourceId = source.GetUniqueLoadID();
                 var captured = TemporaryPawnCapture.Capture(source); hash = captured.Sha256;
@@ -59,6 +60,55 @@ namespace LogSyncMod.AutoTest
             }
             LastResult = new { allPassed = checks.Values.All(v => v), checks, sourceId, cloneId, templateHash = hash, stagedHash, stagedKind, artifacts = ManualTestService.Artifacts };
             return LastResult;
+        }
+
+        private static void VerifyWorkRestrictions(Dictionary<string, bool> checks, List<Thing> objects)
+        {
+            Pawn NativePawn(string kind)
+            {
+                var pawn = PawnGenerator.GeneratePawn(new PawnGenerationRequest(DefDatabase<PawnKindDef>.GetNamed(kind),
+                    forceGenerateNewPawn: true, canGeneratePawnRelations: false,
+                    forcedXenotype: ModsConfig.BiotechActive && kind == "Colonist" ? XenotypeDefOf.Baseliner : null));
+                objects.Add(pawn);
+                return pawn;
+            }
+
+            var restrictedStory = DefDatabase<BackstoryDef>.AllDefsListForReading.First(b => b.DisabledWorkTypes.Contains(WorkTypeDefOf.Construction));
+            void Restrict(Pawn pawn)
+            {
+                pawn.story.Childhood = restrictedStory;
+                pawn.story.Adulthood = null;
+                pawn.Notify_DisabledWorkTypesChanged();
+            }
+
+            var native = NativePawn("Colonist");
+            Restrict(native);
+            var skill = native.skills.GetSkill(SkillDefOf.Construction);
+            skill.Level = 7;
+            checks["native_construction_disabled"] = skill.TotallyDisabled && skill.PermanentlyDisabled && native.GetDisabledWorkTypes().Contains(WorkTypeDefOf.Construction);
+            TestPawnWorkRestrictions.Remove(native);
+            TestPawnWorkRestrictions.Remove(native);
+            checks["humanlike_work_unrestricted"] = native.CombinedDisabledWorkTags == WorkTags.None && native.GetDisabledWorkTypes().Count == 0 && native.GetDisabledWorkTypes(true).Count == 0 && native.skills.skills.All(s => !s.TotallyDisabled && !s.PermanentlyDisabled);
+            checks["native_skill_level_preserved"] = skill.Level == 7;
+
+            var snapshot = TemporaryPawnCapture.Capture(native);
+            var replay = ScenarioGameBackend.GenerateSquadPawn(new ResolvedSquadMember
+            {
+                PawnKind = "Colonist", Seed = 101, Childhood = restrictedStory.defName,
+                PawnTemplateXml = snapshot.TemplateXml
+            }, null, Find.CurrentMap.Tile);
+            objects.Add(replay);
+            checks["restricted_backstory_snapshot_replayed"] = replay.story.Childhood == restrictedStory && replay.skills.GetSkill(SkillDefOf.Construction).Level == 7 && replay.skills.skills.All(s => !s.TotallyDisabled && !s.PermanentlyDisabled);
+            checks["hediff_replace_keeps_work_unrestricted"] = replay.GetDisabledWorkTypes().Count == 0 && replay.CombinedDisabledWorkTags == WorkTags.None;
+
+            var control = NativePawn("Colonist");
+            Restrict(control);
+            checks["unregistered_pawn_still_restricted"] = control.skills.GetSkill(SkillDefOf.Construction).TotallyDisabled;
+            var animal = NativePawn("Wolf_Timber");
+            var animalTags = animal.CombinedDisabledWorkTags;
+            var animalDisabledTypes = animal.GetDisabledWorkTypes().ToList();
+            TestPawnWorkRestrictions.Remove(animal);
+            checks["animal_work_restrictions_unchanged"] = animal.CombinedDisabledWorkTags == animalTags && animal.GetDisabledWorkTypes().SequenceEqual(animalDisabledTypes);
         }
     }
 }

@@ -143,6 +143,11 @@ namespace LogSyncMod
 
     internal static class DebugPawnState
     {
+        internal static bool WorkRestrictionsRemoved(Pawn pawn)
+        {
+            return TestPawnWorkRestrictions.IsUnrestricted(pawn) || WorkerLocked(pawn);
+        }
+
         internal static bool WorkerLocked(Pawn pawn)
         {
             return pawn?.health?.hediffSet != null && LogSyncDebugDefOf.LogSync_DebugSkilledWorker10x != null &&
@@ -162,7 +167,7 @@ namespace LogSyncMod
     {
         private static bool Prefix(Pawn __instance, ref WorkTags __result)
         {
-            if (!DebugPawnState.WorkerLocked(__instance)) return true;
+            if (!DebugPawnState.WorkRestrictionsRemoved(__instance)) return true;
             __result = WorkTags.None;
             return false;
         }
@@ -173,7 +178,7 @@ namespace LogSyncMod
     {
         private static bool Prefix(Pawn __instance, ref List<WorkTypeDef> __result)
         {
-            if (!DebugPawnState.WorkerLocked(__instance)) return true;
+            if (!DebugPawnState.WorkRestrictionsRemoved(__instance)) return true;
             // Do not clear the original list: it is cached by Pawn and must remain intact for removal.
             __result = new List<WorkTypeDef>();
             return false;
@@ -185,7 +190,7 @@ namespace LogSyncMod
     {
         private static bool Prefix(SkillRecord __instance, ref bool __result)
         {
-            if (!DebugPawnState.WorkerLocked(__instance.Pawn)) return true;
+            if (!DebugPawnState.WorkRestrictionsRemoved(__instance.Pawn)) return true;
             __result = false;
             return false;
         }
@@ -196,7 +201,7 @@ namespace LogSyncMod
     {
         private static bool Prefix(SkillRecord __instance, ref bool __result)
         {
-            if (!DebugPawnState.WorkerLocked(__instance.Pawn)) return true;
+            if (!DebugPawnState.WorkRestrictionsRemoved(__instance.Pawn)) return true;
             __result = false;
             return false;
         }
