@@ -60,7 +60,7 @@ namespace LogSyncMod.AutoTest
                 Text.Font = GameFont.Small;
                 if (Widgets.ButtonText(new Rect(w - 150, 20, 122, 32), "取消擂台")) ArenaService.Cancel();
                 var winner = match.Winner == null ? null : rosters[match.Winner];
-                var subtitle = elapsed < ArenaPresentation.AdvanceSeconds ? "本场对战回顾" : winner == null ? "本场平局 · " + (match.Attempts.Count > tournament.Input.MaxReplays ? "重赛次数已用尽" : "即将重赛") : winner.DisplayName + " 晋级  ·  胜利评分 " + match.Score.Value.ToString("F2");
+                var subtitle = elapsed < ArenaPresentation.AdvanceSeconds ? "本场对战回顾" : winner == null ? "本场平局 · " + (match.Attempts.Count > tournament.Input.MaxReplays ? "重赛次数已用尽" : "即将重赛") : winner.DisplayName + " 晋级  ·  胜利质量 " + match.Score.Value.ToString("F2") + " / 100";
                 TextAt(new Rect(26, 57, w - 52, 27), subtitle, 17, elapsed >= ArenaPresentation.AdvanceSeconds && winner != null ? Gold : new Color(.7f, .76f, .83f), TextAnchor.MiddleLeft);
                 var gap = 68f; var cardWidth = Mathf.Min(420, (w - 80 - gap) / 2);
                 var cardHeight = h < 720 ? 72 : 88;

@@ -135,7 +135,7 @@ RimDevTools.exe test run --deploy --mode arena --scenario-path .tools/ProjectDat
     </Entrants>
     <Battle durationSeconds="180" timeoutRealSeconds="300" timeSpeed="fast"
             confirmationTicks="300"/>
-    <Scoring survivalWeight="100" speedWeight="20" timeReferenceSeconds="180"/>
+    <Scoring survivalWeight="45" suppressionWeight="25" exchangeWeight="20" speedWeight="10" timeReferenceSeconds="180"/>
     <TieBreak onDraw="replay" maxReplays="2"/>
     <Presentation bracketSeconds="5" settlementSeconds="3"/>
     <Output width="1920" height="1080"/>
@@ -155,7 +155,7 @@ RimDevTools.exe test run --deploy --mode arena --scenario-path .tools/ProjectDat
 | durationSeconds、timeReferenceSeconds | 有限数，(0,86400] |
 | timeoutRealSeconds | 正整数，1..86400，仍受命令总 Deadline 约束 |
 | confirmationTicks | 整数，0..36000 |
-| survivalWeight、speedWeight | 有限数，0..1000000，至少一个大于零 |
+| survivalWeight、suppressionWeight、exchangeWeight、speedWeight | 有限数，0..100，四项合计 100，默认 45/25/20/10 |
 | maxReplays | 整数，0..10，默认 2；0 表示平局直接未决停止 |
 | bracketSeconds、settlementSeconds | 有限数，1..60；默认分别为 5 和 3 |
 | Output 分辨率 | 成对提供；width=800..3840，height=600..2160，沿用现有范围 |
@@ -230,17 +230,19 @@ RimDevTools.exe test run --deploy --mode arena --scenario-path .tools/ProjectDat
 ### 6.3 胜利分数
 
 ```text
-r = 初始名册中结算时仍站立且在场的数量 / 初始生成数量
-t = (决定本场胜负的 tick - 正式开战 tick) / 60
+r = (己方初始成员站立数 + 0.25 * 己方初始成员倒地存活数) / 己方初始人数
+c = 1 - 敌方初始成员站立数 / 敌方初始人数
+e = 己方整队对敌伤害 / (己方整队对敌伤害 + 己方整队承伤)
+t = 有效战斗 tick / 60
 q = max(0, 1 - t / timeReferenceSeconds)
-score = survivalWeight * r + speedWeight * q
+score = survivalWeight * r + suppressionWeight * c + exchangeWeight * e + speedWeight * q
 ```
 
-默认 survivalWeight=100、speedWeight=20、timeReferenceSeconds=180。存活比例范围 0..1；倒地、死亡、离场、移除与新增单位都不计入分子。由同类单位构成的队伍中，该比例等价于初始名册剩余 combatPower / 初始总 combatPower。
+默认权重为 45/25/20/10，合计必须为 100，timeReferenceSeconds=180。各比例均为 0..1；倒地保全按四分之一权重，死亡、离场、移除与新增单位不计保全。双方均无伤害时交换比例取中性值 0.5。伤害按整队原生已记录伤害计算，包含新增成员输出及已记录的友伤、自伤、环境承伤；不代表准确剩余血量或完整 Hediff 归属。
 
-例如初始 20 个，结算站立 15 个，耗时 45 秒，默认分数为 75+15=90。不要把 15 个存活当成固定分值，也不要用现实秒数。
+例如己方初始 20 个，结算站立 15 个、倒地 3 个；敌方初始 10 个、站立 2 个；对敌伤害 300、承伤 100；有效用时 45 秒，得分为 35.4375+20+15+7.5=77.9375。不要把绝对人数或绝对伤害当作固定分值。
 
-计时包含胜负确认期间的模拟 tick，以冻结的最终战斗快照为准；不含对阵树、倒计时和结算展示。暂停、窗口失焦及游戏速度不会直接改变公式。分数保存原始组成与未格式化值，界面可显示两位小数；排序前不得按显示值舍入。使用稳定的十进制计算规则，CLI 以相同规则重算。
+全灭确认获胜时扣除败方最后一次连续失能后的确认等待；超时判胜使用完整战斗 tick，不含对阵树、倒计时和展示。暂停、窗口失焦及游戏速度不会直接改变公式。分数保存算法版本、四项比例/分数、原始组成、有效时间及未格式化值，界面可显示两位小数；排序前不得按显示值舍入。CLI 独立复算各项。常规 partial 口径可参与评分；明确采集异常或测量要求失败时，分数仅暂定并停止晋级，不参与低分加赛排序。评分不改变本场胜负规则。
 
 仅对有胜者的最后一个 Attempt 计分。平局 Attempt 不得获得晋级分数，不累加耗时，失败重赛不能提高已有参赛者的分数。
 

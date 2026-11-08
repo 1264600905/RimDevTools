@@ -31,7 +31,7 @@ dotnet RimDevTools/bin/Release/net10.0/RimDevTools.dll test run --deploy --mode 
     </Entrants>
     <Battle durationSeconds="180" timeoutRealSeconds="300"
             timeSpeed="fast" confirmationTicks="300"/>
-    <Scoring survivalWeight="100" speedWeight="20" timeReferenceSeconds="180"/>
+    <Scoring survivalWeight="45" suppressionWeight="25" exchangeWeight="20" speedWeight="10" timeReferenceSeconds="180"/>
     <TieBreak onDraw="replay" maxReplays="2"/>
     <Presentation bracketSeconds="3" settlementSeconds="3" advanceStartSeconds="3"/>
     <Output width="1920" height="1080"/>
@@ -84,7 +84,22 @@ Scene 沿用群战的严格场景配置。其他字段范围和完整默认值�
 
 倒地、死亡、离场、移除不计战斗能力；已知待复活单位延迟全灭确认。召唤物可以继续战斗，但不增加初始名册的存活评分。达到模拟时间上限时比较初始成员站立比例，比例相同则平局。原群战仍按其原有绝对存活人数规则结算。
 
-默认胜利分数为 `100 × 初始成员站立比例 + 20 × max(0, 1 − 模拟秒数/180)`。时间包含全灭确认，不包含展示。20 人剩 15 人、45 模拟秒获胜得 90 分。分数按未舍入值排序，报告保存组成供 CLI 复算。
+胜利质量评分为百分制，默认四项合计 100 分：
+
+| 分项 | 默认分值 | 计算 |
+|---|---:|---|
+| 己方保全 | 45 | `(初始成员站立数 + 0.25 × 初始成员倒地存活数) / 初始人数` |
+| 敌方压制 | 25 | `1 − 敌方初始成员站立数 / 敌方初始人数` |
+| 伤害交换 | 20 | `己方整队对敌伤害 / (己方整队对敌伤害 + 己方整队承伤)` |
+| 获胜速度 | 10 | `max(0, 1 − 有效模拟秒数 / timeReferenceSeconds)` |
+
+各分项为上表比例乘以对应分值。`survivalWeight`、`suppressionWeight`、`exchangeWeight`、`speedWeight` 可配置为 0～100，**四项必须合计 100**；`timeReferenceSeconds` 默认 180。省略 `Scoring` 使用全部默认值。旧 XML 若显式写出 100/20 权重，需要改为上面的四项配置，或删除 `Scoring` 使用新默认值；不再接受总分超过 100 的旧权重。
+
+保全与压制只按初始名册计数，新增召唤物不直接增减这两项；其伤害仍计入所属整队。承伤包含已记录的敌伤、友伤、自伤和环境伤害，输出不包含友伤、自伤。双方伤害均为零时，交换项取中性比例 0.5，并明确标记。该项按原生 `DamageResult.totalDamageDealt` 口径统计，不是准确血量损失；并未覆盖所有流血、直接修改 Hediff 等效果。常规 `partial` 口径可用；采集异常或测量要求不满足时，只保留暂定分数并停止晋级，不得参与低分加赛排序。
+
+全灭确认获胜时，有效时间截至败方本次连续失能的起始 tick，扣除最后的确认等待；超时判胜使用完整模拟战斗时间。倒计时、展示、现实等待与游戏速度不直接计分。没有准确战后剩余血量数据，因此不以累计承伤推算血量。分数评价本场获胜质量，不能直接当作跨对手的物种强度。平局不计晋级分。
+
+结算面板显示总分、四项分数与有效用时；报告保存算法版本、原始组成、统计口径和未舍入值供 CLI 独立复算。低分加赛采用最新一场胜利的未舍入总分，同分时仍沿用原有稳定排序。评分不改变本场胜负判定。
 
 运行中的擂台禁止 XML 热重载，重新启动赛事才能重新解析 Def。原生暂停和调速可用，长暂停仍受命令总超时约束。界面支持取消，也可通过现有认证本机测试 API 使用 `arena-status` 和 `arena-cancel`。
 

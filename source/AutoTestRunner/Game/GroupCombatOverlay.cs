@@ -264,9 +264,9 @@ namespace LogSyncMod.AutoTest
         private static void DrawArenaSettlement(float width, float height, float panelWidth)
         {
             var cardWidth = Mathf.Min(width - 32, Mathf.Min(900, Mathf.Max(600, width - panelWidth * 2 - 40)));
-            var cardHeight = Mathf.Min(492, height - 150);
+            var cardHeight = Mathf.Min(562, height - 150);
             var rect = new Rect((width - cardWidth) / 2, (height - cardHeight) / 2, cardWidth, cardHeight);
-            var scale = cardHeight / 492;
+            var scale = cardHeight / 562;
             var gold = new Color(1f, .79f, .28f);
             var previous = GUI.color;
             try
@@ -295,22 +295,35 @@ namespace LogSyncMod.AutoTest
                 DrawText(new Rect(scoreRect.x + 2, scoreRect.y + 3, scoreRect.width, scoreRect.height), score?.Value.ToString("F2") ?? "—", 76 * scale, TextAnchor.MiddleCenter);
                 GUI.color = gold;
                 DrawText(scoreRect, score?.Value.ToString("F2") ?? "—", 76 * scale, TextAnchor.MiddleCenter);
-                DrawText(new Rect(scoreRect.x, rect.y + 173 * scale, scoreRect.width, 26 * scale), score == null ? "平局不计晋级分数" : "本场胜利评分", 18 * scale, TextAnchor.MiddleCenter);
+                DrawText(new Rect(scoreRect.x, rect.y + 173 * scale, scoreRect.width, 26 * scale), score == null ? "平局不计晋级分数" : score.IsRankable ? "胜利质量评分 / 100" : "暂定评分 · 不参与晋级", 18 * scale, TextAnchor.MiddleCenter);
                 GUI.color = previous;
-                DrawText(new Rect(rect.x, rect.y + 205 * scale, rect.width, 26 * scale), score == null ? "即将展示赛后天梯" : "初始成员站立 " + score.Standing + " / " + score.Initial + "   ·   " + snapshot.SimulatedSeconds.ToString("F2") + " 秒", 17 * scale, TextAnchor.MiddleCenter);
+                DrawText(new Rect(rect.x, rect.y + 205 * scale, rect.width, 26 * scale), score == null ? "即将展示赛后天梯" : "初始成员站立 " + score.Standing + " / " + score.Initial + " · 倒地 " + score.Downed + "   ·   有效用时 " + (score.EffectiveElapsedTicks / 60d).ToString("F2") + " 秒", 16 * scale, TextAnchor.MiddleCenter);
+                if (score != null)
+                {
+                    var points = new[] { score.PreservationPoints, score.SuppressionPoints, score.ExchangePoints, score.SpeedPoints };
+                    var labels = new[] { "己方保全", "敌方压制", "伤害交换", "获胜速度" };
+                    for (var i = 0; i < points.Length; i++)
+                    {
+                        var w = (rect.width - 28) / 4;
+                        var item = new Rect(rect.x + 14 + i * w, rect.y + 240 * scale, w - 4, 44 * scale);
+                        Widgets.DrawBoxSolid(item, new Color(.08f, .105f, .14f));
+                        DrawText(item, labels[i] + "\n" + points[i].ToString("F2"), 15 * scale, TextAnchor.MiddleCenter);
+                    }
+                }
                 for (var i = 0; i < snapshot.Teams.Count; i++)
                 {
                     var team = snapshot.Teams[i];
                     var x = rect.x + 14 + i * cardWidth / 2;
                     var w = cardWidth / 2 - 28;
                     GUI.color = team.Outcome == "win" ? gold : Color.white;
-                    DrawText(new Rect(x, rect.y + 250 * scale, w, 32 * scale), TeamLabel(i) + " · " + Label(team.Outcome), 22 * scale, TextAnchor.MiddleCenter);
+                    DrawText(new Rect(x, rect.y + 306 * scale, w, 32 * scale), TeamLabel(i) + " · " + Label(team.Outcome), 22 * scale, TextAnchor.MiddleCenter);
                     GUI.color = previous;
                     var lines = SettlementLines(team);
                     for (var row = 0; row < lines.Length; row++)
-                        DrawText(new Rect(x, rect.y + (292 + row * 30) * scale, w, 28 * scale), lines[row], Mathf.Min(19 * scale, w / 17), TextAnchor.MiddleCenter);
+                        DrawText(new Rect(x, rect.y + (348 + row * 30) * scale, w, 28 * scale), lines[row], Mathf.Min(19 * scale, w / 17), TextAnchor.MiddleCenter);
                 }
-                DrawText(new Rect(rect.x, rect.y + 455 * scale, rect.width, 26 * scale), winner == null ? "赛后天梯将显示重赛结果" : "即将展示胜者晋级天梯", 15 * scale, TextAnchor.MiddleCenter);
+                var footer = score == null ? "赛后天梯将显示重赛结果" : !score.IsRankable ? "伤害统计异常 · 本场暂停晋级" : score.NeutralExchange ? "双方无伤害记录 · 交换项取中性分" : "伤害交换按已记录伤害计算，不含全部流血与身体状态效果";
+                DrawText(new Rect(rect.x + 8, rect.y + 524 * scale, rect.width - 16, 26 * scale), footer, 13 * scale, TextAnchor.MiddleCenter);
             }
             finally { GUI.color = previous; }
         }

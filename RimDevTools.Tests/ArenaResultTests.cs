@@ -25,6 +25,16 @@ internal static class ArenaResultTests
         Reject(r => r.Tournaments[0].Champion = "not-an-entrant", "arena rejects a forged champion");
         Reject(r => r.Tournaments[0].Matches[0].Score.Value += 1, "arena independently recomputes decimal victory scores");
         Reject(r => r.Tournaments[0].Matches[0].Score.ElapsedTicks += 60, "arena rejects wall-time substitution in score components");
+        Reject(r => r.Tournaments[0].Matches[0].Score.PreservationPoints++, "arena independently validates preservation points");
+        Reject(r => r.Tournaments[0].Matches[0].Score.SuppressionPoints++, "arena independently validates suppression points");
+        Reject(r => r.Tournaments[0].Matches[0].Score.ExchangePoints++, "arena independently validates exchange points");
+        Reject(r => r.Tournaments[0].Matches[0].Score.SpeedPoints++, "arena independently validates speed points");
+        Reject(r => r.Tournaments[0].Matches[0].Score.EffectiveElapsedTicks++, "arena rejects forged confirmation-free elapsed time");
+        Reject(r => r.Tournaments[0].Matches[0].Score.Algorithm = "legacy", "arena rejects obsolete scoring algorithms");
+        Reject(r => r.Tournaments[0].Matches[0].Score.EnemyDamage++, "arena validates scoring damage against the entire team ledger");
+        Reject(r => r.Tournaments[0].Matches[0].Score.IsRankable = false, "arena rejects advancing with a provisional score");
+        Reject(r => r.Tournaments[0].Matches[0].Attempts[0].MeasurementRequirementsMet = false, "arena rejects damaged measurement data even when score claims rankable");
+        Reject(r => r.Tournaments[0].Matches[0].Attempts[0].MeasurementQuality = "incomplete", "arena rejects incomplete damage capture for score-based scheduling");
         Reject(r => r.Tournaments[0].Matches[0].Kind = "extra", "arena reconstructs qualification/round/extra kinds");
         Reject(r => r.Tournaments[0].Matches[0].Attempts[0].CleanupComplete = false, "arena never advances a fight with failed cleanup");
         Reject(r => r.Tournaments[0].Matches[0].Attempts[0].Seed++, "arena checks attempt seed against frozen unordered pair identity");
@@ -82,6 +92,8 @@ internal static class ArenaResultTests
                 units.AddRange(Enumerable.Range(0, r.ResolvedCount).Select(i => new GroupCombatUnit { Id = team + i, Team = team, Kind = r.PawnKind, Name = team + " " + i }));
             }
             var ledger = new GroupCombatLedger(units, new[] { KeyValuePair.Create("A", m.Left), KeyValuePair.Create("B", m.Right) });
+            ledger.Record(new GroupCombatDamageEvent { SourceId = "A0", VictimId = "B0", Amount = 249.8938446044921875, RawAmount = 249.8938446044921875 });
+            ledger.Record(new GroupCombatDamageEvent { SourceId = "B0", VictimId = "A0", Amount = 40.712345678912345, RawAmount = 40.712345678912345 });
             foreach (var u in units.Where(u => u.Team == "B")) ledger.SetState(u.Id, "downed", 600);
             var result = ledger.Snapshot(600, true);
             result.CaseId = battle.CaseId; result.TestDefName = battle.TestDefName; result.Seed = battle.Seed; result.InputHash = battle.InputHash;
@@ -89,7 +101,7 @@ internal static class ArenaResultTests
             result.Screenshots = new() { m.Id + "_bracket.png", m.Id + "_initial.png", m.Id + "_final.png" };
             new ArenaEndRule(0).Evaluate(result, 10800);
             m.Attempts.Add(result); m.BracketScreenshots.Add(result.Screenshots[0]);
-            schedule.Resolve(m.Left, ArenaScore.Calculate(input, result.Teams[0].Initial, result.Teams[0].Standing, result.ElapsedTicks));
+            schedule.Resolve(m.Left, ArenaScore.Calculate(input, result));
         }
         t.Champion = schedule.Champion; t.Status = "completed"; t.ChampionScreenshot = "champion.png";
         return new ArenaRunReport { Plan = plan, RunId = "run", Status = "completed", CompletedAtUtc = DateTime.UtcNow.ToString("O"), LoadedMods = new() { "test@1" }, Tournaments = new() { t } };

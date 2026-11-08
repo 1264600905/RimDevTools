@@ -41,8 +41,10 @@ namespace LogSyncMod.AutoTest.Scenarios
         public double SettlementSeconds { get; set; } = 3;
         public double ShowcasePageSeconds { get; set; } = ArenaShowcase.PageSeconds;
         public List<ArenaShowcasePageInput> ShowcasePages { get; set; } = new();
-        public decimal SurvivalWeight { get; set; } = 100;
-        public decimal SpeedWeight { get; set; } = 20;
+        public decimal SurvivalWeight { get; set; } = 45;
+        public decimal SuppressionWeight { get; set; } = 25;
+        public decimal ExchangeWeight { get; set; } = 20;
+        public decimal SpeedWeight { get; set; } = 10;
         public decimal TimeReferenceSeconds { get; set; } = 180;
         public List<ArenaEntrant> Entrants { get; set; } = new();
     }
@@ -56,18 +58,72 @@ namespace LogSyncMod.AutoTest.Scenarios
     }
     public sealed class ArenaScore
     {
+        public string Algorithm { get; set; }
         public int Initial { get; set; }
         public int Standing { get; set; }
+        public int Downed { get; set; }
+        public int EnemyInitial { get; set; }
+        public int EnemyStanding { get; set; }
         public int ElapsedTicks { get; set; }
-        public decimal SurvivalRatio { get; set; }
+        public int EffectiveElapsedTicks { get; set; }
+        public double EnemyDamage { get; set; }
+        public double DamageTaken { get; set; }
+        public decimal PreservationRatio { get; set; }
+        public decimal SuppressionRatio { get; set; }
+        public decimal ExchangeRatio { get; set; }
         public decimal SpeedFactor { get; set; }
+        public decimal PreservationPoints { get; set; }
+        public decimal SuppressionPoints { get; set; }
+        public decimal ExchangePoints { get; set; }
+        public decimal SpeedPoints { get; set; }
+        public string DamageQuality { get; set; }
+        public bool NeutralExchange { get; set; }
+        public bool IsRankable { get; set; }
         public decimal Value { get; set; }
-        public static ArenaScore Calculate(ArenaTournamentInput input, int initial, int standing, int ticks)
+        public static ArenaScore Calculate(ArenaTournamentInput input, GroupCombatRoundResult fight)
         {
-            if (initial < 1 || standing < 0 || standing > initial || ticks < 0) throw new ScenarioConfigurationException("Invalid arena score components");
-            var r = (decimal)standing / initial;
-            var q = Math.Max(0, 1 - (decimal)ticks / 60 / input.TimeReferenceSeconds);
-            return new ArenaScore { Initial = initial, Standing = standing, ElapsedTicks = ticks, SurvivalRatio = r, SpeedFactor = q, Value = input.SurvivalWeight * r + input.SpeedWeight * q };
+            if (input.TimeReferenceSeconds <= 0 || new[] { input.SurvivalWeight, input.SuppressionWeight, input.ExchangeWeight, input.SpeedWeight }.Any(w => w < 0 || w > 100)
+                || input.SurvivalWeight + input.SuppressionWeight + input.ExchangeWeight + input.SpeedWeight != 100)
+                throw new ScenarioConfigurationException("Arena score weights must total 100 with a positive time reference");
+            var winner = fight.Teams.Single(t => t.Outcome == "win");
+            var enemy = fight.Teams.Single(t => t.Outcome == "loss");
+            var originals = fight.Units.Where(u => u.Team == winner.Id && !u.JoinedDuringBattle).ToList();
+            var opponents = fight.Units.Where(u => u.Team == enemy.Id && !u.JoinedDuringBattle).ToList();
+            if (fight.Teams.Count != 2 || winner.Initial < 1 || enemy.Initial < 1 || originals.Count != winner.Initial || opponents.Count != enemy.Initial || fight.ElapsedTicks < 0
+                || !double.IsFinite(winner.EnemyDamage) || !double.IsFinite(winner.DamageTaken) || winner.EnemyDamage < 0 || winner.DamageTaken < 0)
+                throw new ScenarioConfigurationException("Invalid arena score components");
+            var ticks = fight.EndReason == "allUnavailable" && enemy.EliminatedAtTick.HasValue ? enemy.EliminatedAtTick.Value : fight.ElapsedTicks;
+            if (ticks < 0 || ticks > fight.ElapsedTicks) throw new ScenarioConfigurationException("Invalid arena elimination clock");
+            var score = new ArenaScore {
+                Algorithm = "victory-quality-v2", Initial = winner.Initial,
+                Standing = originals.Count(u => u.State == "standing"), Downed = originals.Count(u => u.State == "downed"),
+                EnemyInitial = enemy.Initial, EnemyStanding = opponents.Count(u => u.State == "standing"),
+                ElapsedTicks = fight.ElapsedTicks, EffectiveElapsedTicks = ticks,
+                EnemyDamage = winner.EnemyDamage, DamageTaken = winner.DamageTaken,
+                DamageQuality = fight.MeasurementQuality,
+                IsRankable = fight.MeasurementRequirementsMet && (fight.MeasurementQuality == "partial" || fight.MeasurementQuality == "complete"),
+                NeutralExchange = winner.EnemyDamage == 0 && winner.DamageTaken == 0
+            };
+            score.PreservationRatio = (score.Standing + .25m * score.Downed) / score.Initial;
+            score.SuppressionRatio = 1 - (decimal)score.EnemyStanding / score.EnemyInitial;
+            // Canonicalize to the game's JSON precision, then divide in decimal so
+            // round-tripped evidence and runtime scheduling use identical arithmetic.
+            var dealt = double.Parse(score.EnemyDamage.ToString("G15", CultureInfo.InvariantCulture), CultureInfo.InvariantCulture);
+            var taken = double.Parse(score.DamageTaken.ToString("G15", CultureInfo.InvariantCulture), CultureInfo.InvariantCulture);
+            if (!double.IsFinite(dealt)) dealt = score.EnemyDamage;
+            if (!double.IsFinite(taken)) taken = score.DamageTaken;
+            var largest = Math.Max(dealt, taken);
+            var scale = largest > 1e20 || largest > 0 && largest < 1e-10 ? largest : 1;
+            var dealtDecimal = decimal.Parse((dealt / scale).ToString("G15", CultureInfo.InvariantCulture), NumberStyles.Float, CultureInfo.InvariantCulture);
+            var takenDecimal = decimal.Parse((taken / scale).ToString("G15", CultureInfo.InvariantCulture), NumberStyles.Float, CultureInfo.InvariantCulture);
+            score.ExchangeRatio = score.NeutralExchange ? .5m : dealtDecimal / (dealtDecimal + takenDecimal);
+            score.SpeedFactor = Math.Max(0, 1 - (decimal)ticks / 60 / input.TimeReferenceSeconds);
+            score.PreservationPoints = input.SurvivalWeight * score.PreservationRatio;
+            score.SuppressionPoints = input.SuppressionWeight * score.SuppressionRatio;
+            score.ExchangePoints = input.ExchangeWeight * score.ExchangeRatio;
+            score.SpeedPoints = input.SpeedWeight * score.SpeedFactor;
+            score.Value = score.PreservationPoints + score.SuppressionPoints + score.ExchangePoints + score.SpeedPoints;
+            return score;
         }
     }
     public sealed class ArenaMatch
@@ -171,7 +227,7 @@ namespace LogSyncMod.AutoTest.Scenarios
         }
         public void Resolve(string winner, ArenaScore score)
         {
-            if (Active == null || winner != Active.Left && winner != Active.Right || score == null) throw new InvalidOperationException("Invalid advancement");
+            if (Active == null || winner != Active.Left && winner != Active.Right || score == null || !score.IsRankable || score.Value < 0 || score.Value > 100) throw new InvalidOperationException("Invalid advancement or unrankable arena score");
             Active.Winner = winner; Active.Score = score;
             pool.Remove(winner == Active.Left ? Active.Right : Active.Left);
             scores[winner] = score.Value; lastMatch[winner] = Active.Id;

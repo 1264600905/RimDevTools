@@ -48,8 +48,7 @@ namespace LogSyncMod.AutoTest
         internal static ArenaScore ScoreFor(GroupCombatRoundResult fight)
         {
             var winner = fight.Teams.SingleOrDefault(t => t.Outcome == "win");
-            return tournament == null || winner == null ? null : ArenaScore.Calculate(tournament.Input, winner.Initial,
-                fight.Units.Count(u => u.Team == winner.Id && !u.JoinedDuringBattle && u.State == "standing"), fight.ElapsedTicks);
+            return tournament == null || winner == null ? null : ArenaScore.Calculate(tournament.Input, fight);
         }
         internal static void Frame()
         {
@@ -185,7 +184,14 @@ namespace LogSyncMod.AutoTest
             else
             {
                 var id = winner.Id == "A" ? match.Left : match.Right;
-                scheduler.Resolve(id, ScoreFor(result)); match = null;
+                var score = ScoreFor(result);
+                if (!score.IsRankable)
+                {
+                    match.Score = score; report.Status = "error"; report.ErrorCode = "ARENA_SCORING_DATA_INCOMPLETE";
+                    report.Error = "Damage measurement failed; provisional score cannot determine advancement or low-score extra matches: " + match.Id;
+                    Write(); return;
+                }
+                scheduler.Resolve(id, score); match = null;
             }
             postBattleMatch = completedMatch; postBattleStarted = Time.realtimeSinceStartup; postBattleCaptured = false;
             postBattleOriginalSpeed = Find.TickManager.CurTimeSpeed; Find.TickManager.CurTimeSpeed = TimeSpeed.Paused;

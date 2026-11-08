@@ -61,6 +61,15 @@ if (args.Length == 1 && args[0] is "--tool-update" or "--tool-update-live")
     return;
 }
 
+if (args.Length == 2 && args[0] == "--arena-result")
+{
+    var report = JsonSerializer.Deserialize<LogSyncMod.AutoTest.Scenarios.ArenaRunReport>(File.ReadAllText(args[1]))!;
+    var error = ArenaResultValidator.ValidateIntegrity(report);
+    Console.WriteLine(error ?? "PASS: original arena artifacts independently validated");
+    Environment.ExitCode = error == null ? 0 : 1;
+    return;
+}
+
 if (args.Length == 1 && args[0] == "--arena-result")
 {
     ArenaResultTests.Run((passed, message) => {

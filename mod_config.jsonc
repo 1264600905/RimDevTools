@@ -125,7 +125,8 @@
         "rwzh.chinesepack.rimsaves",
         "trigger.universalblueprints",
         "trigger.eliteraidplus",
-        "trigger.logsyncmod"
+        "trigger.logsyncmod",
+        "ih.clean.textures"
     ],
 
     // 超时参数（单位: 秒）

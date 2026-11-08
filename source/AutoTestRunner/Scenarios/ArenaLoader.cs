@@ -70,11 +70,14 @@ namespace LogSyncMod.AutoTest.Scenarios
                     result.TimeoutRealSeconds = Integer(battle, "timeoutRealSeconds", 300, 1, 86400, input.Path);
                     result.ConfirmationTicks = Integer(battle, "confirmationTicks", 300, 0, 36000, input.Path);
                     if (!new[] { "normal", "fast", "superfast" }.Contains(ScenarioLoader.A(battle, "timeSpeed", "fast"))) ScenarioLoader.Fail(battle, input.Path, "invalid timeSpeed");
-                    var scoring = t.Element("Scoring"); Check(scoring, "survivalWeight speedWeight timeReferenceSeconds", "", input.Path);
-                    result.SurvivalWeight = (decimal)Number(scoring, "survivalWeight", 100, 0, 1000000, input.Path);
-                    result.SpeedWeight = (decimal)Number(scoring, "speedWeight", 20, 0, 1000000, input.Path);
+                    var scoring = t.Element("Scoring"); Check(scoring, "survivalWeight suppressionWeight exchangeWeight speedWeight timeReferenceSeconds", "", input.Path);
+                    result.SurvivalWeight = (decimal)Number(scoring, "survivalWeight", 45, 0, 100, input.Path);
+                    result.SuppressionWeight = (decimal)Number(scoring, "suppressionWeight", 25, 0, 100, input.Path);
+                    result.ExchangeWeight = (decimal)Number(scoring, "exchangeWeight", 20, 0, 100, input.Path);
+                    result.SpeedWeight = (decimal)Number(scoring, "speedWeight", 10, 0, 100, input.Path);
                     result.TimeReferenceSeconds = (decimal)Number(scoring, "timeReferenceSeconds", 180, 0, 86400, input.Path, true);
-                    if (result.TimeReferenceSeconds <= 0 || result.SpeedWeight + result.SurvivalWeight <= 0) ScenarioLoader.Fail(scoring, input.Path, "scoring needs a positive time reference and weight");
+                    if (result.TimeReferenceSeconds <= 0 || result.SurvivalWeight + result.SuppressionWeight + result.ExchangeWeight + result.SpeedWeight != 100)
+                        ScenarioLoader.Fail(scoring, input.Path, "scoring weights must total 100 (defaults: survivalWeight=45, suppressionWeight=25, exchangeWeight=20, speedWeight=10); time reference must be positive");
                     var tie = t.Element("TieBreak"); Check(tie, "onDraw maxReplays", "", input.Path);
                     if (ScenarioLoader.A(tie, "onDraw", "replay") != "replay") ScenarioLoader.Fail(tie, input.Path, "onDraw must be replay");
                     result.MaxReplays = Integer(tie, "maxReplays", 2, 0, 10, input.Path);

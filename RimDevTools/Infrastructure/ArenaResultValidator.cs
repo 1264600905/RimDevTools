@@ -89,12 +89,45 @@ public static class ArenaResultValidator
                 // require a distinct, completed presentation for every attempt.
                 if (m.PostBattleScreenshots.Count > 0 && (m.PostBattleScreenshots.Count != m.Attempts.Count || m.PostBattleScreenshots.Distinct(StringComparer.Ordinal).Count() != m.Attempts.Count || m.PostBattleScreenshots.Any(p => !p.EndsWith("_postbattle.png", StringComparison.Ordinal) || verifyArtifactFiles && !File.Exists(p)))) return "赛后天梯截图与每次尝试不一致";
                 var last = m.Attempts.Last(); var winner = last.Teams.Single(x => x.Outcome == "win");
+                var enemy = last.Teams.Single(x => x.Outcome == "loss");
+                if (!last.MeasurementRequirementsMet || last.MeasurementQuality is not ("partial" or "complete")) return "伤害采集异常的暂定分数不得参与晋级";
+                if (!double.IsFinite(winner.EnemyDamage) || !double.IsFinite(winner.DamageTaken) || winner.EnemyDamage < 0 || winner.DamageTaken < 0) return "评分伤害输入无效";
+                // Recompute each component independently from the final ledger, not the runtime scorer.
                 var standing = last.Units.Count(u => u.Team == winner.Id && !u.JoinedDuringBattle && u.State == "standing");
-                // Independent decimal arithmetic, using simulated ticks from the final snapshot.
-                var ratio = (decimal)standing / winner.Initial; var speed = Math.Max(0, 1 - (decimal)last.ElapsedTicks / 60 / input.TimeReferenceSeconds);
-                var value = input.SurvivalWeight * ratio + input.SpeedWeight * speed;
-                if (m.Score == null || m.Score.Initial != winner.Initial || m.Score.Standing != standing || m.Score.ElapsedTicks != last.ElapsedTicks || m.Score.SurvivalRatio != ratio || m.Score.SpeedFactor != speed || m.Score.Value != value) return "胜利评分无法按原始存活人数和模拟 tick 复算";
-                scores[m.Winner] = value; previous[m.Winner] = m.Id; alive.Remove(m.Winner == m.Left ? m.Right : m.Left);
+                var downed = last.Units.Count(u => u.Team == winner.Id && !u.JoinedDuringBattle && u.State == "downed");
+                var enemyStanding = last.Units.Count(u => u.Team == enemy.Id && !u.JoinedDuringBattle && u.State == "standing");
+                var effectiveTicks = last.EndReason == "allUnavailable" && enemy.EliminatedAtTick.HasValue ? enemy.EliminatedAtTick.Value : last.ElapsedTicks;
+                if (effectiveTicks < 0 || effectiveTicks > last.ElapsedTicks) return "评分有效战斗时钟无效";
+                var preservation = (standing + .25m * downed) / winner.Initial;
+                var suppression = 1 - (decimal)enemyStanding / enemy.Initial;
+                var neutral = winner.EnemyDamage == 0 && winner.DamageTaken == 0;
+                var culture = System.Globalization.CultureInfo.InvariantCulture;
+                var dealt = double.Parse(winner.EnemyDamage.ToString("G15", culture), culture);
+                var taken = double.Parse(winner.DamageTaken.ToString("G15", culture), culture);
+                if (!double.IsFinite(dealt)) dealt = winner.EnemyDamage;
+                if (!double.IsFinite(taken)) taken = winner.DamageTaken;
+                var largest = Math.Max(dealt, taken);
+                var scale = largest > 1e20 || largest > 0 && largest < 1e-10 ? largest : 1;
+                var dealtDecimal = decimal.Parse((dealt / scale).ToString("G15", culture), System.Globalization.NumberStyles.Float, culture);
+                var takenDecimal = decimal.Parse((taken / scale).ToString("G15", culture), System.Globalization.NumberStyles.Float, culture);
+                var exchange = neutral ? .5m : dealtDecimal / (dealtDecimal + takenDecimal);
+                var speed = Math.Max(0, 1 - (decimal)effectiveTicks / 60 / input.TimeReferenceSeconds);
+                var computed = new ArenaScore {
+                    Algorithm = "victory-quality-v2", Initial = winner.Initial, Standing = standing, Downed = downed,
+                    EnemyInitial = enemy.Initial, EnemyStanding = enemyStanding,
+                    ElapsedTicks = last.ElapsedTicks, EffectiveElapsedTicks = effectiveTicks,
+                    EnemyDamage = winner.EnemyDamage, DamageTaken = winner.DamageTaken,
+                    PreservationRatio = preservation, SuppressionRatio = suppression, ExchangeRatio = exchange, SpeedFactor = speed,
+                    PreservationPoints = input.SurvivalWeight * preservation, SuppressionPoints = input.SuppressionWeight * suppression,
+                    ExchangePoints = input.ExchangeWeight * exchange, SpeedPoints = input.SpeedWeight * speed,
+                    DamageQuality = last.MeasurementQuality, NeutralExchange = neutral, IsRankable = true
+                };
+                computed.Value = computed.PreservationPoints + computed.SuppressionPoints + computed.ExchangePoints + computed.SpeedPoints;
+                if (m.Score == null || computed.Value < 0 || computed.Value > 100) return "缺少有效的百分制评分";
+                foreach (var property in typeof(ArenaScore).GetProperties())
+                    if (!Equals(property.GetValue(m.Score), property.GetValue(computed)))
+                        return "百分制评分无法按原始账本复算: " + m.Id + " / " + property.Name + "，记录=" + property.GetValue(m.Score) + "，复算=" + property.GetValue(computed);
+                scores[m.Winner] = computed.Value; previous[m.Winner] = m.Id; alive.Remove(m.Winner == m.Left ? m.Right : m.Left);
             }
             if (string.IsNullOrEmpty(t.ChampionScreenshot) || verifyArtifactFiles && !File.Exists(t.ChampionScreenshot)) return "缺少冠军截图";
             if (queue.Count != 0 || alive.Count != 1 || t.Champion != alive[0]) return "冠军不是唯一最终存活参赛者";

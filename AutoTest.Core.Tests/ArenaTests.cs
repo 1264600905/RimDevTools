@@ -143,6 +143,10 @@ internal static class ArenaTests
         Reject(() => Parse(xml.Replace("<Entrants>", "<Entrants typo='true'>")), "arena strict schema rejects unknown fields");
         Reject(() => Parse(xml.Replace("</Tournament>", "<Battle durationSeconds='NaN'/></Tournament>")), "arena validates finite simulated durations");
         Reject(() => Parse(xml.Replace("</Tournament>", "<Scoring timeReferenceSeconds='0'/></Tournament>")), "arena rejects zero scoring time reference");
+        check(Parse(xml.Replace("</Tournament>", "<Scoring survivalWeight='40' suppressionWeight='30' exchangeWeight='20' speedWeight='10'/></Tournament>")).Tournaments[0].SuppressionWeight == 30,
+            "arena accepts four configurable weights totaling one hundred");
+        foreach (var badScore in new[] { "survivalWeight='100' speedWeight='20'", "exchangeWeight='-1'", "suppressionWeight='101'", "speedWeight='NaN'", "exchangeWeight='0'" })
+            Reject(() => Parse(xml.Replace("</Tournament>", "<Scoring " + badScore + "/></Tournament>")), "arena rejects invalid or legacy non-percent scoring weights: " + badScore);
         Reject(() => Parse(xml.Replace("</Tournament>", "<Output width='1920'/></Tournament>")), "arena requires paired output dimensions");
         Reject(() => Parse("<!DOCTYPE ArenaSuite [<!ENTITY x SYSTEM 'file:///C:/Windows/win.ini'>]>" + xml), "arena disables DTD and external entity resolution");
         Reject(() => ScenarioLoader.Compile(plan.Inputs), "ordinary regression entry refuses ArenaSuite");
@@ -154,9 +158,63 @@ internal static class ArenaTests
             && PawnGroupFormation.Extents(verticalActors[1], true) == (0, 4)
             && verticalActors.All(a => ScenarioLoader.I(a, "originZ") + PawnGroupFormation.Extents(a, true).z / 2 == 50),
             "arena centers both full and partial vertical formations using the same geometry as group combat");
-        var score = ArenaScore.Calculate(input, 20, 15, 2700);
-        check(score.Value == 90 && score.SurvivalRatio == .75m && score.SpeedFactor == .75m, "victory score uses initial standing ratio and simulated seconds");
-        check(ArenaScore.Calculate(input, 20, 0, 12000).Value == 0, "summon-only victory cannot grant original roster survival points; late time bonus floors at zero");
+        GroupCombatRoundResult ScoreBattle()
+        {
+            var result = new GroupCombatRoundResult { ElapsedTicks = 2700, EndReason = "timeLimitRatio", MeasurementRequirementsMet = true,
+                Teams = new() { new() { Id = "A", Outcome = "win", Initial = 20, EnemyDamage = 300, DamageTaken = 100 }, new() { Id = "B", Outcome = "loss", Initial = 10 } } };
+            result.Units.AddRange(Enumerable.Range(0, 20).Select(i => new GroupCombatUnit { Id = "A" + i, Team = "A", State = i < 15 ? "standing" : i < 18 ? "downed" : "dead" }));
+            result.Units.AddRange(Enumerable.Range(0, 10).Select(i => new GroupCombatUnit { Id = "B" + i, Team = "B", State = i < 2 ? "standing" : "downed" }));
+            return result;
+        }
+        var scoredBattle = ScoreBattle(); var score = ArenaScore.Calculate(input, scoredBattle);
+        check(score.Value == 77.9375m && score.PreservationPoints == 35.4375m && score.SuppressionPoints == 20 && score.ExchangePoints == 15 && score.SpeedPoints == 7.5m
+            && score.IsRankable && score.Algorithm == "victory-quality-v2", "percent score independently accounts for original survivors, downed quarter credit, suppression, damage exchange and speed");
+        scoredBattle.Units.Add(new GroupCombatUnit { Id = "summonA", Team = "A", JoinedDuringBattle = true });
+        scoredBattle.Units.Add(new GroupCombatUnit { Id = "summonB", Team = "B", JoinedDuringBattle = true });
+        check(ArenaScore.Calculate(input, scoredBattle).Value == score.Value, "reinforcements do not inflate original preservation or reduce original enemy suppression");
+        var roundTrip = ScoreBattle(); roundTrip.Teams[0].EnemyDamage = 249.8938446044921875; roundTrip.Teams[0].DamageTaken = 40.712345678912345;
+        var canonicalScore = ArenaScore.Calculate(input, roundTrip);
+        roundTrip.Teams[0].EnemyDamage = double.Parse(roundTrip.Teams[0].EnemyDamage.ToString("G15", System.Globalization.CultureInfo.InvariantCulture), System.Globalization.CultureInfo.InvariantCulture);
+        roundTrip.Teams[0].DamageTaken = double.Parse(roundTrip.Teams[0].DamageTaken.ToString("G15", System.Globalization.CultureInfo.InvariantCulture), System.Globalization.CultureInfo.InvariantCulture);
+        check(ArenaScore.Calculate(input, roundTrip).Value == canonicalScore.Value, "game JSON precision round trip cannot alter unrounded score or extra-match ordering");
+        scoredBattle.Teams[0].DamageTaken = 300;
+        check(ArenaScore.Calculate(input, scoredBattle).ExchangePoints == 10, "exchange uses the entire team damage ledger, including all recorded incoming friendly, self and environmental damage");
+        scoredBattle.Teams[0].EnemyDamage = scoredBattle.Teams[0].DamageTaken = 0;
+        check(ArenaScore.Calculate(input, scoredBattle).ExchangePoints == 10 && ArenaScore.Calculate(input, scoredBattle).NeutralExchange, "zero recorded damage on both sides receives an explicit neutral exchange score");
+        scoredBattle.Teams[0].EnemyDamage = scoredBattle.Teams[0].DamageTaken = double.MaxValue;
+        check(ArenaScore.Calculate(input, scoredBattle).ExchangePoints == 10, "finite extreme damage sums cannot overflow the exchange ratio");
+        scoredBattle.Teams[0].DamageTaken = 0;
+        check(ArenaScore.Calculate(input, scoredBattle).ExchangePoints == 20, "damage with no recorded cost earns the exchange maximum");
+        scoredBattle.Teams[0].EnemyDamage = double.NaN;
+        Reject(() => ArenaScore.Calculate(input, scoredBattle), "invalid damage cannot produce a rankable score");
+        var confirmation = ScoreBattle(); confirmation.EndReason = "allUnavailable";
+        foreach (var u in confirmation.Units.Where(u => u.Team == "B")) u.State = "downed";
+        confirmation.Teams[1].EliminatedAtTick = 2400;
+        var beforeWait = ArenaScore.Calculate(input, confirmation); confirmation.ElapsedTicks += 600;
+        check(ArenaScore.Calculate(input, confirmation).Value == beforeWait.Value && beforeWait.EffectiveElapsedTicks == 2400,
+            "changing the final defeat-confirmation wait cannot change victory quality");
+        confirmation.EndReason = "timeLimitRatio";
+        check(ArenaScore.Calculate(input, confirmation).EffectiveElapsedTicks == confirmation.ElapsedTicks, "time-limit wins retain their full combat clock even if enemy elimination history exists");
+        confirmation.ElapsedTicks = 12000;
+        foreach (var u in confirmation.Units.Where(u => u.Team == "A")) u.State = "dead";
+        confirmation.Units.Add(new GroupCombatUnit { Id = "summon", Team = "A", JoinedDuringBattle = true });
+        var summonScore = ArenaScore.Calculate(input, confirmation);
+        check(summonScore.PreservationPoints == 0 && summonScore.SpeedPoints == 0 && summonScore.Value >= 0 && summonScore.Value <= 100,
+            "summon-only victory grants no original survival points and late victories no speed points");
+        var perfect = ScoreBattle(); perfect.ElapsedTicks = 0;
+        foreach (var u in perfect.Units) u.State = u.Team == "A" ? "standing" : "dead";
+        perfect.Teams[0].DamageTaken = 0;
+        check(ArenaScore.Calculate(input, perfect).Value == 100, "perfect victory is capped at exactly one hundred");
+        foreach (var quality in new[] { "partial", "complete", "incomplete", "unknown" })
+        {
+            perfect.MeasurementQuality = quality;
+            check(ArenaScore.Calculate(input, perfect).IsRankable == (quality is "partial" or "complete"), "rankability reflects the recorded damage quality: " + quality);
+        }
+        perfect.MeasurementQuality = "partial"; perfect.MeasurementRequirementsMet = false;
+        check(!ArenaScore.Calculate(input, perfect).IsRankable, "failed damage measurement produces only a provisional score");
+        var unrankableScheduler = new ArenaScheduler(Tournament(input, 2)); unrankableScheduler.Next();
+        try { unrankableScheduler.Resolve(unrankableScheduler.Active.Left, ArenaScore.Calculate(input, perfect)); check(false, "unrankable scores block tournament advancement"); }
+        catch (InvalidOperationException) { check(true, "unrankable scores block tournament advancement"); }
         for (int n = 2; n <= 64; n++)
         {
             var tournament = Tournament(input, n); var schedule = new ArenaScheduler(tournament);
@@ -165,7 +223,7 @@ internal static class ArenaTests
             while ((match = schedule.Next()) != null)
             {
                 valid &= !eliminated.Contains(match.Left) && !eliminated.Contains(match.Right) && pairs.Add(JsonSerializer.Serialize(match.PairKey));
-                eliminated.Add(match.Right); schedule.Resolve(match.Left, new ArenaScore { Value = 100 - count++ });
+                eliminated.Add(match.Right); schedule.Resolve(match.Left, new ArenaScore { IsRankable = true, Value = 100 - count++ });
                 if (count > 64) { valid = false; break; }
             }
             check(valid && count == n - 1 && schedule.Champion != null && !eliminated.Contains(schedule.Champion), "knockout invariants: " + n + " entrants, N-1 unique unordered pairs, no eliminated entrant returns");
@@ -184,18 +242,18 @@ internal static class ArenaTests
         }
         var five = Tournament(input, 5); var s5 = new ArenaScheduler(five);
         var qualification = s5.Next(); check(qualification.Kind == "qualification" && qualification.Round == 0, "odd initial entrant count begins with a real qualification match");
-        s5.Resolve(qualification.Left, new ArenaScore { Value = 10 });
+        s5.Resolve(qualification.Left, new ArenaScore { IsRankable = true, Value = 10 });
         check(s5.Next().Kind == "round", "qualification winner returns to full even round");
         var six = Tournament(input, 6); var s6 = new ArenaScheduler(six); var wins = new List<string>();
-        for (int i = 0; i < 3; i++) { var m = s6.Next(); wins.Add(m.Left); s6.Resolve(m.Left, new ArenaScore { Value = i == 0 ? 100 : i }); }
+        for (int i = 0; i < 3; i++) { var m = s6.Next(); wins.Add(m.Left); s6.Resolve(m.Left, new ArenaScore { IsRankable = true, Value = i == 0 ? 100 : i }); }
         var extra = s6.Next();
         check(extra.Kind == "extra" && extra.PairKey.Order().SequenceEqual(wins.Skip(1).Order()), "odd winners select the two lowest latest victory scores after the full round");
-        s6.Resolve(extra.Left, new ArenaScore { Value = .125m });
+        s6.Resolve(extra.Left, new ArenaScore { IsRankable = true, Value = .125m });
         check(s6.Next().Kind == "round", "extra-match winner advances to the next ordinary round");
         string Trace(int seed)
         {
             var t = Tournament(input, 8); t.Input.Seed = seed; var scheduler = new ArenaScheduler(t); var keys = new List<string>(); ArenaMatch m;
-            while ((m = scheduler.Next()) != null) { keys.Add(m.Id + JsonSerializer.Serialize(m.PairKey)); scheduler.Resolve(m.Left, new ArenaScore { Value = 1 }); }
+            while ((m = scheduler.Next()) != null) { keys.Add(m.Id + JsonSerializer.Serialize(m.PairKey)); scheduler.Resolve(m.Left, new ArenaScore { IsRankable = true, Value = 1 }); }
             return string.Join(";", keys);
         }
         check(Trace(12345) == Trace(12345) && Trace(12345) != Trace(23456), "fixed hashing gives reproducible seed-dependent bracket ordering");
@@ -208,7 +266,7 @@ internal static class ArenaTests
             var a = scheduleA.Next(); var b = scheduleB.Next();
             if (a == null || b == null) { stableOrder &= a == null && b == null; break; }
             stableOrder &= a.Left == b.Left && a.Right == b.Right && a.Kind == b.Kind;
-            scheduleA.Resolve(a.Left, new ArenaScore { Value = 50 }); scheduleB.Resolve(b.Left, new ArenaScore { Value = 50 });
+            scheduleA.Resolve(a.Left, new ArenaScore { IsRankable = true, Value = 50 }); scheduleB.Resolve(b.Left, new ArenaScore { IsRankable = true, Value = 50 });
         }
         check(stableOrder && scheduleA.Champion == scheduleB.Champion, "equal counts and scores remain stable when XML entrant order is reversed");
         var counts = Tournament(input, 4); counts.Rosters[0].ResolvedCount = 1; counts.Rosters[1].ResolvedCount = 30; counts.Rosters[2].ResolvedCount = 31; counts.Rosters[3].ResolvedCount = 100;
