@@ -119,10 +119,10 @@ namespace LogSyncMod.AutoTest
                     .Select(a => (double)a.GetStatValue(stat)).ToArray() ?? Array.Empty<double>())));
         }
 
-        internal static void Clear()
+        // Keep the frozen portraits and scales for the final standings; release all
+        // live pawns and their map before any battle starts.
+        internal static void ReleasePreviews()
         {
-            foreach (var texture in portraits.Values) { texture.Release(); UnityEngine.Object.Destroy(texture); }
-            portraits.Clear();
             foreach (var pawn in previewPawns.Values)
             {
                 if (Find.WorldPawns.Contains(pawn)) Find.WorldPawns.RemovePawn(pawn);
@@ -131,18 +131,27 @@ namespace LogSyncMod.AutoTest
             previewPawns.Clear();
             previewMap?.Dispose(); previewMap = null;
             if (tournament?.Showcase != null) tournament.Showcase.PreviewCleanupComplete = true;
-            generatedHediffs.Clear(); Ready = false;
+            generatedHediffs.Clear();
+        }
+
+        internal static void Clear()
+        {
+            ReleasePreviews();
+            foreach (var texture in portraits.Values) { texture.Release(); UnityEngine.Object.Destroy(texture); }
+            portraits.Clear(); Ready = false;
             tournament = null; maxima = null; hues = null;
         }
 
         private static void DrawPortrait(Rect rect, ArenaEntrantProfile entry)
         {
-            var pawn = previewPawns[entry.Id];
-            if (!pawn.RaceProps.Humanlike)
+            if (portraits.TryGetValue(entry.Id, out var cached)) { GUI.DrawTexture(rect, cached); return; }
+            var kind = DefDatabase<PawnKindDef>.GetNamed(entry.PawnKind);
+            if (!kind.RaceProps.Humanlike)
             {
-                Widgets.DefIcon(rect, DefDatabase<PawnKindDef>.GetNamed(entry.PawnKind).race);
+                Widgets.DefIcon(rect, kind.race);
                 return;
             }
+            var pawn = previewPawns[entry.Id];
             if (!portraits.TryGetValue(entry.Id, out var texture) && Event.current.type == EventType.Repaint)
             {
                 PortraitsCache.SetDirty(pawn);
@@ -163,7 +172,7 @@ namespace LogSyncMod.AutoTest
             GroupCombatOverlay.DrawText(rect, value, size, anchor); GUI.color = previous;
         }
 
-        internal static void Draw(int page, float elapsed)
+        internal static void Draw(int page, float elapsed, bool standings = false)
         {
             if (tournament?.Showcase == null) return;
             if (!Ready)
@@ -185,11 +194,15 @@ namespace LogSyncMod.AutoTest
                 Widgets.DrawBoxSolid(new Rect(0, 0, w, h), new Color(.025f, .035f, .055f));
                 Widgets.DrawBoxSolid(R(0, 0, 1600, 6), Gold);
                 Widgets.DrawBoxSolid(R(72, 66, 30, 3), Gold);
-                TextAt(R(116, 48, 500, 36), "ARENA  /  参赛者巡礼", 15 * scale, Gold);
-                TextAt(R(72, 94, 1200, 68), "本届参赛者", 46 * scale, Color.white);
-                var pageInput = tournament.Input.ShowcasePages[page];
-                TextAt(R(1030, 117, 498, 40), tournament.Rosters.Count + " 种参赛者  ·  本页 " + pageInput.Seconds.ToString("0.##", CultureInfo.InvariantCulture) + " 秒", 17 * scale, Muted, TextAnchor.MiddleRight);
-                var caption = pageInput.Caption.Length > 0 ? "“" + pageInput.Caption + "”" : "全员登场  ·  淘汰对决即将开始";
+                TextAt(R(116, 48, 500, 36), standings ? "ARENA  /  荣誉榜" : "ARENA  /  参赛者巡礼", 15 * scale, Gold);
+                TextAt(R(72, 94, 930, 68), standings ? tournament.TopFive.Entries.Count == 5 ? "本届前五 · 荣耀时刻" : "本届排名 · 荣耀时刻" : "本届参赛者", 46 * scale, Color.white);
+                var pageInput = standings ? new ArenaShowcasePageInput {
+                    Seconds = tournament.TopFive.DurationSeconds,
+                    EntrantIds = tournament.TopFive.Entries.Select(p => p.EntrantId).ToList(),
+                    Caption = ""
+                } : tournament.Input.ShowcasePages[page];
+                TextAt(R(1030, 117, 498, 40), standings ? "赛事完结  ·  展示 10 秒" : tournament.Rosters.Count + " 种参赛者  ·  本页 " + pageInput.Seconds.ToString("0.##", CultureInfo.InvariantCulture) + " 秒", 17 * scale, Muted, TextAnchor.MiddleRight);
+                var caption = standings ? "晋级越远，名次越高  ·  同阶段按最近胜利评分排序" : pageInput.Caption.Length > 0 ? "“" + pageInput.Caption + "”" : "全员登场  ·  淘汰对决即将开始";
                 // User copy is a literal sentence, not rich-text markup.
                 var captionStyle = new GUIStyle(GUI.skin.label) { fontSize = Mathf.RoundToInt(Mathf.Min(20, 1456f / Mathf.Max(1, caption.Length)) * scale), alignment = TextAnchor.MiddleLeft, richText = false, wordWrap = false };
                 captionStyle.normal.textColor = pageInput.Caption.Length > 0 ? new Color(.87f, .8f, .65f) : Muted;
@@ -205,18 +218,24 @@ namespace LogSyncMod.AutoTest
                 for (var i = 0; i < entries.Count; i++)
                 {
                     var entry = entries[i];
-                    var color = Color.HSVToRGB(hues[entry.PawnKind], .48f, .95f);
+                    var color = standings && i == 0 ? Gold : standings && i == 1 ? new Color(.78f, .85f, .93f) : standings && i == 2 ? new Color(.88f, .59f, .37f) : Color.HSVToRGB(hues[entry.PawnKind], .48f, .95f);
                     var reveal = ArenaPresentation.Progress(elapsed, i * .045f, .36f);
                     var x = startX + i * (cardWidth + 18); var y = 234 + (1 - reveal) * 16;
                     Widgets.DrawBoxSolid(R(x + 3, y + 7, cardWidth, 554), new Color(0, 0, 0, .2f));
                     Widgets.DrawBoxSolid(R(x, y, cardWidth, 554), new Color(.065f, .082f, .115f));
                     Widgets.DrawBoxSolid(R(x, y, cardWidth, 3), color);
                     Widgets.DrawBoxSolid(R(x + 1, y + 4, cardWidth - 2, 169), Color.Lerp(new Color(.065f, .082f, .115f), color, .085f));
-                    TextAt(R(x + 18, y + 15, 95, 26), "选手 " + (offset + i + 1).ToString("D2"), 13 * scale, color);
+                    var rankLabel = standings ? new[] { "第一名 · 冠军", "第二名 · 亚军", "第三名", "第四名", "第五名" }[i] : "选手 " + (offset + i + 1).ToString("D2");
+                    TextAt(R(x + 18, y + 15, cardWidth - 85, 26), rankLabel, standings ? 16 * scale : 13 * scale, color);
                     TextAt(R(x + cardWidth - 80, y + 12, 60, 28), "◆", 16 * scale, color, TextAnchor.MiddleRight);
                     DrawPortrait(R(x + (cardWidth - 144) / 2, y + 30, 144, 144), entry);
                     var nameSize = Mathf.Min(25, (cardWidth - 38) / Mathf.Max(1, entry.DisplayName.Length));
                     TextAt(R(x + 18, y + 184, cardWidth - 36, 40), entry.DisplayName, nameSize * scale, Color.white, TextAnchor.MiddleCenter);
+                    if (standings)
+                    {
+                        var placement = tournament.TopFive.Entries[i];
+                        TextAt(R(x + 18, y + 216, cardWidth - 36, 22), placement.Wins == 0 ? "本届未获胜" : placement.Wins + " 场胜利  ·  最近胜利 " + placement.LastVictoryScore.ToString("F2") + " 分", 12 * scale, color, TextAnchor.MiddleCenter);
+                    }
                     Widgets.DrawBoxSolid(R(x + 22, y + 239, cardWidth - 44, 1), new Color(.16f, .2f, .26f));
                     var values = entry.Values();
                     for (var row = 0; row < Labels.Length; row++)
@@ -241,8 +260,8 @@ namespace LogSyncMod.AutoTest
                     }
                 }
 
-                var pages = tournament.Input.ShowcasePages.Count;
-                TextAt(R(72, 805, 1150, 26), "成年角色与原生装备  ·  护甲含衣甲覆盖  ·  条长以本届同项最高值为满格", 14 * scale, Muted);
+                var pages = standings ? 1 : tournament.Input.ShowcasePages.Count;
+                TextAt(R(72, 805, 1150, 26), standings ? "沿用赛前角色与属性快照  ·  条长仍以本届全体同项最高值为满格" : "成年角色与原生装备  ·  护甲含衣甲覆盖  ·  条长以本届同项最高值为满格", 14 * scale, Muted);
                 for (var i = 0; i < GradeColors.Length; i++)
                 {
                     Widgets.DrawBoxSolid(R(72 + i * 193, 841, 7, 7), GradeColors[i]);

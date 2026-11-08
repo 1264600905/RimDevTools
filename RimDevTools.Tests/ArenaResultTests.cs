@@ -49,6 +49,15 @@ internal static class ArenaResultTests
         foreach (var m in presented.Tournaments[0].Matches) m.PostBattleScreenshots.Add(m.Id + "_postbattle.png");
         check(ArenaResultValidator.ValidateIntegrity(presented, presented.Plan, false) == null, "arena accepts per-attempt post-battle captures while retaining original three battle captures");
         Reject(r => r.Tournaments[0].ChampionScreenshot = null!, "arena requires a final champion capture");
+        Reject(r => r.Tournaments[0].TopFive = null!, "arena requires a completed top-five presentation");
+        Reject(r => r.Tournaments[0].TopFive.VisibleSeconds = 9.99, "arena rejects a final page shorter than ten seconds");
+        Reject(r => r.Tournaments[0].TopFive.DurationSeconds = 5, "arena requires a fixed ten-second final page");
+        Reject(r => r.Tournaments[0].TopFive.SimulationTicks = 1, "arena final page must keep simulation paused");
+        Reject(r => r.Tournaments[0].TopFive.Completed = false, "arena rejects an unfinished top-five presentation");
+        Reject(r => r.Tournaments[0].TopFive.Entries.Reverse(), "arena independently reconstructs placing order");
+        Reject(r => r.Tournaments[0].TopFive.Entries[1].Rank = 1, "arena rejects duplicated placing numbers");
+        Reject(r => r.Tournaments[0].TopFive.Entries[1].LastVictoryScore++, "arena checks placing tiebreak scores against the match history");
+        Reject(r => r.Tournaments[0].TopFive.Entries.RemoveAt(4), "arena requires five distinct places when enough entrants compete");
         Reject(r => r.Tournaments[0].Rosters[0].UnitCombatPower = 0, "arena count mode still requires positive combatPower");
         Reject(r => r.Tournaments[0].Input.SurvivalWeight++, "arena rejects result-side changes to tournament scoring configuration");
         Reject(r => r.Tournaments[0].Input.ShowcasePages[0].Caption = "篡改文案", "arena rejects result-side changes to XML showcase copy");
@@ -104,6 +113,7 @@ internal static class ArenaResultTests
             schedule.Resolve(m.Left, ArenaScore.Calculate(input, result));
         }
         t.Champion = schedule.Champion; t.Status = "completed"; t.ChampionScreenshot = "champion.png";
+        t.TopFive = new ArenaTopFiveResult { Entries = ArenaStandings.Build(t), Completed = true, VisibleSeconds = 10, Screenshot = t.ChampionScreenshot };
         return new ArenaRunReport { Plan = plan, RunId = "run", Status = "completed", CompletedAtUtc = DateTime.UtcNow.ToString("O"), LoadedMods = new() { "test@1" }, Tournaments = new() { t } };
     }
 }

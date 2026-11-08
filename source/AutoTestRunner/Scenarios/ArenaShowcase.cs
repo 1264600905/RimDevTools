@@ -56,6 +56,46 @@ namespace LogSyncMod.AutoTest.Scenarios
         public List<ArenaShowcasePage> Pages { get; set; } = new();
     }
 
+    public sealed class ArenaPlacement
+    {
+        public int Rank { get; set; }
+        public string EntrantId { get; set; }
+        public int EliminationStage { get; set; }
+        public decimal LastVictoryScore { get; set; }
+        public int Wins { get; set; }
+    }
+
+    public sealed class ArenaTopFiveResult
+    {
+        public List<ArenaPlacement> Entries { get; set; } = new();
+        public double DurationSeconds { get; set; } = ArenaStandings.DisplaySeconds;
+        public double VisibleSeconds { get; set; }
+        public int SimulationTicks { get; set; }
+        public bool Completed { get; set; }
+        public string Screenshot { get; set; }
+    }
+
+    public static class ArenaStandings
+    {
+        public const double DisplaySeconds = 10;
+        public static List<ArenaPlacement> Build(ArenaTournamentResult tournament)
+        {
+            if (tournament.Champion == null || tournament.Matches.Count != tournament.Rosters.Count - 1 || tournament.Matches.Any(m => m.Winner == null))
+                throw new InvalidOperationException("Standings require a completed knockout tournament");
+            return tournament.Rosters.Select(roster => {
+                var loss = tournament.Matches.SingleOrDefault(m => (m.Left == roster.Id || m.Right == roster.Id) && m.Winner != roster.Id);
+                var wins = tournament.Matches.Where(m => m.Winner == roster.Id).ToList();
+                return new ArenaPlacement {
+                    EntrantId = roster.Id, EliminationStage = loss == null ? int.MaxValue : loss.Round * 2 + (loss.Kind == "extra" ? 1 : 0),
+                    LastVictoryScore = wins.LastOrDefault()?.Score?.Value ?? 0, Wins = wins.Count
+                };
+            }).OrderByDescending(p => p.EliminationStage).ThenByDescending(p => p.LastVictoryScore)
+                .ThenBy(p => ArenaScheduler.Stable(tournament.Input.Seed, p.EntrantId), StringComparer.Ordinal)
+                .ThenBy(p => p.EntrantId, StringComparer.Ordinal).Take(5)
+                .Select((p, index) => { p.Rank = index + 1; return p; }).ToList();
+        }
+    }
+
     public static class ArenaShowcase
     {
         public const int PageSize = 5;

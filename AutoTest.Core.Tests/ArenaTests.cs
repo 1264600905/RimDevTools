@@ -227,6 +227,18 @@ internal static class ArenaTests
                 if (count > 64) { valid = false; break; }
             }
             check(valid && count == n - 1 && schedule.Champion != null && !eliminated.Contains(schedule.Champion), "knockout invariants: " + n + " entrants, N-1 unique unordered pairs, no eliminated entrant returns");
+            tournament.Champion = schedule.Champion;
+            var standings = ArenaStandings.Build(tournament);
+            var final = tournament.Matches.Last();
+            check(standings.Count == Math.Min(5, n) && standings.Select(p => p.EntrantId).Distinct().Count() == standings.Count
+                && standings.Select(p => p.Rank).SequenceEqual(Enumerable.Range(1, standings.Count))
+                && standings[0].EntrantId == schedule.Champion && standings[1].EntrantId == (final.Winner == final.Left ? final.Right : final.Left),
+                "top five preserve champion, runner-up and distinct sequential places: " + n);
+            check(standings.Zip(standings.Skip(1), (a, b) => a.EliminationStage >= b.EliminationStage
+                && (a.EliminationStage != b.EliminationStage || a.LastVictoryScore >= b.LastVictoryScore)).All(x => x),
+                "placing favors later elimination stages before latest winning scores: " + n);
+            var reversed = JsonSerializer.Deserialize<ArenaTournamentResult>(JsonSerializer.Serialize(tournament)); reversed.Rosters.Reverse();
+            check(JsonSerializer.Serialize(standings) == JsonSerializer.Serialize(ArenaStandings.Build(reversed)), "placing is independent of entrant XML order: " + n);
             if (n is 5 or 20 or 64)
             {
                 tournament.Champion = schedule.Champion;
@@ -240,6 +252,18 @@ internal static class ArenaTests
                     "advancement and champion cards retain winner color identity: " + n);
             }
         }
+        var placingFixture = Tournament(input, 8);
+        void PlaceMatch(int round, string kind, string leftId, string rightId, string winnerId, decimal points)
+            => placingFixture.Matches.Add(new ArenaMatch { Round = round, Kind = kind, Left = leftId, Right = rightId, Winner = winnerId, Score = new ArenaScore { Value = points, IsRankable = true } });
+        PlaceMatch(1, "round", "e0", "e1", "e0", 90); PlaceMatch(1, "round", "e2", "e3", "e2", 10);
+        PlaceMatch(1, "round", "e4", "e5", "e4", 80); PlaceMatch(1, "round", "e6", "e7", "e6", 20);
+        PlaceMatch(2, "round", "e0", "e2", "e0", 15); PlaceMatch(2, "round", "e4", "e6", "e4", 5);
+        PlaceMatch(3, "round", "e0", "e4", "e4", 1); placingFixture.Champion = "e4";
+        var placed = ArenaStandings.Build(placingFixture);
+        check(placed.Take(4).Select(p => p.EntrantId).SequenceEqual(new[] { "e4", "e0", "e6", "e2" }),
+            "champion and runner-up outrank higher-scoring semifinal losers, whose latest victory breaks their tie");
+        var finalLoss = placingFixture.Matches.Single(m => m.Left == "e4" && m.Right == "e6"); finalLoss.Kind = "extra";
+        check(ArenaStandings.Build(placingFixture)[2].EntrantId == "e6", "extra-match elimination is later than ordinary losses in the same round");
         var five = Tournament(input, 5); var s5 = new ArenaScheduler(five);
         var qualification = s5.Next(); check(qualification.Kind == "qualification" && qualification.Round == 0, "odd initial entrant count begins with a real qualification match");
         s5.Resolve(qualification.Left, new ArenaScore { IsRankable = true, Value = 10 });

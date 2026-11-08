@@ -14,6 +14,13 @@ namespace LogSyncMod.AutoTest.Scenarios
             foreach (var t in report.Tournaments)
             {
                 s.AppendLine("## " + t.Input.Name).AppendLine().AppendLine("冠军：" + (t.Champion ?? "尚未决出")).AppendLine();
+                if (t.TopFive != null)
+                {
+                    s.AppendLine("|名次|参赛者|胜场|最近胜利评分|").AppendLine("|---:|---|---:|---:|");
+                    foreach (var p in t.TopFive.Entries)
+                        s.AppendLine($"|{p.Rank}|{t.Rosters.Single(r => r.Id == p.EntrantId).DisplayName ?? p.EntrantId}|{p.Wins}|{(p.Wins == 0 ? "—" : p.LastVictoryScore.ToString("F2"))}|");
+                    s.AppendLine($"\n前五展示：{t.TopFive.VisibleSeconds:F2} / {t.TopFive.DurationSeconds:F0} 秒，模拟 tick：{t.TopFive.SimulationTicks}。\n");
+                }
                 s.AppendLine("|参赛者|PawnKind|单体 combatPower|人数|预算|实际战力|剩余|").AppendLine("|---|---|---:|---:|---:|---:|---:|");
                 foreach (var r in t.Rosters) s.AppendLine($"|{r.Id}|{r.PawnKind}|{r.UnitCombatPower}|{r.ResolvedCount}|{r.RequestedBudget}|{r.ActualCombatPower}|{r.UnusedBudget}|");
                 s.AppendLine().AppendLine("评分：百分制胜利质量；保全/压制按初始成员，倒地保全权重 0.25；交换按已记录伤害，速度扣除最终胜负确认等待。")

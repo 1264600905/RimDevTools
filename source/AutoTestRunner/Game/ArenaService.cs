@@ -23,6 +23,7 @@ namespace LogSyncMod.AutoTest
         private static bool waiting, cancel;
         private static float championStarted;
         private static bool championCaptured;
+        private static int championStartTick;
         private static TimeSpeed championOriginalSpeed;
         private static ArenaMatch postBattleMatch;
         private static float postBattleStarted;
@@ -39,9 +40,9 @@ namespace LogSyncMod.AutoTest
         internal static object Status => new {
             busy = Busy, status = report?.Status, runId = report?.RunId, tournament = tournament?.Input.TestDefName,
             match = match?.Id, attempt = match?.Attempts.Count + 1,
-            presentation = showcaseActive ? "showcase" : postBattleMatch != null ? "postBattle" : tournament?.Status == "champion" ? "champion" : null,
+            presentation = showcaseActive ? "showcase" : postBattleMatch != null ? "postBattle" : tournament?.Status == "champion" ? "topFive" : null,
             presentationMatch = postBattleMatch?.Id,
-            presentationSeconds = showcaseActive ? showcasePageStarted < 0 ? 0 : Time.realtimeSinceStartup - showcasePageStarted : postBattleMatch == null ? 0 : Time.realtimeSinceStartup - postBattleStarted,
+            presentationSeconds = showcaseActive ? showcasePageStarted < 0 ? 0 : Time.realtimeSinceStartup - showcasePageStarted : postBattleMatch != null ? Time.realtimeSinceStartup - postBattleStarted : tournament?.Status == "champion" && championStarted >= 0 ? Time.realtimeSinceStartup - championStarted : 0,
             showcasePage = showcaseActive ? showcasePage + 1 : 0, showcasePages = tournament?.Input.ShowcasePages.Count ?? 0,
             artifacts = new { autoTestOutputPath = outputPath }
         };
@@ -106,7 +107,7 @@ namespace LogSyncMod.AutoTest
                         {
                             tournament.Showcase.Completed = true; showcaseActive = false;
                             Find.TickManager.CurTimeSpeed = showcaseOriginalSpeed;
-                            ArenaEntrantShowcase.Clear(); Write();
+                            ArenaEntrantShowcase.ReleasePreviews(); Write();
                         }
                         else StartShowcasePage();
                     }
@@ -129,9 +130,15 @@ namespace LogSyncMod.AutoTest
                 if (tournament?.Status == "champion")
                 {
                     Find.TickManager.CurTimeSpeed = TimeSpeed.Paused;
+                    if (championStarted < 0) return;
                     if (Time.realtimeSinceStartup - championStarted > 20 && (!championCaptured || !AutoTestViewComposite.IsReady(tournament.ChampionScreenshot))) throw new IOException("Champion screenshot did not become ready");
-                    if (championCaptured && AutoTestViewComposite.IsReady(tournament.ChampionScreenshot) && Time.realtimeSinceStartup - championStarted >= tournament.Input.SettlementSeconds)
-                    { tournament.Status = "completed"; Find.TickManager.CurTimeSpeed = championOriginalSpeed; Write(); }
+                    if (championCaptured && AutoTestViewComposite.IsReady(tournament.ChampionScreenshot) && Time.realtimeSinceStartup - championStarted >= ArenaStandings.DisplaySeconds)
+                    {
+                        tournament.TopFive.VisibleSeconds = Time.realtimeSinceStartup - championStarted;
+                        tournament.TopFive.SimulationTicks = Find.TickManager.TicksGame - championStartTick;
+                        tournament.TopFive.Completed = true; tournament.Status = "completed";
+                        ArenaEntrantShowcase.Clear(); Find.TickManager.CurTimeSpeed = championOriginalSpeed; Write();
+                    }
                     return;
                 }
                 if (tournament == null || tournament.Status == "completed")
@@ -151,10 +158,10 @@ namespace LogSyncMod.AutoTest
                 {
                     tournament.Champion = scheduler.Champion; tournament.Status = "champion";
                     championOriginalSpeed = Find.TickManager.CurTimeSpeed; Find.TickManager.CurTimeSpeed = TimeSpeed.Paused;
-                    championStarted = Time.realtimeSinceStartup; championCaptured = false;
-                    ArenaPostBattleView.Begin(tournament, tournament.Matches.Last());
+                    championStarted = -1; championCaptured = false;
                     var directory = Path.Combine(outputPath, "arena_" + report.RunId + "_Screenshots"); Directory.CreateDirectory(directory);
                     tournament.ChampionScreenshot = Path.Combine(directory, "tournament_" + (report.Tournaments.IndexOf(tournament) + 1).ToString("D3") + "_champion.png");
+                    tournament.TopFive = new ArenaTopFiveResult { Entries = ArenaStandings.Build(tournament), Screenshot = tournament.ChampionScreenshot };
                     Write(); return;
                 }
                 var fight = ArenaLoader.CompileBattle(tournament.Input, tournament.Rosters, match, match.Attempts.Count);
@@ -263,7 +270,9 @@ namespace LogSyncMod.AutoTest
             }
             if (tournament?.Status == "champion")
             {
-                ArenaPostBattleView.Draw(ArenaPresentation.PostBattleSeconds, champion: true);
+                if (championStarted < 0 && Event.current.type == EventType.Repaint)
+                { championStarted = Time.realtimeSinceStartup; championStartTick = Find.TickManager.TicksGame; }
+                ArenaEntrantShowcase.Draw(0, championStarted < 0 ? 0 : Time.realtimeSinceStartup - championStarted, standings: true);
                 if (!championCaptured && Event.current.type == EventType.Repaint && Time.realtimeSinceStartup - championStarted >= 1 && AutoTestScreenshotService.PrepareCaptureFrame())
                 {
                     CapturePresentation(tournament.ChampionScreenshot);

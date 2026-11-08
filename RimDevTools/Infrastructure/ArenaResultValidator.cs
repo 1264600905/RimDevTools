@@ -131,6 +131,21 @@ public static class ArenaResultValidator
             }
             if (string.IsNullOrEmpty(t.ChampionScreenshot) || verifyArtifactFiles && !File.Exists(t.ChampionScreenshot)) return "缺少冠军截图";
             if (queue.Count != 0 || alive.Count != 1 || t.Champion != alive[0]) return "冠军不是唯一最终存活参赛者";
+            var top = t.TopFive;
+            if (top == null || !top.Completed || top.DurationSeconds != ArenaStandings.DisplaySeconds || !double.IsFinite(top.VisibleSeconds)
+                || top.VisibleSeconds < top.DurationSeconds || top.SimulationTicks != 0 || top.Screenshot != t.ChampionScreenshot)
+                return "前五展示缺失、未满十秒或展示期间推进了模拟";
+            // Reconstruct placing independently; the tournament already passed all
+            // knockout checks above. Extra matches follow the round at the same depth.
+            var placing = t.Rosters.Select(roster => {
+                var loss = t.Matches.SingleOrDefault(m => (m.Left == roster.Id || m.Right == roster.Id) && m.Winner != roster.Id);
+                var wins = t.Matches.Where(m => m.Winner == roster.Id).ToList();
+                return new ArenaPlacement { EntrantId = roster.Id, EliminationStage = loss == null ? int.MaxValue : loss.Round * 2 + (loss.Kind == "extra" ? 1 : 0),
+                    Wins = wins.Count, LastVictoryScore = wins.LastOrDefault()?.Score.Value ?? 0 };
+            }).OrderByDescending(p => p.EliminationStage).ThenByDescending(p => p.LastVictoryScore)
+                .ThenBy(p => ArenaScheduler.Stable(input.Seed, p.EntrantId), StringComparer.Ordinal).ThenBy(p => p.EntrantId, StringComparer.Ordinal)
+                .Take(5).Select((p, index) => { p.Rank = index + 1; return p; }).ToList();
+            if (JsonSerializer.Serialize(top.Entries) != JsonSerializer.Serialize(placing)) return "前五名次、晋级深度或最近胜利评分与完整赛果不符";
         }
         return null;
     }
