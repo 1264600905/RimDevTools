@@ -91,6 +91,7 @@ namespace LogSyncMod.AutoTest
                 if (cancel) { Finish("cancelled", "Cancelled by user"); return; }
                 if (showcaseActive)
                 {
+                    if (!ArenaEntrantShowcase.InitializeFrame()) return;
                     Find.TickManager.CurTimeSpeed = TimeSpeed.Paused;
                     if (showcasePageStarted < 0) return;
                     var elapsed = Time.realtimeSinceStartup - showcasePageStarted;
@@ -232,11 +233,11 @@ namespace LogSyncMod.AutoTest
             if (!Busy) return;
             if (showcaseActive)
             {
-                if (showcasePageStarted < 0 && Event.current.type == EventType.Repaint)
+                if (ArenaEntrantShowcase.Ready && showcasePageStarted < 0 && Event.current.type == EventType.Repaint)
                 { showcasePageStarted = Time.realtimeSinceStartup; showcaseStartTick = Find.TickManager.TicksGame; }
                 var elapsed = showcasePageStarted < 0 ? 0 : Time.realtimeSinceStartup - showcasePageStarted;
                 ArenaEntrantShowcase.Draw(showcasePage, elapsed);
-                if (!showcaseCaptured && Event.current.type == EventType.Repaint && elapsed >= Math.Min(1, tournament.Input.ShowcasePages[showcasePage].Seconds * .25) && AutoTestScreenshotService.PrepareCaptureFrame())
+                if (ArenaEntrantShowcase.Ready && !showcaseCaptured && Event.current.type == EventType.Repaint && elapsed >= Math.Min(1, tournament.Input.ShowcasePages[showcasePage].Seconds * .25) && AutoTestScreenshotService.PrepareCaptureFrame())
                 {
                     CapturePresentation(tournament.Showcase.Pages[showcasePage].Screenshot);
                     showcaseCaptured = true;

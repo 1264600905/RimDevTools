@@ -52,6 +52,15 @@ internal static class ArenaTests
         const string xml = "<ArenaSuite schemaVersion='1' id='suite'><Tournament id='main'><testDefName>ArenaTest</testDefName><Scene type='mainMap' sizeX='100' sizeZ='100'/><Roster mode='combatPower' budget='3000'/><Entrants><Entrant id='a' pawnKind='Wolf_Timber'/><Entrant id='b' pawnKind='Mercenary_Gunner'/></Entrants></Tournament></ArenaSuite>";
         ArenaPlan Parse(string text) => ArenaLoader.Compile(new[] { new ScenarioInput { Path = "arena.xml", Sha256 = "h", Xml = text } }, new[] { "ArenaTest" });
         var plan = Parse(xml);
+        check(Math.Abs(ArenaShowcase.OverallArmor(.6, new[] { (1d, Array.Empty<double>()) }) - .6) < .00001,
+            "overall armor preserves unarmored natural protection");
+        check(Math.Abs(ArenaShowcase.OverallArmor(0, new[] { (.5, new[] { 1d }), (.5, Array.Empty<double>()) }) - .5) < .00001,
+            "overall armor includes apparel only on covered body parts");
+        check(Math.Abs(ArenaShowcase.OverallArmor(0, new[] { (1d, new[] { 1d, 1d }) }) - 1.5) < .00001
+            && Math.Abs(ArenaShowcase.OverallArmor(.6, new[] { (1d, new[] { 1d }) }) - 1.3) < .00001,
+            "overall armor combines overlapping apparel and natural protection as native gear UI does");
+        check(ArenaShowcase.OverallArmor(0, new[] { (1d, new[] { 5d }) }) == 2,
+            "overall armor caps each layer and summary at native two-hundred-percent limit");
         ArenaTournamentInput WithShowcase(string content) => Parse(xml.Replace("</Tournament>", "<Presentation>" + content + "</Presentation></Tournament>")).Tournaments.Single();
         var customShowcase = WithShowcase("<Showcase pageSeconds='7'><Page seconds='2.5' caption='先看后排！'><Entrant ref='b'/></Page></Showcase>");
         check(customShowcase.ShowcasePages.Count == 2 && customShowcase.ShowcasePages[0].EntrantIds.SequenceEqual(new[] { "b" })

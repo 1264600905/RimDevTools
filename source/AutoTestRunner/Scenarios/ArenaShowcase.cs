@@ -1,6 +1,7 @@
 #nullable disable
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace LogSyncMod.AutoTest.Scenarios
 {
@@ -15,6 +16,16 @@ namespace LogSyncMod.AutoTest.Scenarios
         public double AttackSpeed { get; set; }
         public double SharpArmor { get; set; }
         public double BluntArmor { get; set; }
+        public double NaturalSharpArmor { get; set; }
+        public double NaturalBluntArmor { get; set; }
+        public string ArmorSource { get; set; } = "native gear tab overall armor: body coverage and worn apparel";
+        public List<string> WornApparel { get; set; } = new();
+        public List<string> HediffsAfterGeneration { get; set; } = new();
+        public List<string> HediffsAtSnapshot { get; set; } = new();
+        public string PrimaryWeapon { get; set; }
+        public bool PortraitRendered { get; set; }
+        public bool SpawnedAtSnapshot { get; set; }
+        public int InitializationTicks { get; set; }
         public double[] Values() => new[] { CombatPower, Health, AttackDamage, AttackSpeed, SharpArmor, BluntArmor };
     }
 
@@ -39,6 +50,8 @@ namespace LogSyncMod.AutoTest.Scenarios
     {
         public double PageSeconds { get; set; } = ArenaShowcase.PageSeconds;
         public bool Completed { get; set; }
+        public int InitializationTicks { get; set; }
+        public bool PreviewCleanupComplete { get; set; }
         public List<ArenaEntrantProfile> Entrants { get; set; } = new();
         public List<ArenaShowcasePage> Pages { get; set; } = new();
     }
@@ -58,6 +71,13 @@ namespace LogSyncMod.AutoTest.Scenarios
             if (progress < .6) return 2;
             if (progress < .8) return 3;
             return progress < .95 ? 4 : 5;
+        }
+        // Same layered, body-coverage-weighted summary used by the native Gear tab.
+        public static double OverallArmor(double natural, IEnumerable<(double coverage, double[] layers)> parts)
+        {
+            var bodyUnprotected = 1 - Math.Clamp(natural / 2, 0, 1);
+            return Math.Clamp(parts.Sum(part => part.coverage * (1 - part.layers.Aggregate(bodyUnprotected,
+                (unprotected, armor) => unprotected * (1 - Math.Clamp(armor / 2, 0, 1))))) * 2, 0, 2);
         }
     }
 }

@@ -1,0 +1,23 @@
+<ArenaSuite schemaVersion="1" id="arena.humanoidShowcase" gameVersion="1.7">
+  <Tournament id="axolotl-human" name="人类展示：萌螈猎户 VS 原版雇佣枪手" seed="12345">
+    <testDefName>Arena_Axolotl_VanillaHuman</testDefName>
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all">
+      <Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/>
+    </Scene>
+    <Roster mode="count" count="1"/>
+    <Entrants>
+      <Entrant id="Axolotl" pawnKind="AxolotlSoldierStandard" name="萌螈猎户"/>
+      <Entrant id="Human" pawnKind="Mercenary_Gunner" name="原版雇佣枪手"/>
+    </Entrants>
+    <Battle timeSpeed="normal" durationSeconds="180" timeoutRealSeconds="300" confirmationTicks="300"/>
+    <Presentation>
+      <Showcase pageSeconds="10">
+        <Page caption="萌螈与原版人类同台：各一人，沿用各自原生装备。">
+          <Entrant ref="Axolotl"/>
+          <Entrant ref="Human"/>
+        </Page>
+      </Showcase>
+    </Presentation>
+    <Output width="1920" height="1080"/>
+  </Tournament>
+</ArenaSuite>
