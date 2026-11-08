@@ -1,0 +1,47 @@
+<ArenaSuite schemaVersion="1" id="arena.native-ai-regression" gameVersion="1.7">
+  <Tournament id="animals" name="原生AI回归：20森林狼对8灰熊" seed="12345">
+    <testDefName>Arena_NativeAi_Animals</testDefName>
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all"><Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/></Scene>
+    <Roster mode="count" count="20"/>
+    <Entrants><Entrant id="wolves" pawnKind="Wolf_Timber"/><Entrant id="bears" pawnKind="Bear_Grizzly" count="8"/></Entrants>
+    <Battle timeSpeed="superfast" durationSeconds="180" timeoutRealSeconds="300"/>
+    <TieBreak maxReplays="0"/>
+    <Output width="1920" height="1080"/>
+  </Tournament>
+  <Tournament id="melee-mechs" name="原生AI回归：12镰刀机械体对20座狼" seed="24680">
+    <testDefName>Arena_NativeAi_MeleeMechs</testDefName>
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all"><Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/></Scene>
+    <Roster mode="count" count="12"/>
+    <Entrants><Entrant id="scythers" pawnKind="Mech_Scyther"/><Entrant id="wargs" pawnKind="Warg" count="20"/></Entrants>
+    <Battle timeSpeed="superfast" durationSeconds="180" timeoutRealSeconds="300"/>
+    <TieBreak maxReplays="0"/>
+    <Output width="1920" height="1080"/>
+  </Tournament>
+  <Tournament id="ranged-mechs" name="原生AI回归：12长枪机械体对12尖刺机械体" seed="24680">
+    <testDefName>Arena_NativeAi_RangedMechs</testDefName>
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all"><Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/></Scene>
+    <Roster mode="count" count="12"/>
+    <Entrants><Entrant id="lancers" pawnKind="Mech_Lancer"/><Entrant id="pikemen" pawnKind="Mech_Pikeman"/></Entrants>
+    <Battle timeSpeed="superfast" durationSeconds="180" timeoutRealSeconds="300"/>
+    <TieBreak maxReplays="0"/>
+    <Output width="1920" height="1080"/>
+  </Tournament>
+  <Tournament id="mixed-mechs" name="原生AI回归：12镰刀机械体对6电荷蜈蚣" seed="12345">
+    <testDefName>Arena_NativeAi_MechCharge</testDefName>
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all"><Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/></Scene>
+    <Roster mode="count" count="12"/>
+    <Entrants><Entrant id="scythers" pawnKind="Mech_Scyther"/><Entrant id="centipedes" pawnKind="Mech_CentipedeBlaster" count="6"/></Entrants>
+    <Battle timeSpeed="superfast" durationSeconds="180" timeoutRealSeconds="300"/>
+    <TieBreak maxReplays="0"/>
+    <Output width="1920" height="1080"/>
+  </Tournament>
+  <Tournament id="dms" name="原生AI回归：8鬣蜥对12雇佣兵" seed="12345">
+    <testDefName>Arena_NativeAi_DmsIguanas</testDefName>
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all"><Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/></Scene>
+    <Roster mode="count" count="12"/>
+    <Entrants><Entrant id="iguanas" pawnKind="DMS_Mech_Iguana" count="8"/><Entrant id="mercenaries" pawnKind="Mercenary_Gunner"/></Entrants>
+    <Battle timeSpeed="superfast" durationSeconds="180" timeoutRealSeconds="300"/>
+    <TieBreak maxReplays="0"/>
+    <Output width="1920" height="1080"/>
+  </Tournament>
+</ArenaSuite>

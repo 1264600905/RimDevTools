@@ -8,40 +8,34 @@ using Verse.AI.Group;
 
 namespace LogSyncMod.AutoTest
 {
-    // The race/mod think trees stay intact; their duty hook runs our combat decisions.
-    internal sealed class LordJob_GroupCombatAssault : LordJob
+    // Use the original immediate-assault graph and AssaultColony duty. Only
+    // departures are removed; targeting, positioning and pawn jobs stay native.
+    internal sealed class LordJob_GroupCombatAssault : LordJob_AssaultColony
     {
+        public LordJob_GroupCombatAssault() : this(null) { }
+        public LordJob_GroupCombatAssault(Faction faction)
+            : base(faction, canKidnap: false, canTimeoutOrFlee: false, canSteal: false) { }
+
         public override bool AddFleeToil => false;
         public override StateGraph CreateGraph()
         {
-            var graph = new StateGraph();
-            graph.AddToil(new LordToil_GroupCombatAssault());
+            var graph = base.CreateGraph();
+            // The native graph also has exits for diplomacy/game-ending signals.
+            // A benchmark must keep fighting its opponent until its end rule fires.
+            graph.transitions.RemoveAll(t => t.target is LordToil_ExitMap);
+            graph.lordToils.RemoveAll(t => t is LordToil_ExitMap);
             return graph;
         }
     }
 
-    internal sealed class LordToil_GroupCombatAssault : LordToil
+    [HarmonyPatch(typeof(LordToil), nameof(LordToil.AllowSelfTend), MethodType.Getter)]
+    internal static class GroupCombat_NoSelfTend_Patch
     {
-        public override bool AllowSelfTend => false;
-        public override bool AllowSatisfyLongNeeds => false;
-        public override bool ForceHighStoryDanger => true;
-
-        public override void UpdateAllDuties()
+        private static void Postfix(LordToil __instance, ref bool __result)
         {
-            var duty = DefDatabase<DutyDef>.GetNamed("LogSync_TestCombat");
-            foreach (var pawn in lord.ownedPawns)
-            {
-                if (pawn.mindState.duty?.def == duty) continue;
-                pawn.mindState.duty = new PawnDuty(duty);
-                pawn.TryGetComp<CompCanBeDormant>()?.WakeUp();
-                pawn.jobs.EndCurrentJob(JobCondition.InterruptForced);
-            }
+            if (CombatFightService.Busy && __instance.lord?.LordJob is LordJob_GroupCombatAssault
+                && __instance.lord.Map == CombatFightService.Map) __result = false;
         }
-    }
-
-    public sealed class JobGiver_GroupCombatAttack : ThinkNode_JobGiver
-    {
-        protected override Job TryGiveJob(Pawn pawn) => GroupCombatTactics.CreateJob(pawn);
     }
 
     [HarmonyPatch(typeof(PawnNameColorUtility), nameof(PawnNameColorUtility.PawnNameColorOf))]

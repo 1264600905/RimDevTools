@@ -49,9 +49,10 @@ namespace LogSyncMod.AutoTest.Scenarios
             if (c.Element("Coverage") != null || c.Element("Success") != null || c.Element("Targets") != null) Fail(c, path, "GroupCombat has benchmark results, not regression Coverage/Success/Targets");
             var settings = c.Element("GroupCombat");
             if (settings == null) Fail(c, path, "GroupCombat configuration is required");
+            if (settings.Attribute("aiPolicy") == null) settings.SetAttributeValue("aiPolicy", "assaultColony");
             void Fixed(XElement e, string field, string value) { if (e?.Attribute(field) != null && A(e, field) != value) Fail(e, path, field + " must be " + value); }
             Fixed(c, "kind", "groupCombat"); Fixed(settings, "start", "simultaneous");
-            if (!new[] { "battle", "seekAndAttack", "assaultThings", "assaultColony", "defendPoint", "native" }.Contains(A(settings, "aiPolicy", "battle"))) Fail(settings, path, "aiPolicy must be battle/seekAndAttack/assaultThings/assaultColony/defendPoint/native");
+            if (!new[] { "battle", "seekAndAttack", "assaultThings", "assaultColony", "defendPoint", "native" }.Contains(A(settings, "aiPolicy", "assaultColony"))) Fail(settings, path, "aiPolicy must be battle/seekAndAttack/assaultThings/assaultColony/defendPoint/native");
             if (!new[] { "normal", "fast", "superfast" }.Contains(A(settings, "timeSpeed", "normal"))) Fail(settings, path, "timeSpeed must be normal/fast/superfast");
             var duration = D(settings, "durationSeconds", 180);
             if (!double.IsFinite(duration) || duration <= 0 || duration > 86400) Fail(settings, path, "durationSeconds must be finite and in (0,86400]");
@@ -78,7 +79,7 @@ namespace LogSyncMod.AutoTest.Scenarios
             foreach (var team in teams)
             {
                 Fixed(team, "factionSource", "temporary"); if (team.Attribute("factionDef") != null) Fail(team, path, "GroupCombat creates isolated temporary factions, factionDef is not accepted");
-                var ai = A(team, "ai", A(settings, "aiPolicy", "battle"));
+                var ai = A(team, "ai", A(settings, "aiPolicy", "assaultColony"));
                 if (!new[] { "battle", "seekAndAttack", "assaultThings", "assaultColony", "defendPoint", "native" }.Contains(ai)) Fail(team, path, "team ai must be battle/seekAndAttack/assaultThings/assaultColony/defendPoint/native");
                 if (ai != "defendPoint" && team.Attributes().Any(a => a.Name.LocalName.StartsWith("defend", StringComparison.Ordinal))) Fail(team, path, "defend coordinates/radius require ai=defendPoint");
                 if (ai == "defendPoint" && (I(team, "defendX", 0) < 0 || I(team, "defendZ", 0) < 0 || I(team, "defendX", 0) >= I(c.Element("Scene"), "sizeX", 50) || I(team, "defendZ", 0) >= I(c.Element("Scene"), "sizeZ", 50) || D(team, "defendRadius", 28) <= 0 || !double.IsFinite(D(team, "defendRadius", 28)))) Fail(team, path, "invalid defend point/radius");

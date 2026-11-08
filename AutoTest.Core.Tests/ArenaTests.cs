@@ -170,8 +170,8 @@ internal static class ArenaTests
         Reject(() => Parse(xml.Replace("id='b' pawnKind", "id='b' xenotype='' pawnKind")), "arena refuses an explicitly empty xenotype override");
         var verticalRosters = new List<ResolvedCombatRoster> { CombatRoster.Resolve("a", "Wolf_Timber", 100, null, 27), CombatRoster.Resolve("b", "Bear_Polar", 200, null, 3) };
         var verticalBattle = XElement.Parse(ArenaLoader.CompileBattle(input, verticalRosters, null, 0).Xml);
-        check((string)verticalBattle.Element("GroupCombat").Attribute("aiPolicy") == "seekAndAttack",
-            "arena explicitly selects the tool combat controller instead of inheriting a native AI default");
+        check((string)verticalBattle.Element("GroupCombat").Attribute("aiPolicy") == "assaultColony",
+            "arena explicitly selects the native immediate-assault AI without a custom combat scheduler");
         var verticalActors = verticalBattle.Element("Actors").Elements("PawnGroup").ToList();
         check(PawnGroupFormation.Extents(verticalActors[0], true) == (16, 4)
             && PawnGroupFormation.Extents(verticalActors[1], true) == (4, 0)

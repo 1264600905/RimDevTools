@@ -32,6 +32,11 @@ internal static class GroupCombatTests
             catch (ScenarioConfigurationException) { assert(true, message); }
         }
         var plan = Compile(Xml);
+        assert((string)XElement.Parse(plan.Cases.Single().Xml).Element("GroupCombat").Attribute("aiPolicy") == "assaultColony",
+            "group combat defaults explicitly to the native immediate-assault policy");
+        foreach (var alias in new[] { "battle", "seekAndAttack", "native" })
+            assert(Compile(Xml.Replace("<GroupCombat>", "<GroupCombat aiPolicy='" + alias + "'>")).Cases.Count == 1,
+                "legacy assault policy remains accepted: " + alias);
         assert(plan.Purpose == "groupcombat" && plan.Cases.Single().CaseType == "GroupCombat", "group compiler reuses expanded templates and scene presets with independent benchmark purpose");
         Reject(Xml, "ordinary regression entry refuses group rules even during whole-directory selection", false);
         try { GroupCombatPlan.Expand(plan); assert(false, "group named selection required"); } catch (ScenarioConfigurationException) { assert(true, "group named selection required"); }

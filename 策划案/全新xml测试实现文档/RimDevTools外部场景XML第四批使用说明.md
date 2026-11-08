@@ -39,19 +39,19 @@ RimDevTools.exe test run --mode groupcombat --scenario-path AutoTest.Core.Tests/
 
 ## AI、时间与准备
 
-每个 Team 可独立填写 `ai`，省略时继承 GroupCombat 的 `aiPolicy`，缺省为 `battle`：
+每个 Team 可独立填写 `ai`，省略时继承 GroupCombat 的 `aiPolicy`，缺省为 `assaultColony`：
 
 | 值 | 行为 |
 | --- | --- |
-| battle | 默认测试战斗 AI，与 seekAndAttack 使用同一调度器和独立 LogSync_TestCombat 职责；关闭群体逃跑转换与原版 NPC 自疗入口，保留种族/模组原有行为树 |
+| battle | 兼容旧配置，使用下述原生立刻进攻策略 |
 | assaultThings | 原生 LordJob_AssaultThings，指定对方初始成员为攻击目标；原生索敌半径较小，范围外可能走破坏目标分支并下达近战任务，不适合远程交火对比 |
-| assaultColony / native | 原生 LordJob_AssaultColony，关闭劫掠、超时逃跑和偷窃选项；可显式使用，按原生战斗逻辑选择武器、射击位置及贴身近战 |
+| assaultColony / native | 原生 LordJob_AssaultColony 进攻流程及 AssaultColony 职责，禁止自治疗、群体溃逃、超时撤退、绑架、偷窃及其他群体离场转换；原生选敌、选位、攻击与任务调度保持原样 |
 | defendPoint | 原生据点防御，可设置 defendX、defendZ、defendRadius；省略坐标时取本队出生位置均值 |
-| seekAndAttack | 工具自主选择目标、技能、远程射击位置及近战任务，使用独立测试职责；射程外先接近到射击位置，能射击时停下，不因暂时无法开火而远距离改用近战追击；保留攻击预热和连射 |
+| seekAndAttack | 兼容旧配置，与 assaultColony 相同，不再使用自定义战斗职责或调度器 |
 
-测试 AI 优先保留仍可射击的目标，否则优先选择当前可射击的敌人，再寻找可接近的敌人。近战单位正常接敌；远程单位只在贴身且无法开火时主动改用近战，没有射击位置时短暂等待并重新判断。每 30 ticks 检查一次任务，移动时每 120 ticks 重新评估射击位置，不定时打断预热、冷却和连射。技能、弹道、伤害、护甲及模组武器效果仍通过原生攻击管线执行，不直接结算伤害。原生对照测试可显式选择 native/assaultColony。结果中的 group.ai 标明 controller 和 duty，group.ai_decision 记录有界决策诊断，group.ai_shot 记录每个角色首次成功发射弹丸（包括未命中的射击）。
+原生进攻策略由游戏行为树自行选择目标、技能、射击位置和近战时机，工具不再每 30 ticks 下发任务，也不再追加“进入射程立即停下”等规则。结果中的 group.ai 标明 controller=native、实际职责、自治疗许可与逃跑/离场状态；group.ai_native_job 仅采样观察实际原生任务，不改变任务；group.ai_shot 记录每个角色首次成功发射弹丸（包括未命中的射击）。
 
-全体参战 Pawn 生成后统一调用原生 ClearAllRelations 清理社交关系，包括反向关系；这不保证陌生人永不争吵。默认 battle 通过 LordToil.AllowSelfTend=false 禁止原版 NPC 自疗，不依赖殖民者医疗方案；自带治疗逻辑的模组可能忽略此入口。角色的 ThinkTree 不作替换，原生贴身反击和模组高优先级行为仍可生效。个体原生行为和模组行为仍可能逃离，结果单列 escaped。新增、召唤或分裂出的 Pawn 按临时阵营、Lord 阵营或明确注册的归属适配器加入所属队伍；不会根据站位或攻击对象猜测归属。
+全体参战 Pawn 生成后统一调用原生 ClearAllRelations 清理社交关系，包括反向关系；这不保证陌生人永不争吵。原生进攻策略仅在本场测试队伍的 LordToil 上限制 AllowSelfTend=false，不修改共享定义或殖民者医疗方案；生理恢复、再生及模组治疗能力不作屏蔽。角色的 ThinkTree 不作替换，原生贴身反击和模组高优先级行为仍可生效。个体精神状态和模组行为仍可能逃离，结果单列 escaped。新增、召唤或分裂出的 Pawn 按临时阵营、Lord 阵营或明确注册的归属适配器加入所属队伍；不会根据站位或攻击对象猜测归属。
 
 GroupCombat 的 `timeSpeed` 默认 `normal`（一倍速），接受 normal、fast、superfast，例如 `<GroupCombat timeSpeed="fast"/>`。durationSeconds 默认 180（10800 ticks），支持 `(0,86400]`。群战期间允许使用原生暂停和速度控制；暂停时战斗计时、存活计时、DPS 分母和 Case 的 timeoutRealSeconds 均暂停。CLI 的 timeout-seconds 仍是整个进程的独立实际时间上限。所有成员准备完毕并拍完初始图后才开始共同计时和战斗。
 
