@@ -1,0 +1,29 @@
+<ArenaSuite schemaVersion="1" id="arena.tribe200.empire75" gameVersion="1.7">
+  <SquadTemplates>
+    <SquadTemplate id="tribalRaid" source="faction" factionDef="TribeSavage">
+      <GroupMaker mode="random" kindDef="Combat" referencePoints="5000"/>
+      <RaidRules strategyDef="ImmediateAttack"/>
+      <Xenotypes mode="inherit"/>
+    </SquadTemplate>
+    <SquadTemplate id="imperialRaid" source="faction" factionDef="Empire">
+      <GroupMaker mode="random" kindDef="Combat" referencePoints="5000"/>
+      <RaidRules strategyDef="ImmediateAttack"/>
+      <Xenotypes mode="inherit"/>
+    </SquadTemplate>
+  </SquadTemplates>
+  <Tournament id="main" name="200人部落 对战 75人帝国" seed="12345">
+    <testDefName>Arena_Tribe200VsEmpire75</testDefName>
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="140" sizeZ="120" revealFog="all">
+      <Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/>
+    </Scene>
+    <Roster mode="count" count="200" costMode="native"/>
+    <Entrants>
+      <Entrant id="tribe" squad="tribalRaid" name="部落混编" count="200"/>
+      <Entrant id="empire" squad="imperialRaid" name="帝国混编" count="75"/>
+    </Entrants>
+    <Battle timeSpeed="superfast" durationSeconds="180" timeoutRealSeconds="900"/>
+    <TieBreak maxReplays="0"/>
+    <Presentation><Showcase pageSeconds="5"/></Presentation>
+    <Output width="1920" height="1080"/>
+  </Tournament>
+</ArenaSuite>

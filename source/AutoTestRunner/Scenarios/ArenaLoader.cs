@@ -39,9 +39,10 @@ namespace LogSyncMod.AutoTest.Scenarios
             {
                 using var reader = XmlReader.Create(new StringReader(input.Xml), ScenarioLoader.ReaderSettings());
                 var root = XElement.Load(reader, LoadOptions.SetLineInfo);
-                Check(root, "schemaVersion id gameVersion", "Tournament", input.Path);
+                Check(root, "schemaVersion id gameVersion", "Tournament SquadTemplates", input.Path);
                 if (root.Name != "ArenaSuite" || ScenarioLoader.A(root, "schemaVersion") != "1" || ScenarioLoader.A(root, "gameVersion", "1.7") != "1.7") ScenarioLoader.Fail(root, input.Path, "expected ArenaSuite schemaVersion=1 gameVersion=1.7; use the independent arena entry");
                 Required(root, "id", input.Path);
+                var squadTemplates = SquadTemplates.ParseAll(root, input.Path);
                 var ids = new HashSet<string>(StringComparer.Ordinal);
                 foreach (var t in root.Elements("Tournament"))
                 {
@@ -51,20 +52,24 @@ namespace LogSyncMod.AutoTest.Scenarios
                     var testName = t.Element("testDefName")?.Value.Trim();
                     if (string.IsNullOrEmpty(testName) || !System.Text.RegularExpressions.Regex.IsMatch(testName, "^[A-Za-z_][A-Za-z0-9_.-]*$")) ScenarioLoader.Fail(t, input.Path, "testDefName must be a stable identifier");
                     Check(t.Element("testDefName"), "", "", input.Path);
-                    var roster = t.Element("Roster"); Check(roster, "mode budget count", "", input.Path, true);
+                    var roster = t.Element("Roster"); Check(roster, "mode budget count costMode", "", input.Path, true);
                     var mode = ScenarioLoader.A(roster, "mode");
+                    var costMode = ScenarioLoader.A(roster, "costMode", "pawnKind"); SquadTemplates.ValidateCostMode(costMode);
                     if (mode != "count" && mode != "combatPower") ScenarioLoader.Fail(roster, input.Path, "Roster mode must be count/combatPower");
                     if (mode == "count" && roster.Attribute("budget") != null || mode == "combatPower" && roster.Attribute("count") != null) ScenarioLoader.Fail(roster, input.Path, "count and budget modes are mutually exclusive");
                     var entrants = t.Element("Entrants"); Check(entrants, "", "Entrant", input.Path, true);
-                    var result = new ArenaTournamentInput { Id = id, Name = ScenarioLoader.A(t, "name", testName), TestDefName = testName, Seed = ScenarioLoader.I(t, "seed", 12345), Xml = t.ToString(SaveOptions.DisableFormatting), Source = input.Path, InputHash = input.Sha256, RosterMode = mode, Budget = mode == "combatPower" ? CombatRoster.Positive(Required(roster, "budget", input.Path)) : null, Count = Integer(roster, "count", 20, 1, 100, input.Path) };
+                    var result = new ArenaTournamentInput { Id = id, Name = ScenarioLoader.A(t, "name", testName), TestDefName = testName, Seed = ScenarioLoader.I(t, "seed", 12345), Xml = t.ToString(SaveOptions.DisableFormatting), Source = input.Path, InputHash = input.Sha256, RosterMode = mode, CostMode = costMode, SquadTemplates = squadTemplates, Budget = mode == "combatPower" ? CombatRoster.Positive(Required(roster, "budget", input.Path)) : null, Count = Integer(roster, "count", 20, 1, CombatRoster.MaxTeamMembers, input.Path) };
                     foreach (var e in entrants.Elements("Entrant"))
                     {
-                        Check(e, "id pawnKind name count budget", "", input.Path);
+                        Check(e, "id pawnKind squad name count budget xenotype", "", input.Path);
                         if (mode == "combatPower" && e.Attribute("count") != null) ScenarioLoader.Fail(e, input.Path, "budget mode forbids entrant count overrides");
                         if (mode == "count" && e.Attribute("budget") != null) ScenarioLoader.Fail(e, input.Path, "count mode forbids entrant budget overrides");
-                        result.Entrants.Add(new ArenaEntrant { Id = Required(e, "id", input.Path), PawnKind = Required(e, "pawnKind", input.Path), Name = ScenarioLoader.A(e, "name"), Count = e.Attribute("count") == null ? null : Integer(e, "count", 20, 1, 100, input.Path), Budget = e.Attribute("budget") == null ? null : CombatRoster.Positive(Required(e, "budget", input.Path)) });
+                        if ((e.Attribute("pawnKind") == null) == (e.Attribute("squad") == null)) ScenarioLoader.Fail(e, input.Path, "Entrant requires exactly one of pawnKind/squad");
+                        var squadId = ScenarioLoader.A(e, "squad");
+                        if (squadId != null && (!squadTemplates.ContainsKey(squadId) || e.Attribute("xenotype") != null)) ScenarioLoader.Fail(e, input.Path, "unknown squad or conflicting entrant xenotype");
+                        result.Entrants.Add(new ArenaEntrant { Id = Required(e, "id", input.Path), PawnKind = e.Attribute("pawnKind") == null ? null : Required(e, "pawnKind", input.Path), Squad = squadId, Xenotype = e.Attribute("xenotype") == null ? null : Required(e, "xenotype", input.Path), Name = ScenarioLoader.A(e, "name"), Count = e.Attribute("count") == null ? null : Integer(e, "count", 20, 1, CombatRoster.MaxTeamMembers, input.Path), Budget = e.Attribute("budget") == null ? null : CombatRoster.Positive(Required(e, "budget", input.Path)) });
                     }
-                    if (result.Entrants.Count < 2 || result.Entrants.Count > 64 || result.Entrants.Select(e => e.Id).Distinct(StringComparer.Ordinal).Count() != result.Entrants.Count || result.Entrants.Select(e => e.PawnKind).Distinct(StringComparer.Ordinal).Count() != result.Entrants.Count) ScenarioLoader.Fail(entrants, input.Path, "requires 2..64 distinct entrant IDs and PawnKinds");
+                    if (result.Entrants.Count < 2 || result.Entrants.Count > 64 || result.Entrants.Select(e => e.Id).Distinct(StringComparer.Ordinal).Count() != result.Entrants.Count || result.Entrants.Where(e => e.PawnKind != null).Select(e => e.PawnKind).Distinct(StringComparer.Ordinal).Count() != result.Entrants.Count(e => e.PawnKind != null)) ScenarioLoader.Fail(entrants, input.Path, "requires 2..64 distinct entrant IDs and PawnKinds");
                     var battle = t.Element("Battle"); Check(battle, "durationSeconds timeoutRealSeconds timeSpeed confirmationTicks", "", input.Path);
                     result.DurationSeconds = Number(battle, "durationSeconds", 180, 0, 86400, input.Path, true);
                     result.TimeoutRealSeconds = Integer(battle, "timeoutRealSeconds", 300, 1, 86400, input.Path);
@@ -92,7 +97,7 @@ namespace LogSyncMod.AutoTest.Scenarios
                     // Compile a synthetic count=1 battle through the existing strict scene parser.
                     // This validates Scene/Environment/Layout without maintaining a second whitelist.
                     var scene = t.Element("Scene"); if (scene == null) ScenarioLoader.Fail(t, input.Path, "Scene is required");
-                    CompileBattle(result, result.Entrants.Take(2).Select(e => new ResolvedCombatRoster { Id = e.Id, PawnKind = e.PawnKind, ResolvedCount = 1 }).ToList(), null, 0);
+                    CompileBattle(result, result.Entrants.Take(2).Select(e => new ResolvedCombatRoster { Id = e.Id, PawnKind = e.PawnKind ?? "Colonist", ResolvedCount = 1 }).ToList(), null, 0);
                     all.Add(result);
                 }
             }
@@ -111,8 +116,10 @@ namespace LogSyncMod.AutoTest.Scenarios
             var actors = new XElement("Actors");
             for (int i = 0; i < 2; i++)
             {
-                var r = rosters.Single(r => r.Id == ids[i]); var columns = Math.Min(10, Math.Max(1, r.ResolvedCount));
-                var actor = new XElement("PawnGroup", new XAttribute("id", i == 0 ? "left" : "right"), new XAttribute("team", i == 0 ? "A" : "B"), new XAttribute("count", r.ResolvedCount), new XAttribute("formation", "grid"), new XAttribute("columns", columns), new XAttribute("spacing", 2), new XElement("basePawnKind", r.PawnKind));
+                var r = rosters.Single(r => r.Id == ids[i]); var columns = PawnGroupFormation.ArenaRows(r.ResolvedCount, width);
+                var actor = new XElement("PawnGroup", new XAttribute("id", i == 0 ? "left" : "right"), new XAttribute("team", i == 0 ? "A" : "B"), new XAttribute("count", r.ResolvedCount), new XAttribute("formation", "grid"), new XAttribute("columns", columns), new XAttribute("spacing", 2), new XElement("basePawnKind", r.PawnKind ?? "Colonist"));
+                var xenotype = input.Entrants.Single(e => e.Id == r.Id).Xenotype;
+                if (xenotype != null) actor.Add(new XElement("Xenotype", new XAttribute("def", xenotype)));
                 var extent = PawnGroupFormation.Extents(actor, verticalFirst: true);
                 var x = i == 0 ? Math.Max(1, width / 5 - extent.x / 2) : Math.Min(width - extent.x - 2, width * 4 / 5 - extent.x / 2);
                 var z = Math.Max(1, height / 2 - extent.z / 2);

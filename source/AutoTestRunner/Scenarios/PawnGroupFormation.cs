@@ -7,6 +7,13 @@ namespace LogSyncMod.AutoTest.Scenarios
     // Combat blocks fill a vertical file before moving to the next file.
     public static class PawnGroupFormation
     {
+        public static int ArenaRows(int count, int mapWidth)
+        {
+            // Prefer a broad, shallow block (about four columns per row), keeping
+            // each army in its own side of the map with a central approach lane.
+            var maxColumns = Math.Max(1, ((mapWidth * 2 / 5 - 3) / 2) + 1);
+            return Math.Max((int)Math.Ceiling(Math.Sqrt(count) / 2), (count + maxColumns - 1) / maxColumns);
+        }
         private static (int count, int length, int spacing) Dimensions(XElement actor)
         {
             var count = ScenarioLoader.I(actor, "count", 1);

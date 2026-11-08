@@ -10,6 +10,10 @@ namespace LogSyncMod.AutoTest.Scenarios
         public string Id { get; set; }
         public string PawnKind { get; set; }
         public string DisplayName { get; set; }
+        public int Count { get; set; }
+        public decimal TotalCombatPower { get; set; }
+        public string Xenotype { get; set; }
+        public List<ArenaEntrantProfile> Composition { get; set; } = new();
         public double CombatPower { get; set; }
         public double Health { get; set; }
         public double AttackDamage { get; set; }

@@ -112,7 +112,7 @@ namespace LogSyncMod.AutoTest
             var x = rect.x + iconSize + 24; var width = rect.width - iconSize - 36;
             TextAt(new Rect(x, rect.y + 7, width, 22), side + (revealed ? match.Winner == null ? " · 平局" : won ? " · 晋级" : " · 淘汰" : ""), 15, won && revealed ? Gold : color, TextAnchor.MiddleLeft);
             TextAt(new Rect(x, rect.y + 29, width, 27), roster.DisplayName + " ×" + roster.ResolvedCount, Mathf.Min(21, width / Mathf.Max(10, roster.DisplayName.Length + 5)), Color.white, TextAnchor.MiddleLeft);
-            if (rect.height > 75) TextAt(new Rect(x, rect.y + 57, width, 22), "单体 " + roster.UnitCombatPower + " · 投入 " + roster.ActualCombatPower, 13, new Color(.7f, .76f, .83f), TextAnchor.MiddleLeft);
+            if (rect.height > 75) TextAt(new Rect(x, rect.y + 57, width, 22), (roster.SquadId != null ? "混编 " + roster.Members.Select(m => SquadGeneration.KindLabel(m.PawnKind)).Distinct(StringComparer.Ordinal).Count() + " 种" : "单体 CP " + roster.UnitCombatPower.ToString("0.##")) + " · 总 CP " + roster.ActualCombatPower.ToString("0.##"), 13, new Color(.7f, .76f, .83f), TextAnchor.MiddleLeft);
             GUI.color = old;
         }
         private static void DrawTree(Vector2 origin, float scale, float elapsed)
@@ -142,7 +142,16 @@ namespace LogSyncMod.AutoTest
                 Card(rect, Color.Lerp(new Color(.28f, .32f, .39f), color, reveal), node.Id == result.Id ? reveal : 0);
                 var label = node.Id == result.Id ? elapsed < ArenaPresentation.AdvanceSeconds ? MatchKind(match) + "\n结果揭晓中"
                     : match.Winner == null ? "本场平局\n" + (match.Attempts.Count > tournament.Input.MaxReplays ? "重赛次数已用尽" : "等待重赛") : node.Label : node.Label;
-                TextAt(rect.ContractedBy(5 * scale), label, Mathf.Clamp(14 * scale, 8, 20), Color.white);
+                var lines = label.Split(new[] { '\n' }, 2);
+                var padding = 11 * scale;
+                var textWidth = rect.width - padding * 2;
+                var titleSize = Mathf.Clamp(Mathf.Min(14 * scale, textWidth / Mathf.Max(1, lines[0].Length)), 8, 20);
+                TextAt(new Rect(rect.x + padding, rect.y + 7 * scale, textWidth, 21 * scale), lines[0], titleSize, Color.white, TextAnchor.MiddleLeft);
+                if (lines.Length > 1)
+                    TextAt(new Rect(rect.x + padding, rect.y + 29 * scale, textWidth, 18 * scale), lines[1], Mathf.Clamp(11 * scale, 8, 16),
+                        new Color(.65f, .73f, .83f), TextAnchor.MiddleLeft);
+                Widgets.DrawBoxSolid(new Rect(rect.x + 1, rect.y + 8 * scale, 2 * scale, rect.height - 16 * scale), color);
+                TooltipHandler.TipRegion(rect, label);
                 if (node.Id == "future" && tournament.Champion != null)
                 {
                     var old = GUI.color; GUI.color = Gold; Widgets.DrawBox(rect, 2); GUI.color = old;

@@ -29,6 +29,8 @@ namespace LogSyncMod.AutoTest.Scenarios
         public string Source { get; set; }
         public string InputHash { get; set; }
         public int Seed { get; set; } = 12345;
+        public string CostMode { get; set; } = "pawnKind";
+        public Dictionary<string, SquadTemplate> SquadTemplates { get; set; } = new();
         public string RosterMode { get; set; }
         public decimal? Budget { get; set; }
         public int Count { get; set; } = 20;
@@ -52,6 +54,8 @@ namespace LogSyncMod.AutoTest.Scenarios
     {
         public string Id { get; set; }
         public string PawnKind { get; set; }
+        public string Squad { get; set; }
+        public string Xenotype { get; set; }
         public string Name { get; set; }
         public int? Count { get; set; }
         public decimal? Budget { get; set; }

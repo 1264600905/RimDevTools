@@ -34,7 +34,13 @@ public static class ArenaResultValidator
             {
                 var r = t.Rosters.SingleOrDefault(r => r.Id == e.Id);
                 var budget = e.Budget ?? input.Budget;
-                if (r == null || r.PawnKind != e.PawnKind || r.UnitCombatPower <= 0 || r.Mode != input.RosterMode || r.RequestedBudget != budget || r.ResolvedCount < 1 || r.ResolvedCount > 100) return "配兵身份或 combatPower 快照无效";
+                if (e.Squad != null)
+                {
+                    var squadError = SquadTemplates.ValidateRoster(r!, input.SquadTemplates[e.Squad], budget, e.Count ?? input.Count, input.CostMode);
+                    if (squadError != null) return squadError;
+                    continue;
+                }
+                if (r == null || r.PawnKind != e.PawnKind || r.UnitCombatPower <= 0 || r.Mode != input.RosterMode || r.RequestedBudget != budget || r.ResolvedCount < 1 || r.ResolvedCount > CombatRoster.MaxTeamMembers) return "配兵身份或 combatPower 快照无效";
                 var count = budget.HasValue ? decimal.Floor(budget.Value / r.UnitCombatPower) : e.Count ?? input.Count;
                 if (r.ResolvedCount != count || budget.HasValue && (r.ActualCombatPower > budget || budget.Value - r.ActualCombatPower >= r.UnitCombatPower)) return "预算配兵不满足最大整数人数";
             }
@@ -74,7 +80,12 @@ public static class ArenaResultValidator
                     foreach (var side in new[] { "A", "B" })
                     {
                         var roster = t.Rosters.Single(r => r.Id == (side == "A" ? m.Left : m.Right));
-                        if (a.Teams.Single(x => x.Id == side).Initial != roster.ResolvedCount || a.Units.Any(u => u.Team == side && !u.JoinedDuringBattle && u.Kind != roster.PawnKind)) return "实际初始单位与冻结配兵不符";
+                        if (a.Teams.Single(x => x.Id == side).Initial != roster.ResolvedCount || (roster.Members.Count == 0 && a.Units.Any(u => u.Team == side && !u.JoinedDuringBattle && u.Kind != roster.PawnKind))) return "实际初始单位与冻结配兵不符";
+                        if (roster.Members.Count > 0)
+                        {
+                            var memberError = SquadTemplates.ValidateUnits(roster, a.Units.Where(u => u.Team == side), side == "A" ? "left" : "right");
+                            if (memberError != null) return memberError;
+                        }
                     }
                     var ledgerError = GroupCombatResultValidator.ValidateIntegrity(new GroupCombatRunReport { Rounds = new() { a } });
                     if (ledgerError != null) return ledgerError;

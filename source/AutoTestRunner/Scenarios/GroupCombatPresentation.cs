@@ -10,6 +10,10 @@ namespace LogSyncMod.AutoTest.Scenarios
         public const float PanelTop = 116;
         public const float IntroDuration = 3.8f;
         public const float SettlementDuration = 3f;
+        public const float MaximumProjectionSize = 28;
+        public static float CameraSizeLimit(float uiHeight, float markerThreshold = 0)
+            => Math.Min(MaximumProjectionSize, uiHeight / (2 * Math.Max(18, markerThreshold + 2)));
+        public static string UnitTypeName(string label, string defName) => string.IsNullOrWhiteSpace(label) ? defName : label.Trim();
         public static (double output, double taken) SurvivorTotals(IEnumerable<GroupCombatUnit> units)
         {
             var living = units.Where(u => u.Alive).ToList();
@@ -37,12 +41,12 @@ namespace LogSyncMod.AutoTest.Scenarios
             return ((minX + maxX) / 2, (minZ + maxZ) / 2 + (top - bottom) * size / height, size);
         }
 
-        public static float ZoomTarget(float currentSize, float requiredSize)
+        public static float ZoomTarget(float currentSize, float requiredSize, float maximumSize = MaximumProjectionSize)
         {
             // Retain a one-unit reserve and a two-unit dead band. Both expansion and
             // contraction are allowed; small movements cannot repeatedly reverse zoom.
-            return currentSize <= 0 || requiredSize > currentSize || requiredSize < currentSize - 2
-                ? requiredSize + 1 : currentSize;
+            return Math.Min(maximumSize, currentSize <= 0 || requiredSize > currentSize || requiredSize < currentSize - 2
+                ? requiredSize + 1 : currentSize);
         }
     }
 }

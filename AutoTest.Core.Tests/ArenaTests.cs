@@ -19,7 +19,10 @@ internal static class ArenaTests
         check(CombatRoster.Resolve("r", "K", .1m, .3m).ResolvedCount == 3 && CombatRoster.Power(.1f) == .1m, "budget arithmetic uses loaded float round-trip decimals at exact boundaries");
         check(CombatRoster.Resolve("r", "K", .3m, .899999999999999999m).ResolvedCount == 2, "budget arithmetic never uses tolerance to create an unaffordable pawn");
         Reject(() => CombatRoster.Resolve("r", "K", 100, 99), "budget rejects zero affordable units");
-        Reject(() => CombatRoster.Resolve("r", "K", 1, 101), "budget rejects excessive rosters without clamping");
+        Reject(() => CombatRoster.Resolve("r", "K", 1, 201), "budget rejects excessive rosters without clamping");
+        check(CombatRoster.Resolve("r", "K", 1, 200).ResolvedCount == 200
+            && CombatRoster.Resolve("r", "K", 1, null, 200).ResolvedCount == 200, "CP and count budgets both accept the 200-member team boundary");
+        Reject(() => CombatRoster.Resolve("r", "K", 1, null, 201), "count budget rejects the 201st member");
         Reject(() => CombatRoster.Power(float.NaN), "allocation rejects NaN combatPower");
         check(CombatRoster.Resolve("r", "K", 100, 3000).ResolvedCount == 30 && CombatRoster.Resolve("r", "K", 3000, 3000).ResolvedCount == 1, "exact budget division covers CP 100 and CP equal to full budget");
         Reject(() => CombatRoster.Resolve("r", "K", .1m, decimal.MaxValue), "huge budget arithmetic overflow fails before allocating a roster");
@@ -47,11 +50,17 @@ internal static class ArenaTests
             Group(suite.ToString(SaveOptions.DisableFormatting));
         }
         Reject(() => ResolveAndValidate(groupXml.Replace("originX='10'", "originX='95'"), 75), "resolved budget formations are revalidated against map edges before spawning");
-        Reject(() => ResolveAndValidate(groupXml, 20), "resolved group budget refuses more than 100 units before spawning");
+        Reject(() => ResolveAndValidate(groupXml, 10), "resolved group budget refuses more than 200 units before spawning");
         check(Group(groupXml.Replace("combatPowerBudget='3000'", "")).Cases.Count == 1, "group count default remains one when count and budget are both absent");
         const string xml = "<ArenaSuite schemaVersion='1' id='suite'><Tournament id='main'><testDefName>ArenaTest</testDefName><Scene type='mainMap' sizeX='100' sizeZ='100'/><Roster mode='combatPower' budget='3000'/><Entrants><Entrant id='a' pawnKind='Wolf_Timber'/><Entrant id='b' pawnKind='Mercenary_Gunner'/></Entrants></Tournament></ArenaSuite>";
         ArenaPlan Parse(string text) => ArenaLoader.Compile(new[] { new ScenarioInput { Path = "arena.xml", Sha256 = "h", Xml = text } }, new[] { "ArenaTest" });
         var plan = Parse(xml);
+        var largeInput = Parse(xml.Replace("mode='combatPower' budget='3000'", "mode='count' count='200'")).Tournaments.Single();
+        var largeRosters = new List<ResolvedCombatRoster> { CombatRoster.Resolve("a", "Wolf_Timber", 75, null, 200), CombatRoster.Resolve("b", "Mercenary_Gunner", 85, null, 200) };
+        var largeBattle = XElement.Parse(ArenaLoader.CompileBattle(largeInput, largeRosters, null, 0).Xml);
+        check(largeBattle.Element("Actors").Elements("PawnGroup").Sum(a => (int)a.Attribute("count")) == 400,
+            "arena compiles 200 versus 200 with valid formation bounds");
+        Reject(() => Parse(xml.Replace("mode='combatPower' budget='3000'", "mode='count' count='201'")), "arena XML rejects team counts above 200");
         check(Math.Abs(ArenaShowcase.OverallArmor(.6, new[] { (1d, Array.Empty<double>()) }) - .6) < .00001,
             "overall armor preserves unarmored natural protection");
         check(Math.Abs(ArenaShowcase.OverallArmor(0, new[] { (.5, new[] { 1d }), (.5, Array.Empty<double>()) }) - .5) < .00001,
@@ -151,15 +160,27 @@ internal static class ArenaTests
         Reject(() => Parse("<!DOCTYPE ArenaSuite [<!ENTITY x SYSTEM 'file:///C:/Windows/win.ini'>]>" + xml), "arena disables DTD and external entity resolution");
         Reject(() => ScenarioLoader.Compile(plan.Inputs), "ordinary regression entry refuses ArenaSuite");
         var input = plan.Tournaments.Single();
+        var yttakinInput = Parse(xml.Replace("id='b' pawnKind", "id='b' xenotype='Yttakin' pawnKind")).Tournaments.Single();
+        var yttakinRosters = new List<ResolvedCombatRoster> { CombatRoster.Resolve("a", "Wolf_Timber", 100, null, 20), CombatRoster.Resolve("b", "Mercenary_Gunner", 85, null, 80) };
+        var yttakinBattle = XElement.Parse(ArenaLoader.CompileBattle(yttakinInput, yttakinRosters, new ArenaMatch { Left = "b", Right = "a" }, 0).Xml);
+        check(yttakinInput.Entrants[1].Xenotype == "Yttakin"
+            && (string)yttakinBattle.Element("Actors").Elements().First().Element("Xenotype")?.Attribute("def") == "Yttakin"
+            && yttakinBattle.Element("Actors").Elements().Last().Element("Xenotype") == null,
+            "arena freezes the explicit xenotype on its entrant across side changes without modifying the opponent");
+        Reject(() => Parse(xml.Replace("id='b' pawnKind", "id='b' xenotype='' pawnKind")), "arena refuses an explicitly empty xenotype override");
         var verticalRosters = new List<ResolvedCombatRoster> { CombatRoster.Resolve("a", "Wolf_Timber", 100, null, 27), CombatRoster.Resolve("b", "Bear_Polar", 200, null, 3) };
         var verticalBattle = XElement.Parse(ArenaLoader.CompileBattle(input, verticalRosters, null, 0).Xml);
         check((string)verticalBattle.Element("GroupCombat").Attribute("aiPolicy") == "seekAndAttack",
             "arena explicitly selects the tool combat controller instead of inheriting a native AI default");
         var verticalActors = verticalBattle.Element("Actors").Elements("PawnGroup").ToList();
-        check(PawnGroupFormation.Extents(verticalActors[0], true) == (4, 18)
-            && PawnGroupFormation.Extents(verticalActors[1], true) == (0, 4)
+        check(PawnGroupFormation.Extents(verticalActors[0], true) == (16, 4)
+            && PawnGroupFormation.Extents(verticalActors[1], true) == (4, 0)
             && verticalActors.All(a => ScenarioLoader.I(a, "originZ") + PawnGroupFormation.Extents(a, true).z / 2 == 50),
-            "arena centers both full and partial vertical formations using the same geometry as group combat");
+            "arena centers broad, shallow formations using the same geometry as group combat");
+        check(PawnGroupFormation.ArenaRows(200, 140) == 8 && PawnGroupFormation.ArenaRows(75, 140) == 5,
+            "large arena armies use 25 columns by 8 rows and 15 columns by 5 rows");
+        check(PawnGroupFormation.ArenaRows(200, 100) == 11,
+            "narrow arena maps add enough rows to keep both armies in separate spawn areas");
         GroupCombatRoundResult ScoreBattle()
         {
             var result = new GroupCombatRoundResult { ElapsedTicks = 2700, EndReason = "timeLimitRatio", MeasurementRequirementsMet = true,

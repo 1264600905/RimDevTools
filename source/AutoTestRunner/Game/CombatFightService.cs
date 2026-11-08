@@ -252,8 +252,11 @@ namespace LogSyncMod.AutoTest
             current.MapId = Map.uniqueID; current.IsPocketMap = Map.Parent is PocketMapParent; current.GeneratorDef = Map.generatorDef.defName;
             foreach (var team in c.Element("Teams").Elements("Team"))
             {
-                var faction = new Faction { def = DefDatabase<FactionDef>.GetNamed("LogSync_GroupCombatFaction"), loadID = Find.UniqueIDsManager.GetNextFactionID(), Name = ScenarioLoader.A(team, "name", ScenarioLoader.A(team, "id")), temporary = true, hidden = true };
-                faction.ideos = new FactionIdeosTracker(faction);
+                var teamId = ScenarioLoader.A(team, "id");
+                var teamRosters = input.ResolvedRosters.Where(r => r.Team == teamId || IsArena && r == input.ResolvedRosters[teamId == "A" ? 0 : 1]).ToList();
+                var sourceFactions = teamRosters.Where(r => r.FactionDef != null).Select(r => r.FactionDef).Distinct().ToList();
+                if (sourceFactions.Count > 1) throw new ScenarioConfigurationException("One team cannot mix squad generation factions");
+                var faction = SquadGeneration.CreateFaction(sourceFactions.FirstOrDefault() ?? "LogSync_GroupCombatFaction", ScenarioLoader.A(team, "name", teamId));
                 // Use the current session's already initialized ideology as a read-only basis;
                 // no new ideology or leader is added to the player's world for a benchmark.
                 if (Faction.OfPlayer?.ideos?.PrimaryIdeo != null) faction.ideos.SetPrimary(Faction.OfPlayer.ideos.PrimaryIdeo);
@@ -284,7 +287,12 @@ namespace LogSyncMod.AutoTest
                 {
                     var pawn = members[i]; var id = actorId + "[" + i + "]";
                     pawns.Add(id, pawn); rosterIds.Add(pawn, id);
-                    roster.Add(new GroupCombatUnit { Id = id, NativeId = pawn.GetUniqueLoadID(), Team = ScenarioLoader.A(actor, "team"), Group = GroupCombatPlan.DisplayGroupKey(actor), GroupName = actorId, Kind = pawn.kindDef.defName, KindLabel = pawn.kindDef.LabelCap, Name = pawn.LabelShort, X = pawn.Position.x, Z = pawn.Position.z });
+                    var team = ScenarioLoader.A(actor, "team");
+                    var squad = input.ResolvedRosters.FirstOrDefault(r => r.Id == actorId)
+                        ?? (IsArena ? input.ResolvedRosters[team == "A" ? 0 : 1] : null);
+                    var group = GroupCombatPlan.DisplayGroupKey(actor);
+                    if (squad?.Members.Count > 0) group += ":" + pawn.kindDef.defName + ":" + pawn.genes?.Xenotype?.defName;
+                    roster.Add(new GroupCombatUnit { Id = id, NativeId = pawn.GetUniqueLoadID(), Team = team, Group = group, GroupName = actorId, Kind = pawn.kindDef.defName, KindLabel = pawn.kindDef.LabelCap, Name = pawn.LabelShort, X = pawn.Position.x, Z = pawn.Position.z });
                 }
             }
             ledger = new GroupCombatLedger(roster, c.Element("Teams").Elements("Team").Select(t => new KeyValuePair<string, string>(ScenarioLoader.A(t, "id"), ScenarioLoader.A(t, "name", ScenarioLoader.A(t, "id")))), ScenarioLoader.I(settings.Element("Metrics"), "detailLimit", 10000));

@@ -26,7 +26,7 @@ namespace LogSyncMod.AutoTest.Scenarios
                 {
                     text.AppendLine("配兵战力来源：游戏加载后的 PawnKindDef.combatPower。").AppendLine();
                     text.AppendLine("| 编组 | PawnKind | 预算 | 单体战力 | 人数 | 实际投入 | 剩余预算 |").AppendLine("| --- | --- | --- | --- | --- | --- | --- |");
-                    foreach (var roster in round.ResolvedRosters) text.AppendLine("| " + E(roster.Id) + " | " + E(roster.PawnKind) + " | " + roster.RequestedBudget + " | " + roster.UnitCombatPower + " | " + roster.ResolvedCount + " | " + roster.ActualCombatPower + " | " + roster.UnusedBudget + " |");
+                    foreach (var roster in round.ResolvedRosters) text.AppendLine("| " + E(roster.Id) + " | " + E(roster.PawnKind) + " | " + roster.RequestedBudget + " | " + (roster.SquadId != null ? "混编" : roster.UnitCombatPower.ToString("0.##")) + " | " + roster.ResolvedCount + " | " + roster.ActualCombatPower + " | " + roster.UnusedBudget + " |");
                     text.AppendLine();
                 }
                 text.AppendLine("| 队伍 | 结局 | 初始/新增/存活/倒地/死亡/逃离/移除 | 对敌伤害 | 团队 DPS / 平均输出 | 总/存活人均承伤 | 全部参战输出 min/max/mean/median | 全部参战存活期 DPS min/max/mean/median | 全部参战承伤 min/max/mean/median |").AppendLine("| --- | --- | --- | --- | --- | --- | --- | --- | --- |");

@@ -1,0 +1,51 @@
+<TestSuite schemaVersion="1" id="groupcombat.president-yttakin" gameVersion="1.7">
+  <Requirements>
+    <Mod packageId="trigger.ceoocplan"/>
+    <Mod packageId="ancot.ancotlibrary"/>
+    <Mod packageId="melondove.wolfeinrace"/>
+    <Mod packageId="ariandel.ariandellibrary"/>
+    <DLC packageId="ludeon.rimworld.biotech"/>
+  </Requirements>
+  <Templates>
+    <PawnTemplate id="president"><basePawnKind>CEO_President</basePawnKind></PawnTemplate>
+    <PawnTemplate id="pirate">
+      <basePawnKind>Pirate_Yttakin</basePawnKind>
+      <Xenotype def="Yttakin"/>
+    </PawnTemplate>
+  </Templates>
+  <Case id="base" kind="groupCombat" seed="12345" timeoutRealSeconds="600" abstract="true">
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all">
+      <Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/>
+    </Scene>
+    <Teams>
+      <Team id="A" name="社长" ai="seekAndAttack"/>
+      <Team id="B" name="毛绒种海盗" ai="seekAndAttack"/>
+    </Teams>
+    <Actors>
+      <PawnGroup id="president" template="president" team="A" count="1" originX="20" originZ="50"/>
+      <PawnGroup id="pirates" template="pirate" team="B" count="20" originX="76" originZ="41" formation="grid" columns="10" spacing="2"/>
+    </Actors>
+    <Steps>
+      <Require id="president-count"><ActorCount group="president" equals="1"/></Require>
+      <Require id="yttakin-xenotype"><HasXenotype actor="pirates" def="Yttakin"/></Require>
+      <Require id="president-weapon"><Equipped actor="president" def="CEO_BlackGauntlet"/></Require>
+      <!-- CEO_ForceWearPresidentApparel equips the native outfit after spawning. -->
+      <Require id="president-outfit-effect"><HasHediff actor="president" def="CEO_ForceWearPresidentApparel"/></Require>
+      <Require id="reflect-shield"><HasAbility actor="president" def="CEO_ReflectShield"/></Require>
+      <Require id="god-terminate"><HasAbility actor="president" def="CEO_GodTerminate"/></Require>
+    </Steps>
+    <GroupCombat durationSeconds="300" timeSpeed="superfast"><End confirmationTicks="300"/></GroupCombat>
+    <Output purpose="benchmark" showAllParticipants="true" width="1920" height="1080"/>
+  </Case>
+  <Case id="twenty" extends="base" name="社长对20名毛绒种海盗">
+    <testDefName>President1VsYttakin20</testDefName>
+  </Case>
+  <Case id="forty" extends="base" name="社长对40名毛绒种海盗">
+    <testDefName>President1VsYttakin40</testDefName>
+    <Actors><PawnGroup id="pirates" count="40"/></Actors>
+  </Case>
+  <Case id="eighty" extends="base" name="社长对80名毛绒种海盗">
+    <testDefName>President1VsYttakin80</testDefName>
+    <Actors><PawnGroup id="pirates" count="80"/></Actors>
+  </Case>
+</TestSuite>

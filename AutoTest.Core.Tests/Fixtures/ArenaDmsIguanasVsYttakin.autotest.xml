@@ -1,0 +1,41 @@
+<ArenaSuite schemaVersion="1" id="arena.dms-iguanas-yttakin" gameVersion="1.7">
+  <Tournament id="twenty" name="20鬣蜥对20名毛绒种海盗" seed="12345">
+    <testDefName>Arena_DmsIguanas20VsYttakin20</testDefName>
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all">
+      <Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/>
+    </Scene>
+    <Roster mode="count" count="20"/>
+    <Entrants>
+      <Entrant id="iguanas" pawnKind="DMS_Mech_Iguana" name="鬣蜥" count="20"/>
+      <Entrant id="pirates" pawnKind="Pirate_Yttakin" xenotype="Yttakin" name="毛绒种海盗" count="20"/>
+    </Entrants>
+    <Battle timeSpeed="superfast" durationSeconds="300" timeoutRealSeconds="600" confirmationTicks="300"/>
+    <Output width="1920" height="1080"/>
+  </Tournament>
+  <Tournament id="forty" name="20鬣蜥对40名毛绒种海盗" seed="12345">
+    <testDefName>Arena_DmsIguanas20VsYttakin40</testDefName>
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all">
+      <Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/>
+    </Scene>
+    <Roster mode="count" count="20"/>
+    <Entrants>
+      <Entrant id="iguanas" pawnKind="DMS_Mech_Iguana" name="鬣蜥" count="20"/>
+      <Entrant id="pirates" pawnKind="Pirate_Yttakin" xenotype="Yttakin" name="毛绒种海盗" count="40"/>
+    </Entrants>
+    <Battle timeSpeed="superfast" durationSeconds="300" timeoutRealSeconds="600" confirmationTicks="300"/>
+    <Output width="1920" height="1080"/>
+  </Tournament>
+  <Tournament id="eighty" name="20鬣蜥对80名毛绒种海盗" seed="12345">
+    <testDefName>Arena_DmsIguanas20VsYttakin80</testDefName>
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all">
+      <Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/>
+    </Scene>
+    <Roster mode="count" count="20"/>
+    <Entrants>
+      <Entrant id="iguanas" pawnKind="DMS_Mech_Iguana" name="鬣蜥" count="20"/>
+      <Entrant id="pirates" pawnKind="Pirate_Yttakin" xenotype="Yttakin" name="毛绒种海盗" count="80"/>
+    </Entrants>
+    <Battle timeSpeed="superfast" durationSeconds="300" timeoutRealSeconds="600" confirmationTicks="300"/>
+    <Output width="1920" height="1080"/>
+  </Tournament>
+</ArenaSuite>

@@ -139,7 +139,7 @@ namespace LogSyncMod.AutoTest
                 GUI.color = TeamColor(index); DrawText(new Rect(0, 0, width, 23 * scale), TeamLabel(index), 18 * scale); GUI.color = previousColor;
                 DrawText(new Rect(0, 24 * scale, width, 20 * scale), team.Name, 12 * scale);
                 DrawText(new Rect(0, 44 * scale, width, 20 * scale), "存活 " + team.Alive + "/" + team.Total + "   倒地 " + team.Downed + "   死亡 " + team.Dead, 12 * scale);
-                var groups = members.Where(u => u.Alive).GroupBy(u => u.Kind + "|" + u.Group).OrderByDescending(g => g.Count()).ThenBy(g => g.Key, StringComparer.Ordinal).ToList();
+                var groups = members.Where(u => u.Alive).GroupBy(u => GroupCombatPresentation.UnitTypeName(u.KindLabel, u.Kind), StringComparer.Ordinal).OrderByDescending(g => g.Count()).ThenBy(g => g.Key, StringComparer.Ordinal).ToList();
                 var y = 66 * scale;
                 if (team.Joined > 0)
                 {
@@ -186,9 +186,14 @@ namespace LogSyncMod.AutoTest
                 }
                 else
                 {
-                    // Compact screens keep every rank visible on one line.
-                    var text = rank + "." + unit.Name + " " + value(unit).ToString("F0");
-                    DrawName(new Rect(bar.x, y, bar.width, rowHeight), text, Mathf.Min(Mathf.Min(12 * uiScale, rowHeight - 2), bar.width / Mathf.Max(1, text.Length)), unit.State);
+                    // Keep damage in its own column: "Ivy 0" looked like an
+                    // unnecessary generated name suffix before combat started.
+                    var amount = value(unit).ToString("F0");
+                    var fontSize = Mathf.Min(12 * uiScale, rowHeight - 2);
+                    var valueWidth = Mathf.Min(bar.width * .45f, Mathf.Max(30 * uiScale, amount.Length * fontSize * .65f));
+                    var nameWidth = bar.width - valueWidth - 8 * uiScale;
+                    DrawName(new Rect(bar.x, y, nameWidth, rowHeight), name, Mathf.Min(fontSize, nameWidth / Mathf.Max(1, name.Length)), unit.State);
+                    DrawText(new Rect(bar.xMax - valueWidth, y, valueWidth, rowHeight), amount, fontSize, TextAnchor.MiddleRight);
                 }
                 y += rowHeight;
             }
@@ -223,7 +228,7 @@ namespace LogSyncMod.AutoTest
             var previousColor = GUI.color; GUI.color = TeamColor(index);
             DrawText(new Rect(rect.x + 8, rect.y + 8, rect.width - 16, 28), TeamLabel(index) + "  ·  " + team.Initial + " 名参战", Mathf.Min(20, rect.width / 10), TextAnchor.MiddleCenter); GUI.color = previousColor;
             DrawText(new Rect(rect.x + 8, rect.y + 36, rect.width - 16, 24), team.Name, Mathf.Min(16, rect.width / 16), TextAnchor.MiddleCenter);
-            var groups = snapshot.Units.Where(u => u.Team == team.Id).GroupBy(u => u.Kind + "|" + u.Group).ToList();
+            var groups = snapshot.Units.Where(u => u.Team == team.Id).GroupBy(u => GroupCombatPresentation.UnitTypeName(u.KindLabel, u.Kind), StringComparer.Ordinal).ToList();
             if (groups.Count == 0) return;
             var columns = Mathf.Min(groups.Count, Mathf.Max(1, Mathf.CeilToInt(Mathf.Sqrt(groups.Count * rect.width / (rect.height * 2)))));
             var rows = Mathf.CeilToInt((float)groups.Count / columns);

@@ -38,6 +38,7 @@ internal sealed class CoreTestSuite
         ManualTestPlanTests.Run(Assert);
         GroupCombatTests.Run(Assert);
         ArenaTests.Run(Assert);
+        SquadTests.Run(Assert);
         TestSessionExitTests.Run(Assert);
         TestRuntimeQueue();
         TestRuntimeHistory();

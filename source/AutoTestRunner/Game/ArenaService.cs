@@ -66,16 +66,32 @@ namespace LogSyncMod.AutoTest
                     if (frozen?.Purpose != "arena" || frozen.SchemaVersion != 1) throw new ScenarioConfigurationException("Invalid frozen arena plan");
                     report.Plan = ArenaLoader.Compile(frozen.Inputs, frozen.SelectedTestDefNames);
                     report.Plan.SkippedFiles = frozen.SkippedFiles;
-                    // Freeze every tournament's loaded Def values before generating any Pawn.
+                    // Freeze every tournament's roster and native loadouts before any battle.
                     foreach (var input in report.Plan.Tournaments)
                     {
                         var result = new ArenaTournamentResult { Input = input }; report.Tournaments.Add(result); tournament = result;
                         foreach (var entrant in input.Entrants)
                         {
-                            var kind = DefDatabase<PawnKindDef>.GetNamedSilentFail(entrant.PawnKind);
-                            if (kind == null) throw new ScenarioConfigurationException("Unknown loaded PawnKind: " + entrant.PawnKind, "COMBAT_POWER_INVALID");
-                            var roster = CombatRoster.Resolve(entrant.Id, entrant.PawnKind, CombatRoster.Power(kind.combatPower), entrant.Budget ?? input.Budget, entrant.Count ?? input.Count);
-                            roster.DisplayName = entrant.Name ?? kind.LabelCap.ToString(); roster.Source = input.Source;
+                            ResolvedCombatRoster roster;
+                            if (entrant.Squad != null)
+                            {
+                                roster = SquadGeneration.Resolve(entrant.Id, input.SquadTemplates[entrant.Squad], entrant.Budget ?? input.Budget,
+                                    entrant.Count ?? input.Count, input.CostMode, SquadTemplates.MemberSeed(input.Seed, entrant.Id, 0), Find.CurrentMap.Tile);
+                                roster.DisplayName = entrant.Name ?? entrant.Squad;
+                            }
+                            else
+                            {
+                                var kind = DefDatabase<PawnKindDef>.GetNamedSilentFail(entrant.PawnKind);
+                                if (kind == null) throw new ScenarioConfigurationException("Unknown loaded PawnKind: " + entrant.PawnKind, "COMBAT_POWER_INVALID");
+                                if (entrant.Xenotype != null && (!ModsConfig.BiotechActive || !kind.RaceProps.Humanlike
+                                    || DefDatabase<XenotypeDef>.GetNamedSilentFail(entrant.Xenotype) == null))
+                                    throw new ScenarioConfigurationException("Invalid arena xenotype for " + entrant.Id + ": " + entrant.Xenotype);
+                                var power = CombatRoster.Power(kind.combatPower);
+                                if (input.CostMode == "native" && entrant.Xenotype != null) power *= CombatRoster.Power(DefDatabase<XenotypeDef>.GetNamed(entrant.Xenotype).combatPowerFactor);
+                                roster = CombatRoster.Resolve(entrant.Id, entrant.PawnKind, power, entrant.Budget ?? input.Budget, entrant.Count ?? input.Count);
+                                roster.DisplayName = entrant.Name ?? kind.LabelCap.ToString(); roster.CostMode = input.CostMode;
+                            }
+                            roster.Source = input.Source;
                             result.Rosters.Add(roster);
                         }
                         // Validate the largest formations against every entrant before battle.

@@ -43,7 +43,84 @@ dotnet RimDevTools/bin/Release/net10.0/RimDevTools.dll test run --deploy --mode 
 
 固定数量用 `<Roster mode="count" count="20"/>`。数量模式可以在单个 `Entrant` 上写 `count="10"` 覆盖人数；预算模式可以写 `budget="3200"` 覆盖该参赛者的预算，未指定时沿用 `Roster.budget`。数量模式禁止预算覆盖，预算模式禁止人数覆盖。参赛者为 2～64 种互不重复的 PawnKind，ID 也须唯一。两种擂台模式都只允许具有有限正战力的单位。首版继承原生 PawnKind 配装。
 
-配兵人数取预算能容纳的最大整数：`floor(budget/combatPower)`。每方最多 100 人，单场最多 300 人；预算不足一人、非法战力、溢出或超限会停止，不会调整预算或截断人数。3000 战力可以配 40 个 75CP 森林狼，或 35 个 85CP 雇佣枪手；后者实际投入 2975，剩余 25。
+人类参赛者可填写 `xenotype="Yttakin"` 等 XenotypeDef，明确指定基因类型；需要启用 Biotech 且该 Def 已加载。赛前展示与实际对局都应用该配置，换边后仍跟随原参赛者。省略时保留原生生成结果。例：`<Entrant id="pirates" pawnKind="Pirate_Yttakin" xenotype="Yttakin" count="80"/>`。
+
+### 混编队伍与两种预算
+
+`ArenaSuite` 或群战的 `TestSuite` 可以添加 `SquadTemplates`。参赛者用 `squad` 引用模板，与 `pawnKind` 二选一。原有 XML 默认保留基础 PawnKind CP 口径；显式 `costMode="native"` 时混编成员按 `PawnKind.combatPower × Xenotype.combatPowerFactor` 计费。原版袭击事件对点数的额外调整不在这里执行。
+
+```xml
+<SquadTemplates>
+  <SquadTemplate id="yttakinRaid" source="faction" factionDef="PirateYttakin">
+    <GroupMaker mode="random" kindDef="Combat" referencePoints="5000"/>
+    <RaidRules strategyDef="ImmediateAttack"/>
+    <Xenotypes mode="inherit"/>
+  </SquadTemplate>
+</SquadTemplates>
+```
+
+CP 预算：`<Roster mode="combatPower" budget="5000" costMode="native"/>`；人数预算：`<Roster mode="count" count="20" costMode="native"/>`。人数是整支混编队伍的总人数，不是每个兵种的人数。参赛者可用 `budget` 或 `count` 覆盖本方额度，两种模式不得混用。混编和原有单兵种可同场参赛：
+
+```xml
+<Entrants>
+  <Entrant id="iguanas" pawnKind="DMS_Mech_Iguana" name="鬣蜥"/>
+  <Entrant id="pirates" squad="yttakinRaid" name="毛绒种混编队"/>
+</Entrants>
+```
+
+原版只有按点数配兵的接口。人数模式复用原版编队适用性、候选项、策略限制、兵种/异种权重，再抽满指定人数。`referencePoints`（默认 5000）仅为人数模式选择模板及筛选兵种提供原版所需的点数环境，不是另一条 CP 上限；CP 模式直接使用本方实际预算。无法凑齐人数时显式报错，不重复首领或偷偷减少人数。每队限 1～200 人；CP 预算上限 10000000，超出可支持规模时拒绝启动。
+
+指定原版编队：把 `GroupMaker` 改为 `<GroupMaker mode="specific" kindDef="Combat" index="0"/>`。编号为加载完成后该派系**全部** `pawnGroupMakers` 的从零开始下标。结果 JSON 的 `Rosters[].GroupMakers` 列出编号、类型、权重、可用性、候选兵种、禁用策略及指纹；`GroupMakerIndex` 记录实际选择。可把返回的 SHA256 写入可选属性 `fingerprint`，更新模组后若内容变化则拒绝生成。`kindDef` 当前仅接受 `Combat`。
+
+自定义权重编队仍复用原版配兵：
+
+```xml
+<SquadTemplate id="customRaid" source="custom" factionDef="Pirate">
+  <Composition mode="weighted" allocator="native">
+    <Option pawnKind="Mercenary_Gunner" weight="3"/>
+    <Option pawnKind="Mercenary_Heavy" weight="1"/>
+  </Composition>
+  <Xenotypes mode="weighted">
+    <Option def="Baseliner" weight="1"/>
+    <Option def="Yttakin" weight="2"/>
+  </Xenotypes>
+</SquadTemplate>
+```
+
+权重不是最终人数比例。固定名单用 `Composition mode="fixed"`，子项改成 `<Member pawnKind="Mercenary_Gunner" count="10"/>`。人数模式要求名单人数恰好等于人数额度；CP 模式要求名单总花费不超过预算，不截断也不补人。固定名单也可以使用异种随机池。
+
+异种策略可以是 `<Xenotypes mode="inherit"/>`、`<Xenotypes mode="fixed" def="Yttakin"/>` 或上例的权重池。异种在配兵阶段参与成本和适用性判断，再传给原生 Pawn 生成器，不在生成结束后简单替换。异种覆盖仅应用到人类成员，原版或模组编队中的动物、机械等非人类成员保留其种族，不强加异种；萌螈等种族通过相应派系和 PawnKind 选择。
+
+群战复用完全相同的模板，在 `Actors` 中引用：
+
+```xml
+<!-- 人数预算 -->
+<PawnGroup id="pirates" team="B" squad="yttakinRaid" count="20"
+           costMode="native" originX="70" originZ="30"
+           formation="grid" columns="10" spacing="2"/>
+<!-- CP预算：用 combatPowerBudget="5000" 替换 count="20" -->
+```
+
+混编 PawnGroup 不接受单角色模板或其他 Pawn 覆盖字段；需要修改组成或异种时修改队伍模板。同一队伍阵营的混编组须使用相同生成派系，以保留派系相关能力。每个参赛者的兵种、异种、个人种子、技能、特征和配装在开赛前冻结；后续每轮生成新的角色并恢复配装，原生及模组的生成/出生效果继续运行。普通群战同种子换边也沿用相同名单。装备与异种会由 CLI 对照每个实际初始角色复核。快照不承诺复制模组私有组件状态或所有世界关系。
+
+混编介绍卡用左右箭头切换兵种的代表成员，显示该类人数；同显示名称的 PawnKind 合并为同一兵种，包括不同 DefName、异种及配装。战斗侧栏、开战阵容和赛后兵种数使用相同口径；实际生成与配装仍按完整冻结名单执行。底部列全队人数和总 CP，悬停查看各类人数和 CP。属性条是该类真实代表角色的属性，护甲包含出生后动态效果，不对不同配置取平均。JSON 同时记录详细成员配置和介绍采样数据。
+
+扩展算法使用显式注册的生成器：
+
+```xml
+<SquadTemplate id="extensionTeam" source="generator" factionDef="Pirate">
+  <Generator id="myMod.leaderAndGuards">
+    <Param name="minimumGuards" value="4"/>
+  </Generator>
+  <Xenotypes mode="inherit"/>
+</SquadTemplate>
+```
+
+扩展代码实现 `LogSyncMod.AutoTest.ITestSquadGenerator`，启动时通过 `TestSquadGenerators.Register(id, generator)` 注册。上下文含模板、派系、CP预算或人数、成本口径和种子；返回 `TestSquadMemberSpec` 列表。参数名称、类型及业务规则由生成器校验，工具统一复核人数、成本、兵种与异种。未知 ID 报错，XML 不解析任意 CLR 类型或执行脚本。示例 ID 需要扩展自行注册，并非工具内置算法。
+
+可运行示例：`AutoTest.Core.Tests/Fixtures/ArenaSquads.autotest.xml` 和 `AutoTest.Core.Tests/Fixtures/GroupCombatSquads.autotest.xml`，需要启用 DMS Core 及其依赖。
+
+单兵种 CP 配兵人数取预算能容纳的最大整数：`floor(budget/combatPower)`；混编按上面的编队规则分配。每队最多 200 人（同队多组人数合计），两队单场最多 400 人，三队群战最多 600 人；预算不足一人、非法战力、溢出或超限会停止，不会调整预算或截断人数。3000 战力可以配 40 个 75CP 森林狼，或 35 个 85CP 雇佣枪手；后者实际投入 2975，剩余 25。
 
 Scene 沿用群战的严格场景配置。其他字段范围和完整默认值见[实施计划](全新xml测试实现文档/擂台测试与combatPower配兵实施计划.md)。`Output` 指输出截图分辨率，宽高须同时提供，范围 800～3840 × 600～2160；不改变实时游戏窗口。XML 拒绝未知字段、DTD 与外部实体。
 
@@ -77,7 +154,9 @@ Scene 沿用群战的严格场景配置。其他字段范围和完整默认值�
 
 六项属性的进度条和右侧数值按同一套六档颜色显示：低于 20% 为灰色（粗糙），20%～40% 为白色（普通），40%～60% 为绿色（优秀），60%～80% 为蓝色（稀有），80%～95% 为紫色（史诗），95% 及以上为橙色（传说），达到分界值时进入更高一档。百分比取该项实际属性除以本届同项最高值，跨页保持一致；空条为零值。页面底部显示颜色图例。
 
-群战和擂台的初始阵型均优先沿地图 Z 轴纵向排列，再沿 X 轴增加下一列。`line` 为单条纵列；`grid` 沿用 `columns` 配置值作为每条纵列的容量。擂台每列最多 10 个单位，并按真实占地居中。边界检查、群战换边和实际生成共用同一套坐标计算。普通外部场景仍采用原有横向排布。
+擂台自动采用横向列多、纵向行少的阵型，目标宽高约 4:1，并按地图宽度限制横向占地、保留中央接近通道。140 格宽地图中，200 人为 25 列 × 8 行，75 人为 15 列 × 5 行。群战显式 XML 阵型仍按配置：`line` 为单条纵列，`grid.columns` 为每条纵列的容量。边界检查、群战换边和实际生成共用同一套坐标计算。普通外部场景仍采用原有横向排布。
+
+群战和擂台的自动相机实际投影半高最多 28 格，不再为容纳边缘成员无限拉远；达到上限后保持战斗中心，边缘成员可能位于屏幕或侧栏之外。相机还读取 Camera+ 的全局及自定义图标替换阈值，必要时进一步收紧缩放，留出 2 个 UI 像素余量。测试战斗地图内另以 Harmony 补丁将 Camera+ 的有效图标触发阈值设为负数，并禁用屏幕边缘指示图标；全局及自定义兵种规则均适用。同时禁用原版缩放高亮的圆点与剪影，避免相机达到自定义硬上限时触发原版的 90% 范围判定。不会修改玩家的原版或 Camera+ 设置，战斗结束恢复原相机配置与图标行为。
 
 - 常规轮次依次选择初始人数差最小的两队，同差值用固定种子排序。A 对 B 与 B 对 A 只是一场逻辑对决。
 - 初始参赛人数为奇数，最近人数的一对先打资格赛，再由偶数队伍进入普通轮次。

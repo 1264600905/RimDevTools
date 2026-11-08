@@ -37,13 +37,25 @@ public static class GroupCombatResultValidator
             {
                 var actual = report.Rounds.SingleOrDefault(r => r.CaseId == expected.CaseId);
                 if (actual == null || actual.TestDefName != expected.TestDefName || actual.InputHash != expected.InputHash || actual.Seed != expected.Seed || actual.Swapped != expected.Swapped) return "群战结果定义、输入哈希或重复实验参数与 CLI 固定输入不符";
-                var groups = System.Xml.Linq.XElement.Parse(expected.Xml).Element("Actors")!.Elements("PawnGroup").Where(g => g.Attribute("combatPowerBudget") != null).ToList();
+                var groups = System.Xml.Linq.XElement.Parse(expected.Xml).Element("Actors")!.Elements("PawnGroup").Where(g => g.Attribute("combatPowerBudget") != null || g.Attribute("squad") != null).ToList();
                 if (actual.ResolvedRosters.Count != groups.Count) return "群战预算编组快照缺失或多余";
                 foreach (var group in groups)
                 {
                     var resolved = actual.ResolvedRosters.SingleOrDefault(r => r.Id == ScenarioLoader.A(group, "id"));
+                    if (group.Attribute("squad") != null)
+                    {
+                        var template = SquadTemplates.Parse(group.Element("SquadTemplate")!, expected.Source);
+                        var error = SquadTemplates.ValidateRoster(resolved!, template,
+                            group.Attribute("combatPowerBudget") == null ? null : CombatRoster.Positive(ScenarioLoader.A(group, "combatPowerBudget")),
+                            ScenarioLoader.I(group, "count", 1), ScenarioLoader.A(group, "costMode", "pawnKind"));
+                        if (error != null) return error;
+                        if (resolved!.Team != ScenarioLoader.A(group, "team")) return "混编队伍阵营不符";
+                        var memberError = SquadTemplates.ValidateUnits(resolved, actual.Units.Where(u => u.Team == resolved.Team), resolved.Id);
+                        if (memberError != null) return memberError;
+                        continue;
+                    }
                     var budget = CombatRoster.Positive(ScenarioLoader.A(group, "combatPowerBudget"));
-                    if (resolved == null || resolved.PawnKind != group.Element("basePawnKind")!.Value || resolved.Team != ScenarioLoader.A(group, "team") || resolved.UnitCombatPower <= 0 || resolved.RequestedBudget != budget || resolved.Mode != "combatPower" || resolved.ResolvedCount < 1 || resolved.ResolvedCount > 100 || resolved.ActualCombatPower > budget || budget - resolved.ActualCombatPower >= resolved.UnitCombatPower) return "群战预算配兵算术或身份不符";
+                    if (resolved == null || resolved.PawnKind != group.Element("basePawnKind")!.Value || resolved.Team != ScenarioLoader.A(group, "team") || resolved.UnitCombatPower <= 0 || resolved.RequestedBudget != budget || resolved.Mode != "combatPower" || resolved.ResolvedCount < 1 || resolved.ResolvedCount > CombatRoster.MaxTeamMembers || resolved.ActualCombatPower > budget || budget - resolved.ActualCombatPower >= resolved.UnitCombatPower) return "群战预算配兵算术或身份不符";
                     var generated = actual.Units.Where(u => !u.JoinedDuringBattle && u.Id.StartsWith(resolved.Id + "[", StringComparison.Ordinal)).ToList();
                     if (generated.Count != resolved.ResolvedCount || generated.Any(u => u.Team != resolved.Team || u.Kind != resolved.PawnKind)) return "群战预算配兵与实际生成数量不符";
                 }
@@ -57,7 +69,7 @@ public static class GroupCombatResultValidator
             foreach (var team in round.Teams)
             {
                 var units = round.Units.Where(u => u.Team == team.Id).ToList();
-                if (team.Initial <= 0 || team.Initial != units.Count(u => !u.JoinedDuringBattle) || team.Joined != units.Count(u => u.JoinedDuringBattle) || team.Total != units.Count || team.Total != team.Standing + team.Downed + team.Dead + team.Escaped + team.Removed || team.Alive != team.Standing || team.Alive != units.Count(u => u.Alive) || team.PendingRevival != units.Count(u => u.PendingRevival)) return "群战初始/新增人数与最终状态分项不一致";
+                if (team.Initial <= 0 || team.Initial > CombatRoster.MaxTeamMembers || team.Initial != units.Count(u => !u.JoinedDuringBattle) || team.Joined != units.Count(u => u.JoinedDuringBattle) || team.Total != units.Count || team.Total != team.Standing + team.Downed + team.Dead + team.Escaped + team.Removed || team.Alive != team.Standing || team.Alive != units.Count(u => u.Alive) || team.PendingRevival != units.Count(u => u.PendingRevival)) return "群战初始/新增人数与最终状态分项不一致";
                 if (!Equal(team.EnemyDamage, units.Sum(u => u.EnemyDamage) + team.UnrosteredEnemyDamage) || !Equal(team.DamageTaken, round.Matrix.Where(m => m.Channel == "pawn" && m.Victim == team.Id).Sum(m => m.Amount))) return "群战输出/承伤未与逐单位及矩阵核对一致";
                 var dps = round.SimulatedSeconds > 0 ? team.EnemyDamage / round.SimulatedSeconds : 0;
                 var living = units.Where(u => u.Alive).ToList();

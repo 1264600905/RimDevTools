@@ -51,8 +51,8 @@ internal static class GroupCombatTests
             && PawnGroupFormation.Extents(verticalLine, true) == (0, 10)
             && PawnGroupFormation.Offset(verticalLine, 5, false) == (10, 0), "combat lines are vertical while ordinary external scenarios retain their horizontal layout");
         var footprintsMatch = true;
-        foreach (var population in new[] { 1, 3, 10, 27, 100 })
-        foreach (var length in new[] { 1, 4, 10, 100 })
+        foreach (var population in new[] { 1, 3, 10, 27, 100, 200 })
+        foreach (var length in new[] { 1, 4, 10, 100, 200 })
         {
             var formation = new XElement(vertical); formation.SetAttributeValue("count", population); formation.SetAttributeValue("columns", length);
             var offsets = Enumerable.Range(0, population).Select(i => PawnGroupFormation.Offset(formation, i, true)).ToArray();
@@ -60,6 +60,17 @@ internal static class GroupCombatTests
             footprintsMatch &= offsets.Distinct().Count() == population && offsets.Max(p => p.x) == bounds.x && offsets.Max(p => p.z) == bounds.z;
         }
         assert(footprintsMatch, "vertical spawn cells and validation footprints agree for small, partial and maximum rosters");
+        var largeGroups = XElement.Parse(Xml);
+        foreach (var actor in largeGroups.Element("Case").Element("Actors").Elements("PawnGroup"))
+        {
+            actor.SetAttributeValue("count", 200); actor.SetAttributeValue("columns", 10); actor.SetAttributeValue("spacing", 2);
+            actor.SetAttributeValue("originX", (string)actor.Attribute("team") == "A" ? 1 : 60);
+        }
+        assert(Compile(largeGroups.ToString()).Cases.Count == 1, "group combat accepts 200 versus 200");
+        var additional = new XElement(largeGroups.Element("Case").Element("Actors").Elements("PawnGroup").First());
+        additional.SetAttributeValue("id", "extra"); additional.SetAttributeValue("count", 1);
+        largeGroups.Element("Case").Element("Actors").Add(additional);
+        Reject(largeGroups.ToString(), "splitting a team into groups cannot bypass the 200-member limit");
         var byId = Compile(Xml); ScenarioLoader.SelectRules(byId, new[] { byId.Cases.Single().CaseId });
         assert(byId.Cases.Count == 1, "full stable case identity can explicitly select a benchmark");
         Reject(Xml.Replace("<Team id=\"B\" name=\"乙\" />", "<Team id=\"B\"/><Team id=\"C\"/><Team id=\"D\"/>"), "group compiler rejects a fourth team");
@@ -95,6 +106,14 @@ internal static class GroupCombatTests
         assert(GroupCombatPlan.DisplayGroupKey(groupingA) == GroupCombatPlan.DisplayGroupKey(groupingB), "roster display merges the same PawnKind/template across formations without splitting random hair or spawn locations");
         groupingB.Element("Equipment").Element("SetPrimary").SetAttributeValue("def", "Gun_AssaultRifle");
         assert(GroupCombatPlan.DisplayGroupKey(groupingA) != GroupCombatPlan.DisplayGroupKey(groupingB), "explicit loadout differences distinguish display groups of the same PawnKind");
+        var namedTypes = new[] {
+            new GroupCombatUnit { Kind = "Empire_Guard", KindLabel = "皇家禁卫", Group = "rifle" },
+            new GroupCombatUnit { Kind = "Empire_Guard_Elite", KindLabel = "皇家禁卫", Group = "sword" },
+            new GroupCombatUnit { Kind = "Empire_Trooper", KindLabel = "战士" }
+        }.GroupBy(u => GroupCombatPresentation.UnitTypeName(u.KindLabel, u.Kind)).ToList();
+        assert(namedTypes.Count == 2 && namedTypes.Single(g => g.Key == "皇家禁卫").Count() == 2,
+            "visible troop types merge identical names across PawnKind defs and loadouts");
+        assert(GroupCombatPresentation.UnitTypeName(null, "UnknownKind") == "UnknownKind", "unlabeled troop types retain their definition identity");
         Reject(Xml.Replace("<GroupCombat>", "<Output width='400' height='300'/><GroupCombat>"), "benchmark output rejects unusable screen resolution rather than clipping hidden statistics");
 
         var roster = new[] {
@@ -162,7 +181,13 @@ internal static class GroupCombatTests
         var closeZoom = GroupCombatPresentation.ZoomTarget(wideZoom, closeFrame.size);
         assert(closeZoom < wideZoom && closeZoom >= closeFrame.size, "converging armies shrink the camera target instead of retaining the opening view");
         assert(GroupCombatPresentation.ZoomTarget(closeZoom, closeFrame.size + .2f) == closeZoom && GroupCombatPresentation.ZoomTarget(closeZoom, closeFrame.size - .2f) == closeZoom, "small formation movements keep the zoom target stable in both directions");
-        assert(GroupCombatPresentation.ZoomTarget(closeZoom, wideFrame.size) >= wideFrame.size, "spreading armies expand the camera target again");
+        assert(GroupCombatPresentation.ZoomTarget(closeZoom, wideFrame.size) == Math.Min(wideFrame.size + 1, GroupCombatPresentation.MaximumProjectionSize), "spreading armies expand the camera only as far as the hard limit");
+        assert(GroupCombatPresentation.ZoomTarget(0, 500) == 28 && GroupCombatPresentation.ZoomTarget(100, 500) == 28,
+            "extreme formations and previous oversized targets cannot exceed the camera maximum");
+        assert(GroupCombatPresentation.CameraSizeLimit(1080, 10) == 28
+            && 1080 / (2 * GroupCombatPresentation.CameraSizeLimit(1080, 32)) > 32
+            && 600 / (2 * GroupCombatPresentation.CameraSizeLimit(600, 64)) > 64,
+            "camera limits preserve real pawn rendering above global and custom Camera+ marker thresholds at all resolutions");
         var motion = new GroupCombatCameraMotion();
         motion.Step(0, 0, 24, 0);
         motion.Step(100, 50, 40, 1f / 60);

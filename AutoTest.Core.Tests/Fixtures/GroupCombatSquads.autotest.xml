@@ -1,0 +1,56 @@
+<TestSuite schemaVersion="1" id="groupcombat.squads" gameVersion="1.7">
+  <SquadTemplates>
+    <SquadTemplate id="nativeRaid" source="faction" factionDef="PirateYttakin">
+      <GroupMaker mode="random" kindDef="Combat" referencePoints="1500"/>
+      <Xenotypes mode="inherit"/>
+    </SquadTemplate>
+    <SquadTemplate id="customRaid" source="custom" factionDef="Pirate">
+      <Composition mode="weighted" allocator="native">
+        <Option pawnKind="Mercenary_Gunner" weight="3"/>
+        <Option pawnKind="Mercenary_Heavy" weight="1"/>
+      </Composition>
+      <Xenotypes mode="fixed" def="Yttakin"/>
+    </SquadTemplate>
+    <SquadTemplate id="fixedRaid" source="custom" factionDef="Pirate">
+      <Composition mode="fixed">
+        <Member pawnKind="Mercenary_Gunner" count="2"/>
+        <Member pawnKind="Mercenary_Heavy" count="2"/>
+      </Composition>
+      <Xenotypes mode="fixed" def="Yttakin"/>
+    </SquadTemplate>
+  </SquadTemplates>
+  <Case id="base" kind="groupCombat" abstract="true" seed="12345" timeoutRealSeconds="300">
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all">
+      <Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/>
+    </Scene>
+    <Teams><Team id="A" name="鬣蜥"/><Team id="B" name="毛绒种混编"/></Teams>
+    <Actors>
+      <PawnGroup id="iguanas" team="A" count="3" originX="18" originZ="40" formation="grid" columns="6" spacing="2">
+        <basePawnKind>DMS_Mech_Iguana</basePawnKind>
+      </PawnGroup>
+      <PawnGroup id="pirates" team="B" squad="nativeRaid" count="6" costMode="native" originX="75" originZ="40" formation="grid" columns="6" spacing="2"/>
+    </Actors>
+    <GroupCombat durationSeconds="60" timeSpeed="superfast">
+      <Experiments swapSides="true"><Seed value="12345"/></Experiments>
+    </GroupCombat>
+    <Output purpose="benchmark" showAllParticipants="true" width="1920" height="1080"/>
+  </Case>
+  <Case id="nativeCount" extends="base" name="原版混编六人：换边复现">
+    <testDefName>GroupCombat_SquadsNativeCount</testDefName>
+    <Steps><Require id="count"><ActorCount group="pirates" equals="6"/></Require></Steps>
+  </Case>
+  <Case id="customCP" extends="base" name="自定义混编CP预算：换边复现">
+    <testDefName>GroupCombat_SquadsCustomCP</testDefName>
+    <Patches>
+      <RemoveNode xpath="Actors/PawnGroup[@id='pirates']"/>
+      <AddNode xpath="Actors"><Value>
+        <PawnGroup id="pirates" team="B" squad="customRaid" combatPowerBudget="1500" costMode="native" originX="75" originZ="40" formation="grid" columns="6" spacing="2"/>
+      </Value></AddNode>
+    </Patches>
+  </Case>
+  <Case id="fixedCount" extends="base" name="固定四人混编：换边复现">
+    <testDefName>GroupCombat_SquadsFixedCount</testDefName>
+    <Actors><PawnGroup id="pirates" squad="fixedRaid" count="4"/></Actors>
+    <Steps><Require id="count"><ActorCount group="pirates" equals="4"/></Require></Steps>
+  </Case>
+</TestSuite>

@@ -1,0 +1,100 @@
+<ArenaSuite schemaVersion="1" id="arena.squads" gameVersion="1.7">
+  <SquadTemplates>
+    <SquadTemplate id="nativeRaid" source="faction" factionDef="PirateYttakin">
+      <GroupMaker mode="random" kindDef="Combat" referencePoints="1500"/>
+      <Xenotypes mode="inherit"/>
+    </SquadTemplate>
+    <SquadTemplate id="rangedRaid" source="faction" factionDef="Pirate">
+      <GroupMaker mode="specific" kindDef="Combat" index="0" referencePoints="1500"/>
+      <Xenotypes mode="fixed" def="Yttakin"/>
+    </SquadTemplate>
+    <SquadTemplate id="customRaid" source="custom" factionDef="Pirate">
+      <Composition mode="weighted" allocator="native">
+        <Option pawnKind="Mercenary_Gunner" weight="3"/>
+        <Option pawnKind="Mercenary_Heavy" weight="1"/>
+      </Composition>
+      <Xenotypes mode="weighted">
+        <Option def="Baseliner" weight="1"/>
+        <Option def="Yttakin" weight="1"/>
+      </Xenotypes>
+    </SquadTemplate>
+    <SquadTemplate id="fixedRaid" source="custom" factionDef="Pirate">
+      <Composition mode="fixed">
+        <Member pawnKind="Mercenary_Gunner" count="2"/>
+        <Member pawnKind="Mercenary_Heavy" count="2"/>
+      </Composition>
+      <Xenotypes mode="fixed" def="Yttakin"/>
+    </SquadTemplate>
+  </SquadTemplates>
+  <Tournament id="nativeCP" name="原版随机混编：CP预算" seed="12345">
+    <testDefName>Arena_SquadsNativeCP</testDefName>
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all">
+      <Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/>
+    </Scene>
+    <Roster mode="combatPower" budget="1500" costMode="native"/>
+    <Entrants>
+      <Entrant id="iguanas" pawnKind="DMS_Mech_Iguana" name="鬣蜥"/>
+      <Entrant id="pirates" squad="nativeRaid" name="原版毛绒种混编"/>
+    </Entrants>
+    <Battle timeSpeed="superfast" durationSeconds="90" timeoutRealSeconds="300"/>
+    <TieBreak maxReplays="0"/>
+    <Presentation><Showcase pageSeconds="5"/></Presentation>
+    <Output width="1920" height="1080"/>
+  </Tournament>
+  <Tournament id="nativeCount" name="原版随机混编：人数预算" seed="12345">
+    <testDefName>Arena_SquadsNativeCount</testDefName>
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all">
+      <Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/>
+    </Scene>
+    <Roster mode="count" count="6" costMode="native"/>
+    <Entrants>
+      <Entrant id="iguanas" pawnKind="DMS_Mech_Iguana" name="鬣蜥" count="3"/>
+      <Entrant id="pirates" squad="nativeRaid" name="六人原版混编"/>
+    </Entrants>
+    <Battle timeSpeed="superfast" durationSeconds="90" timeoutRealSeconds="300"/>
+    <TieBreak maxReplays="0"/>
+    <Output width="1920" height="1080"/>
+  </Tournament>
+  <Tournament id="specificCP" name="指定编队与异种：CP预算" seed="12345">
+    <testDefName>Arena_SquadsSpecificCP</testDefName>
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all">
+      <Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/>
+    </Scene>
+    <Roster mode="combatPower" budget="1500" costMode="native"/>
+    <Entrants>
+      <Entrant id="iguanas" pawnKind="DMS_Mech_Iguana" name="鬣蜥"/>
+      <Entrant id="pirates" squad="rangedRaid" name="指定模板的毛绒种"/>
+    </Entrants>
+    <Battle timeSpeed="superfast" durationSeconds="90" timeoutRealSeconds="300"/>
+    <TieBreak maxReplays="0"/>
+    <Output width="1920" height="1080"/>
+  </Tournament>
+  <Tournament id="customCount" name="自定义权重混编：人数预算" seed="12345">
+    <testDefName>Arena_SquadsCustomCount</testDefName>
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all">
+      <Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/>
+    </Scene>
+    <Roster mode="count" count="6" costMode="pawnKind"/>
+    <Entrants>
+      <Entrant id="iguanas" pawnKind="DMS_Mech_Iguana" name="鬣蜥" count="3"/>
+      <Entrant id="pirates" squad="customRaid" name="六人自定义混编"/>
+    </Entrants>
+    <Battle timeSpeed="superfast" durationSeconds="90" timeoutRealSeconds="300"/>
+    <TieBreak maxReplays="0"/>
+    <Output width="1920" height="1080"/>
+  </Tournament>
+  <Tournament id="fixedCount" name="固定名单：人数预算" seed="12345">
+    <testDefName>Arena_SquadsFixedCount</testDefName>
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all">
+      <Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/>
+    </Scene>
+    <Roster mode="count" count="4" costMode="native"/>
+    <Entrants>
+      <Entrant id="iguanas" pawnKind="DMS_Mech_Iguana" name="鬣蜥" count="2"/>
+      <Entrant id="pirates" squad="fixedRaid" name="固定四人混编"/>
+    </Entrants>
+    <Battle timeSpeed="superfast" durationSeconds="90" timeoutRealSeconds="300"/>
+    <TieBreak maxReplays="0"/>
+    <Output width="1920" height="1080"/>
+  </Tournament>
+</ArenaSuite>

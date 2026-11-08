@@ -82,7 +82,36 @@ namespace LogSyncMod.AutoTest
                 compiled.Cases[i].Xml = XElement.Parse(inputs[i].Xml).Element("Case").ToString(SaveOptions.DisableFormatting);
             }
             report.PlannedRounds = GroupCombatPlan.Expand(compiled);
-            foreach (var round in report.PlannedRounds) round.ResolvedRosters = rosters[compiled.Cases.Single(c => round.CaseId.StartsWith(c.CaseId + "/round-", StringComparison.Ordinal)).CaseId];
+            var squadCache = new Dictionary<string, ResolvedCombatRoster>(StringComparer.Ordinal);
+            foreach (var round in report.PlannedRounds)
+            {
+                round.ResolvedRosters = new List<ResolvedCombatRoster>(rosters[compiled.Cases.Single(c => round.CaseId.StartsWith(c.CaseId + "/round-", StringComparison.Ordinal)).CaseId]);
+                var xml = XElement.Parse(round.Xml);
+                foreach (var actor in xml.Element("Actors").Elements("PawnGroup").Where(a => a.Attribute("squad") != null))
+                {
+                    var template = SquadTemplates.Parse(actor.Element("SquadTemplate"), round.Source);
+                    var oldExtent = PawnGroupFormation.Extents(actor, true).x;
+                    var cacheKey = round.CaseId.Substring(0, round.CaseId.LastIndexOf("/round-", StringComparison.Ordinal)) + ":" + round.Seed + ":" + ScenarioLoader.A(actor, "id");
+                    if (!squadCache.TryGetValue(cacheKey, out var roster))
+                    {
+                        roster = SquadGeneration.Resolve(ScenarioLoader.A(actor, "id"), template,
+                            actor.Attribute("combatPowerBudget") == null ? null : CombatRoster.Positive(ScenarioLoader.A(actor, "combatPowerBudget")),
+                            ScenarioLoader.I(actor, "count", 1), ScenarioLoader.A(actor, "costMode", "pawnKind"),
+                            SquadTemplates.MemberSeed(round.Seed, ScenarioLoader.A(actor, "id"), 0), Find.CurrentMap.Tile);
+                        squadCache.Add(cacheKey, roster);
+                    }
+                    roster.Team = ScenarioLoader.A(actor, "team"); roster.Source = round.Source; roster.DisplayName = template.Id;
+                    actor.Attribute("squad").Remove(); actor.Attribute("combatPowerBudget")?.Remove(); actor.Attribute("costMode")?.Remove();
+                    actor.Element("SquadTemplate").Remove(); actor.SetAttributeValue("count", roster.ResolvedCount);
+                    actor.Add(new XElement("basePawnKind", roster.PawnKind));
+                    if (round.Swapped) actor.SetAttributeValue("originX", ScenarioLoader.I(actor, "originX", 20) - PawnGroupFormation.Extents(actor, true).x + oldExtent);
+                    round.ResolvedRosters.Add(roster);
+                }
+                xml.Attribute("packageId")?.Remove();
+                var suite = new XElement("TestSuite", new XAttribute("schemaVersion", 1), new XAttribute("id", "resolvedSquads"), xml);
+                ScenarioLoader.Compile(new[] { new ScenarioInput { Path = round.Source, Sha256 = round.InputHash, Xml = suite.ToString(SaveOptions.DisableFormatting) } }, true);
+                round.Xml = xml.ToString(SaveOptions.DisableFormatting);
+            }
         }
 
         private static void Finish()

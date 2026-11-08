@@ -21,8 +21,14 @@ namespace LogSyncMod.AutoTest.Scenarios
                         s.AppendLine($"|{p.Rank}|{t.Rosters.Single(r => r.Id == p.EntrantId).DisplayName ?? p.EntrantId}|{p.Wins}|{(p.Wins == 0 ? "—" : p.LastVictoryScore.ToString("F2"))}|");
                     s.AppendLine($"\n前五展示：{t.TopFive.VisibleSeconds:F2} / {t.TopFive.DurationSeconds:F0} 秒，模拟 tick：{t.TopFive.SimulationTicks}。\n");
                 }
-                s.AppendLine("|参赛者|PawnKind|单体 combatPower|人数|预算|实际战力|剩余|").AppendLine("|---|---|---:|---:|---:|---:|---:|");
-                foreach (var r in t.Rosters) s.AppendLine($"|{r.Id}|{r.PawnKind}|{r.UnitCombatPower}|{r.ResolvedCount}|{r.RequestedBudget}|{r.ActualCombatPower}|{r.UnusedBudget}|");
+                s.AppendLine("|参赛者|PawnKind|单体/平均 combatPower|人数|预算|实际战力|剩余|").AppendLine("|---|---|---:|---:|---:|---:|---:|");
+                foreach (var r in t.Rosters) s.AppendLine($"|{r.Id}|{r.PawnKind}|{(r.SquadId != null ? "混编" : r.UnitCombatPower.ToString("0.##"))}|{r.ResolvedCount}|{r.RequestedBudget}|{r.ActualCombatPower}|{r.UnusedBudget}|");
+                foreach (var r in t.Rosters.Where(r => r.SquadId != null))
+                {
+                    s.AppendLine($"\n混编队伍 {r.DisplayName}：派系 `{r.FactionDef}`，成本口径 `{r.CostMode}`，编队编号 {r.GroupMakerIndex}，指纹 `{r.GroupMakerFingerprint}`。");
+                    s.AppendLine("|兵种|异种|人数|合计CP|").AppendLine("|---|---|---:|---:|");
+                    foreach (var g in r.Members.GroupBy(m => (m.PawnKind, m.Xenotype))) s.AppendLine($"|{g.Key.PawnKind}|{g.Key.Xenotype}|{g.Count()}|{g.Sum(m => m.Cost)}|");
+                }
                 s.AppendLine().AppendLine("评分：百分制胜利质量；保全/压制按初始成员，倒地保全权重 0.25；交换按已记录伤害，速度扣除最终胜负确认等待。")
                     .AppendLine("|对局|类型|双方|胜者|总分 / 100|保全|压制|交换|速度|有效秒数|伤害口径|可排序|尝试次数|")
                     .AppendLine("|---|---|---|---|---:|---:|---:|---:|---:|---:|---|---|---:|");
@@ -51,7 +57,7 @@ namespace LogSyncMod.AutoTest.Scenarios
             var layout = new ArenaBracketLayout(); var tips = new Dictionary<string, ArenaBracketNode>();
             foreach (var r in tournament.Rosters)
             {
-                var node = new ArenaBracketNode { Id = "entrant/" + r.Id, EntrantId = r.Id, Label = r.DisplayName + " ×" + r.ResolvedCount + "\nCP " + r.UnitCombatPower, X = 8, Y = 8 + layout.Nodes.Count * 64 };
+                var node = new ArenaBracketNode { Id = "entrant/" + r.Id, EntrantId = r.Id, Label = r.DisplayName + " ×" + r.ResolvedCount + "\n" + (r.SquadId != null ? "混编 · 总 CP " + r.ActualCombatPower.ToString("0.##") : "CP " + r.UnitCombatPower.ToString("0.##")), X = 8, Y = 8 + layout.Nodes.Count * 64 };
                 tips[r.Id] = node; layout.Nodes.Add(node);
             }
             foreach (var m in tournament.Matches)

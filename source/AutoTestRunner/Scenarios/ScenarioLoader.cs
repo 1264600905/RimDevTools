@@ -46,6 +46,7 @@ namespace LogSyncMod.AutoTest.Scenarios
                 if (root == null || root.Name != "TestSuite") Fail(root, input.Path, "expected TestSuite; ArenaSuite requires --mode arena");
                 foreach (var e in root.DescendantsAndSelf()) e.AddAnnotation(new SourceLine { Line = ((IXmlLineInfo)e).LineNumber });
                 ExpandBattleCases(root, input.Path, groupCombat);
+                SquadTemplates.FreezeGroupReferences(root, input.Path, groupCombat);
                 ValidateTree(root, input.Path, allowParameters: true);
                 if (A(root, "schemaVersion") != "1") Fail(root, input.Path, "schemaVersion must be 1");
                 if (A(root, "gameVersion", "1.7") != "1.7") Fail(root, input.Path, "only the 1.7 scenario backend is supported");
@@ -199,21 +200,23 @@ namespace LogSyncMod.AutoTest.Scenarios
                     if (actor.Attribute("count") != null) Fail(actor, path, "count and combatPowerBudget are mutually exclusive");
                     CombatRoster.Positive(A(actor, "combatPowerBudget"));
                 }
+                if (actor.Attribute("costMode") != null && actor.Attribute("squad") == null) Fail(actor, path, "PawnGroup costMode requires a squad");
                 var count = I(actor, "count", 1);
-                if (count < 1 || count > 100) Fail(actor, path, "count must be 1..100");
+                var maxCount = groupCombat ? CombatRoster.MaxTeamMembers : 100;
+                if (count < 1 || count > maxCount) Fail(actor, path, "count must be 1.." + maxCount);
                 if (actor.Name != "DefRef")
                 {
                     var x = I(actor, "x", I(actor, "originX", 20)); var z = I(actor, "z", I(actor, "originZ", 20));
                     var grid = actor.Name == "PawnGroup" && A(actor, "formation", "line") == "grid";
                     var columns = grid ? I(actor, "columns", 5) : count;
-                    if (columns < 1 || columns > 100 || I(actor, "spacing", 2) < 1) Fail(actor, path, "columns and spacing must be positive (columns <= 100)");
+                    if (columns < 1 || columns > maxCount || I(actor, "spacing", 2) < 1) Fail(actor, path, "columns and spacing must be positive (columns <= " + maxCount + ")");
                     var footprint = actor.Name == "PawnGroup" ? PawnGroupFormation.Extents(actor, groupCombat) : actor.Name == "TerrainArea" ? (x: I(actor, "width") - 1, z: I(actor, "height") - 1) : (x: 0, z: 0);
                     if (x < 0 || z < 0 || x + footprint.x >= I(scene, "sizeX", 50) || z + footprint.z >= I(scene, "sizeZ", 50)) Fail(actor, path, "actor lies outside the configured scene");
                 }
                 for (var n = 0; n < count && actor.Name == "PawnGroup"; n++) if (!actors.Add(id + "[" + n + "]")) Fail(actor, path, "duplicate group member");
                 if (actor.Name == "Corpse" && !actors.Add(id + ".innerPawn")) Fail(actor, path, "duplicate corpse innerPawn");
                 if (actor.Name == "Pawn" || actor.Name == "PawnGroup" || actor.Name == "Corpse")
-                    if (string.IsNullOrWhiteSpace(actor.Element("basePawnKind")?.Value)) Fail(actor, path, "basePawnKind is required");
+                    if (actor.Attribute("squad") == null && string.IsNullOrWhiteSpace(actor.Element("basePawnKind")?.Value)) Fail(actor, path, "basePawnKind is required");
             }
             var steps = new HashSet<string>();
             if (new[] { "PlantGrowthView", "BuildingView", "TerrainPatchView" }.Contains(type))
@@ -329,6 +332,7 @@ namespace LogSyncMod.AutoTest.Scenarios
         private static void ValidateTree(XElement node, string path, bool allowParameters = false)
         {
             var name = node.Name.LocalName;
+            if (name == "SquadTemplate") { SquadTemplates.Parse(node, path); return; }
             var required = name switch {
                 "Thing" or "Building" or "CreateThing" or "Add" or "SetPrimary" or "Ensure" or "Set" or "Remove" => "def",
                 "Team" => "id", "Relation" => "a b value", "Def" or "DefRef" => "defType defName",
@@ -343,13 +347,13 @@ namespace LogSyncMod.AutoTest.Scenarios
             foreach (var field in required.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries)) Required(node, field, path);
             var actor = new[] { "Pawn", "PawnGroup", "Corpse" }.Contains(name);
             var thing = new[] { "Thing", "Building" }.Contains(name);
-            var attrs = name == "PawnGroup" ? "id template team count combatPowerBudget originX originZ spacing formation columns spawn" : actor ? "id template team x z spawn" : thing ? "id def stuff team x z count quality color rotation growth spawn" : name == "DefRef" ? "id defType defName" : name == "TerrainArea" ? "id def x z width height" : Attributes.TryGetValue(name, out var text) ? text : "";
+            var attrs = name == "PawnGroup" ? "id template squad costMode team count combatPowerBudget originX originZ spacing formation columns spawn" : actor ? "id template team x z spawn" : thing ? "id def stuff team x z count quality color rotation growth spawn" : name == "DefRef" ? "id defType defName" : name == "TerrainArea" ? "id def x z width height" : Attributes.TryGetValue(name, out var text) ? text : "";
             if (name == "Set") attrs = node.Parent?.Name == "Skills" ? "def level passion" : "def degree";
             if (name == "Ensure") attrs = node.Parent?.Name == "Hediffs" ? "def severity part durationTicks" : "def";
             if (name == "Remove") attrs = node.Parent?.Name == "Hediffs" ? "def part" : "def";
             if (name == "Add" && node.Parent?.Name == "Genes") attrs = "def xenogene";
             foreach (var a in node.Attributes()) if (!attrs.Split(' ').Contains(a.Name.ToString())) Fail(node, path, "unknown attribute " + a.Name);
-            var children = actor ? Children["PawnTemplate"] : name == "li" ? node.Parent?.Name.LocalName switch { "forcedTraits" => "def degree", "skills" => "skill range passion", _ => "" } : Children.TryGetValue(name, out var allowed) ? allowed : new[] { "Require", "Wait", "Success", "All", "Any", "Not" }.Contains(name) ? Conditions : "";
+            var children = actor ? Children["PawnTemplate"] + (name == "PawnGroup" ? " SquadTemplate" : "") : name == "li" ? node.Parent?.Name.LocalName switch { "forcedTraits" => "def degree", "skills" => "skill range passion", _ => "" } : Children.TryGetValue(name, out var allowed) ? allowed : new[] { "Require", "Wait", "Success", "All", "Any", "Not" }.Contains(name) ? Conditions : "";
             foreach (var e in node.Elements())
             {
                 if (!children.Split(' ').Contains(e.Name.ToString())) Fail(e, path, "unknown/unsupported element: " + e.Name);

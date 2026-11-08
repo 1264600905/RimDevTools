@@ -115,7 +115,12 @@ namespace LogSyncMod.AutoTest
             for (var n = 0; n < count; n++)
             {
                 Thing thing;
-                if (actor.Name == "Pawn" || actor.Name == "PawnGroup" || actor.Name == "Corpse") thing = GeneratePawn(actor);
+                if (actor.Name == "PawnGroup" && squadRosters.TryGetValue(id, out var squad))
+                {
+                    thing = GenerateSquadPawn(squad.Members[n], teams[A(actor, "team")], Map.Tile);
+                    owned.Add(thing);
+                }
+                else if (actor.Name == "Pawn" || actor.Name == "PawnGroup" || actor.Name == "Corpse") thing = GeneratePawn(actor);
                 else
                 {
                     thing = MakeThing(A(actor, "def"), A(actor, "stuff"));
@@ -180,7 +185,7 @@ namespace LogSyncMod.AutoTest
             return pawn;
         }
 
-        private void ApplyPawnConfig(Pawn pawn, XElement a)
+        private void ApplyPawnConfig(Pawn pawn, XElement a, bool restoreColorState = false)
         {
             ApplyAge(pawn, a.Element("Age"));
             if (a.Element("Xenotype") != null)
@@ -240,13 +245,14 @@ namespace LogSyncMod.AutoTest
                         if (item.Name == "Remove") { foreach (var old in pawn.apparel.WornApparel.Where(app => app.def.defName == def).ToList()) old.Destroy(); continue; }
                         var apparelNew = MakeThing(def, A(item, "stuff")) as Apparel ?? throw new ScenarioConfigurationException("Not apparel: " + def);
                         owned.Add(apparelNew); ApplyQuality(apparelNew, A(item, "quality")); ApplyColor(apparelNew, A(item, "color"));
+                        if (restoreColorState && A(item, "color") == null) apparelNew.TryGetComp<CompColorable>()?.Disable();
                         if (!ApparelUtility.HasPartsToWear(pawn, apparelNew.def)) throw new ScenarioConfigurationException("Pawn cannot wear " + def);
                         // Do not silently replace unrelated clothing.
                         if (pawn.apparel.WornApparel.Any(old => !ApparelUtility.CanWearTogether(old.def, apparelNew.def, pawn.RaceProps.body))) throw new ScenarioConfigurationException("Explicit apparel conflicts with inherited clothing: " + def);
                         pawn.apparel.Wear(apparelNew, false);
                         if (!pawn.apparel.WornApparel.Contains(apparelNew)) throw new InvalidOperationException("Wear failed: " + def);
                     }
-                    else if (type == "Equipment") Equip(pawn, item);
+                    else if (type == "Equipment") Equip(pawn, item, restoreColorState);
                     else if (type == "Traits") { Need(pawn.story, type); if (item.Name == "Remove") { foreach (var t in pawn.story.traits.allTraits.Where(t => t.def.defName == def).ToList()) pawn.story.traits.RemoveTrait(t); } else SetTrait(pawn, def, I(item, "degree")); }
                     else if (type == "Skills") SetSkill(pawn, def, I(item, "level"), A(item, "passion"));
                     else if (type == "Hediffs") { if (item.Name == "Remove") RemoveHediff(pawn, item); else AddHediff(pawn, item); }
@@ -290,11 +296,12 @@ namespace LogSyncMod.AutoTest
             skill.Level = baseLevel; if (passion != null) skill.passion = Enum.Parse<Passion>(passion, true);
             if (skill.Level != level) throw new InvalidOperationException("Skill rejected: " + name);
         }
-        private void Equip(Pawn p, XElement item)
+        private void Equip(Pawn p, XElement item, bool restoreColorState = false)
         {
             Need(p.equipment, "Equipment");
             var weapon = MakeThing(A(item, "def"), A(item, "stuff")) as ThingWithComps ?? throw new ScenarioConfigurationException("Weapon requires ThingWithComps");
             owned.Add(weapon); ApplyQuality(weapon, A(item, "quality")); ApplyColor(weapon, A(item, "color"));
+            if (restoreColorState && A(item, "color") == null) weapon.TryGetComp<CompColorable>()?.Disable();
             if (!weapon.def.IsWeapon) throw new ScenarioConfigurationException("Not a weapon: " + weapon.def.defName);
             p.equipment.DestroyAllEquipment(); p.equipment.AddEquipment(weapon);
             if (p.equipment.Primary != weapon) throw new InvalidOperationException("Equipment rejected");

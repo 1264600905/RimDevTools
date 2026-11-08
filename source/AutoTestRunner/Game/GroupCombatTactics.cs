@@ -145,4 +145,14 @@ namespace LogSyncMod.AutoTest
             if (__result) GroupCombatTactics.NotifyShot(__instance);
         }
     }
+
+    [HarmonyPatch(typeof(GenSpawn), nameof(GenSpawn.Spawn), new[] { typeof(Thing), typeof(IntVec3), typeof(Map), typeof(Rot4), typeof(WipeMode), typeof(bool), typeof(bool) })]
+    internal static class GroupCombat_InvalidSpawnDiagnostic_Patch
+    {
+        private static void Prefix(Thing newThing, Map map)
+        {
+            if (CombatFightService.Busy && map == CombatFightService.Map && newThing?.Destroyed == true)
+                CombatFightService.DamageDiagnostic("group.invalid_spawn: " + newThing + "; " + Environment.StackTrace);
+        }
+    }
 }

@@ -89,7 +89,10 @@ namespace LogSyncMod.AutoTest.Scenarios
                 Fixed(relation, "value", "Hostile");
             }
             var pawns = c.Element("Actors").Elements().Where(a => a.Name == "Pawn" || a.Name == "PawnGroup").ToList();
-            if (pawns.Count == 0 || pawns.Sum(a => a.Name == "PawnGroup" ? I(a, "count", 1) : 1) > 300) Fail(c, path, "GroupCombat requires 1..300 initial participants");
+            if (pawns.Count == 0 || pawns.Sum(a => a.Name == "PawnGroup" ? I(a, "count", 1) : 1) > CombatRoster.MaxBattleMembers) Fail(c, path, "GroupCombat requires 1.." + CombatRoster.MaxBattleMembers + " initial participants");
+            foreach (var team in pawns.GroupBy(a => A(a, "team")))
+                if (team.Sum(a => a.Name == "PawnGroup" ? I(a, "count", 1) : 1) > CombatRoster.MaxTeamMembers)
+                    Fail(c, path, "team " + team.Key + " exceeds " + CombatRoster.MaxTeamMembers + " initial participants");
             foreach (var pawn in pawns) { if (A(pawn, "team") == null) Fail(pawn, path, "combat Pawn requires a team"); Fixed(pawn, "spawn", "true"); }
             foreach (var team in teams) if (!pawns.Any(p => A(p, "team") == A(team, "id"))) Fail(team, path, "team has no initial participants");
             foreach (var step in c.Element("Steps").Elements())

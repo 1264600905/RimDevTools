@@ -15,14 +15,17 @@ namespace LogSyncMod.AutoTest
         private static ArenaTournamentResult tournament;
         private static double[] maxima;
         private static Dictionary<string, float> hues;
+        private static readonly Dictionary<string, int> selectedTypes = new();
+        private static readonly Dictionary<string, List<(string id, int count, decimal totalPower)>> sampleTypes = new();
         private static readonly Dictionary<string, Pawn> previewPawns = new();
         private static readonly Dictionary<string, RenderTexture> portraits = new();
         private static readonly Dictionary<string, List<string>> generatedHediffs = new();
+        private static readonly List<SquadGeneration.FactionScope> previewFactions = new();
         private static AutoTestMainMap previewMap;
         private static int initializationStartTick;
         internal static bool Ready { get; private set; }
         private const int InitializationTicks = 300;
-        private static readonly string[] Labels = { "战力 · CP", "血量", "攻击伤害", "攻击速度", "利器护甲", "钝器护甲" };
+        private static readonly string[] Labels = { "单体 · CP", "血量", "攻击伤害", "攻击速度", "利器护甲", "钝器护甲" };
         private static readonly Color Muted = new(.57f, .64f, .73f);
         private static readonly Color Gold = new(1f, .79f, .4f);
         private static readonly Color[] GradeColors = {
@@ -38,23 +41,43 @@ namespace LogSyncMod.AutoTest
             value.Showcase = new ArenaShowcaseResult { PageSeconds = value.Input.ShowcasePageSeconds };
             // Spawn real, equipped pawns so PostSpawnSetup and native ticks can add
             // runtime comps/hediffs before sampling, as they do for normal characters.
-            previewMap = new AutoTestMainMap(Find.CurrentMap, value.Input.Seed, new IntVec3(100, 1, 100));
+            previewMap = new AutoTestMainMap(Find.CurrentMap, value.Input.Seed, new IntVec3(200, 1, 200));
             Rand.PushState(value.Input.Seed);
             try
             {
                 foreach (var roster in value.Rosters)
                 {
-                    var kind = DefDatabase<PawnKindDef>.GetNamed(roster.PawnKind);
-                    var age = Math.Max(kind.RaceProps.lifeStageAges.Last().minAge, kind.RaceProps.Humanlike ? 25 : 0);
-                    var pawn = PawnGenerator.GeneratePawn(new PawnGenerationRequest(kind, forceGenerateNewPawn: true,
-                            canGeneratePawnRelations: false, fixedBiologicalAge: age));
-                    previewPawns.Add(roster.Id, pawn);
-                    generatedHediffs.Add(roster.Id, pawn.health.hediffSet.hediffs.Select(h => h.def.defName).ToList());
-                    var index = previewPawns.Count - 1;
-                    GenSpawn.Spawn(pawn, new IntVec3(10 + index % 8 * 11, 0, 10 + index / 8 * 11), previewMap.Map, Rot4.South);
-                    var wait = JobMaker.MakeJob(JobDefOf.Wait_MaintainPosture);
-                    wait.expiryInterval = 60000;
-                    pawn.jobs.StartJob(wait, JobCondition.InterruptForced);
+                    var samples = new List<(string id, int count, decimal totalPower)>(); sampleTypes.Add(roster.Id, samples);
+                    var groups = roster.Members.GroupBy(m => SquadGeneration.KindLabel(m.PawnKind), StringComparer.Ordinal).ToList();
+                    var scope = roster.FactionDef == null ? null : new SquadGeneration.FactionScope(roster.FactionDef, roster.DisplayName);
+                    if (scope != null) previewFactions.Add(scope);
+                    var faction = scope?.Faction;
+                    var sampleCount = Math.Max(1, groups.Count);
+                    for (var type = 0; type < sampleCount; type++)
+                    {
+                        Pawn pawn;
+                        var sampleId = type == 0 ? roster.Id : roster.Id + "/type-" + type;
+                        if (roster.Members.Count > 0)
+                            pawn = ScenarioGameBackend.GenerateSquadPawn(groups[type].First(), faction, previewMap.Map.Tile);
+                        else
+                        {
+                            var kind = DefDatabase<PawnKindDef>.GetNamed(roster.PawnKind);
+                            var age = Math.Max(kind.RaceProps.lifeStageAges.Last().minAge, kind.RaceProps.Humanlike ? 25 : 0);
+                            var xenotype = value.Input.Entrants.Single(e => e.Id == roster.Id).Xenotype;
+                            pawn = PawnGenerator.GeneratePawn(new PawnGenerationRequest(kind, forceGenerateNewPawn: true,
+                                canGeneratePawnRelations: false, fixedBiologicalAge: age,
+                                forcedXenotype: xenotype == null ? null : DefDatabase<XenotypeDef>.GetNamed(xenotype)));
+                        }
+                        previewPawns.Add(sampleId, pawn);
+                        samples.Add((sampleId, groups.Count > 0 ? groups[type].Count() : roster.ResolvedCount,
+                            groups.Count > 0 ? groups[type].Sum(m => m.Cost) : roster.ActualCombatPower));
+                        generatedHediffs.Add(sampleId, pawn.health.hediffSet.hediffs.Select(h => h.def.defName).ToList());
+                        var index = previewPawns.Count - 1;
+                        if (index >= 3600) throw new ScenarioConfigurationException("Too many distinct squad preview types");
+                        GenSpawn.Spawn(pawn, new IntVec3(5 + index % 60 * 3, 0, 5 + index / 60 * 3), previewMap.Map, Rot4.South);
+                        var wait = JobMaker.MakeJob(JobDefOf.Wait_MaintainPosture); wait.expiryInterval = 60000;
+                        pawn.jobs.StartJob(wait, JobCondition.InterruptForced);
+                    }
                 }
             }
             finally { Rand.PopState(); }
@@ -78,34 +101,46 @@ namespace LogSyncMod.AutoTest
             {
                 foreach (var roster in tournament.Rosters)
                 {
-                    var pawn = previewPawns[roster.Id];
-                    if (!pawn.Spawned || pawn.Destroyed || pawn.Dead) throw new InvalidOperationException("Preview pawn did not survive initialization: " + roster.Id);
-                    var attacks = pawn.meleeVerbs.GetUpdatedAvailableVerbsList(terrainTools: false)
-                        .Where(v => v.IsMeleeAttack).ToList();
-                    var totalWeight = attacks.Sum(v => v.GetSelectionWeight(null));
-                    var damage = totalWeight > 0 ? attacks.Sum(v => v.GetSelectionWeight(null) / totalWeight
-                        * v.verb.verbProps.AdjustedMeleeDamageAmount(v.verb, pawn)) : 0;
-                    var cooldown = totalWeight > 0 ? attacks.Sum(v => v.GetSelectionWeight(null) / totalWeight
-                        * v.verb.verbProps.AdjustedCooldownTicks(v.verb, pawn)) / 60f : 0;
-                    showcase.Entrants.Add(new ArenaEntrantProfile {
-                        Id = roster.Id, PawnKind = roster.PawnKind, DisplayName = roster.DisplayName,
-                        CombatPower = (double)roster.UnitCombatPower, AttackDamage = damage,
-                        Health = pawn.RaceProps.body.AllParts.Sum(part => part.def.GetMaxHealth(pawn)),
-                        AttackSpeed = cooldown > 0 ? 1 / cooldown : 0,
-                        SharpArmor = OverallArmor(pawn, StatDefOf.ArmorRating_Sharp),
-                        BluntArmor = OverallArmor(pawn, StatDefOf.ArmorRating_Blunt),
-                        NaturalSharpArmor = pawn.GetStatValue(StatDefOf.ArmorRating_Sharp),
-                        NaturalBluntArmor = pawn.GetStatValue(StatDefOf.ArmorRating_Blunt),
-                        WornApparel = pawn.apparel?.WornApparel.Select(a => a.def.defName).ToList() ?? new(),
-                        PrimaryWeapon = pawn.equipment?.Primary?.def.defName,
-                        HediffsAfterGeneration = generatedHediffs[roster.Id],
-                        HediffsAtSnapshot = pawn.health.hediffSet.hediffs.Select(h => h.def.defName).ToList(),
-                        SpawnedAtSnapshot = pawn.Spawned, InitializationTicks = showcase.InitializationTicks
-                    });
+                    var profiles = new List<ArenaEntrantProfile>();
+                    foreach (var sample in sampleTypes[roster.Id])
+                    {
+                        var pawn = previewPawns[sample.id];
+                        if (!pawn.Spawned || pawn.Destroyed || pawn.Dead) throw new InvalidOperationException("Preview pawn did not survive initialization: " + roster.Id);
+                        var attacks = pawn.meleeVerbs.GetUpdatedAvailableVerbsList(terrainTools: false)
+                            .Where(v => v.IsMeleeAttack).ToList();
+                        var totalWeight = attacks.Sum(v => v.GetSelectionWeight(null));
+                        var damage = totalWeight > 0 ? attacks.Sum(v => v.GetSelectionWeight(null) / totalWeight
+                            * v.verb.verbProps.AdjustedMeleeDamageAmount(v.verb, pawn)) : 0;
+                        var cooldown = totalWeight > 0 ? attacks.Sum(v => v.GetSelectionWeight(null) / totalWeight
+                            * v.verb.verbProps.AdjustedCooldownTicks(v.verb, pawn)) / 60f : 0;
+                        var profile = new ArenaEntrantProfile {
+                            Id = sample.id, PawnKind = pawn.kindDef.defName, DisplayName = pawn.kindDef.LabelCap,
+                            Count = sample.count, Xenotype = pawn.genes?.Xenotype?.defName,
+                            TotalCombatPower = sample.totalPower,
+                            CombatPower = (double)(roster.Members.FirstOrDefault(m => m.PawnKind == pawn.kindDef.defName && m.Xenotype == pawn.genes?.Xenotype?.defName)?.Cost ?? roster.UnitCombatPower), AttackDamage = damage,
+                            Health = pawn.RaceProps.body.AllParts.Sum(part => part.def.GetMaxHealth(pawn)),
+                            AttackSpeed = cooldown > 0 ? 1 / cooldown : 0,
+                            SharpArmor = OverallArmor(pawn, StatDefOf.ArmorRating_Sharp),
+                            BluntArmor = OverallArmor(pawn, StatDefOf.ArmorRating_Blunt),
+                            NaturalSharpArmor = pawn.GetStatValue(StatDefOf.ArmorRating_Sharp),
+                            NaturalBluntArmor = pawn.GetStatValue(StatDefOf.ArmorRating_Blunt),
+                            WornApparel = pawn.apparel?.WornApparel.Select(a => a.def.defName).ToList() ?? new(),
+                            PrimaryWeapon = pawn.equipment?.Primary?.def.defName,
+                            HediffsAfterGeneration = generatedHediffs[sample.id],
+                            HediffsAtSnapshot = pawn.health.hediffSet.hediffs.Select(h => h.def.defName).ToList(),
+                            SpawnedAtSnapshot = pawn.Spawned, InitializationTicks = showcase.InitializationTicks
+                        };
+                        profiles.Add(profile);
+                    }
+                    var entry = System.Text.Json.JsonSerializer.Deserialize<ArenaEntrantProfile>(System.Text.Json.JsonSerializer.Serialize(profiles[0]));
+                    if (roster.SquadId != null) entry.Composition = profiles;
+                    entry.Count = roster.ResolvedCount; entry.TotalCombatPower = roster.ActualCombatPower;
+                    entry.DisplayName = roster.DisplayName;
+                    showcase.Entrants.Add(entry);
                 }
             }
             finally { Rand.PopState(); }
-            maxima = Enumerable.Range(0, Labels.Length).Select(i => showcase.Entrants.Max(e => e.Values()[i])).ToArray();
+            maxima = Enumerable.Range(0, Labels.Length).Select(i => showcase.Entrants.SelectMany(e => e.Composition.Count > 0 ? e.Composition : new List<ArenaEntrantProfile> { e }).Max(e => e.Values()[i])).ToArray();
             hues = ArenaPresentation.IdentityHues(tournament.Rosters.Select(r => r.PawnKind));
             Ready = true;
             return true;
@@ -123,13 +158,22 @@ namespace LogSyncMod.AutoTest
         // live pawns and their map before any battle starts.
         internal static void ReleasePreviews()
         {
-            foreach (var pawn in previewPawns.Values)
+            foreach (var pair in previewPawns)
             {
+                var pawn = pair.Value;
+                if (Ready && pawn.RaceProps.Humanlike && !portraits.ContainsKey(pair.Key))
+                {
+                    var texture = new RenderTexture(256, 256, 0); texture.Create();
+                    PawnCacheCameraManager.PawnCacheRenderer.RenderPawn(pawn, texture, Vector3.zero, 1f, 0, Rot4.South,
+                        renderHead: true, renderHeadgear: true, renderClothes: true, portrait: true);
+                    portraits.Add(pair.Key, texture);
+                }
                 if (Find.WorldPawns.Contains(pawn)) Find.WorldPawns.RemovePawn(pawn);
                 if (!pawn.Destroyed) pawn.Destroy(DestroyMode.Vanish);
             }
-            previewPawns.Clear();
+            previewPawns.Clear(); sampleTypes.Clear();
             previewMap?.Dispose(); previewMap = null;
+            foreach (var faction in previewFactions) faction.Dispose(); previewFactions.Clear();
             if (tournament?.Showcase != null) tournament.Showcase.PreviewCleanupComplete = true;
             generatedHediffs.Clear();
         }
@@ -138,7 +182,7 @@ namespace LogSyncMod.AutoTest
         {
             ReleasePreviews();
             foreach (var texture in portraits.Values) { texture.Release(); UnityEngine.Object.Destroy(texture); }
-            portraits.Clear(); Ready = false;
+            portraits.Clear(); selectedTypes.Clear(); Ready = false;
             tournament = null; maxima = null; hues = null;
         }
 
@@ -151,7 +195,7 @@ namespace LogSyncMod.AutoTest
                 Widgets.DefIcon(rect, kind.race);
                 return;
             }
-            var pawn = previewPawns[entry.Id];
+            if (!previewPawns.TryGetValue(entry.Id, out var pawn)) return;
             if (!portraits.TryGetValue(entry.Id, out var texture) && Event.current.type == EventType.Repaint)
             {
                 PortraitsCache.SetDirty(pawn);
@@ -218,6 +262,9 @@ namespace LogSyncMod.AutoTest
                 for (var i = 0; i < entries.Count; i++)
                 {
                     var entry = entries[i];
+                    var roster = tournament.Rosters.Single(r => r.Id == entry.Id);
+                    var selected = selectedTypes.TryGetValue(entry.Id, out var selection) ? selection : 0;
+                    var detail = entry.Composition.Count > 0 ? entry.Composition[selected % entry.Composition.Count] : entry;
                     var color = standings && i == 0 ? Gold : standings && i == 1 ? new Color(.78f, .85f, .93f) : standings && i == 2 ? new Color(.88f, .59f, .37f) : Color.HSVToRGB(hues[entry.PawnKind], .48f, .95f);
                     var reveal = ArenaPresentation.Progress(elapsed, i * .045f, .36f);
                     var x = startX + i * (cardWidth + 18); var y = 234 + (1 - reveal) * 16;
@@ -228,7 +275,7 @@ namespace LogSyncMod.AutoTest
                     var rankLabel = standings ? new[] { "第一名 · 冠军", "第二名 · 亚军", "第三名", "第四名", "第五名" }[i] : "选手 " + (offset + i + 1).ToString("D2");
                     TextAt(R(x + 18, y + 15, cardWidth - 85, 26), rankLabel, standings ? 16 * scale : 13 * scale, color);
                     TextAt(R(x + cardWidth - 80, y + 12, 60, 28), "◆", 16 * scale, color, TextAnchor.MiddleRight);
-                    DrawPortrait(R(x + (cardWidth - 144) / 2, y + 30, 144, 144), entry);
+                    DrawPortrait(R(x + (cardWidth - 144) / 2, y + 30, 144, 144), detail);
                     var nameSize = Mathf.Min(25, (cardWidth - 38) / Mathf.Max(1, entry.DisplayName.Length));
                     TextAt(R(x + 18, y + 184, cardWidth - 36, 40), entry.DisplayName, nameSize * scale, Color.white, TextAnchor.MiddleCenter);
                     if (standings)
@@ -236,8 +283,14 @@ namespace LogSyncMod.AutoTest
                         var placement = tournament.TopFive.Entries[i];
                         TextAt(R(x + 18, y + 216, cardWidth - 36, 22), placement.Wins == 0 ? "本届未获胜" : placement.Wins + " 场胜利  ·  最近胜利 " + placement.LastVictoryScore.ToString("F2") + " 分", 12 * scale, color, TextAnchor.MiddleCenter);
                     }
+                    if (!standings && entry.Composition.Count > 0)
+                    {
+                        if (Widgets.ButtonText(R(x + 8, y + 218, 25, 22), "‹")) selectedTypes[entry.Id] = (selected + entry.Composition.Count - 1) % entry.Composition.Count;
+                        if (Widgets.ButtonText(R(x + cardWidth - 33, y + 218, 25, 22), "›")) selectedTypes[entry.Id] = (selected + 1) % entry.Composition.Count;
+                        TextAt(R(x + 35, y + 216, cardWidth - 70, 23), detail.DisplayName + " ×" + detail.Count, 12 * scale, Muted, TextAnchor.MiddleCenter);
+                    }
                     Widgets.DrawBoxSolid(R(x + 22, y + 239, cardWidth - 44, 1), new Color(.16f, .2f, .26f));
-                    var values = entry.Values();
+                    var values = detail.Values();
                     for (var row = 0; row < Labels.Length; row++)
                     {
                         var metricY = y + 252 + row * 46;
@@ -258,10 +311,16 @@ namespace LogSyncMod.AutoTest
                         for (var segment = 1; segment < 10; segment++)
                             Widgets.DrawBoxSolid(new Rect(bar.x + bar.width * segment / 10, bar.y, scale, bar.height), new Color(.055f, .075f, .1f, .65f));
                     }
+                    if (roster.SquadId != null)
+                    {
+                        TextAt(R(x + 18, y + 527, cardWidth - 36, 23), roster.ResolvedCount + " 人 · 总 CP " + roster.ActualCombatPower.ToString("0.##"), 12 * scale, Muted, TextAnchor.MiddleCenter);
+                        var description = "同名兵种合并计数；属性为该类代表成员，左右箭头切换。\n" + string.Join("\n", entry.Composition.Select(p => p.DisplayName + " ×" + p.Count + " · CP " + p.TotalCombatPower.ToString("0.##")));
+                        TooltipHandler.TipRegion(R(x, y, cardWidth, 554), description);
+                    }
                 }
 
                 var pages = standings ? 1 : tournament.Input.ShowcasePages.Count;
-                TextAt(R(72, 805, 1150, 26), standings ? "沿用赛前角色与属性快照  ·  条长仍以本届全体同项最高值为满格" : "成年角色与原生装备  ·  护甲含衣甲覆盖  ·  条长以本届同项最高值为满格", 14 * scale, Muted);
+                TextAt(R(72, 805, 1150, 26), standings ? "沿用赛前角色与属性快照  ·  条长仍以本届全体同项最高值为满格" : "原生装备与实际角色属性  ·  混编箭头切换兵种代表，悬停查看构成  ·  同项最高值为满格", 14 * scale, Muted);
                 for (var i = 0; i < GradeColors.Length; i++)
                 {
                     Widgets.DrawBoxSolid(R(72 + i * 193, 841, 7, 7), GradeColors[i]);

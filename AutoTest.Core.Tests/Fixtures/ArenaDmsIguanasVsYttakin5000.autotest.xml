@@ -1,0 +1,16 @@
+<ArenaSuite schemaVersion="1" id="arena.dms-iguanas-yttakin-5000" gameVersion="1.7">
+  <Tournament id="equalBudget" name="鬣蜥对毛绒种海盗：双方5000CP" seed="12345">
+    <testDefName>Arena_DmsIguanasVsYttakin5000</testDefName>
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all">
+      <Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/>
+    </Scene>
+    <Roster mode="combatPower" budget="5000"/>
+    <Entrants>
+      <Entrant id="iguanas" pawnKind="DMS_Mech_Iguana" name="鬣蜥"/>
+      <Entrant id="pirates" pawnKind="Pirate_Yttakin" xenotype="Yttakin" name="毛绒种海盗"/>
+    </Entrants>
+    <Battle timeSpeed="superfast" durationSeconds="300" timeoutRealSeconds="600" confirmationTicks="300"/>
+    <TieBreak onDraw="replay" maxReplays="0"/>
+    <Output width="1920" height="1080"/>
+  </Tournament>
+</ArenaSuite>

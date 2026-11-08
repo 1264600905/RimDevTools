@@ -5,6 +5,12 @@ internal static class GroupCombatLifecycleTests
     internal static void Run(Action<bool, string> check)
     {
         var teams = new[] { KeyValuePair.Create("A", "A"), KeyValuePair.Create("B", "B") };
+        var distinctNames = new GroupCombatLedger(new[] {
+            new GroupCombatUnit { Id = "ivy", Team = "A", Name = "Ivy" },
+            new GroupCombatUnit { Id = "aiko", Team = "B", Name = "Aiko" }
+        }, teams);
+        check(distinctNames.UnitName("ivy") == "Ivy" && distinctNames.UnitName("aiko") == "Aiko",
+            "unique pawn names keep their original text without a zero or numbering suffix");
         var counts = new GroupCombatLedger(new[] {
             new GroupCombatUnit { Id = "standing", Team = "A", Name = "狼", EnemyDamage = 10, DamageTaken = 20 },
             new GroupCombatUnit { Id = "downed", Team = "A", Name = "狼", EnemyDamage = 30, DamageTaken = 40 },
