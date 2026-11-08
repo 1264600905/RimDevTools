@@ -1,0 +1,100 @@
+<ArenaSuite schemaVersion="1" id="arena.countdownStart" gameVersion="1.7">
+  <Tournament id="Normal" name="倒计时启动测试 Normal" seed="12345">
+    <testDefName>Arena_Countdown_Normal</testDefName>
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all">
+      <Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/>
+    </Scene>
+    <Roster mode="combatPower" budget="3000"/>
+    <Entrants>
+      <Entrant id="Elephant" pawnKind="Elephant" name="象"/>
+      <Entrant id="Rhinoceros" pawnKind="Rhinoceros" name="犀牛"/>
+    </Entrants>
+    <Battle timeSpeed="normal" durationSeconds="180" timeoutRealSeconds="300" confirmationTicks="300"/>
+    <Presentation settlementSeconds="3"/>
+    <Output width="1920" height="1080"/>
+  </Tournament>
+  <Tournament id="Fast" name="倒计时启动测试 Fast" seed="12345">
+    <testDefName>Arena_Countdown_Fast</testDefName>
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all">
+      <Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/>
+    </Scene>
+    <Roster mode="combatPower" budget="3000"/>
+    <Entrants>
+      <Entrant id="Elephant" pawnKind="Elephant" name="象"/>
+      <Entrant id="Rhinoceros" pawnKind="Rhinoceros" name="犀牛"/>
+    </Entrants>
+    <Battle timeSpeed="fast" durationSeconds="180" timeoutRealSeconds="300" confirmationTicks="300"/>
+    <Presentation settlementSeconds="3"/>
+    <Output width="1920" height="1080"/>
+  </Tournament>
+  <Tournament id="Superfast" name="倒计时启动测试 Superfast" seed="12345">
+    <testDefName>Arena_Countdown_Superfast</testDefName>
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all">
+      <Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/>
+    </Scene>
+    <Roster mode="combatPower" budget="3000"/>
+    <Entrants>
+      <Entrant id="Elephant" pawnKind="Elephant" name="象"/>
+      <Entrant id="Rhinoceros" pawnKind="Rhinoceros" name="犀牛"/>
+    </Entrants>
+    <Battle timeSpeed="superfast" durationSeconds="180" timeoutRealSeconds="300" confirmationTicks="300"/>
+    <Presentation settlementSeconds="3"/>
+    <Output width="1920" height="1080"/>
+  </Tournament>
+  <Tournament id="Zero" name="倒计时启动测试 Zero" seed="12345">
+    <testDefName>Arena_Countdown_Zero</testDefName>
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all">
+      <Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/>
+    </Scene>
+    <Roster mode="combatPower" budget="3000"/>
+    <Entrants>
+      <Entrant id="Elephant" pawnKind="Elephant" name="象"/>
+      <Entrant id="Rhinoceros" pawnKind="Rhinoceros" name="犀牛"/>
+    </Entrants>
+    <Battle timeSpeed="superfast" durationSeconds="180" timeoutRealSeconds="300" confirmationTicks="300"/>
+    <Presentation bracketSeconds="5" settlementSeconds="3" advanceStartSeconds="0"/>
+    <Output width="1920" height="1080"/>
+  </Tournament>
+  <Tournament id="One" name="倒计时启动测试 One" seed="12345">
+    <testDefName>Arena_Countdown_One</testDefName>
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all">
+      <Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/>
+    </Scene>
+    <Roster mode="combatPower" budget="3000"/>
+    <Entrants>
+      <Entrant id="Elephant" pawnKind="Elephant" name="象"/>
+      <Entrant id="Rhinoceros" pawnKind="Rhinoceros" name="犀牛"/>
+    </Entrants>
+    <Battle timeSpeed="superfast" durationSeconds="180" timeoutRealSeconds="300" confirmationTicks="300"/>
+    <Presentation bracketSeconds="5" settlementSeconds="3" advanceStartSeconds="1"/>
+    <Output width="1920" height="1080"/>
+  </Tournament>
+  <Tournament id="Four" name="倒计时启动测试 Four" seed="12345">
+    <testDefName>Arena_Countdown_Four</testDefName>
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all">
+      <Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/>
+    </Scene>
+    <Roster mode="combatPower" budget="3000"/>
+    <Entrants>
+      <Entrant id="Elephant" pawnKind="Elephant" name="象"/>
+      <Entrant id="Rhinoceros" pawnKind="Rhinoceros" name="犀牛"/>
+    </Entrants>
+    <Battle timeSpeed="superfast" durationSeconds="180" timeoutRealSeconds="300" confirmationTicks="300"/>
+    <Presentation bracketSeconds="5" settlementSeconds="3" advanceStartSeconds="4"/>
+    <Output width="1920" height="1080"/>
+  </Tournament>
+  <Tournament id="Short" name="倒计时启动测试 Short" seed="12345">
+    <testDefName>Arena_Countdown_Short</testDefName>
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all">
+      <Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/>
+    </Scene>
+    <Roster mode="combatPower" budget="3000"/>
+    <Entrants>
+      <Entrant id="Elephant" pawnKind="Elephant" name="象"/>
+      <Entrant id="Rhinoceros" pawnKind="Rhinoceros" name="犀牛"/>
+    </Entrants>
+    <Battle timeSpeed="superfast" durationSeconds="180" timeoutRealSeconds="300" confirmationTicks="300"/>
+    <Presentation bracketSeconds="1" settlementSeconds="3"/>
+    <Output width="1920" height="1080"/>
+  </Tournament>
+</ArenaSuite>

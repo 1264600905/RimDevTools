@@ -78,8 +78,9 @@ namespace LogSyncMod.AutoTest.Scenarios
                     var tie = t.Element("TieBreak"); Check(tie, "onDraw maxReplays", "", input.Path);
                     if (ScenarioLoader.A(tie, "onDraw", "replay") != "replay") ScenarioLoader.Fail(tie, input.Path, "onDraw must be replay");
                     result.MaxReplays = Integer(tie, "maxReplays", 2, 0, 10, input.Path);
-                    var presentation = t.Element("Presentation"); Check(presentation, "bracketSeconds settlementSeconds", "", input.Path);
-                    result.BracketSeconds = Number(presentation, "bracketSeconds", 5, 1, 60, input.Path);
+                    var presentation = t.Element("Presentation"); Check(presentation, "bracketSeconds settlementSeconds advanceStartSeconds", "", input.Path);
+                    result.BracketSeconds = Number(presentation, "bracketSeconds", 3, 1, 60, input.Path);
+                    result.AdvanceStartSeconds = Number(presentation, "advanceStartSeconds", 3, 0, 60, input.Path);
                     result.SettlementSeconds = Number(presentation, "settlementSeconds", 3, 1, 60, input.Path);
                     var output = t.Element("Output"); Check(output, "width height", "", input.Path);
                     if ((output?.Attribute("width") != null) != (output?.Attribute("height") != null)) ScenarioLoader.Fail(output, input.Path, "Output width/height must be supplied together");

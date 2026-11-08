@@ -36,7 +36,8 @@ namespace LogSyncMod.AutoTest.Scenarios
         public int ConfirmationTicks { get; set; } = 300;
         public int TimeoutRealSeconds { get; set; } = 300;
         public double DurationSeconds { get; set; } = 180;
-        public double BracketSeconds { get; set; } = 5;
+        public double BracketSeconds { get; set; } = 3;
+        public double AdvanceStartSeconds { get; set; } = 3;
         public double SettlementSeconds { get; set; } = 3;
         public decimal SurvivalWeight { get; set; } = 100;
         public decimal SpeedWeight { get; set; } = 20;

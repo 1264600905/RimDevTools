@@ -27,12 +27,22 @@ namespace LogSyncMod.AutoTest
             return result = new CombatStartupTiming();
         }
         internal static void Stop() { result = null; initialPositions = null; }
+        internal static void CountdownStarted(double duration, double advance)
+        {
+            if (result == null) return;
+            labelAt = Now + duration;
+            result.CountdownSeconds = duration;
+            result.AdvanceStartSeconds = advance;
+        }
         internal static void Repaint(string label)
         {
             if (result == null) return;
             if (!labelAt.HasValue && label == "开始") labelAt = Now;
             if (!Observing) return;
             var now = Now;
+            if (label.Length > 0 && (result.CountdownLabels.Count == 0 || result.CountdownLabels[result.CountdownLabels.Count - 1].Label != label))
+                result.CountdownLabels.Add(new CombatCountdownObservation { Label = label, Seconds = Relative, ElapsedTicks = CombatFightService.Display?.ElapsedTicks ?? 0 });
+            if (label == "开始") result.StartLabelSeconds ??= Relative;
             result.UiThreadId = Thread.CurrentThread.ManagedThreadId;
             Window.Repaints++;
             if (lastRepaint.HasValue) Window.MaxRepaintGapSeconds = System.Math.Max(Window.MaxRepaintGapSeconds, now - lastRepaint.Value);
@@ -59,7 +69,8 @@ namespace LogSyncMod.AutoTest
         }
         internal static void TickEnd(double began)
         {
-            if (!Observing || !speedAt.HasValue) return;
+            if (!Observing) return;
+            if (!speedAt.HasValue) { result.Waiting.Ticks++; return; }
             result.TickThreadId = Thread.CurrentThread.ManagedThreadId;
             result.FirstTickSeconds ??= Relative;
             result.Running.Ticks++;

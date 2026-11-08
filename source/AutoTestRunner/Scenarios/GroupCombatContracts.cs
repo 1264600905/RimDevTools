@@ -168,6 +168,11 @@ namespace LogSyncMod.AutoTest.Scenarios
 
     public sealed class CombatStartupTiming
     {
+        // Arena times are relative to the countdown deadline; preparation can be negative.
+        public double CountdownSeconds { get; set; }
+        public double AdvanceStartSeconds { get; set; }
+        public double? StartLabelSeconds { get; set; }
+        public List<CombatCountdownObservation> CountdownLabels { get; set; } = new();
         public string ConfiguredSpeed { get; set; }
         public float TickRateMultiplier { get; set; }
         public int UpdateThreadId { get; set; }
@@ -184,6 +189,13 @@ namespace LogSyncMod.AutoTest.Scenarios
         public double ObservedRunningSeconds { get; set; }
         public CombatStartupWindow Waiting { get; set; } = new();
         public CombatStartupWindow Running { get; set; } = new();
+    }
+
+    public sealed class CombatCountdownObservation
+    {
+        public string Label { get; set; }
+        public double Seconds { get; set; }
+        public int ElapsedTicks { get; set; }
     }
 
     public sealed class CombatStartupWindow

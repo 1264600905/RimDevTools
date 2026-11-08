@@ -52,6 +52,7 @@ namespace LogSyncMod.AutoTest
                     DrawTeam(new Rect(x, GroupCombatPresentation.PanelTop, panelWidth, panelHeight), snapshot.Teams[i], i);
                 }
                 if (CombatFightService.ShowingIntro) DrawIntro(width, height, panelWidth);
+                else if (CombatFightService.IsArena && CombatFightService.Measuring && CombatFightService.CountdownLabel.Length > 0) DrawCountdown(width, height);
                 if (CombatFightService.ShowingSettlement) DrawSettlement(width, height, panelWidth);
                 if (verifyInput && Event.current.type == EventType.Repaint)
                 {
@@ -192,7 +193,7 @@ namespace LogSyncMod.AutoTest
                 y += rowHeight;
             }
         }
-        private static void DrawIntro(float width, float height, float panelWidth)
+        private static void DrawCountdown(float width, float height)
         {
             var label = CombatFightService.CountdownLabel;
             var size = label == "开始" ? 88 : 138;
@@ -200,6 +201,10 @@ namespace LogSyncMod.AutoTest
             var previousColor = GUI.color;
             GUI.color = new Color(0, 0, 0, .8f); DrawText(new Rect(center.x + 4, center.y + 4, center.width, center.height), label, size, TextAnchor.MiddleCenter);
             GUI.color = label == "开始" ? new Color(1f, .8f, .3f) : Color.white; DrawText(center, label, size, TextAnchor.MiddleCenter); GUI.color = previousColor;
+        }
+        private static void DrawIntro(float width, float height, float panelWidth)
+        {
+            DrawCountdown(width, height);
             var availableWidth = width - panelWidth * 2 - 48;
             var rosterWidth = Mathf.Min(960, availableWidth);
             var rosterHeight = Mathf.Min(176, height / 2 - 210);
@@ -309,7 +314,7 @@ namespace LogSyncMod.AutoTest
             }
             finally { GUI.color = previous; }
         }
-        private static string Label(string state) => state switch { "standing" => "存活", "downed" => "倒地", "dead" => "死亡", "escaped" => "离场", "removed" => "移除", "win" => "胜利", "loss" => "落败", "draw" => "平局", "undetermined" => "进行中", "prepared" or "preparing" => "准备", "countdown" => "即将开战", "running" => "战斗", "finishing" => "结算", _ => state };
+        private static string Label(string state) => state switch { "standing" => "存活", "downed" => "倒地", "dead" => "死亡", "escaped" => "离场", "removed" => "移除", "win" => "胜利", "loss" => "落败", "draw" => "平局", "undetermined" => "进行中", "prepared" or "preparing" => "准备", "countdown" or "roster" => "即将开战", "running" => "战斗", "finishing" => "结算", _ => state };
         private static void DrawPortrait(Rect rect, GroupCombatUnit unit)
         {
             if (portraits.TryGetValue(unit.Id, out var texture)) { GUI.DrawTexture(rect, texture); return; }

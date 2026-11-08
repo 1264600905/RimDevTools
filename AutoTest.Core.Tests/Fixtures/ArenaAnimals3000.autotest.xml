@@ -35,7 +35,7 @@
     <Battle timeSpeed="superfast" durationSeconds="180" timeoutRealSeconds="300" confirmationTicks="300"/>
     <Scoring survivalWeight="100" speedWeight="20" timeReferenceSeconds="180"/>
     <TieBreak onDraw="replay" maxReplays="2"/>
-    <Presentation bracketSeconds="5" settlementSeconds="3"/>
+    <Presentation bracketSeconds="3" settlementSeconds="3"/>
     <Output width="1920" height="1080"/>
   </Tournament>
 </ArenaSuite>

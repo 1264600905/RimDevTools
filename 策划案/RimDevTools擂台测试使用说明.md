@@ -33,7 +33,7 @@ dotnet RimDevTools/bin/Release/net10.0/RimDevTools.dll test run --deploy --mode 
             timeSpeed="fast" confirmationTicks="300"/>
     <Scoring survivalWeight="100" speedWeight="20" timeReferenceSeconds="180"/>
     <TieBreak onDraw="replay" maxReplays="2"/>
-    <Presentation bracketSeconds="5" settlementSeconds="3"/>
+    <Presentation bracketSeconds="3" settlementSeconds="3" advanceStartSeconds="3"/>
     <Output width="1920" height="1080"/>
   </Tournament>
 </ArenaSuite>
@@ -48,6 +48,8 @@ Scene 沿用群战的严格场景配置。其他字段范围和完整默认值�
 ## 赛制与胜负
 
 每场开战前暂停并显示原有阵容与倒计时，再显示初始战场；结算卡片以大号金色数字显示胜利分数，并显示胜者的大图标或人类头像。结算后新增 5.5 秒的赛后天梯：依次突出 A 队、B 队，再播放胜者晋级动画；平局显示重赛状态。参赛对象按 PawnKind 固定配色，晋级节点继承胜者颜色。每次对决重建地图、临时敌对阵营和满编队伍。赛后天梯支持自动定位本场、全局总览和滚动，包含全部参赛者、已定对决和后续待定节点。群战与擂台期间仅隐藏参战单位模型下方的地图名称标签，排行榜、结算页与其他界面仍保留名称。
+
+`Presentation.advanceStartSeconds` 设置在倒计时剩余多少秒时提前准备开战截图，默认 3 秒，范围 0～60；0 表示倒计时结束后才准备，超过倒计时长度时从倒计时开始准备。`bracketSeconds` 为完整倒计时长度，默认 3 秒，显示 3、2、1，再显示“开始”。准备期间 UI 继续倒数，模拟保持暂停；只有倒计时归零且初始截图完整落盘后才按配置档位推进模拟、计时和计分。准备较慢或提前量不足时会继续等待截图，不会提前消耗战斗时间。阵容展示在开战时收起，“开始”在开战后短暂保留。
 
 群战和擂台的初始阵型均优先沿地图 Z 轴纵向排列，再沿 X 轴增加下一列。`line` 为单条纵列；`grid` 沿用 `columns` 配置值作为每条纵列的容量。擂台每列最多 10 个单位，并按真实占地居中。边界检查、群战换边和实际生成共用同一套坐标计算。普通外部场景仍采用原有横向排布。
 

@@ -11,6 +11,12 @@ namespace LogSyncMod.AutoTest.Scenarios
         public const float AnimationSeconds = 2.4f;
         public const float PostBattleSeconds = 5.5f;
 
+        public static double CapturePreparationElapsed(double countdownSeconds, double advanceSeconds)
+            => Math.Max(0, countdownSeconds - advanceSeconds);
+
+        public static string CountdownLabel(double elapsed, double countdownSeconds)
+            => elapsed < countdownSeconds ? Math.Ceiling(countdownSeconds - Math.Max(0, elapsed)).ToString(System.Globalization.CultureInfo.InvariantCulture) : "开始";
+
         public static float Progress(float elapsed, float start, float duration)
         {
             var t = Math.Clamp((elapsed - start) / duration, 0, 1);

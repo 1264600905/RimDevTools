@@ -22,7 +22,7 @@ namespace LogSyncMod.AutoTest
         private static Action<GroupCombatRoundResult> completed;
         private static Action stateChanged;
         private static ArenaEndRule arenaEndRule;
-        private static double arenaIntroSeconds, arenaSettlementSeconds;
+        private static double arenaIntroSeconds, arenaSettlementSeconds, arenaAdvanceStartSeconds;
         internal static bool IsArena => arenaEndRule != null;
         private static string ArtifactPrefix => IsArena ? "arena" : "groupcombat";
         internal static void BeginArenaFight(string runId, string artifacts, GroupCombatRoundInput fight, ArenaTournamentInput tournament, Action<GroupCombatRoundResult> callback)
@@ -35,6 +35,8 @@ namespace LogSyncMod.AutoTest
             completed = callback ?? throw new ArgumentNullException(nameof(callback)); stateChanged = changed;
             arenaEndRule = tournament == null ? null : new ArenaEndRule(tournament.ConfirmationTicks);
             arenaIntroSeconds = tournament?.BracketSeconds ?? GroupCombatPresentation.IntroDuration;
+            arenaAdvanceStartSeconds = tournament?.AdvanceStartSeconds ?? 0;
+            initialCaptureReady = false;
             arenaSettlementSeconds = tournament?.SettlementSeconds ?? GroupCombatPresentation.SettlementDuration;
             outputPath = artifacts; activeRunId = runId; cancel = false;
             if (captureIndex > 0) roundIndex = captureIndex - 1;
@@ -70,9 +72,10 @@ namespace LogSyncMod.AutoTest
         private static string aiPolicy;
         private static string phase;
         private static string pendingCapture, outputPath;
-        private static bool captureRequested, polling, cancel;
+        private static bool captureRequested, polling, cancel, initialCaptureReady;
         private static bool verifyTickFailure;
         private static float introStartedRealtime;
+        private static float battleStartedRealtime;
         private static float settlementStartedRealtime;
         private static int settlementStartTick;
         private static string lastCountdownLabel;
@@ -88,7 +91,10 @@ namespace LogSyncMod.AutoTest
         internal static bool OverlayEnabled => overlayEnabled;
         internal static bool ShowingIntro => phase is "prepared" or "countdown" or "roster";
         internal static bool ShowingSettlement => phase == "finishing" && current?.ExecutionStatus == "completed";
-        internal static string CountdownLabel => ShowingIntro ? GroupCombatPresentation.CountdownLabel(phase == "prepared" ? 0 : Time.realtimeSinceStartup - introStartedRealtime) : "";
+        internal static string CountdownLabel => IsArena
+            ? ShowingIntro || Measuring && Time.realtimeSinceStartup - battleStartedRealtime < .8f
+                ? ArenaPresentation.CountdownLabel(phase == "prepared" ? 0 : Time.realtimeSinceStartup - introStartedRealtime, arenaIntroSeconds) : ""
+            : ShowingIntro ? GroupCombatPresentation.CountdownLabel(phase == "prepared" ? 0 : Time.realtimeSinceStartup - introStartedRealtime) : "";
         internal static object Status => new { busy = Busy, phase, runId = activeRunId, caseId = input?.CaseId, mapId = Map?.uniqueID, elapsedTicks = current?.ElapsedTicks, totalEvents = current?.TotalEvents, speed = Find.TickManager?.CurTimeSpeed.ToString(), paused = Find.TickManager?.Paused, pausedRealtime, screen = new { width = Screen.width, height = Screen.height, windowWidth = Screen.windowWidth, windowHeight = Screen.windowHeight, fullScreen = Screen.fullScreen, mode = Screen.fullScreenMode.ToString() }, camera = GroupCombatCamera.Status, overlayInput = GroupCombatOverlay.InputVerification, artifacts = new { autoTestOutputPath = outputPath }, teamAi, actors = pawns.Select(p => new { id = p.Key, x = p.Value.Position.x, z = p.Value.Position.z, dead = p.Value.Dead, downed = p.Value.Downed, job = p.Value.CurJob?.def.defName, duty = p.Value.mindState?.duty?.def.defName }), rounds = GroupCombatService.Rounds.Select(r => new { r.CaseId, r.ExecutionStatus, r.CleanupComplete, r.EndReason, r.Error }) };
         internal static void Cancel() { if (Busy) cancel = true; }
         internal static void SetVerificationSpeed(string speed)
@@ -169,9 +175,10 @@ namespace LogSyncMod.AutoTest
                 if (phase == "prepared" && CaptureFinished())
                 {
                     phase = "countdown"; introStartedRealtime = now; lastCountdownLabel = null;
+                    if (IsArena) CombatStartupProbe.CountdownStarted(arenaIntroSeconds, arenaAdvanceStartSeconds);
                     Trace("group.intro_facing", "total=" + introFacing.Count + "; correct=" + introFacing.Count(p => p.Key.Rotation == p.Value));
                 }
-                if (phase == "countdown")
+                if (phase == "countdown" || IsArena && phase == "roster")
                 {
                     var label = CountdownLabel;
                     if (label != lastCountdownLabel && label.Length > 0)
@@ -180,12 +187,18 @@ namespace LogSyncMod.AutoTest
                         Trace("group.countdown", "label=" + label + "; elapsedTicks=" + current.ElapsedTicks + "; events=" + current.TotalEvents + "; paused=" + Find.TickManager.Paused);
                     }
                 }
-                if (phase == "countdown" && now - introStartedRealtime >= (IsArena ? arenaIntroSeconds : GroupCombatPresentation.IntroDuration))
+                if (phase == "countdown" && now - introStartedRealtime >= (IsArena
+                    ? ArenaPresentation.CapturePreparationElapsed(arenaIntroSeconds, arenaAdvanceStartSeconds)
+                    : GroupCombatPresentation.IntroDuration))
                 {
                     if (IsArena) { phase = "roster"; RequestCapture("initial"); }
                     else StartMeasurement();
                 }
-                if (phase == "roster" && CaptureFinished()) StartMeasurement();
+                if (phase == "roster")
+                {
+                    if (!initialCaptureReady) initialCaptureReady = CaptureFinished();
+                    if (phase == "roster" && initialCaptureReady && now - introStartedRealtime >= arenaIntroSeconds) StartMeasurement();
+                }
                 else if (phase == "finishing")
                 {
                     Find.TickManager.CurTimeSpeed = TimeSpeed.Paused;
@@ -207,6 +220,7 @@ namespace LogSyncMod.AutoTest
             foreach (var pawn in introFacing.Keys) pawn.jobs?.StopAll();
             introFacing.Clear();
             phase = "running"; startTick = Find.TickManager.TicksGame; current.ExecutionStatus = "running";
+            battleStartedRealtime = Time.realtimeSinceStartup;
             var settingsNode = roundConfig.Element("GroupCombat");
             Find.TickManager.CurTimeSpeed = ScenarioLoader.A(settingsNode, "timeSpeed", "normal") switch { "fast" => TimeSpeed.Fast, "superfast" => TimeSpeed.Superfast, _ => TimeSpeed.Normal };
             CombatStartupProbe.SpeedSwitch(ScenarioLoader.A(settingsNode, "timeSpeed", "normal"), pawns.Values);

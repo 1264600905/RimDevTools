@@ -53,6 +53,19 @@ internal static class ArenaTests
         ArenaPlan Parse(string text) => ArenaLoader.Compile(new[] { new ScenarioInput { Path = "arena.xml", Sha256 = "h", Xml = text } }, new[] { "ArenaTest" });
         var plan = Parse(xml);
         check(plan.Purpose == "arena" && plan.Tournaments[0].Budget == 3000 && plan.Tournaments[0].MaxReplays == 2 && plan.DefaultDeadlineSeconds > 600, "arena has independent parser, frozen defaults and bounded tournament deadline");
+        check(plan.Tournaments[0].BracketSeconds == 3 && plan.Tournaments[0].AdvanceStartSeconds == 3,
+            "arena defaults to a three-second countdown and prepares its start from the beginning");
+        foreach (var lead in new[] { 0, 1, 4, 60 })
+            check(Parse(xml.Replace("</Tournament>", "<Presentation advanceStartSeconds='" + lead + "'/></Tournament>")).Tournaments[0].AdvanceStartSeconds == lead,
+                "arena freezes an explicit start preparation lead: " + lead);
+        foreach (var invalid in new[] { "-1", "61", "NaN", "Infinity" })
+            Reject(() => Parse(xml.Replace("</Tournament>", "<Presentation advanceStartSeconds='" + invalid + "'/></Tournament>")), "arena rejects invalid start preparation lead: " + invalid);
+        check(ArenaPresentation.CountdownLabel(0, 3) == "3" && ArenaPresentation.CountdownLabel(1, 3) == "2"
+            && ArenaPresentation.CountdownLabel(2.99, 3) == "1" && ArenaPresentation.CountdownLabel(3, 3) == "开始",
+            "arena countdown runs 3, 2, 1, Start without a hidden hold");
+        check(ArenaPresentation.CapturePreparationElapsed(5, 3) == 2 && ArenaPresentation.CapturePreparationElapsed(5, 0) == 5
+            && ArenaPresentation.CapturePreparationElapsed(3, 3) == 0 && ArenaPresentation.CapturePreparationElapsed(1, 3) == 0,
+            "arena starts preparation during countdown, supports disabled overlap and clamps long leads to countdown start");
         var mixedBudget = Parse(xml.Replace("id='a' pawnKind", "id='a' budget='3200' pawnKind")).Tournaments.Single();
         check(mixedBudget.Budget == 3000 && mixedBudget.Entrants[0].Budget == 3200 && mixedBudget.Entrants[1].Budget == null
             && CombatRoster.Resolve("a", "AlphaThrumbo", 800, mixedBudget.Entrants[0].Budget ?? mixedBudget.Budget).ResolvedCount == 4
