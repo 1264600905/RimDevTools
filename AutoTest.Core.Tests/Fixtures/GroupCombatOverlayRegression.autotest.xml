@@ -1,0 +1,19 @@
+<TestSuite schemaVersion="1" id="groupcombat.overlay-regression" gameVersion="1.7">
+  <Case id="large" kind="groupCombat" name="面板与头像回归：100人对100人" seed="101" timeoutRealSeconds="600">
+    <testDefName>GroupCombat_OverlayRegression</testDefName>
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="110" sizeZ="100" revealFog="all">
+      <Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/>
+    </Scene>
+    <Teams><Team id="A" name="100人甲队"/><Team id="B" name="100人乙队"/></Teams>
+    <Actors>
+      <PawnGroup id="left" team="A" count="100" originX="20" originZ="35" formation="grid" columns="10" spacing="2">
+        <basePawnKind>Mercenary_Gunner</basePawnKind>
+      </PawnGroup>
+      <PawnGroup id="right" team="B" count="100" originX="65" originZ="35" formation="grid" columns="10" spacing="2">
+        <basePawnKind>Mercenary_Gunner</basePawnKind>
+      </PawnGroup>
+    </Actors>
+    <GroupCombat durationSeconds="30" timeSpeed="superfast"/>
+    <Output purpose="benchmark" showAllParticipants="true" width="1920" height="1080"/>
+  </Case>
+</TestSuite>

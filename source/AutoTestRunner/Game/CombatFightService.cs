@@ -164,6 +164,7 @@ namespace LogSyncMod.AutoTest
             try
             {
                 if (!Busy) return;
+                GroupCombatOverlay.Frame();
                 if (cancel && phase != "finishing") Freeze("cancelled", "cancelled", null);
                 var now = Time.realtimeSinceStartup;
                 if (Measuring && Find.TickManager.Paused) pausedRealtime += Math.Max(0, now - lastFrameRealtime);
@@ -406,6 +407,13 @@ namespace LogSyncMod.AutoTest
         }
         private static bool CaptureFinished()
         {
+            // Finish the bounded portrait warmup while the roster is still paused.
+            // Start the capture deadline after warmup, rather than timing out large teams.
+            if (ShowingIntro && OverlayEnabled && !GroupCombatOverlay.PortraitsReady)
+            {
+                phaseStartedRealtime = Time.realtimeSinceStartup;
+                return false;
+            }
             if (captureRequested && AutoTestViewComposite.IsReady(pendingCapture))
             {
                 if (phase == "roster") CombatStartupProbe.CaptureReady();
@@ -425,6 +433,7 @@ namespace LogSyncMod.AutoTest
             // combat. Tournament trees are shown only after settlement.
             GroupCombatOverlay.Draw();
             if (Event.current.type == EventType.Repaint) CombatStartupProbe.Repaint(CountdownLabel);
+            if (ShowingIntro && OverlayEnabled && !GroupCombatOverlay.PortraitsReady) return;
             if (Event.current.type != EventType.Repaint || captureRequested || pendingCapture == null || Time.frameCount - preparedFrame < 3 || Time.realtimeSinceStartup - phaseStartedRealtime < 1 || !Screen.fullScreen || !AutoTestScreenshotService.PrepareCaptureFrame()) return;
             current.ScreenshotWidth = requestedWidth > 0 ? requestedWidth : Screen.width; current.ScreenshotHeight = requestedHeight > 0 ? requestedHeight : Screen.height;
             var captureBegan = CombatStartupProbe.Now;
@@ -436,6 +445,7 @@ namespace LogSyncMod.AutoTest
 
         private static void FinishRound()
         {
+            Trace("group.overlay_cache", JsonSerializer.Serialize(GroupCombatOverlay.CacheStatus));
             CombatStartupProbe.Stop();
             if (ShowingSettlement) Trace("group.settlement", "realSeconds=" + (Time.realtimeSinceStartup - settlementStartedRealtime).ToString("F3", CultureInfo.InvariantCulture) + "; simulationTicks=" + (Find.TickManager.TicksGame - settlementStartTick));
             phase = "cleaning"; introFacing.Clear(); teamLords.Clear(); lifecyclePawns.Clear();

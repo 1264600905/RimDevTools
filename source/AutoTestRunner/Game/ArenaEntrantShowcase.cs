@@ -165,8 +165,7 @@ namespace LogSyncMod.AutoTest
                 if (Ready && pawn.RaceProps.Humanlike && !portraits.ContainsKey(pair.Key))
                 {
                     var texture = new RenderTexture(256, 256, 0); texture.Create();
-                    PawnCacheCameraManager.PawnCacheRenderer.RenderPawn(pawn, texture, Vector3.zero, 1f, 0, Rot4.South,
-                        renderHead: true, renderHeadgear: true, renderClothes: true, portrait: true);
+                    PawnPortraitRendering.Render(pawn, texture);
                     portraits.Add(pair.Key, texture);
                 }
                 if (Find.WorldPawns.Contains(pawn)) Find.WorldPawns.RemovePawn(pawn);
@@ -203,8 +202,7 @@ namespace LogSyncMod.AutoTest
                 pawn.Drawer.renderer.SetAllGraphicsDirty();
                 pawn.Drawer.renderer.EnsureGraphicsInitialized();
                 texture = new RenderTexture(256, 256, 0); texture.Create();
-                PawnCacheCameraManager.PawnCacheRenderer.RenderPawn(pawn, texture, Vector3.zero, 1f, 0, Rot4.South,
-                    renderHead: true, renderHeadgear: true, renderClothes: true, portrait: true);
+                PawnPortraitRendering.Render(pawn, texture);
                 portraits.Add(entry.Id, texture);
                 entry.PortraitRendered = true;
             }

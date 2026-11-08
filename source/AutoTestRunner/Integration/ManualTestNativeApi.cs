@@ -26,9 +26,10 @@ namespace LogSyncMod.AutoTest
                 object result;
                 switch (operation)
                 {
+                    case "verify-combat-overlay-rendering": try { result = CombatOverlayProbe.Run(); } finally { global::LogSyncMod.TestSessionCompletion.Complete("manual", global::LogSyncMod.LogSyncMod.settings?.autoTestRunId); } break;
                     case "verify-groupcombat-data": try { result = GroupCombatDataProbe.Run(); } finally { global::LogSyncMod.TestSessionCompletion.Complete("manual", global::LogSyncMod.LogSyncMod.settings?.autoTestRunId); } break;
                     case "verify-groupcombat-unique-map": try { result = GroupCombatDataProbe.RunUniqueMap(); } finally { global::LogSyncMod.TestSessionCompletion.Complete("manual", global::LogSyncMod.LogSyncMod.settings?.autoTestRunId); } break;
-                    case "arena-status": result = new { arena = ArenaService.Status, fight = CombatFightService.Status, audio = global::LogSyncMod.TestAudioController.Status }; break;
+                    case "arena-status": result = new { arena = ArenaService.Status, fight = CombatFightService.Status, overlayCache = GroupCombatOverlay.CacheStatus, audio = global::LogSyncMod.TestAudioController.Status }; break;
                     case "arena-cancel": ArenaService.Cancel(); result = new { requested = true }; break;
                     case "verify-arena-execution-fault":
                         if (!CombatFightService.IsArena) throw new InvalidOperationException("Execution-failure verification requires an arena fight");
