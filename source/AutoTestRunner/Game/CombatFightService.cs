@@ -188,7 +188,7 @@ namespace LogSyncMod.AutoTest
                 {
                     phase = "countdown"; introStartedRealtime = now;
                     CombatStartupProbe.CountdownStarted(arenaIntroSeconds, arenaAdvanceStartSeconds);
-                    Trace("camera.introduction", "leftSeconds=2; rightSeconds=2; transition=none; elapsedTicks=" + current.ElapsedTicks + "; events=" + current.TotalEvents);
+                    Trace("camera.introduction", "leftSeconds=1.5; rightSeconds=1.5; transition=continuous; totalSeconds=5.6; elapsedTicks=" + current.ElapsedTicks + "; events=" + current.TotalEvents);
                 }
                 if (phase == "countdown" || IsArena && phase == "roster")
                 {

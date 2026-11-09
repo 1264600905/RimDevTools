@@ -36,17 +36,30 @@ namespace LogSyncMod.AutoTest.Scenarios
         private readonly Dictionary<string, ArenaCameraSubject> subjects = new(StringComparer.Ordinal);
         private List<ArenaCameraSubject> roster = new();
         private List<Contact> contacts = new();
-        private float clock, shotStarted, regionStarted, nextObservation, nextOverview = 22, lastObservation;
+        private float clock, regionStarted, nextObservation, lastObservation;
         private bool forceObservation = true, fighting;
-        private string preferredFocus, lastFollowTeam;
+        private string preferredFocus;
         private Contact anchor;
         private int introductionStage = -1;
-        private readonly Dictionary<string, int> initialCounts = new(StringComparer.Ordinal);
-        internal const float IntroductionSeconds = 4;
+        private float introductionElapsed;
+        private (float x, float z, float size)? introOverview, introLeft, introRight;
+        private float introWidth, introHeight;
+        private bool introOverlay;
+        private (float x, float z)? overviewCenter;
+        internal const float IntroductionHoldSeconds = 1.5f;
+        internal const float IntroductionSeconds = 5.6f;
         internal int IntroductionStage => introductionStage;
+        internal float IntroductionElapsed => introductionElapsed;
+        internal void SetOverviewCenter(float x, float z)
+        {
+            overviewCenter = (x, z); introOverview = null; forceObservation = true;
+        }
         internal void SetIntroduction(float? elapsed)
         {
-            var stage = elapsed.HasValue ? elapsed.Value < 2 ? 0 : 1 : -1;
+            introductionElapsed = Math.Max(0, elapsed ?? 0);
+            var t = introductionElapsed;
+            var stage = !elapsed.HasValue ? -1 : t < .2f ? 0 : t < .8f ? 1 : t < 2.3f ? 2
+                : t < 2.9f ? 3 : t < 4.4f ? 4 : t < 5.3f ? 5 : 6;
             if (stage != introductionStage) { introductionStage = stage; forceObservation = true; }
         }
         internal ArenaCameraMode Mode { get; private set; }
@@ -55,19 +68,19 @@ namespace LogSyncMod.AutoTest.Scenarios
         internal string OpponentId { get; private set; }
         internal string Reason { get; private set; } = "开场阵形";
         internal int Switches { get; private set; }
-        internal bool Compact => Shot is ArenaCameraMode.Follow or ArenaCameraMode.Close;
-        internal float MaximumSize => Shot switch { ArenaCameraMode.Close => 10, ArenaCameraMode.Follow => 16, ArenaCameraMode.Battle => 20, _ => 28 };
+        internal bool Compact => false;
+        internal float MaximumSize => introductionStage >= 0 || Shot == ArenaCameraMode.Overview ? 28 : Shot == ArenaCameraMode.Follow ? 16 : 20;
 
         internal void SetMode(ArenaCameraMode mode)
         {
-            Mode = mode; preferredFocus = null; forceObservation = true;
-            // Returning to automatic always re-establishes the battle's context first.
-            if (mode == ArenaCameraMode.Auto) { if (fighting) SetShot(ArenaCameraMode.Battle, "恢复自动导播"); nextOverview = clock + 20; }
+            // The old close-up API uses the stable follow shot; automatic never rotates on a timer.
+            Mode = mode == ArenaCameraMode.Close ? ArenaCameraMode.Follow : mode;
+            preferredFocus = null; forceObservation = true;
         }
 
         internal void Select(string id)
         {
-            if (Mode is not (ArenaCameraMode.Follow or ArenaCameraMode.Close)) return;
+            if (Mode is not (ArenaCameraMode.Auto or ArenaCameraMode.Follow)) return;
             preferredFocus = id; forceObservation = true;
         }
 
@@ -93,99 +106,51 @@ namespace LogSyncMod.AutoTest.Scenarios
                 past.Dealt = actor.DamageDealt; past.Taken = actor.DamageTaken;
             }
             if (roster.Count == 0) return;
-            if (initialCounts.Count == 0)
-                foreach (var team in roster.GroupBy(p => p.Team)) initialCounts.Add(team.Key, team.Count());
             contacts = FindContacts();
             if (introductionStage >= 0)
             {
-                var teamId = introductionStage == 0 ? "A" : "B";
+                var teamId = introductionStage <= 2 ? "A" : "B";
                 var team = roster.Where(p => p.Team == teamId).ToList();
                 if (team.Count == 0) team = roster;
                 var cx = team.Average(p => p.X); var cz = team.Average(p => p.Z);
                 FocusId = team.OrderBy(p => Square(p.X - cx) + Square(p.Z - cz)).ThenBy(p => p.Id, StringComparer.Ordinal).First().Id;
                 OpponentId = null;
-                SetShot(ArenaCameraMode.Close, introductionStage == 0 ? "左方登场特写" : "右方登场特写");
+                SetShot(introductionStage is 0 or 6 ? ArenaCameraMode.Overview : ArenaCameraMode.Close,
+                    introductionStage switch { 0 => "双方阵形", 1 => "拉近左方", 2 => "左方登场特写", 3 => "移向右方", 4 => "右方登场特写", _ => "回到全局" });
                 return;
             }
             if (!fighting) { SetShot(ArenaCameraMode.Overview, "开场阵形"); return; }
 
-            var targetValid = FocusId != null && subjects.ContainsKey(FocusId);
-            if (Mode != ArenaCameraMode.Auto)
+            if (Mode == ArenaCameraMode.Overview)
             {
-                if (Mode == ArenaCameraMode.Overview) { SetShot(Mode, "手动锁定"); return; }
-                if (Mode == ArenaCameraMode.Battle) { ChooseBattle(true); SetShot(Mode, "手动锁定主战区"); return; }
-                var selected = preferredFocus != null && subjects.TryGetValue(preferredFocus, out var pinned) ? pinned
-                    : targetValid ? subjects[FocusId] : BestContact()?.Actor ?? roster[0];
-                Focus(selected, Mode);
-                return;
+                SetShot(ArenaCameraMode.Overview, "手动全局"); return;
             }
-
-            if (clock < 3) { SetShot(ArenaCameraMode.Overview, "开场阵形"); return; }
-
-            // A lone fighter deserves sustained screen time, including a last survivor.
-            var singles = roster.GroupBy(p => p.Team).Where(g => g.Count() == 1).Select(g => g.First()).ToList();
-            if (singles.Count > 0 && roster.Select(p => p.Team).Distinct().Count() > 1)
+            if (Mode == ArenaCameraMode.Battle)
             {
-                var actor = singles.FirstOrDefault(p => p.Id == FocusId)
-                    ?? singles.OrderBy(p => initialCounts[p.Team]).ThenByDescending(p => history[p.Id].Recent).First();
-                var beat = (clock - 3) % 22;
-                if (beat < 15) Focus(actor, ArenaCameraMode.Follow);
-                else if (beat < 18) Focus(actor, ArenaCameraMode.Close);
-                else { ChooseBattle(true); SetShot(ArenaCameraMode.Battle, "单体交战，回看战区"); }
-                return;
+                ChooseBattle(true); SetShot(ArenaCameraMode.Battle, "锁定交战区"); return;
             }
-
-            if (contacts.Count == 0)
+            if (preferredFocus != null)
+            {
+                if (subjects.TryGetValue(preferredFocus, out var pinned))
+                {
+                    FocusId = pinned.Id; OpponentId = EnemyFor(pinned)?.Id; anchor = null;
+                    SetShot(ArenaCameraMode.Follow, "跟随人物，可点选切换"); return;
+                }
+                preferredFocus = null;
+            }
+            if (Mode == ArenaCameraMode.Follow)
+            {
+                var selected = FocusId != null && subjects.TryGetValue(FocusId, out var current) ? current
+                    : contacts.OrderByDescending(c => c.Interest).FirstOrDefault()?.Actor ?? roster[0];
+                FocusId = selected.Id; OpponentId = EnemyFor(selected)?.Id; anchor = null;
+                SetShot(ArenaCameraMode.Follow, "跟随人物，可点选切换"); return;
+            }
+            if (Shot == ArenaCameraMode.Overview && (clock < 3 || contacts.Count == 0))
             {
                 SetShot(ArenaCameraMode.Overview, "等待接敌"); return;
             }
-
-            // Keep a decisive small engagement on screen instead of rotating away mid-duel.
-            if (roster.Count <= 6 && roster.Select(p => p.Team).Distinct().Count() > 1)
-            {
-                var subject = targetValid ? subjects[FocusId] : BestContact()?.Actor;
-                if (subject != null) Focus(subject, ArenaCameraMode.Close);
-                return;
-            }
-
-            var age = clock - shotStarted;
-            if (Shot == ArenaCameraMode.Overview)
-            {
-                if (age >= 2.5f) { ChooseBattle(true); SetShot(ArenaCameraMode.Battle, "主战区交火"); }
-                return;
-            }
-            if (Shot == ArenaCameraMode.Battle && clock >= nextOverview && age >= 5)
-            {
-                nextOverview = clock + 22; SetShot(ArenaCameraMode.Overview, "回看全局"); return;
-            }
-            if (Shot == ArenaCameraMode.Battle)
-            {
-                ChooseBattle(!targetValid || age >= 8);
-                if (age >= 12)
-                {
-                    var contact = BestContact(preferOtherTeam: true);
-                    if (contact != null) { lastFollowTeam = contact.Actor.Team; Focus(contact.Actor, ArenaCameraMode.Follow); }
-                }
-            }
-            else if (!targetValid)
-            {
-                ChooseBattle(true); SetShot(ArenaCameraMode.Battle, "重新寻找交战目标");
-            }
-            else
-            {
-                var actor = subjects[FocusId];
-                var enemy = EnemyFor(actor);
-                if (enemy == null || Distance(actor, enemy) > 32)
-                { ChooseBattle(true); SetShot(ArenaCameraMode.Battle, "目标脱离交战"); }
-                else if (Shot == ArenaCameraMode.Follow && age >= 6)
-                {
-                    if (Distance(actor, enemy) <= 12) Focus(actor, ArenaCameraMode.Close);
-                    else { ChooseBattle(true); SetShot(ArenaCameraMode.Battle, "主战区交火"); }
-                }
-                else if (Shot == ArenaCameraMode.Close && age >= 4.5f)
-                { ChooseBattle(true); SetShot(ArenaCameraMode.Battle, "主战区交火"); }
-                else OpponentId = enemy.Id;
-            }
+            ChooseBattle(true);
+            SetShot(ArenaCameraMode.Battle, "主战区，可点选关注人物");
         }
 
         private List<Contact> FindContacts()
@@ -233,12 +198,6 @@ namespace LogSyncMod.AutoTest.Scenarios
             return result;
         }
 
-        private Contact BestContact(bool preferOtherTeam = false)
-        {
-            return contacts.OrderByDescending(c => c.Interest * (preferOtherTeam && c.Actor.Team != lastFollowTeam ? 1.35 : 1))
-                .ThenBy(c => c.Actor.Id, StringComparer.Ordinal).FirstOrDefault();
-        }
-
         private void ChooseBattle(bool allowNewRegion)
         {
             var regions = new Dictionary<(int x, int z), Region>();
@@ -249,10 +208,14 @@ namespace LogSyncMod.AutoTest.Scenarios
                 region.Contacts.Add(contact); region.Interest += contact.Interest;
             }
             var best = regions.Values.OrderByDescending(r => r.Interest).FirstOrDefault();
-            if (best == null) { FocusId = roster[0].Id; OpponentId = null; anchor = null; return; }
+            if (best == null)
+            {
+                if (FocusId == null || !subjects.ContainsKey(FocusId)) FocusId = roster[0].Id;
+                OpponentId = null; anchor = null; return;
+            }
             var currentContact = contacts.FirstOrDefault(c => c.Actor.Id == FocusId);
             var currentRegion = currentContact == null ? null : regions[((int)Math.Floor(currentContact.X / 12), (int)Math.Floor(currentContact.Z / 12))];
-            if (currentRegion != null && (!allowNewRegion || clock - regionStarted < 8 || currentRegion.Interest * 1.5 >= best.Interest))
+            if (currentRegion != null && (!allowNewRegion || clock - regionStarted < 12 || currentRegion.Interest * 2 >= best.Interest))
                 anchor = currentContact;
             else
             {
@@ -272,64 +235,91 @@ namespace LogSyncMod.AutoTest.Scenarios
                 ?? roster.Where(p => p.Team != actor.Team).OrderBy(p => Distance(actor, p)).FirstOrDefault();
         }
 
-        private void Focus(ArenaCameraSubject actor, ArenaCameraMode desired)
-        {
-            var enemy = EnemyFor(actor);
-            FocusId = actor.Id; OpponentId = enemy?.Id;
-            var separation = enemy == null ? float.MaxValue : Distance(actor, enemy);
-            // A long-range shot must retain context rather than magnify an empty midpoint.
-            SetShot(desired == ArenaCameraMode.Close && separation > 12 ? ArenaCameraMode.Follow : desired,
-                separation > 12 && desired == ArenaCameraMode.Close ? "目标较远，跟随取景" : Mode == ArenaCameraMode.Auto ? "交战焦点" : "手动锁定，可点选人物");
-        }
-
         private void SetShot(ArenaCameraMode shot, string reason)
         {
-            if (Shot != shot) { Shot = shot; shotStarted = clock; Switches++; }
+            if (Shot != shot) { Shot = shot; Switches++; }
             Reason = reason;
         }
 
         internal (float x, float z, float size)? Frame(float width, float height, bool overlay)
         {
             if (roster.Count == 0) return null;
-            var points = new List<(float x, float z)>();
-            var minimum = 16f;
-            if (Shot == ArenaCameraMode.Overview)
+            if (introductionStage >= 0) return IntroductionFrame(width, height, overlay);
+            if (Shot == ArenaCameraMode.Overview) return OverviewFrame(width, height, overlay);
+            var actor = FocusId != null && subjects.TryGetValue(FocusId, out var found) ? found : roster[0];
+            if (Shot == ArenaCameraMode.Follow)
+                return GroupCombatPresentation.Frame(new[] { (actor.X, actor.Z) }, width, height, overlay,
+                    roster.Count <= 6 ? 8 : roster.Count <= 16 ? 11 : 14,
+                    GroupCombatPresentation.PanelWidth(width), 160, MaximumSize);
+            var cx = anchor?.X ?? actor.X; var cz = anchor?.Z ?? actor.Z;
+            var points = roster.Where(p => Square(p.X - cx) + Square(p.Z - cz) <= 13 * 13).Select(p => (p.X, p.Z)).ToList();
+            if (points.Count == 0) points.Add((actor.X, actor.Z));
+            // Use the engagement as the center. Recomputing a bounding-box midpoint
+            // made every casualty and every unit crossing the radius move the camera.
+            var rx = points.Max(p => Math.Abs(p.Item1 - cx));
+            var rz = points.Max(p => Math.Abs(p.Item2 - cz));
+            var framed = GroupCombatPresentation.Frame(new[] { (cx - rx, cz - rz), (cx + rx, cz + rz) },
+                width, height, overlay, roster.Count <= 6 ? 9 : roster.Count <= 16 ? 12 : 16,
+                GroupCombatPresentation.PanelWidth(width), 160, MaximumSize);
+            return framed;
+        }
+
+        private (float x, float z, float size) OverviewFrame(float width, float height, bool overlay)
+        {
+            // Trim large armies' outliers consistently before and after the introduction.
+            var xs = roster.Select(p => p.X).OrderBy(v => v).ToList();
+            var zs = roster.Select(p => p.Z).OrderBy(v => v).ToList();
+            var trim = roster.Count >= 20 ? roster.Count / 20 : 0;
+            var frame = GroupCombatPresentation.Frame(new[] { (xs[trim], zs[trim]), (xs[xs.Count - trim - 1], zs[zs.Count - trim - 1]) },
+                width, height, overlay, 16, GroupCombatPresentation.PanelWidth(width), 160, 28);
+            return overviewCenter.HasValue ? (overviewCenter.Value.x, overviewCenter.Value.z, frame.size) : frame;
+        }
+
+        private (float x, float z, float size) IntroductionFrame(float width, float height, bool overlay)
+        {
+            if (!introOverview.HasValue || introWidth != width || introHeight != height || introOverlay != overlay)
             {
-                // Trim only large rosters' extremes, so a stray pawn cannot dominate the overview.
-                var xs = roster.Select(p => p.X).OrderBy(v => v).ToList();
-                var zs = roster.Select(p => p.Z).OrderBy(v => v).ToList();
-                var trim = roster.Count >= 20 ? roster.Count / 20 : 0;
-                points.Add((xs[trim], zs[trim])); points.Add((xs[xs.Count - trim - 1], zs[zs.Count - trim - 1]));
-            }
-            else if (FocusId != null && subjects.TryGetValue(FocusId, out var actor))
-            {
-                var enemy = introductionStage >= 0 ? null : EnemyFor(actor);
-                if (Shot == ArenaCameraMode.Battle)
+                introWidth = width; introHeight = height; introOverlay = overlay;
+                introOverview = OverviewFrame(width, height, overlay);
+                (float x, float z, float size) Portrait(string teamId)
                 {
-                    minimum = 11;
-                    var cx = anchor?.X ?? actor.X; var cz = anchor?.Z ?? actor.Z;
-                    points.AddRange(roster.Where(p => Square(p.X - cx) + Square(p.Z - cz) <= 13 * 13).Select(p => (p.X, p.Z)));
-                    if (points.Count == 0) points.Add((actor.X, actor.Z));
+                    var team = roster.Where(p => p.Team == teamId).ToList();
+                    if (team.Count == 0) team = roster;
+                    var x = team.Average(p => p.X); var z = team.Average(p => p.Z);
+                    // Frame a representative group around the formation's center.
+                    var core = team.OrderBy(p => Square(p.X - x) + Square(p.Z - z)).Take(12);
+                    // Side panels are hidden throughout the introduction.
+                    var minimum = team.Count <= 2 ? 6 : team.Count <= 8 ? 8 : 10;
+                    return GroupCombatPresentation.Frame(core.Select(p => (p.X, p.Z)), width, height, overlay, minimum, 0, 160, 12);
                 }
-                else
-                {
-                    minimum = Shot == ArenaCameraMode.Close ? 7 : 9;
-                    points.Add((actor.X, actor.Z));
-                    if (enemy != null)
-                    {
-                        var distance = Distance(actor, enemy);
-                        var lead = distance <= (Shot == ArenaCameraMode.Close ? 12 : 22) ? 1 : 8 / Math.Max(1, distance);
-                        points.Add((actor.X + (enemy.X - actor.X) * lead, actor.Z + (enemy.Z - actor.Z) * lead));
-                    }
-                }
+                introLeft = Portrait("A"); introRight = Portrait("B");
+                var size = Math.Max(introLeft.Value.size, introRight.Value.size);
+                // Both sides use the same scale; crossing the arena only pans.
+                var left = introLeft.Value; var right = introRight.Value;
+                introLeft = (left.x, left.z + (size - left.size) * (overlay ? GroupCombatPresentation.PanelTop + 6 - 160 : 16 - 160) / height, size);
+                introRight = (right.x, right.z + (size - right.size) * (overlay ? GroupCombatPresentation.PanelTop + 6 - 160 : 16 - 160) / height, size);
             }
-            if (points.Count == 0) points.Add((roster[0].X, roster[0].Z));
-            var panel = Compact ? GroupCombatPresentation.CompactPanelWidth(width) : GroupCombatPresentation.PanelWidth(width);
-            return GroupCombatPresentation.Frame(points, width, height, overlay, minimum, panel, 160, MaximumSize);
+            var wide = introOverview.Value; var a = introLeft.Value; var b = introRight.Value;
+            return introductionStage switch {
+                0 => wide,
+                1 => Blend(wide, a, (introductionElapsed - .2f) / .6f),
+                2 => a,
+                3 => Blend(a, b, (introductionElapsed - 2.3f) / .6f),
+                4 => b,
+                5 => Blend(b, wide, (introductionElapsed - 4.4f) / .9f),
+                _ => wide
+            };
+        }
+
+        private static (float x, float z, float size) Blend((float x, float z, float size) a, (float x, float z, float size) b, float progress)
+        {
+            var t = Math.Clamp(progress, 0, 1);
+            t = t * t * (3 - 2 * t);
+            return (a.x + (b.x - a.x) * t, a.z + (b.z - a.z) * t, a.size + (b.size - a.size) * t);
         }
 
         internal static string Label(ArenaCameraMode mode) => mode switch {
-            ArenaCameraMode.Auto => "自动", ArenaCameraMode.Overview => "全局", ArenaCameraMode.Battle => "战区", ArenaCameraMode.Follow => "跟随", _ => "近景"
+            ArenaCameraMode.Auto => "自动", ArenaCameraMode.Overview => "全局", ArenaCameraMode.Battle => "交战区", ArenaCameraMode.Follow => "跟随", _ => "近景"
         };
         private static float Square(float value) => value * value;
         private static float Distance(ArenaCameraSubject a, ArenaCameraSubject b) => (float)Math.Sqrt(Square(a.X - b.X) + Square(a.Z - b.Z));

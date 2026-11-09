@@ -19,6 +19,8 @@ namespace LogSyncMod.AutoTest
         private static float rootSize;
         private static float previousFrameTime;
         private static GroupCombatCameraMotion motion;
+        private static ArenaCameraZoom arenaZoom;
+        private static ArenaCameraPan arenaPan;
         private static float maximumProjectionSize, maximumRootSize, markerThreshold;
         private static float maximumObservedProjectionSize;
         private static int cameraFrames, limitViolations;
@@ -27,7 +29,8 @@ namespace LogSyncMod.AutoTest
         private static (float x, float z, float size)? arenaFrame;
         private static int arenaWidth, arenaHeight;
         private static bool arenaCameraFailed, travelling;
-        private static readonly ArenaCameraMode[] cameraModes = { ArenaCameraMode.Auto, ArenaCameraMode.Overview, ArenaCameraMode.Battle, ArenaCameraMode.Follow, ArenaCameraMode.Close };
+        private static readonly ArenaCameraMode[] cameraModes = { ArenaCameraMode.Auto, ArenaCameraMode.Overview, ArenaCameraMode.Battle, ArenaCameraMode.Follow };
+        internal static bool SidePanelsVisible => !CombatFightService.CameraIntroElapsed.HasValue;
         internal static bool CompactPanels => director?.Compact == true && (CombatFightService.Measuring || CombatFightService.CameraIntroElapsed.HasValue);
         internal static string FocusId => director?.FocusId;
         internal static string OpponentId => director?.OpponentId;
@@ -50,9 +53,12 @@ namespace LogSyncMod.AutoTest
             maximumProjectionSize = maximumRootSize = maximumObservedProjectionSize = 0;
             cameraFrames = limitViolations = 0;
             motion = new GroupCombatCameraMotion(); previousFrameTime = Time.realtimeSinceStartup;
+            arenaZoom = new ArenaCameraZoom();
+            arenaPan = new ArenaCameraPan();
             arenaCameraFailed = travelling = false; arenaFrame = null;
             arenaWidth = arenaHeight = 0;
             director = CombatFightService.IsArena ? new ArenaCameraDirector() : null;
+            director?.SetOverviewCenter(CombatFightService.Map.Size.x / 2f, CombatFightService.Map.Size.z / 2f);
             director?.SetMode(arenaMode);
             Postfix();
         }
@@ -137,11 +143,10 @@ namespace LogSyncMod.AutoTest
             var now = Time.realtimeSinceStartup;
             var elapsed = Math.Max(0, now - previousFrameTime);
             previousFrameTime = now;
-            var oldIntroductionStage = director.IntroductionStage;
+            var wasIntroduction = director.IntroductionStage >= 0;
+            var previousShot = director.Shot;
             director.SetIntroduction(CombatFightService.CameraIntroElapsed);
-            // Cut directly to each portrait and back to the countdown overview.
-            if (oldIntroductionStage != director.IntroductionStage)
-                motion = new GroupCombatCameraMotion();
+            var leavingIntroduction = wasIntroduction && director.IntroductionStage < 0;
             var observing = director.Advance(elapsed, CombatFightService.Measuring, Find.TickManager.Paused);
             if (observing)
             {
@@ -162,7 +167,7 @@ namespace LogSyncMod.AutoTest
                 }
                 director.Observe(values);
             }
-            if (observing || arenaWidth != UI.screenWidth || arenaHeight != UI.screenHeight)
+            if (observing || director.IntroductionStage >= 0 || arenaWidth != UI.screenWidth || arenaHeight != UI.screenHeight)
             {
                 arenaFrame = director.Frame(UI.screenWidth, UI.screenHeight, CombatFightService.OverlayEnabled) ?? arenaFrame;
                 arenaWidth = UI.screenWidth; arenaHeight = UI.screenHeight;
@@ -171,21 +176,29 @@ namespace LogSyncMod.AutoTest
             var frame = arenaFrame.Value;
             markerThreshold = MarkerThreshold();
             maximumProjectionSize = GroupCombatPresentation.CameraSizeLimit(UI.screenHeight, markerThreshold);
-            var nextProjection = GroupCombatPresentation.ZoomTarget(targetProjectionSize, frame.size, Math.Min(maximumProjectionSize, director.MaximumSize));
-            var distance = Vector2.Distance(new Vector2(motion.X, motion.Z), new Vector2(frame.x, frame.z));
-            travelling = director.IntroductionStage < 0 && cameraFrames > 0 && (distance > 22 || travelling && distance > 7);
-            var travelSize = Math.Min(22, maximumProjectionSize);
-            if (travelling) nextProjection = Math.Max(nextProjection, travelSize);
+            var introduction = director.IntroductionStage >= 0;
+            var nextProjection = introduction ? Math.Min(frame.size + 1, maximumProjectionSize)
+                : arenaZoom.Target(targetProjectionSize, frame.size, Math.Min(maximumProjectionSize, director.MaximumSize), elapsed);
+            travelling = false;
             var position = new Vector3(frame.x, 0, frame.z);
             if (rootSize == 0 || Math.Abs(nextProjection - targetProjectionSize) > .1f)
             {
                 targetProjectionSize = nextProjection;
                 rootSize = RootForProjection(position, targetProjectionSize);
             }
-            var waitForWideView = travelling && motion.Size < travelSize - .75f;
-            // Across distant engagements, widen first, travel second, then move back in.
-            motion.Step(waitForWideView ? motion.X : frame.x, waitForWideView ? motion.Z : frame.z,
-                nextProjection, elapsed);
+            // The introduction follows its timed path exactly, including both full holds.
+            // Keep this same motion state when the countdown and battle take over.
+            var returningToOverview = !introduction && director.Shot == ArenaCameraMode.Overview && previousShot != ArenaCameraMode.Overview;
+            if (introduction || cameraFrames == 0 || leavingIntroduction || returningToOverview)
+            {
+                motion.Set(frame.x, frame.z, nextProjection);
+                arenaPan.Reset(frame.x, frame.z);
+            }
+            else
+            {
+                arenaPan.Observe(frame.x, frame.z, motion.X, motion.Z, elapsed);
+                motion.Step(arenaPan.X, arenaPan.Z, nextProjection, elapsed, positionSeconds: 1.1f, maximumMoveSpeed: 10, smoothZoom: false);
+            }
             // Native culling may use RootSize rather than the overridden projection.
             // Keep the previous wider root until a zoom-in has almost finished.
             maximumRootSize = Math.Max(Math.Max(11, rootSize), motion.Size > nextProjection + .2f ? maximumRootSize : 11);
@@ -225,7 +238,7 @@ namespace LogSyncMod.AutoTest
             GUI.color = previous;
             var focusName = director.FocusId != null && CombatFightService.Pawns.TryGetValue(director.FocusId, out var pawn) ? pawn.LabelShort : null;
             var description = ArenaCameraDirector.Label(director.Mode) + " · " + ArenaCameraDirector.Label(director.Shot)
-                + (director.Compact && focusName != null ? " · " + focusName : "") + " · " + director.Reason;
+                + (director.Shot == ArenaCameraMode.Follow && focusName != null ? " · " + focusName : "") + " · " + director.Reason;
             GroupCombatOverlay.DrawText(new Rect(12, top + 32, width - 24, 23), description, width < 1000 ? 11 : 13, TextAnchor.MiddleCenter);
         }
 
@@ -237,21 +250,21 @@ namespace LogSyncMod.AutoTest
             {
                 if (!Enum.TryParse<ArenaCameraMode>(mode, true, out var value) || !Enum.IsDefined(typeof(ArenaCameraMode), value))
                     throw new ArgumentException("Unknown arena camera mode: " + mode);
-                arenaMode = value; director.SetMode(value);
+                director.SetMode(value); arenaMode = director.Mode;
             }
             if (focusId != null)
             {
                 if (!CombatFightService.Pawns.TryGetValue(focusId, out var pawn) || !pawn.Spawned || pawn.Map != CombatFightService.Map || pawn.Dead || pawn.Downed)
                     throw new ArgumentException("Camera focus must be a standing arena participant");
-                if (director.Mode is not (ArenaCameraMode.Follow or ArenaCameraMode.Close))
-                    throw new InvalidOperationException("Choosing a participant requires Follow or Close mode");
+                if (director.Mode is not (ArenaCameraMode.Auto or ArenaCameraMode.Follow))
+                    throw new InvalidOperationException("Choosing a participant requires Auto or Follow mode");
                 director.Select(focusId);
             }
         }
 
         internal static void HandleArenaInput()
         {
-            if (director == null || !CombatFightService.Measuring || director.Mode is not (ArenaCameraMode.Follow or ArenaCameraMode.Close)
+            if (director == null || !CombatFightService.Measuring || director.Mode is not (ArenaCameraMode.Auto or ArenaCameraMode.Follow)
                 || Event.current.type != EventType.MouseDown || Event.current.button != 0) return;
             var mouse = Event.current.mousePosition;
             var inset = CombatFightService.OverlayEnabled ? PanelWidth(UI.screenWidth) + 22 : 16;
@@ -292,7 +305,7 @@ namespace LogSyncMod.AutoTest
                 var points = CombatFightService.CameraPawns.Select(p => camera.WorldToViewportPoint(p.DrawPos)).ToList();
                 var inset = CombatFightService.OverlayEnabled ? (PanelWidth(UI.screenWidth) + 16) / UI.screenWidth : 0;
                 var markerCount = showMarker == null || !Active ? 0 : CombatFightService.CameraPawns.Count(p => (bool)showMarker.Invoke(null, new object[] { p, null }));
-                return new { active = Active, mode = director?.Mode.ToString(), shot = director?.Shot.ToString(), introductionStage = director?.IntroductionStage, focusId = director?.FocusId, opponentId = director?.OpponentId, reason = director?.Reason, switches = director?.Switches, compactPanels = CompactPanels, travelling, arenaCameraFailed, uiWidth = UI.screenWidth, uiHeight = UI.screenHeight, height = camera.transform.position.y, rootSize = Find.CameraDriver.RootSize, targetRootSize = rootSize, orthographicSize = camera.orthographicSize, maximumProjectionSize, maximumObservedProjectionSize, markerThreshold, cameraPlusMarkers = markerCount, cameraPlusEdgeMarkers = CameraPlusCombatCompatibility.EdgeMarkers(CombatFightService.CameraPawns), cameraPlusThresholdPatchReads = CameraPlusCombatCompatibility.ThresholdReads, cameraPlusEdgePatchReads = CameraPlusCombatCompatibility.EdgeReads, vanillaHighlightEnabled = SilhouetteUtility.CanHighlightAny(), uiCellSize = UI.CurUICellSize(), cameraFrames, limitViolations, x = camera.transform.position.x, z = camera.transform.position.z, living = CombatFightService.Pawns.Values.Count(p => p.Spawned && p.Map == CombatFightService.Map && !p.Dead), tracked = points.Count, visible = points.Count(p => p.z > 0 && p.x >= 0 && p.x <= 1 && p.y >= 0 && p.y <= 1), betweenPanels = points.Count(p => p.z > 0 && p.x >= inset && p.x <= 1 - inset && p.y >= (director == null ? 90f : 160f) / UI.screenHeight && p.y <= 1 - (GroupCombatPresentation.PanelTop + 6) / UI.screenHeight) };
+                return new { active = Active, mode = director?.Mode.ToString(), shot = director?.Shot.ToString(), introductionStage = director?.IntroductionStage, introductionElapsed = director?.IntroductionElapsed, focusId = director?.FocusId, opponentId = director?.OpponentId, reason = director?.Reason, switches = director?.Switches, compactPanels = CompactPanels, sidePanelsVisible = SidePanelsVisible, targetProjectionSize, travelling, panRetargets = arenaPan?.Retargets, panTargetX = arenaPan?.X, panTargetZ = arenaPan?.Z, frameX = arenaFrame?.x, frameZ = arenaFrame?.z, arenaCameraFailed, uiWidth = UI.screenWidth, uiHeight = UI.screenHeight, height = camera.transform.position.y, rootSize = Find.CameraDriver.RootSize, targetRootSize = rootSize, orthographicSize = camera.orthographicSize, maximumProjectionSize, maximumObservedProjectionSize, markerThreshold, cameraPlusMarkers = markerCount, cameraPlusEdgeMarkers = CameraPlusCombatCompatibility.EdgeMarkers(CombatFightService.CameraPawns), cameraPlusThresholdPatchReads = CameraPlusCombatCompatibility.ThresholdReads, cameraPlusEdgePatchReads = CameraPlusCombatCompatibility.EdgeReads, vanillaHighlightEnabled = SilhouetteUtility.CanHighlightAny(), uiCellSize = UI.CurUICellSize(), cameraFrames, limitViolations, x = camera.transform.position.x, z = camera.transform.position.z, living = CombatFightService.Pawns.Values.Count(p => p.Spawned && p.Map == CombatFightService.Map && !p.Dead), tracked = points.Count, visible = points.Count(p => p.z > 0 && p.x >= 0 && p.x <= 1 && p.y >= 0 && p.y <= 1), betweenPanels = points.Count(p => p.z > 0 && p.x >= inset && p.x <= 1 - inset && p.y >= (director == null ? 90f : 160f) / UI.screenHeight && p.y <= 1 - (GroupCombatPresentation.PanelTop + 6) / UI.screenHeight) };
             }
         }
     }

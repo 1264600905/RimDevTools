@@ -82,7 +82,7 @@ namespace LogSyncMod.AutoTest
                 DrawText(new Rect(150, 73, width - 300, 24), data.TimeLabel + (CombatFightService.Measuring && Find.TickManager.Paused ? "已暂停" : Label(CombatFightService.Phase)), 16, TextAnchor.MiddleCenter);
                 Text.Font = GameFont.Small;
                 if (Widgets.ButtonText(new Rect(width - 142, 54, 120, 32), CombatFightService.IsArena ? "取消擂台" : "取消群战")) { if (CombatFightService.IsArena) ArenaService.Cancel(); else CombatFightService.Cancel(); }
-                for (var i = 0; i < snapshot.Teams.Count; i++)
+                for (var i = 0; GroupCombatCamera.SidePanelsVisible && i < snapshot.Teams.Count; i++)
                 {
                     var x = i == 0 ? 8 : width - panelWidth - 8;
                     DrawTeam(new Rect(x, GroupCombatPresentation.PanelTop, panelWidth, panelHeight), data.Teams[i], i);
