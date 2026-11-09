@@ -4,7 +4,7 @@
 
 RimDevTools 是面向 RimWorld 模组开发的 Windows 工具链，将环境检查、构建部署、依赖定位、日志采集、游戏测试与工坊发布组织为可重复的 CLI 操作。随包模板和工具 Mod 提供 RimWorld **1.6、1.7** 对应内容；CLI 也识别 1.7+ 现代布局，实际工具组件及更新支持范围以发行清单为准。
 
-当前版本为 **1.5.1.0**，提供 [RimWorld 1.6、1.7 模板包及 Tools 简化包](https://github.com/1264600905/RimDevTools/releases/tag/v1.5.1.0)。包含旧项目模式、自动更新、外部 XML 场景测试，以及擂台匹配和清理配置、生命条、正午重设与混编轮播；两个版本模板的 Codex、Claude skill 均已同步相关说明。自定义场景后端目前仅支持 RimWorld 1.7。
+当前版本为 **1.5.2.0**，提供 [RimWorld 1.6、1.7 模板包及 Tools 简化包](https://github.com/1264600905/RimDevTools/releases/tag/v1.5.2.0)。包含旧项目模式、自动更新、外部 XML 场景测试，以及擂台匹配和清理配置、生命条、正午重设与混编轮播；两个版本模板的 Codex、Claude skill 均已同步相关说明。自定义场景后端目前仅支持 RimWorld 1.7。
 
 ## 仓库包含什么
 
@@ -14,7 +14,7 @@ RimDevTools 是面向 RimWorld 模组开发的 Windows 工具链，将环境检�
 | LogSyncMod | 兼容 RimWorld 1.6/1.7；按 PackageId、关键词和日志级别筛选日志并同步到独立文件 |
 | AutoTestRunner | 在游戏内执行 UI、战斗、视图、配方、技能等自动测试并生成结构化结果与证据 |
 | Project Template | 为新项目提供 1.6 或 1.7 工程结构、三语翻译目录和构建配置 |
-| Tools Package | 为已有项目和工具更新提供正式工具载荷、两套核心 skill 与人工配置参考 |
+| Tools Package | 为已有项目和工具更新提供正式工具载荷、两套完整 skill 与人工配置参考 |
 
 ## 主要能力
 
@@ -36,9 +36,11 @@ RimDevTools 是面向 RimWorld 模组开发的 Windows 工具链，将环境检�
 | --- | --- |
 | `RimDevTools-<version>-Template-RimWorld-1.6.zip` | 新建 RimWorld 1.6 模组项目，包含完整模板和工具 |
 | `RimDevTools-<version>-Template-RimWorld-1.7.zip` | 新建 RimWorld 1.7 模组项目，包含完整模板和工具 |
-| `RimDevTools-<version>-Tools.zip` | 已有项目所需工具，以及模板项目与旧项目共同使用的更新来源 |
+| `RimDevTools-<version>-Tools-Full.zip` | 已有项目所需工具，以及完整的 Codex、Claude skill |
 
-Tools 包提供 `.tools`、`.agents/skills/rimdevtools`、`.claude/skills/rimdevtools`、配置参考及发行清单，包含必要的两版工具 Mod、ILSpy 和许可证；它精简的是示例模组内容。包内 `mod_config.jsonc` 供人工填写，已有项目应保留自己的配置。Tools 包不按游戏版本再拆分。
+Tools 包提供 `.tools` 工具目录、`.agents/skills` 与 `.claude/skills` 下的全部模板 skill、配置参考及发行清单，包含必要的两版工具 Mod、ILSpy 和许可证；它精简的是示例模组内容。包内 `mod_config.jsonc` 供人工填写，已有项目应保留自己的配置。Tools 包不按游戏版本再拆分。
+
+供人工下载的完整简化包为 `Tools-Full.zip`，包含两套各 7 个 skill 及其全部配套文件。另附 `Tools.zip` 作为 1.5.1 等已有更新器使用的兼容载荷，只包含原受管理工具和核心 skill；自动更新不会新增或替换其他 skill。已有项目接入完整简化包时，应先检查同名 skill 的本地修改，避免直接覆盖。
 
 新模板解压到独立开发目录。项目应位于 RimWorld `Mods` 和 Steam Workshop 内容目录之外，以满足部署位置保护。
 
@@ -207,9 +209,9 @@ powershell -ExecutionPolicy Bypass -File .tools\publish-rimdevtools.ps1 -CreateZ
 输出为：
 
 ```text
-artifacts/RimDevTools-1.5.1.0-Template-RimWorld-1.6/
-artifacts/RimDevTools-1.5.1.0-Template-RimWorld-1.7/
-artifacts/RimDevTools-1.5.1.0-Tools/
+artifacts/RimDevTools-1.5.2.0-Template-RimWorld-1.6/
+artifacts/RimDevTools-1.5.2.0-Template-RimWorld-1.7/
+artifacts/RimDevTools-1.5.2.0-Tools-Full/
 ```
 
 每个目录同时对应 `.zip` 和 `.zip.sha256`。验证三种发布布局，再执行 Windows 更新实测：
@@ -217,11 +219,11 @@ artifacts/RimDevTools-1.5.1.0-Tools/
 ```powershell
 dotnet build RimDevTools.ReleaseTests\RimDevTools.ReleaseTests.csproj
 dotnet RimDevTools.ReleaseTests\bin\Debug\net10.0\RimDevTools.ReleaseTests.dll `
-  artifacts\RimDevTools-1.5.1.0-Template-RimWorld-1.6
+  artifacts\RimDevTools-1.5.2.0-Template-RimWorld-1.6
 dotnet RimDevTools.ReleaseTests\bin\Debug\net10.0\RimDevTools.ReleaseTests.dll `
-  artifacts\RimDevTools-1.5.1.0-Template-RimWorld-1.7
+  artifacts\RimDevTools-1.5.2.0-Template-RimWorld-1.7
 dotnet RimDevTools.ReleaseTests\bin\Debug\net10.0\RimDevTools.ReleaseTests.dll `
-  artifacts\RimDevTools-1.5.1.0-Tools
+  artifacts\RimDevTools-1.5.2.0-Tools-Full
 dotnet RimDevTools.Tests\bin\Debug\net10.0\RimDevTools.Tests.dll --tool-update
 dotnet RimDevTools.Tests\bin\Debug\net10.0\RimDevTools.Tests.dll --tool-update-live
 ```

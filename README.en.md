@@ -4,7 +4,7 @@
 
 RimDevTools is a Windows toolchain for RimWorld mod development. It provides repeatable CLI operations for environment checks, builds, deployment, dependency discovery, log collection, game testing and Workshop publishing. The bundled templates and tool Mod contain files for RimWorld **1.6 and 1.7**. The CLI also recognizes the 1.7+ modern layout; the release manifest defines which game versions its components and updates actually support.
 
-The current version is **1.5.1.0**, with [RimWorld 1.6 and 1.7 templates and a Tools Package](https://github.com/1264600905/RimDevTools/releases/tag/v1.5.1.0). It includes existing-project mode, automatic updates, external XML scenario tests, configurable arena matchmaking and cleanup, health bars, noon resets and rotating mixed-squad previews. The Codex and Claude skills in both templates document these features. The custom scenario backend currently supports RimWorld 1.7 only.
+The current version is **1.5.2.0**, with [RimWorld 1.6 and 1.7 templates and a Tools Package](https://github.com/1264600905/RimDevTools/releases/tag/v1.5.2.0). It includes existing-project mode, automatic updates, external XML scenario tests, configurable arena matchmaking and cleanup, health bars, noon resets and rotating mixed-squad previews. The Codex and Claude skills in both templates document these features. The custom scenario backend currently supports RimWorld 1.7 only.
 
 ## Repository components
 
@@ -14,7 +14,7 @@ The current version is **1.5.1.0**, with [RimWorld 1.6 and 1.7 templates and a T
 | LogSyncMod | Supports RimWorld 1.6/1.7; filters logs by PackageId, keywords and severity, then synchronizes them to a separate file |
 | AutoTestRunner | Runs in-game UI, combat, view, recipe and ability tests, producing structured results and evidence |
 | Project Template | Supplies a 1.6 or 1.7 project layout, translation directories for three languages and build configuration for new projects |
-| Tools Package | Supplies the official tool payload, both core skill locations and a manual configuration reference for existing projects and tool updates |
+| Tools Package | Supplies the official tool payload, all Codex and Claude skills and a manual configuration reference for existing projects and tool updates |
 
 ## Main capabilities
 
@@ -36,9 +36,11 @@ Choose an attachment actually available on [GitHub Releases](https://github.com/
 | --- | --- |
 | `RimDevTools-<version>-Template-RimWorld-1.6.zip` | Create a RimWorld 1.6 mod project with the complete template and tools |
 | `RimDevTools-<version>-Template-RimWorld-1.7.zip` | Create a RimWorld 1.7 mod project with the complete template and tools |
-| `RimDevTools-<version>-Tools.zip` | Obtain tools for an existing project; also serves as the update source for template and existing projects |
+| `RimDevTools-<version>-Tools-Full.zip` | Tools for an existing project, with all Codex and Claude skills |
 
-The Tools Package contains `.tools`, `.agents/skills/rimdevtools`, `.claude/skills/rimdevtools`, a configuration reference and a release manifest, including the required tool Mod files for both game versions, ILSpy and licenses. It reduces the example mod content while retaining tool capabilities. Its `mod_config.jsonc` is a manual reference: retain your existing project's configuration. The Tools Package is shared across game versions.
+The Tools Package contains `.tools`, all template skills under `.agents/skills` and `.claude/skills`, a configuration reference and a release manifest, including the required tool Mod files for both game versions, ILSpy and licenses. It reduces the example mod content while retaining tool capabilities. Its `mod_config.jsonc` is a manual reference: retain your existing project's configuration. The Tools Package is shared across game versions.
+
+Download `Tools-Full.zip` for the complete package, including all 7 skills for each client and their supporting files. A separate `Tools.zip` compatibility payload serves existing updaters, including 1.5.1, with the original managed tools and core skill. Automatic updates preserve other skills without adding or replacing them. Check local edits to matching skills before integrating the full package into an existing project.
 
 Extract a new template into a separate development directory. Keep the project outside RimWorld's `Mods` directory and Steam Workshop content directories to satisfy deployment location checks.
 
@@ -207,9 +209,9 @@ powershell -ExecutionPolicy Bypass -File .tools\publish-rimdevtools.ps1 -CreateZ
 Output:
 
 ```text
-artifacts/RimDevTools-1.5.1.0-Template-RimWorld-1.6/
-artifacts/RimDevTools-1.5.1.0-Template-RimWorld-1.7/
-artifacts/RimDevTools-1.5.1.0-Tools/
+artifacts/RimDevTools-1.5.2.0-Template-RimWorld-1.6/
+artifacts/RimDevTools-1.5.2.0-Template-RimWorld-1.7/
+artifacts/RimDevTools-1.5.2.0-Tools-Full/
 ```
 
 Each directory has a corresponding `.zip` and `.zip.sha256`. Verify all three release layouts, then run the Windows update integration tests:
@@ -217,11 +219,11 @@ Each directory has a corresponding `.zip` and `.zip.sha256`. Verify all three re
 ```powershell
 dotnet build RimDevTools.ReleaseTests\RimDevTools.ReleaseTests.csproj
 dotnet RimDevTools.ReleaseTests\bin\Debug\net10.0\RimDevTools.ReleaseTests.dll `
-  artifacts\RimDevTools-1.5.1.0-Template-RimWorld-1.6
+  artifacts\RimDevTools-1.5.2.0-Template-RimWorld-1.6
 dotnet RimDevTools.ReleaseTests\bin\Debug\net10.0\RimDevTools.ReleaseTests.dll `
-  artifacts\RimDevTools-1.5.1.0-Template-RimWorld-1.7
+  artifacts\RimDevTools-1.5.2.0-Template-RimWorld-1.7
 dotnet RimDevTools.ReleaseTests\bin\Debug\net10.0\RimDevTools.ReleaseTests.dll `
-  artifacts\RimDevTools-1.5.1.0-Tools
+  artifacts\RimDevTools-1.5.2.0-Tools-Full
 dotnet RimDevTools.Tests\bin\Debug\net10.0\RimDevTools.Tests.dll --tool-update
 dotnet RimDevTools.Tests\bin\Debug\net10.0\RimDevTools.Tests.dll --tool-update-live
 ```

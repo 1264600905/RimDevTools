@@ -42,7 +42,7 @@ if ($TemplateGameVersion -eq "All") {
 }
 
 if ([string]::IsNullOrWhiteSpace($OutputPath)) {
-    $packageName = if ($TemplateGameVersion -eq "Tools") { "RimDevTools-$toolVersion-Tools" } else { "RimDevTools-$toolVersion-Template-RimWorld-$TemplateGameVersion" }
+    $packageName = if ($TemplateGameVersion -eq "Tools") { "RimDevTools-$toolVersion-Tools-Full" } else { "RimDevTools-$toolVersion-Template-RimWorld-$TemplateGameVersion" }
     $OutputPath = Join-Path "artifacts" $packageName
 }
 $output = [System.IO.Path]::GetFullPath((Join-Path $projectRoot $OutputPath))
@@ -165,7 +165,7 @@ try {
     if ($isToolsPackage) {
         New-Item -ItemType Directory -Path $output -Force | Out-Null
         foreach ($client in @(".agents", ".claude")) {
-            Copy-DirectoryContents (Join-Path $templateRoot "1.6\$client\skills\rimdevtools") (Join-Path $output "$client\skills\rimdevtools")
+            Copy-DirectoryContents (Join-Path $templateRoot "1.6\$client\skills") (Join-Path $output "$client\skills")
         }
     }
     else { Copy-DirectoryContents $templateVersionRoot $output }
@@ -341,32 +341,50 @@ Write-Host "发布完成: $output"
 if ($CreateZip) {
     Add-Type -AssemblyName System.IO.Compression
     Add-Type -AssemblyName System.IO.Compression.FileSystem
-    if (Test-Path -LiteralPath $archive) { Remove-Item -LiteralPath $archive -Force }
-    # Windows PowerShell can enable the legacy backslash ZIP path switch.
-    # Write portable names explicitly so existing updaters accept the archive.
-    $archiveStream = [System.IO.File]::Create($archive)
-    $zip = $null
-    try {
-        $zip = [System.IO.Compression.ZipArchive]::new($archiveStream, [System.IO.Compression.ZipArchiveMode]::Create, $false)
-        foreach ($entry in Get-ChildItem -LiteralPath $output -Recurse -Force | Sort-Object FullName) {
-            $relative = (Get-RelativePath $output $entry.FullName).Replace('\', '/')
-            if ($entry.PSIsContainer) { $null = $zip.CreateEntry($relative.TrimEnd('/') + '/'); continue }
-            $zipEntry = $zip.CreateEntry($relative, [System.IO.Compression.CompressionLevel]::Optimal)
-            $inputStream = [System.IO.File]::OpenRead($entry.FullName)
-            try {
-                $entryStream = $zipEntry.Open()
-                try { $inputStream.CopyTo($entryStream) }
-                finally { $entryStream.Dispose() }
+    $archives = @([pscustomobject]@{ Path = $archive; Files = $null })
+    if ($isToolsPackage) {
+        # 1.5.1 and earlier accept only the managed core skill in Tools.zip.
+        # Keep that stable update contract separate from the full download.
+        $compatibilityName = "RimDevTools-$toolVersion-Tools"
+        if ($VersionSuffix) { $compatibilityName += "-$VersionSuffix" }
+        $compatibilityArchive = Join-Path $artifactsRoot ($compatibilityName + ".zip")
+        if ($compatibilityArchive -eq $archive) { throw "完整 Tools 包不能占用兼容更新包名称" }
+        $updateFiles = @($fileRecords | ForEach-Object { $_.path }) + @(".tools/Data/tool-package.manifest.json", "mod_config.jsonc")
+        $archives += [pscustomobject]@{ Path = $compatibilityArchive; Files = $updateFiles }
+    }
+    foreach ($archiveSpec in $archives) {
+        $archive = $archiveSpec.Path
+        if (Test-Path -LiteralPath $archive) { Remove-Item -LiteralPath $archive -Force }
+        # Windows PowerShell can enable the legacy backslash ZIP path switch.
+        # Write portable names explicitly so existing updaters accept the archive.
+        $archiveStream = [System.IO.File]::Create($archive)
+        $zip = $null
+        try {
+            $zip = [System.IO.Compression.ZipArchive]::new($archiveStream, [System.IO.Compression.ZipArchiveMode]::Create, $false)
+            foreach ($entry in Get-ChildItem -LiteralPath $output -Recurse -Force | Sort-Object FullName) {
+                $relative = (Get-RelativePath $output $entry.FullName).Replace('\', '/')
+                if ($null -ne $archiveSpec.Files) {
+                    if ($entry.PSIsContainer) { continue }
+                    if ($archiveSpec.Files -cnotcontains $relative) { continue }
+                }
+                if ($entry.PSIsContainer) { $null = $zip.CreateEntry($relative.TrimEnd('/') + '/'); continue }
+                $zipEntry = $zip.CreateEntry($relative, [System.IO.Compression.CompressionLevel]::Optimal)
+                $inputStream = [System.IO.File]::OpenRead($entry.FullName)
+                try {
+                    $entryStream = $zipEntry.Open()
+                    try { $inputStream.CopyTo($entryStream) }
+                    finally { $entryStream.Dispose() }
+                }
+                finally { $inputStream.Dispose() }
             }
-            finally { $inputStream.Dispose() }
         }
+        finally {
+            if ($null -ne $zip) { $zip.Dispose() }
+            $archiveStream.Dispose()
+        }
+        Write-Host "压缩包已生成: $archive"
+        $archiveHash = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+        [System.IO.File]::WriteAllText($archive + ".sha256", "$archiveHash  $([System.IO.Path]::GetFileName($archive))`n", [System.Text.UTF8Encoding]::new($false))
+        Write-Host "校验文件已生成: $archive.sha256"
     }
-    finally {
-        if ($null -ne $zip) { $zip.Dispose() }
-        $archiveStream.Dispose()
-    }
-    Write-Host "压缩包已生成: $archive"
-    $archiveHash = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
-    [System.IO.File]::WriteAllText($archive + ".sha256", "$archiveHash  $([System.IO.Path]::GetFileName($archive))`n", [System.Text.UTF8Encoding]::new($false))
-    Write-Host "校验文件已生成: $archive.sha256"
 }

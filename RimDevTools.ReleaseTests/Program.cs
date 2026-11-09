@@ -51,8 +51,38 @@ foreach (var name in new[] { "LogSyncMod.dll", "AutoTestRunner.dll" })
 if (!File.Exists(Path.Combine(data, "project-template.manifest.json")))
 {
     var expected = package.Files.Select(file => file.Path).Append(ToolPackageManifest.RelativePath).Append("mod_config.jsonc").ToHashSet(StringComparer.OrdinalIgnoreCase);
+    var updateFiles = expected.ToHashSet(StringComparer.OrdinalIgnoreCase);
+    foreach (var client in new[] { ".agents", ".claude" })
+    {
+        var sourceSkills = Path.Combine(Environment.CurrentDirectory, "components", "ProjectTemplate", "1.6", client, "skills");
+        var skillFiles = Directory.EnumerateFiles(sourceSkills, "*", SearchOption.AllDirectories).ToArray();
+        foreach (var source in skillFiles)
+            expected.Add(client + "/skills/" + Path.GetRelativePath(sourceSkills, source).Replace('\\', '/'));
+        Assert(skillFiles.All(source =>
+        {
+            var destination = Path.Combine(release, client, "skills", Path.GetRelativePath(sourceSkills, source));
+            return File.Exists(destination) && ToolPackageManifest.Hash(source) == ToolPackageManifest.Hash(destination);
+        }), "Tools contains every template skill file unchanged for " + client);
+    }
     var actual = Directory.EnumerateFiles(release, "*", SearchOption.AllDirectories).Select(path => Path.GetRelativePath(release, path).Replace('\\', '/')).ToHashSet(StringComparer.OrdinalIgnoreCase);
-    Assert(actual.SetEquals(expected), "Tools package contains only managed payload, manifest and config reference");
+    Assert(actual.SetEquals(expected), "Tools package contains managed payload, all template skills, manifest and config reference");
+    var compatibilityArchive = Path.Combine(Path.GetDirectoryName(release)!, $"RimDevTools-{releaseToolVersion}-Tools.zip");
+    using (var archive = ZipFile.OpenRead(compatibilityArchive))
+    {
+        Assert(archive.Entries.All(entry => !entry.FullName.Contains('\\'))
+            && archive.Entries.Select(entry => entry.FullName).Distinct(StringComparer.OrdinalIgnoreCase).Count() == archive.Entries.Count,
+            "compatibility ZIP uses portable unique paths");
+        Assert(updateFiles.SetEquals(archive.Entries.Select(entry => entry.FullName)), "compatibility ZIP contains exactly the payload accepted by 1.5.1 updaters");
+        Assert(archive.Entries.All(entry =>
+        {
+            using var stream = entry.Open();
+            return entry.Length == new FileInfo(Path.Combine(release, entry.FullName)).Length
+                && Convert.ToHexString(SHA256.HashData(stream)).Equals(ToolPackageManifest.Hash(Path.Combine(release, entry.FullName)), StringComparison.OrdinalIgnoreCase);
+        }), "compatibility ZIP bytes match the full distribution baseline");
+        var checksum = File.ReadAllText(compatibilityArchive + ".sha256").Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+        Assert(checksum.Length == 2 && checksum[1] == Path.GetFileName(compatibilityArchive)
+            && checksum[0].Equals(ToolPackageManifest.Hash(compatibilityArchive), StringComparison.OrdinalIgnoreCase), "compatibility ZIP matches its SHA-256 attachment");
+    }
     foreach (var forbidden in new[] { ".gitignore", "source", "About", "Defs", "Languages", "README.md", ".mcp.json", ".tools/ProjectData", ".tools/log" })
         Assert(!File.Exists(Path.Combine(release, forbidden)) && !Directory.Exists(Path.Combine(release, forbidden)), $"Tools excludes {forbidden}");
     var reference = ProjectConfig.Load(Path.Combine(release, "mod_config.jsonc"));
@@ -60,8 +90,6 @@ if (!File.Exists(Path.Combine(data, "project-template.manifest.json")))
         && reference.CsprojPaths.Count == 0 && reference.SyncItems.Count == 0, "Tools config is a manual reference without machine or template defaults");
     using var versionJson = JsonDocument.Parse(Run(Path.Combine(tools, "RimDevTools.exe"), release, "--version"));
     Assert(versionJson.RootElement.GetProperty("templateGameVersion").GetString() == "unpackaged", "Tools has no template identity");
-    foreach (var client in new[] { ".agents", ".claude" })
-        Assert(Directory.EnumerateDirectories(Path.Combine(release, client, "skills")).Select(Path.GetFileName).SequenceEqual(["rimdevtools"]), "Tools includes only core skill for " + client);
     var removed = RunResult(Path.Combine(tools, "RimDevTools.exe"), release, "init", "--existing");
     Assert(removed.ExitCode == 2 && removed.Stdout.Contains("UNKNOWN_COMMAND"), "Tools has no first-time integration command");
     Console.WriteLine($"PASS {passed} Tools release tests");

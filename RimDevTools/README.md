@@ -21,15 +21,15 @@ powershell -ExecutionPolicy Bypass -File .tools\publish-rimdevtools.ps1
 powershell -ExecutionPolicy Bypass -File .tools\publish-rimdevtools.ps1 -CreateZip
 ```
 
-默认发布会生成 1.6、1.7 两个模板包和一个 Tools 简化包，共用载荷只准备一次。模板包命名为 `RimDevTools-<工具版本>-Template-RimWorld-<游戏版本>`，简化包为 `RimDevTools-<工具版本>-Tools`。可传 `-TemplateGameVersion 1.6`、`1.7` 或 `Tools` 只生成一种包。`-CreateZip` 同时输出 ZIP 与 `.zip.sha256`。
+默认发布会生成 1.6、1.7 两个模板包和一个 Tools 简化包，共用载荷只准备一次。模板包命名为 `RimDevTools-<工具版本>-Template-RimWorld-<游戏版本>`，简化包为 `RimDevTools-<工具版本>-Tools-Full`。可传 `-TemplateGameVersion 1.6`、`1.7` 或 `Tools` 只生成一种包。`-CreateZip` 同时输出 ZIP 与 `.zip.sha256`。完整简化包包含 Codex、Claude 两套各 7 个 skill 的全部文件；额外生成 `RimDevTools-<工具版本>-Tools.zip` 兼容自动更新载荷，保持 1.5.1 更新器的管理范围，不替换其他 skill。
 
 `RimDevTools.exe --version` 同时报告 `rimDevToolsVersion`、`templateGameVersion` 和 `templateSchemaVersion`。模板版本信息来自每个发布包中的 `.tools/Data/project-template.manifest.json`，所以同一个工具版本可随不同游戏版本模板发布。
 
-模板包目录内容（Tools 包仅含正式工具、两套核心 skill、发行清单与人工配置参考，不含模板及 `.gitignore`）：
+模板包目录内容（Tools 包仅含正式工具、两套完整 skill、发行清单与人工配置参考，不含模板及 `.gitignore`）：
 
 ```text
-artifacts/RimDevTools-1.5.1.0-Template-RimWorld-1.6/
-artifacts/RimDevTools-1.5.1.0-Template-RimWorld-1.7/
+artifacts/RimDevTools-1.5.2.0-Template-RimWorld-1.6/
+artifacts/RimDevTools-1.5.2.0-Template-RimWorld-1.7/
 ├── mod_config.jsonc
 ├── 1.6/ or 1.7/
 ├── About/
@@ -134,7 +134,7 @@ dotnet build RimDevTools.Tests\RimDevTools.Tests.csproj
 dotnet RimDevTools.Tests\bin\Debug\net10.0\RimDevTools.Tests.dll
 
 dotnet build RimDevTools.ReleaseTests\RimDevTools.ReleaseTests.csproj
-dotnet RimDevTools.ReleaseTests\bin\Debug\net10.0\RimDevTools.ReleaseTests.dll artifacts\RimDevTools-1.5.1.0-Template-RimWorld-1.7
+dotnet RimDevTools.ReleaseTests\bin\Debug\net10.0\RimDevTools.ReleaseTests.dll artifacts\RimDevTools-1.5.2.0-Template-RimWorld-1.7
 ```
 
 单元测试使用临时游戏目录。发布测试验证模板逐文件一致、三种 MCP 配置、两套 RimSage skill、单工具 Mod 清单、ILSpy 和干净日志/参考目录。

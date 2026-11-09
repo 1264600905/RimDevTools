@@ -1,6 +1,9 @@
 {
   "schemaVersion": 1,
-  "supportedVersions": ["1.6", "1.7"],
+  "supportedVersions": [
+    "1.6",
+    "1.7"
+  ],
   "requiredFiles": [
     "mod_config.jsonc",
     ".tools/RimDevTools.exe",
@@ -8,12 +11,32 @@
     ".tools/Data/tool-mods.manifest.json",
     ".tools/Ilspy/ilspycmd.exe",
     ".agents/skills/rimdevtools/SKILL.md",
-    ".claude/skills/rimdevtools/SKILL.md"
+    ".claude/skills/rimdevtools/SKILL.md",
+    ".agents/skills/about-write-description/SKILL.md",
+    ".agents/skills/rimsage/SKILL.md",
+    ".agents/skills/rimworld-development-engineer/SKILL.md",
+    ".agents/skills/rimworld-plan-engineer/SKILL.md",
+    ".agents/skills/rimworld-xml-test/SKILL.md",
+    ".agents/skills/test-result-validation/SKILL.md",
+    ".claude/skills/about-write-description/SKILL.md",
+    ".claude/skills/rimsage/SKILL.md",
+    ".claude/skills/rimworld-development-engineer/SKILL.md",
+    ".claude/skills/rimworld-plan-engineer/SKILL.md",
+    ".claude/skills/rimworld-xml-test/SKILL.md",
+    ".claude/skills/test-result-validation/SKILL.md"
   ],
   "requiredDirectories": [],
   "forbiddenPaths": [
-    ".gitignore", "About", "source", "Defs", "Languages", "README.md",
-    ".mcp.json", "opencode.jsonc", ".tools/ProjectData", ".tools/log",
+    ".gitignore",
+    "About",
+    "source",
+    "Defs",
+    "Languages",
+    "README.md",
+    ".mcp.json",
+    "opencode.jsonc",
+    ".tools/ProjectData",
+    ".tools/log",
     ".tools/Data/project-template.manifest.json"
   ]
 }
