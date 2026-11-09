@@ -4,7 +4,7 @@
 
 RimDevTools 是面向 RimWorld 模组开发的 Windows 工具链，将环境检查、构建部署、依赖定位、日志采集、游戏测试与工坊发布组织为可重复的 CLI 操作。随包模板和工具 Mod 提供 RimWorld **1.6、1.7** 对应内容；CLI 也识别 1.7+ 现代布局，实际工具组件及更新支持范围以发行清单为准。
 
-当前版本为 **1.5.5.0**，提供 [RimWorld 1.6、1.7 模板包及 Tools 简化包](https://github.com/1264600905/RimDevTools/releases/tag/v1.5.5.0)。包含旧项目模式、自动更新、外部 XML 场景测试，以及擂台匹配和清理配置、生命条、正午重设与混编轮播。本版新增全局、战区、跟随和近景镜头，开战前左右各特写 2 秒，单体一方优先跟随；伤害统计异常继续晋级，完整赛程结束后正常退出，异常中止保留游戏。自定义场景后端目前仅支持 RimWorld 1.7。
+当前版本为 **1.5.6.0**，提供 [RimWorld 1.6、1.7 模板包及 Tools 简化包](https://github.com/1264600905/RimDevTools/releases/tag/v1.5.6.0)。新增与淘汰赛并列的魔王轮战赛和极限挑战赛，支持多人数组合及 CP 预算的加法、乘法增长；魔王与挑战者分开展示，赛后使用双方肖像和分页成绩卡。三种赛制先播放至少现实 5 秒的观众规则页，准备耗时计入其中，并修复默认测试场地铺平后再次生成废墟的问题。模板 skill 已同步新增规则、配置示例与结果核对方法。自定义场景后端目前仅支持 RimWorld 1.7。
 
 ## 仓库包含什么
 
@@ -209,9 +209,9 @@ powershell -ExecutionPolicy Bypass -File .tools\publish-rimdevtools.ps1 -CreateZ
 输出为：
 
 ```text
-artifacts/RimDevTools-1.5.5.0-Template-RimWorld-1.6/
-artifacts/RimDevTools-1.5.5.0-Template-RimWorld-1.7/
-artifacts/RimDevTools-1.5.5.0-Tools/
+artifacts/RimDevTools-1.5.6.0-Template-RimWorld-1.6/
+artifacts/RimDevTools-1.5.6.0-Template-RimWorld-1.7/
+artifacts/RimDevTools-1.5.6.0-Tools/
 ```
 
 每个目录对应一个 `.zip`；发布时只上传这三个 ZIP。验证三种发布布局，再执行隔离的 Windows 更新集成测试：
@@ -219,11 +219,11 @@ artifacts/RimDevTools-1.5.5.0-Tools/
 ```powershell
 dotnet build RimDevTools.ReleaseTests\RimDevTools.ReleaseTests.csproj
 dotnet RimDevTools.ReleaseTests\bin\Debug\net10.0\RimDevTools.ReleaseTests.dll `
-  artifacts\RimDevTools-1.5.5.0-Template-RimWorld-1.6
+  artifacts\RimDevTools-1.5.6.0-Template-RimWorld-1.6
 dotnet RimDevTools.ReleaseTests\bin\Debug\net10.0\RimDevTools.ReleaseTests.dll `
-  artifacts\RimDevTools-1.5.5.0-Template-RimWorld-1.7
+  artifacts\RimDevTools-1.5.6.0-Template-RimWorld-1.7
 dotnet RimDevTools.ReleaseTests\bin\Debug\net10.0\RimDevTools.ReleaseTests.dll `
-  artifacts\RimDevTools-1.5.5.0-Tools
+  artifacts\RimDevTools-1.5.6.0-Tools
 dotnet RimDevTools.Tests\bin\Debug\net10.0\RimDevTools.Tests.dll --tool-update
 dotnet RimDevTools.Tests\bin\Debug\net10.0\RimDevTools.Tests.dll --tool-update-live
 ```
