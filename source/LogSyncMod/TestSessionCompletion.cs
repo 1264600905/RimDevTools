@@ -11,12 +11,12 @@ namespace LogSyncMod
         private static readonly TestSessionExitPolicy Policy = new TestSessionExitPolicy();
         private static bool heartbeatSent;
         // May be requested by quick's timer; Unity APIs are only called by Pump on the main thread.
-        public static void Complete(string kind, string runId)
+        public static void Complete(string kind, string runId, string completionStatus = null)
         {
             lock (Sync)
             {
                 var settings = LogSyncMod.settings;
-                Policy.Request(kind, runId, settings?.testSessionActive == true, settings?.testSessionKind, settings?.autoTestRunId, Clock.ElapsedMilliseconds, RuntimeHeartbeat.Sequence);
+                Policy.Request(kind, runId, settings?.testSessionActive == true, settings?.testSessionKind, settings?.autoTestRunId, Clock.ElapsedMilliseconds, RuntimeHeartbeat.Sequence, completionStatus);
             }
         }
         internal static void Pump()

@@ -1,0 +1,38 @@
+<ArenaSuite schemaVersion="1" id="arena.camera-strategies" gameVersion="1.7">
+  <Tournament id="solo" name="相机验证：单体迎战狼群" seed="13579">
+    <testDefName>Arena_Camera_Solo</testDefName>
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all"><Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/></Scene>
+    <Roster mode="count" count="1"/>
+    <Entrants><Entrant id="solo" pawnKind="Mech_CentipedeGunner"/><Entrant id="wolves" pawnKind="Wolf_Timber" count="8"/></Entrants>
+    <Battle timeSpeed="normal" durationSeconds="150" timeoutRealSeconds="360" confirmationTicks="120"/>
+    <TieBreak maxReplays="0"/>
+    <Output width="1920" height="1080"/>
+  </Tournament>
+  <Tournament id="ranged" name="相机验证：蜈蚣远程交火" seed="12345">
+    <testDefName>Arena_Camera_Ranged</testDefName>
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all"><Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/></Scene>
+    <Roster mode="count" count="8"/>
+    <Entrants><Entrant id="left" pawnKind="Mech_CentipedeBlaster"/><Entrant id="right" pawnKind="Mech_CentipedeGunner"/></Entrants>
+    <Battle timeSpeed="normal" durationSeconds="150" timeoutRealSeconds="360" confirmationTicks="120"/>
+    <TieBreak maxReplays="0"/>
+    <Output width="1920" height="1080"/>
+  </Tournament>
+  <Tournament id="melee" name="相机验证：狼群对灰熊" seed="12345">
+    <testDefName>Arena_Camera_Melee</testDefName>
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all"><Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/></Scene>
+    <Roster mode="count" count="20"/>
+    <Entrants><Entrant id="wolves" pawnKind="Wolf_Timber"/><Entrant id="bears" pawnKind="Bear_Grizzly" count="8"/></Entrants>
+    <Battle timeSpeed="normal" durationSeconds="180" timeoutRealSeconds="360" confirmationTicks="120"/>
+    <TieBreak maxReplays="0"/>
+    <Output width="1920" height="1080"/>
+  </Tournament>
+  <Tournament id="duel" name="相机验证：少人数决胜" seed="24680">
+    <testDefName>Arena_Camera_Duel</testDefName>
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all"><Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/></Scene>
+    <Roster mode="count" count="2"/>
+    <Entrants><Entrant id="wolves" pawnKind="Wolf_Timber"/><Entrant id="bears" pawnKind="Bear_Grizzly"/></Entrants>
+    <Battle timeSpeed="normal" durationSeconds="120" timeoutRealSeconds="240" confirmationTicks="120"/>
+    <TieBreak maxReplays="0"/>
+    <Output width="1920" height="1080"/>
+  </Tournament>
+</ArenaSuite>

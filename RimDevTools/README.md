@@ -28,8 +28,8 @@ powershell -ExecutionPolicy Bypass -File .tools\publish-rimdevtools.ps1 -CreateZ
 模板包目录内容（Tools 包仅含正式工具、两套完整 skill、发行清单与人工配置参考，不含模板及 `.gitignore`）：
 
 ```text
-artifacts/RimDevTools-1.5.4.0-Template-RimWorld-1.6/
-artifacts/RimDevTools-1.5.4.0-Template-RimWorld-1.7/
+artifacts/RimDevTools-1.5.5.0-Template-RimWorld-1.6/
+artifacts/RimDevTools-1.5.5.0-Template-RimWorld-1.7/
 ├── mod_config.jsonc
 ├── 1.6/ or 1.7/
 ├── About/
@@ -73,7 +73,7 @@ RimDevTools.exe mods install-tools [--mods-path <path>] [--dry-run] [--verbose]
 
 1.7 独立擂台入口：`test run --mode arena --scenario-path <ArenaSuite XML 文件或目录> --test-name <testDefName>`，支持固定数量、统一 combatPower 预算和单败淘汰赛。现有群战也可用 `PawnGroup.combatPowerBudget` 按战力配兵。详见[擂台测试使用说明](../策划案/RimDevTools擂台测试使用说明.md)。
 
-擂台容忍伤害采集异常：保留异常记录，伤害交换项取中性分，按实际胜负继续晋级。擂台结束、报错、取消或超时均不主动关闭游戏；返回 JSON 标明 `gameStillRunning` 和 `transactionRetained`。游戏仍运行时保留配置事务，手动退出游戏后执行 `test cleanup` 或在下一次测试启动时恢复。
+擂台容忍伤害采集异常：保留异常记录，伤害交换项取中性分，按实际胜负继续晋级。完整赛程正常完成并展示荣誉榜后自动关闭游戏；报错、取消、未决平局或超时保留游戏。返回 JSON 标明 `gameStillRunning` 和 `transactionRetained`。游戏仍运行时保留配置事务，手动退出游戏后执行 `test cleanup` 或在下一次测试启动时恢复。
 
 项目命令从当前目录或直接父目录发现 `mod_config.jsonc`。最终结果是 stdout 上的单个 JSON 对象，进度与诊断写入 stderr。默认结果只包含摘要和关键字段；`--verbose` 展开检查项、计划、候选元数据和可用的详细结果，并显示构建、Unity、ILSpy 子进程输出。警告和错误始终保留；普通模式会显示子进程识别出的 warning/error 行，失败时最多附带 12 行、每行最多 500 个字符的末尾诊断。游戏自身 stdout/stderr 仍保持丢弃。`--version` 必须作为唯一参数使用，并只返回 RimDevTools 自身版本。
 
@@ -136,7 +136,7 @@ dotnet build RimDevTools.Tests\RimDevTools.Tests.csproj
 dotnet RimDevTools.Tests\bin\Debug\net10.0\RimDevTools.Tests.dll
 
 dotnet build RimDevTools.ReleaseTests\RimDevTools.ReleaseTests.csproj
-dotnet RimDevTools.ReleaseTests\bin\Debug\net10.0\RimDevTools.ReleaseTests.dll artifacts\RimDevTools-1.5.4.0-Template-RimWorld-1.7
+dotnet RimDevTools.ReleaseTests\bin\Debug\net10.0\RimDevTools.ReleaseTests.dll artifacts\RimDevTools-1.5.5.0-Template-RimWorld-1.7
 ```
 
 单元测试使用临时游戏目录。发布测试验证模板逐文件一致、三种 MCP 配置、两套 RimSage skill、单工具 Mod 清单、ILSpy 和干净日志/参考目录。

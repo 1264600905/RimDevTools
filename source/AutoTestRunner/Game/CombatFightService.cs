@@ -88,15 +88,16 @@ namespace LogSyncMod.AutoTest
         internal static Map Map => arena?.Map;
         internal static GroupCombatLedger Ledger => Measuring ? ledger : null;
         internal static IReadOnlyDictionary<string, Pawn> Pawns => pawns;
-        internal static IEnumerable<Pawn> CameraPawns => pawns.Where(p => p.Value.Spawned && p.Value.Map == Map && !p.Value.Dead && !p.Value.Downed && ledger?.IsCameraTarget(p.Key) == true).Select(p => p.Value);
+        internal static IEnumerable<Pawn> CameraPawns => pawns.Where(p => p.Value.Spawned && p.Value.Map == Map && !p.Value.Dead && !p.Value.Downed && (IsArena || ledger?.IsCameraTarget(p.Key) == true)).Select(p => p.Value);
         internal static GroupCombatRoundResult Display => current;
         internal static bool IsCombatParticipant(Pawn pawn) => Measuring && pawn?.Spawned == true && pawn.Map == Map && RosterId(pawn) != null;
         internal static void TraceAi(string stage, string details) => Trace(stage, details);
         internal static string Phase => phase;
         internal static bool OverlayEnabled => overlayEnabled;
-        internal static bool ShowingIntro => phase is "prepared" or "countdown" or "roster";
+        internal static bool ShowingIntro => phase is "prepared" or "portraits" or "countdown" or "roster";
+        internal static float? CameraIntroElapsed => IsArena && phase == "portraits" ? Time.realtimeSinceStartup - introStartedRealtime : null;
         internal static bool ShowingSettlement => phase == "finishing" && current?.ExecutionStatus == "completed";
-        internal static string CountdownLabel => IsArena
+        internal static string CountdownLabel => phase == "portraits" ? "" : IsArena
             ? ShowingIntro || Measuring && Time.realtimeSinceStartup - battleStartedRealtime < .8f
                 ? ArenaPresentation.CountdownLabel(phase == "prepared" ? 0 : Time.realtimeSinceStartup - introStartedRealtime, arenaIntroSeconds) : ""
             : ShowingIntro ? GroupCombatPresentation.CountdownLabel(phase == "prepared" ? 0 : Time.realtimeSinceStartup - introStartedRealtime) : "";
@@ -180,9 +181,14 @@ namespace LogSyncMod.AutoTest
                 }
                 if (phase == "prepared" && CaptureFinished())
                 {
-                    phase = "countdown"; introStartedRealtime = now; lastCountdownLabel = null;
-                    if (IsArena) CombatStartupProbe.CountdownStarted(arenaIntroSeconds, arenaAdvanceStartSeconds);
+                    phase = IsArena ? "portraits" : "countdown"; introStartedRealtime = now; lastCountdownLabel = null;
                     Trace("group.intro_facing", "total=" + introFacing.Count + "; correct=" + introFacing.Count(p => p.Key.Rotation == p.Value));
+                }
+                if (phase == "portraits" && now - introStartedRealtime >= ArenaCameraDirector.IntroductionSeconds)
+                {
+                    phase = "countdown"; introStartedRealtime = now;
+                    CombatStartupProbe.CountdownStarted(arenaIntroSeconds, arenaAdvanceStartSeconds);
+                    Trace("camera.introduction", "leftSeconds=2; rightSeconds=2; transition=none; elapsedTicks=" + current.ElapsedTicks + "; events=" + current.TotalEvents);
                 }
                 if (phase == "countdown" || IsArena && phase == "roster")
                 {
@@ -393,6 +399,7 @@ namespace LogSyncMod.AutoTest
             sample.ArenaMaintenance = current.ArenaMaintenance;
             sample.ScreenshotWidth = current.ScreenshotWidth; sample.ScreenshotHeight = current.ScreenshotHeight;
             sample.Diagnostics.AddRange(current.Diagnostics); sample.Screenshots = current.Screenshots; sample.ExecutionStatus = current.ExecutionStatus;
+            sample.CameraScreenshots = current.CameraScreenshots;
             sample.MeasurementLimits.Add("Main metric is native DamageResult.totalDamageDealt for Pawn damage, not raw weapon damage or capped absolute health loss.");
             sample.MeasurementLimits.Add("Direct Hediff edits, bleeding and damage bypassing Thing.TakeDamage are not attributed; no last-attacker inference. Native CompShield fully absorbed input is a separate shield channel, never main DPS. Other shield implementations have unknown absorbed quantity. Armor/item and building channels remain separate.");
             sample.MeasurementQuality = sample.Diagnostics.Any(d => d.StartsWith("damage.") && !d.StartsWith("damage.forwarded_result")) ? "incomplete" : "partial";
@@ -418,6 +425,17 @@ namespace LogSyncMod.AutoTest
             pendingCapture = Path.Combine(directory, roundIndex.ToString("D4") + "_" + label + ".png");
             captureRequested = false; preparedFrame = Time.frameCount; phaseStartedRealtime = Time.realtimeSinceStartup;
             if (label == "initial") CombatStartupProbe.CaptureRequested();
+        }
+
+        internal static string CaptureArenaCamera()
+        {
+            if (!IsArena || !(Measuring || CameraIntroElapsed.HasValue)) throw new InvalidOperationException("Camera capture requires an arena introduction or running fight");
+            var directory = Path.Combine(outputPath, "arena_" + activeRunId + "_Screenshots");
+            Directory.CreateDirectory(directory);
+            var path = Path.Combine(directory, roundIndex.ToString("D4") + "_camera_" + (current.CameraScreenshots.Count + 1).ToString("D3") + "_" + GroupCombatCamera.ShotLabel + ".png");
+            Find.CameraDriver.StartCoroutine(GroupCombatScreenshot.Capture(path, current.ScreenshotWidth, current.ScreenshotHeight));
+            current.CameraScreenshots.Add(path);
+            return path;
         }
         private static bool CaptureFinished()
         {
@@ -446,6 +464,8 @@ namespace LogSyncMod.AutoTest
             // Both modes use the existing roster/countdown presentation before
             // combat. Tournament trees are shown only after settlement.
             GroupCombatOverlay.Draw();
+            GroupCombatCamera.DrawArenaControls();
+            GroupCombatCamera.HandleArenaInput();
             if (Event.current.type == EventType.Repaint) CombatStartupProbe.Repaint(CountdownLabel);
             if (ShowingIntro && OverlayEnabled && !GroupCombatOverlay.PortraitsReady) return;
             if (Event.current.type != EventType.Repaint || captureRequested || pendingCapture == null || Time.frameCount - preparedFrame < 3 || Time.realtimeSinceStartup - phaseStartedRealtime < 1 || !Screen.fullScreen || !AutoTestScreenshotService.PrepareCaptureFrame()) return;

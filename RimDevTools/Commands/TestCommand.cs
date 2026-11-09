@@ -346,7 +346,7 @@ public static class TestCommand
         ConfigTransaction? transaction = null;
         GameProcessSession? gameSession = null;
         WorkshopAssetVerificationScope? assetScope = null;
-        TestOutcome outcome;
+        TestOutcome outcome = TestOutcome.Failure(ExitCodes.GameFailed, "TEST_FAILED", "测试尚未完成");
         var gameExited = true;
         int? gameProcessId = null;
         var resultSnapshot = AutoResultValidator.Snapshot(outputPath);
@@ -395,8 +395,13 @@ public static class TestCommand
             {
                 if (mode == "arena")
                 {
-                    // Never close a spectator's game, including on errors, timeouts or cancellation.
+                    // Successful schedules exit natively after flushing their artifacts.
+                    // Failure paths leave the game available for inspection; never force-kill it.
+                    if (outcome.Ok && !gameSession.Process.HasExited)
+                        await Task.WhenAny(gameSession.Process.WaitForExitAsync(), Task.Delay(TimeSpan.FromSeconds(10)));
                     gameExited = gameSession.Process.HasExited;
+                    if (outcome.Ok && !gameExited)
+                        outcome = TestOutcome.Failure(ExitCodes.Timeout, "ARENA_EXIT_TIMEOUT", "擂台已完成，但游戏未按时正常退出，已保留游戏与配置事务");
                 }
                 else
                 {

@@ -8,7 +8,10 @@ internal static class TestSessionExitTests
             check(gate.Request(kind, "run", true, kind, "run", 100, 4) && !gate.ShouldExit(true, kind, "run", 1099, 5) && gate.ShouldExit(true, kind, "run", 1100, 5) && !gate.ShouldExit(true, kind, "run", 1200, 6), "CLI " + kind + " completion exits once after a later main-thread heartbeat and artifact flush grace");
         }
         var regular = new LogSyncMod.TestSessionExitPolicy();
-        check(!regular.Request("arena", "run", true, "arena", "run", 0, 0) && !regular.Pending, "arena completion or failure never arms automatic game exit");
+        foreach (var status in new[] { "error", "cancelled", "timeout", "unresolvedDraw", null })
+            check(!regular.Request("arena", "run", true, "arena", "run", 0, 0, status) && !regular.Pending, "arena " + status + " does not arm automatic game exit");
+        var arena = new LogSyncMod.TestSessionExitPolicy();
+        check(arena.Request("arena", "run", true, "arena", "run", 100, 4, "completed") && !arena.ShouldExit(true, "arena", "run", 1099, 5) && arena.ShouldExit(true, "arena", "run", 1100, 5), "a fully completed arena exits after artifact flush and a later heartbeat");
         check(!regular.Request("manual", "run", false, "manual", "run", 0, 0) && !regular.Pending, "ordinary in-game manual tests never arm game exit");
         check(!regular.Request("auto", "foreign", true, "auto", "run", 0, 0) && !regular.Request("quick", "run", true, "manual", "run", 0, 0), "stale run and wrong-mode completion cannot close a CLI session");
         var pending = new LogSyncMod.TestSessionExitPolicy(); pending.Request("auto", "run", true, "auto", "run", 0, 8);

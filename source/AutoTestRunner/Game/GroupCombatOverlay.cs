@@ -75,8 +75,8 @@ namespace LogSyncMod.AutoTest
             try
             {
                 var width = UI.screenWidth; var height = UI.screenHeight;
-                var panelWidth = GroupCombatPresentation.PanelWidth(width);
-                var panelHeight = GroupCombatPresentation.PanelHeight(height);
+                var panelWidth = GroupCombatCamera.PanelWidth(width);
+                var panelHeight = GroupCombatCamera.CompactPanels ? Mathf.Min(286, height - GroupCombatPresentation.PanelTop - 170) : GroupCombatPresentation.PanelHeight(height);
                 Widgets.DrawWindowBackground(new Rect(8, 34, width - 16, 70));
                 DrawText(new Rect(150, 36, width - 300, 38), snapshot.Name, width >= 1280 ? 24 : 18, TextAnchor.MiddleCenter);
                 DrawText(new Rect(150, 73, width - 300, 24), data.TimeLabel + (CombatFightService.Measuring && Find.TickManager.Paused ? "已暂停" : Label(CombatFightService.Phase)), 16, TextAnchor.MiddleCenter);
@@ -87,7 +87,7 @@ namespace LogSyncMod.AutoTest
                     var x = i == 0 ? 8 : width - panelWidth - 8;
                     DrawTeam(new Rect(x, GroupCombatPresentation.PanelTop, panelWidth, panelHeight), data.Teams[i], i);
                 }
-                if (CombatFightService.ShowingIntro) DrawIntro(width, height, panelWidth);
+                if (CombatFightService.ShowingIntro && !CombatFightService.CameraIntroElapsed.HasValue) DrawIntro(width, height, panelWidth);
                 else if (CombatFightService.IsArena && CombatFightService.Measuring && CombatFightService.CountdownLabel.Length > 0) DrawCountdown(width, height);
                 if (CombatFightService.ShowingSettlement) DrawSettlement(width, height, panelWidth);
                 if (verifyInput && Event.current.type == EventType.Repaint)
@@ -139,6 +139,7 @@ namespace LogSyncMod.AutoTest
         }
         private static void DrawTeam(Rect rect, GroupCombatOverlayData.Team panel, int index)
         {
+            if (GroupCombatCamera.CompactPanels) { DrawCompactTeam(rect, panel, index); return; }
             var team = panel.Result;
             Widgets.DrawBoxSolid(rect, new Color(.055f, .075f, .09f, .62f));
             var previousColor = GUI.color; GUI.color = new Color(.65f, .72f, .8f, .5f); Widgets.DrawBox(rect); GUI.color = previousColor;
@@ -182,6 +183,38 @@ namespace LogSyncMod.AutoTest
                 DrawText(new Rect(0, footer + 40 * scale, width, 20 * scale), panel.Outcome, 11 * scale);
             }
             finally { GUI.EndGroup(); }
+        }
+
+        private static void DrawCompactTeam(Rect rect, GroupCombatOverlayData.Team panel, int index)
+        {
+            Widgets.DrawBoxSolid(rect, new Color(.055f, .075f, .09f, .78f));
+            Widgets.DrawBoxSolid(new Rect(rect.x, rect.y, rect.width, 3), TeamColor(index));
+            GUI.BeginGroup(new Rect(rect.x + 8, rect.y + 8, rect.width - 16, rect.height - 16));
+            var previous = GUI.color;
+            try
+            {
+                var width = rect.width - 16;
+                GUI.color = TeamColor(index); DrawText(new Rect(0, 0, width, 22), TeamLabel(index) + " · " + panel.Result.Name, 14); GUI.color = previous;
+                DrawText(new Rect(0, 27, width, 20), "存活 " + panel.Result.Alive + "/" + panel.Result.Total + " · 倒地 " + panel.Result.Downed, 12);
+                DrawText(new Rect(0, 49, width, 20), "输出 " + panel.Result.EnemyDamage.ToString("F0") + " · 承伤 " + panel.Result.DamageTaken.ToString("F0"), 12);
+                DrawText(new Rect(0, 79, width, 20), "输出前三", 12);
+                var rows = panel.Output.Take(3).ToArray();
+                for (var i = 0; i < rows.Length; i++)
+                {
+                    var row = rows[i]; var y = 105 + i * 35;
+                    DrawPortrait(new Rect(0, y, 26, 26), row.Unit);
+                    DrawHealthName(new Rect(30, y, width - 30, 17), row.Unit.Name, 11, row.Unit, Mathf.Min(38, width * .25f));
+                    DrawText(new Rect(30, y + 16, width - 30, 17), row.CompactValue, 11);
+                }
+                var focus = snapshot.Units.FirstOrDefault(u => u.Team == panel.Result.Id && (u.Id == GroupCombatCamera.FocusId || u.Id == GroupCombatCamera.OpponentId));
+                if (focus != null)
+                {
+                    var y = rect.height - 57;
+                    DrawText(new Rect(0, y, width, 18), focus.Id == GroupCombatCamera.FocusId ? "镜头关注" : "交战对手", 11);
+                    DrawHealthName(new Rect(0, y + 19, width, 18), focus.Name, 12, focus);
+                }
+            }
+            finally { GUI.color = previous; GUI.EndGroup(); }
         }
         private static void Ranking(float x, float width, float y, float rowHeight, float uiScale, string label, GroupCombatOverlayData.Rank[] rows, Color color, double maximum)
         {

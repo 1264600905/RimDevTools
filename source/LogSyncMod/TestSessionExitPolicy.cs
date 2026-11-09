@@ -12,9 +12,10 @@ namespace LogSyncMod
         private long requestedAt;
         private long heartbeatAtRequest;
         private bool consumed;
-        public bool Request(string kind, string runId, bool sessionActive, string sessionKind, string sessionRunId, long now, long heartbeatSequence)
+        public bool Request(string kind, string runId, bool sessionActive, string sessionKind, string sessionRunId, long now, long heartbeatSequence, string completionStatus = null)
         {
-            if (!sessionActive || string.IsNullOrWhiteSpace(runId) || runId != sessionRunId || kind != sessionKind || kind != "quick" && kind != "auto" && kind != "groupcombat" && kind != "manual") return false;
+            if (!sessionActive || string.IsNullOrWhiteSpace(runId) || runId != sessionRunId || kind != sessionKind || kind != "quick" && kind != "auto" && kind != "groupcombat" && kind != "manual" && kind != "arena") return false;
+            if (kind == "arena" && completionStatus != "completed") return false;
             if (Pending) return RunId == runId && Kind == kind;
             RunId = runId; Kind = kind; requestedAt = now; heartbeatAtRequest = heartbeatSequence; Pending = true; consumed = false; return true;
         }

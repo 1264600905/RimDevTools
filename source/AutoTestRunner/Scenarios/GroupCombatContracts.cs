@@ -166,6 +166,7 @@ namespace LogSyncMod.AutoTest.Scenarios
         public int ScreenshotWidth { get; set; }
         public int ScreenshotHeight { get; set; }
         public List<string> Screenshots { get; set; } = new List<string>();
+        public List<string> CameraScreenshots { get; set; } = new List<string>();
     }
 
     public sealed class CombatStartupTiming

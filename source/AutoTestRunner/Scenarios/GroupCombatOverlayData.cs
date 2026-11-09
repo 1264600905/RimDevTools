@@ -105,6 +105,6 @@ namespace LogSyncMod.AutoTest.Scenarios
             return !other.HasValue || value == other.Value ? text : "<color=#" + (value > other.Value ? "66FF73FF" : "FF5252FF") + ">" + text + "</color>";
         }
 
-        internal static string Label(string state) => state switch { "standing" => "存活", "downed" => "倒地", "dead" => "死亡", "escaped" => "离场", "removed" => "移除", "win" => "胜利", "loss" => "落败", "draw" => "平局", "undetermined" => "进行中", "prepared" or "preparing" => "准备", "countdown" or "roster" => "即将开战", "running" => "战斗", "finishing" => "结算", _ => state };
+        internal static string Label(string state) => state switch { "standing" => "存活", "downed" => "倒地", "dead" => "死亡", "escaped" => "离场", "removed" => "移除", "win" => "胜利", "loss" => "落败", "draw" => "平局", "undetermined" => "进行中", "prepared" or "preparing" => "准备", "portraits" => "选手登场", "countdown" or "roster" => "即将开战", "running" => "战斗", "finishing" => "结算", _ => state };
     }
 }

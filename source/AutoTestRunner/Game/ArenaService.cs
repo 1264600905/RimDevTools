@@ -273,13 +273,15 @@ namespace LogSyncMod.AutoTest
             report.Status = status; report.Error = error; report.CompletedAtUtc = DateTime.UtcNow.ToString("O");
             foreach (var item in report.Tournaments.Where(t => t.Status != "completed"))
             { item.Status = item == tournament ? status : "notRun"; item.Error = item == tournament ? error : "Stopped before this tournament"; }
-            try { Write(); }
+            var persisted = false;
+            try { Write(); persisted = true; }
             finally
             {
                 logGuard?.Dispose(); logGuard = null;
                 global::LogSyncMod.TestAudioController.Restore("arena_completed");
                 Log.Message("[LogSyncArena] COMPLETED runId=" + report.RunId + " status=" + report.Status);
-                // Arena is a spectator session. Completion or failure must leave the game open.
+                // Only a fully completed schedule exits. Errors, cancellation and draws stay open.
+                if (persisted && report.Status == "completed") global::LogSyncMod.TestSessionCompletion.Complete("arena", report.RunId, report.Status);
             }
         }
         private static void Write()
