@@ -79,9 +79,12 @@ internal sealed class ToolUpdatePlan
         long total = 0;
         foreach (var entry in zip.Entries)
         {
-            if (entry.FullName.EndsWith('/') && allowed.Any(f => f.StartsWith(entry.FullName, StringComparison.Ordinal))) continue;
-            if (!allowed.Contains(entry.FullName) || entry.Length > 512L * 1024 * 1024 || (total += entry.Length) > 1024L * 1024 * 1024)
+            if (entry.FullName.EndsWith('/') && (allowed.Any(f => f.StartsWith(entry.FullName, StringComparison.Ordinal))
+                || ToolPackageManifest.IsBundledSkillPath(entry.FullName + "SKILL.md"))) continue;
+            var bundledSkill = ToolPackageManifest.IsBundledSkillPath(entry.FullName);
+            if ((!allowed.Contains(entry.FullName) && !bundledSkill) || entry.Length > 512L * 1024 * 1024 || (total += entry.Length) > 1024L * 1024 * 1024)
                 throw new InvalidDataException($"工具包含不允许的内容或大小: {entry.FullName}");
+            if (bundledSkill) continue;
             var path = Path.GetFullPath(entry.FullName, destination);
             PathSafety.EnsureNoReparsePoints(destination, path);
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);

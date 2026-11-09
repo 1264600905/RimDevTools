@@ -25,7 +25,7 @@ description: 操作项目本地的 RimDevTools CLI，处理 RimWorld 模组配�
 
 ## 旧项目模式
 
-在现有 `mod_config.jsonc` 中设置 `existing_project_mode: true`，继续使用原来的 `csproj_paths`、`sync_items` 和 `game_version`。缺失或 `false` 沿用模板模式。旧项目模式只放宽模板名称、程序集名和日志关键词等专属门禁；必要元数据、构建、路径安全及测试依赖仍按对应命令校验。无需首次接入命令，不会自动识别工程、生成配置或修改 `.gitignore`。简化包 `Tools-Full.zip` 包含正式工具、Codex 与 Claude 的全部模板 skill 及配置参考；接入已有项目时保留配置并检查同名 skill 的本地修改。`Tools.zip` 是供已有更新器使用的兼容载荷，自动更新只管理核心 `rimdevtools` skill，其他 skill 保留原样。
+在现有 `mod_config.jsonc` 中设置 `existing_project_mode: true`，继续使用原来的 `csproj_paths`、`sync_items` 和 `game_version`。缺失或 `false` 沿用模板模式。旧项目模式只放宽模板名称、程序集名和日志关键词等专属门禁；必要元数据、构建、路径安全及测试依赖仍按对应命令校验。无需首次接入命令，不会自动识别工程、生成配置或修改 `.gitignore`。简化包 `Tools.zip` 包含正式工具、Codex 与 Claude 的全部模板 skill 及配置参考；接入已有项目时保留配置并检查同名 skill 的本地修改。发布页只提供 1.6 模板、1.7 模板与 Tools 三个 ZIP，更新器使用 GitHub 附件 SHA-256 摘要校验。自动更新只管理核心 `rimdevtools` skill，其他 skill 保留原样。1.5.2 及更早版本的更新器不支持完整 Tools 包，需手动安装一次。
 
 ## 测试产物与归档
 

@@ -104,7 +104,26 @@ internal static partial class ToolUpdateTests
             var business = await Capture(() => CliApplication.RunAsync(["workshop", "upload"]));
             Assert(stopwatch.Elapsed < TimeSpan.FromSeconds(3) && business.ExitCode == ExitCodes.InvalidArguments && business.Output.Contains("WORKSHOP_LEGACY_ENTRY_DISABLED"), "startup timeout stays within the two-second budget and preserves business failure");
 
-            foreach (var extra in new[] { "../escape", ".tools/Ilspy/../../outside", ".tools/ProjectData/fake", ".tools/Data/project-template.manifest.json", ".agents/skills/other/SKILL.md" })
+            var fullZip = Path.Combine(root, "full-tools.zip");
+            File.Copy(zip, fullZip);
+            using (var archive = ZipFile.Open(fullZip, ZipArchiveMode.Update))
+            foreach (var client in new[] { ".agents", ".claude" })
+            foreach (var name in new[] { "about-write-description", "rimsage", "rimworld-development-engineer", "rimworld-plan-engineer", "rimworld-xml-test", "test-result-validation" })
+            {
+                archive.CreateEntry($"{client}/skills/{name}/");
+                using var writer = new StreamWriter(archive.CreateEntry($"{client}/skills/{name}/SKILL.md").Open());
+                writer.Write("bundled optional skill");
+            }
+            var localSkill = Path.Combine(original.Root, ".agents/skills/rimworld-xml-test/SKILL.md");
+            Directory.CreateDirectory(Path.GetDirectoryName(localSkill)!);
+            File.WriteAllText(localSkill, "user edited XML skill");
+            var fullPlan = Prepare(original, fullZip, Release(fullZip));
+            Assert(fullPlan.Changes.All(change => !ToolPackageManifest.IsBundledSkillPath(change.Path))
+                && !Directory.Exists(fullPlan.Staged(".agents/skills/rimworld-xml-test"))
+                && File.ReadAllText(localSkill) == "user edited XML skill", "full Tools ZIP accepts every bundled skill without staging or replacing local optional skills");
+
+            foreach (var extra in new[] { "../escape", ".tools/Ilspy/../../outside", ".tools/ProjectData/fake", ".tools/Data/project-template.manifest.json", ".agents/skills/other/SKILL.md",
+                ".agents/skills/rimsage/../outside", ".claude/skills/rimworld-xml-test/NUL.txt", ".agents/skills/rimsage-extra/SKILL.md" })
             {
                 var malicious = Path.Combine(root, Guid.NewGuid().ToString("N") + ".zip");
                 File.Copy(zip, malicious);
@@ -283,7 +302,9 @@ internal static partial class ToolUpdateTests
     {
         var manifest = ToolPackageManifest.Load(root);
         using var archive = ZipFile.Open(zip, ZipArchiveMode.Create);
-        foreach (var path in manifest.Files.Select(f => f.Path).Append(ToolPackageManifest.RelativePath).Append("mod_config.jsonc")) archive.CreateEntryFromFile(Path.Combine(root, path), path);
+        var bundled = Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
+            .Select(path => Path.GetRelativePath(root, path).Replace('\\', '/')).Where(ToolPackageManifest.IsBundledSkillPath);
+        foreach (var path in manifest.Files.Select(f => f.Path).Append(ToolPackageManifest.RelativePath).Append("mod_config.jsonc").Concat(bundled)) archive.CreateEntryFromFile(Path.Combine(root, path), path);
         return zip;
     }
 

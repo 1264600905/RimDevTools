@@ -8,13 +8,17 @@ internal static partial class ToolUpdateTests
     {
         _passed = 0;
         var repository = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../.."));
-        var package = Path.Combine(repository, "artifacts", "RimDevTools-" + CurrentVersion + "-Tools-Full");
+        var package = Path.Combine(repository, "artifacts", "RimDevTools-" + CurrentVersion + "-Tools");
         if (!File.Exists(Path.Combine(package, ToolPackageManifest.RelativePath))) throw new InvalidOperationException("请先运行默认三包发布，再执行 --tool-update-live");
+        var extracted = Path.Combine(temporary, "published-tools-stage");
+        ToolUpdatePlan.Extract(package + ".zip", extracted);
+        ToolPackageManifest.Load(extracted).VerifyFiles(extracted);
+        Assert(!Directory.Exists(Path.Combine(extracted, ".agents/skills/rimworld-xml-test")), "published full Tools ZIP stages only managed files for updates");
         var future = Path.Combine(temporary, "future-publish");
         var build = await RunProcess("dotnet", repository, "publish", Path.Combine(repository, "RimDevTools", "RimDevTools.csproj"), "-c", "Release", "-r", "win-x64", "--self-contained", "false", "-p:PublishSingleFile=true", "-p:Version=" + FutureVersion, "-o", future);
         Assert(build.ExitCode == 0, "future-version single-file EXE publishes for real update verification: " + (build.ExitCode == 0 ? "passed" : build.Output));
         var targetRoot = Path.Combine(temporary, "future-package");
-        CopyPackage(package, targetRoot, managedOnly: true);
+        CopyPackage(package, targetRoot);
         File.Copy(Path.Combine(future, "RimDevTools.exe"), Path.Combine(targetRoot, ".tools", "RimDevTools.exe"), true);
         File.AppendAllText(Path.Combine(targetRoot, ".agents/skills/rimdevtools/SKILL.md"), "\nFuture release skill.\n");
         File.WriteAllText(Path.Combine(targetRoot, ".agents/skills/rimdevtools/new-managed.md"), "new managed file");
@@ -63,7 +67,7 @@ internal static partial class ToolUpdateTests
             Assert(final.Status == "succeeded", "independent helper updates and verifies the real Windows EXE: " + (final.Error ?? mode));
             Assert(await ToolUpdateTransaction.ReadVersionAsync(installation.Executable, installation.Root) == FutureVersion, "updated EXE actually runs at the target assembly version");
             Assert(bundledSkills.Count > 0 && bundledSkills.All(file => File.Exists(Path.Combine(installation.Root, file.Key))
-                && ToolPackageManifest.Hash(Path.Combine(installation.Root, file.Key)) == file.Value), "compatibility update preserves all other skills shipped in Tools-Full");
+                && ToolPackageManifest.Hash(Path.Combine(installation.Root, file.Key)) == file.Value), "update preserves all other skills shipped in Tools");
             Assert(File.ReadAllText(ignored) == "user ignored content" && File.ReadAllText(note) == "user added note"
                 && projectFiles.All(path => File.ReadAllText(Path.Combine(installation.Root, path)) == "user project content: " + path)
                 && File.ReadAllText(Path.Combine(installation.Root, ".tools/Data/project-template.manifest.json")) == "original template identity", "update preserves project code, resources, Workshop identity, other skills, user files and original template metadata");
@@ -137,14 +141,12 @@ internal static partial class ToolUpdateTests
         return new(root);
     }
 
-    private static void CopyPackage(string source, string destination, bool managedOnly = false)
+    private static void CopyPackage(string source, string destination)
     {
         Directory.CreateDirectory(destination);
         foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
         {
             var relative = Path.GetRelativePath(source, file);
-            var portable = relative.Replace('\\', '/');
-            if (managedOnly && !ToolPackageManifest.IsManagedPath(portable) && portable != ToolPackageManifest.RelativePath && portable != "mod_config.jsonc") continue;
             var target = Path.Combine(destination, relative);
             Directory.CreateDirectory(Path.GetDirectoryName(target)!);
             File.Copy(file, target);

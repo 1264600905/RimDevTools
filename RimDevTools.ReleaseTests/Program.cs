@@ -20,7 +20,7 @@ if (File.Exists(release + ".zip"))
 {
     using var archive = ZipFile.OpenRead(release + ".zip");
     Assert(archive.Entries.All(entry => !entry.FullName.Contains('\\')),
-        "published ZIP uses forward slash paths accepted by existing updaters");
+        "published ZIP uses portable forward slash paths");
     Assert(archive.Entries.Select(entry => entry.FullName).Distinct(StringComparer.OrdinalIgnoreCase).Count() == archive.Entries.Count,
         "published ZIP contains no Windows path collisions");
     var archiveFiles = archive.Entries.Where(entry => !entry.FullName.EndsWith('/')).ToArray();
@@ -34,9 +34,6 @@ if (File.Exists(release + ".zip"))
         return entry.Length == new FileInfo(source).Length
             && Convert.ToHexString(SHA256.HashData(stream)).Equals(ToolPackageManifest.Hash(source), StringComparison.OrdinalIgnoreCase);
     }), "published ZIP payload matches every validated package file");
-    var checksum = File.ReadAllText(release + ".zip.sha256").Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
-    Assert(checksum.Length == 2 && checksum[1] == Path.GetFileName(release) + ".zip"
-        && checksum[0].Equals(ToolPackageManifest.Hash(release + ".zip"), StringComparison.OrdinalIgnoreCase), "published ZIP matches its SHA-256 attachment");
 }
 var package = ToolPackageManifest.Load(release);
 package.VerifyFiles(release);
@@ -51,7 +48,6 @@ foreach (var name in new[] { "LogSyncMod.dll", "AutoTestRunner.dll" })
 if (!File.Exists(Path.Combine(data, "project-template.manifest.json")))
 {
     var expected = package.Files.Select(file => file.Path).Append(ToolPackageManifest.RelativePath).Append("mod_config.jsonc").ToHashSet(StringComparer.OrdinalIgnoreCase);
-    var updateFiles = expected.ToHashSet(StringComparer.OrdinalIgnoreCase);
     foreach (var client in new[] { ".agents", ".claude" })
     {
         var sourceSkills = Path.Combine(Environment.CurrentDirectory, "components", "ProjectTemplate", "1.6", client, "skills");
@@ -66,23 +62,6 @@ if (!File.Exists(Path.Combine(data, "project-template.manifest.json")))
     }
     var actual = Directory.EnumerateFiles(release, "*", SearchOption.AllDirectories).Select(path => Path.GetRelativePath(release, path).Replace('\\', '/')).ToHashSet(StringComparer.OrdinalIgnoreCase);
     Assert(actual.SetEquals(expected), "Tools package contains managed payload, all template skills, manifest and config reference");
-    var compatibilityArchive = Path.Combine(Path.GetDirectoryName(release)!, $"RimDevTools-{releaseToolVersion}-Tools.zip");
-    using (var archive = ZipFile.OpenRead(compatibilityArchive))
-    {
-        Assert(archive.Entries.All(entry => !entry.FullName.Contains('\\'))
-            && archive.Entries.Select(entry => entry.FullName).Distinct(StringComparer.OrdinalIgnoreCase).Count() == archive.Entries.Count,
-            "compatibility ZIP uses portable unique paths");
-        Assert(updateFiles.SetEquals(archive.Entries.Select(entry => entry.FullName)), "compatibility ZIP contains exactly the payload accepted by 1.5.1 updaters");
-        Assert(archive.Entries.All(entry =>
-        {
-            using var stream = entry.Open();
-            return entry.Length == new FileInfo(Path.Combine(release, entry.FullName)).Length
-                && Convert.ToHexString(SHA256.HashData(stream)).Equals(ToolPackageManifest.Hash(Path.Combine(release, entry.FullName)), StringComparison.OrdinalIgnoreCase);
-        }), "compatibility ZIP bytes match the full distribution baseline");
-        var checksum = File.ReadAllText(compatibilityArchive + ".sha256").Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
-        Assert(checksum.Length == 2 && checksum[1] == Path.GetFileName(compatibilityArchive)
-            && checksum[0].Equals(ToolPackageManifest.Hash(compatibilityArchive), StringComparison.OrdinalIgnoreCase), "compatibility ZIP matches its SHA-256 attachment");
-    }
     foreach (var forbidden in new[] { ".gitignore", "source", "About", "Defs", "Languages", "README.md", ".mcp.json", ".tools/ProjectData", ".tools/log" })
         Assert(!File.Exists(Path.Combine(release, forbidden)) && !Directory.Exists(Path.Combine(release, forbidden)), $"Tools excludes {forbidden}");
     var reference = ProjectConfig.Load(Path.Combine(release, "mod_config.jsonc"));

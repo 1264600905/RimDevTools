@@ -71,8 +71,7 @@ public sealed class ToolPackageManifest
 
     public static bool IsManagedPath(string? path)
     {
-        if (string.IsNullOrWhiteSpace(path) || path.Contains('\\') || path.Contains(':') || Path.IsPathRooted(path)) return false;
-        if (path.Split('/').Any(part => part is "" or "." or ".." || part.EndsWith('.') || part.EndsWith(' ') || part.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 || IsDeviceName(part))) return false;
+        if (!IsSafeRelativePath(path)) return false;
         return path == ".tools/RimDevTools.exe" || path == ".tools/Data/tool-mods.manifest.json"
             || path.StartsWith(".tools/Data/LogSyncMod/", StringComparison.Ordinal)
             || path.StartsWith(".tools/Data/licenses/", StringComparison.Ordinal)
@@ -81,6 +80,22 @@ public sealed class ToolPackageManifest
             || path.StartsWith(".agents/skills/rimdevtools/", StringComparison.Ordinal)
             || path.StartsWith(".claude/skills/rimdevtools/", StringComparison.Ordinal);
     }
+
+    // Full downloads also ship these optional skills. They are not update-owned:
+    // an automatic tool update must preserve the project's copies and local edits.
+    internal static bool IsBundledSkillPath(string? path)
+    {
+        if (!IsSafeRelativePath(path)) return false;
+        var parts = path!.Split('/');
+        return parts.Length >= 4 && parts[0] is ".agents" or ".claude" && parts[1] == "skills"
+            && parts[2] is "about-write-description" or "rimsage" or "rimworld-development-engineer"
+                or "rimworld-plan-engineer" or "rimworld-xml-test" or "test-result-validation";
+    }
+
+    private static bool IsSafeRelativePath([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] string? path)
+        => !string.IsNullOrWhiteSpace(path) && !path.Contains('\\') && !path.Contains(':') && !Path.IsPathRooted(path)
+            && !path.Split('/').Any(part => part is "" or "." or ".." || part.EndsWith('.') || part.EndsWith(' ')
+                || part.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 || IsDeviceName(part));
 
     private static bool IsDeviceName(string part)
     {
