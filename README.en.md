@@ -4,7 +4,7 @@
 
 RimDevTools is a Windows toolchain for RimWorld mod development. It provides repeatable CLI operations for environment checks, builds, deployment, dependency discovery, log collection, game testing and Workshop publishing. The bundled templates and tool Mod contain files for RimWorld **1.6 and 1.7**. The CLI also recognizes the 1.7+ modern layout; the release manifest defines which game versions its components and updates actually support.
 
-The source version is **1.5.0.0**, including existing-project mode, a Tools Package, automatic tool updates, external XML scenario tests and a custom XML testing skill in the templates. The [public v1.2.2.0 release](https://github.com/1264600905/RimDevTools/releases/tag/v1.2.2.0), checked on 2026-11-06, still offers two template packages. The three 1.5.0.0 packages are local builds and have not been uploaded. To use the new features now, build the packages from source as described below.
+The current version is **1.5.1.0**, with [RimWorld 1.6 and 1.7 templates and a Tools Package](https://github.com/1264600905/RimDevTools/releases/tag/v1.5.1.0). It includes existing-project mode, automatic updates, external XML scenario tests, configurable arena matchmaking and cleanup, health bars, noon resets and rotating mixed-squad previews. The Codex and Claude skills in both templates document these features. The custom scenario backend currently supports RimWorld 1.7 only.
 
 ## Repository components
 
@@ -207,9 +207,9 @@ powershell -ExecutionPolicy Bypass -File .tools\publish-rimdevtools.ps1 -CreateZ
 Output:
 
 ```text
-artifacts/RimDevTools-1.5.0.0-Template-RimWorld-1.6/
-artifacts/RimDevTools-1.5.0.0-Template-RimWorld-1.7/
-artifacts/RimDevTools-1.5.0.0-Tools/
+artifacts/RimDevTools-1.5.1.0-Template-RimWorld-1.6/
+artifacts/RimDevTools-1.5.1.0-Template-RimWorld-1.7/
+artifacts/RimDevTools-1.5.1.0-Tools/
 ```
 
 Each directory has a corresponding `.zip` and `.zip.sha256`. Verify all three release layouts, then run the Windows update integration tests:
@@ -217,11 +217,11 @@ Each directory has a corresponding `.zip` and `.zip.sha256`. Verify all three re
 ```powershell
 dotnet build RimDevTools.ReleaseTests\RimDevTools.ReleaseTests.csproj
 dotnet RimDevTools.ReleaseTests\bin\Debug\net10.0\RimDevTools.ReleaseTests.dll `
-  artifacts\RimDevTools-1.5.0.0-Template-RimWorld-1.6
+  artifacts\RimDevTools-1.5.1.0-Template-RimWorld-1.6
 dotnet RimDevTools.ReleaseTests\bin\Debug\net10.0\RimDevTools.ReleaseTests.dll `
-  artifacts\RimDevTools-1.5.0.0-Template-RimWorld-1.7
+  artifacts\RimDevTools-1.5.1.0-Template-RimWorld-1.7
 dotnet RimDevTools.ReleaseTests\bin\Debug\net10.0\RimDevTools.ReleaseTests.dll `
-  artifacts\RimDevTools-1.5.0.0-Tools
+  artifacts\RimDevTools-1.5.1.0-Tools
 dotnet RimDevTools.Tests\bin\Debug\net10.0\RimDevTools.Tests.dll --tool-update
 dotnet RimDevTools.Tests\bin\Debug\net10.0\RimDevTools.Tests.dll --tool-update-live
 ```

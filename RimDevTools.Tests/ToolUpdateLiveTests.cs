@@ -11,7 +11,7 @@ internal static partial class ToolUpdateTests
         var package = Path.Combine(repository, "artifacts", "RimDevTools-" + CurrentVersion + "-Tools");
         if (!File.Exists(Path.Combine(package, ToolPackageManifest.RelativePath))) throw new InvalidOperationException("请先运行默认三包发布，再执行 --tool-update-live");
         var future = Path.Combine(temporary, "future-publish");
-        var build = await RunProcess("dotnet", repository, "publish", Path.Combine(repository, "RimDevTools", "RimDevTools.csproj"), "-c", "Release", "-r", "win-x64", "--self-contained", "false", "-p:PublishSingleFile=true", "-p:Version=1.3.1", "-o", future);
+        var build = await RunProcess("dotnet", repository, "publish", Path.Combine(repository, "RimDevTools", "RimDevTools.csproj"), "-c", "Release", "-r", "win-x64", "--self-contained", "false", "-p:PublishSingleFile=true", "-p:Version=" + FutureVersion, "-o", future);
         Assert(build.ExitCode == 0, "future-version single-file EXE publishes for real update verification: " + (build.ExitCode == 0 ? "passed" : build.Output));
         var targetRoot = Path.Combine(temporary, "future-package");
         CopyPackage(package, targetRoot);

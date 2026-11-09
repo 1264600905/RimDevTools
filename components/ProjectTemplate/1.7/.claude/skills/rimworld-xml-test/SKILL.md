@@ -25,7 +25,7 @@ description: 编写、调整和运行 RimDevTools 外部 XML 自动测试，包�
 | 矩阵、精确选择、补充/替代普通回归 | [selection-and-coverage.md](references/selection-and-coverage.md)、[远程矩阵](assets/ranged-matrix.autotest.xml) |
 | 三视图、整套配装、暂存角色输入 | [views-and-staging.md](references/views-and-staging.md)、[配装视图](assets/loadout-view.autotest.xml) |
 | 双方群战、整场继承、换边与伤害统计 | [groupcombat.md](references/groupcombat.md)、[群战实验](assets/groupcombat.autotest.xml) |
-| 擂台淘汰赛、独立预算、百分制评分与参赛者展示 | [arena.md](references/arena.md)、[擂台实验](assets/arena.autotest.xml) |
+| 擂台淘汰赛、匹配与清理配置、正午重设、生命条及混编轮播 | [arena.md](references/arena.md)、[擂台实验](assets/arena.autotest.xml) |
 | 战力配兵、派系/自定义混编、异种与扩展生成器 | [squads-and-rosters.md](references/squads-and-rosters.md)、[混编群战](assets/groupcombat-squads.autotest.xml) |
 
 这些参考按当前加载器、运行后端与测试夹具整理；宿主源码可用时，以 `ScenarioLoader`、`GroupCombatLoader`、`ArenaLoader`、`SquadTemplates`、`CombatFightService` 及地图生成实现为准。不要把历史策划案或旧夹具名称当作当前行为：最新实现默认 `assaultColony`，`battle/seekAndAttack/native` 均兼容到同一原生即时进攻控制器，已撤回早先自定义攻击 Job 调度。模板使用原版定义演示结构，Def、DLC、原生约束和实际画面仍需在宿主核对。

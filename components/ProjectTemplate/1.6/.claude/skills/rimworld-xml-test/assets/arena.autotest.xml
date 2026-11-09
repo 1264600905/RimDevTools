@@ -13,6 +13,10 @@
       <Entrant id="cougars" pawnKind="Cougar" name="美洲狮"/>
       <Entrant id="grizzlies" pawnKind="Bear_Grizzly" name="灰熊"/>
     </Entrants>
+    <!-- 人数接近为 closestCount；随机配对改为 random，使用 Tournament.seed 复现 -->
+    <Matchmaking mode="closestCount"/>
+    <!-- 两开关独立且默认 false；按测试目标开启，地面预放物资也会被清理 -->
+    <Cleanup corpses="false" droppedItems="false"/>
     <Battle durationSeconds="180" timeoutRealSeconds="300" timeSpeed="fast" confirmationTicks="300"/>
     <Scoring survivalWeight="45" suppressionWeight="25" exchangeWeight="20" speedWeight="10" timeReferenceSeconds="180"/>
     <TieBreak onDraw="replay" maxReplays="2"/>

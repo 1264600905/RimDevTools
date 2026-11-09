@@ -9,8 +9,8 @@ using RimDevTools;
 internal static partial class ToolUpdateTests
 {
     private static readonly string CurrentVersion = typeof(CliApplication).Assembly.GetName().Version!.ToString();
-    private static readonly string FutureVersion = new Version(1, 3, 1, 0).ToString();
-    private const string DownloadUrl = "https://github.com/1264600905/RimDevTools/releases/download/test/RimDevTools-1.3.1.0-Tools.zip";
+    private static readonly string FutureVersion = new Version(Version.Parse(CurrentVersion).Major, Version.Parse(CurrentVersion).Minor, Version.Parse(CurrentVersion).Build + 1, 0).ToString();
+    private static readonly string DownloadUrl = "https://github.com/1264600905/RimDevTools/releases/download/test/RimDevTools-" + FutureVersion + "-Tools.zip";
     private static int _passed;
 
     internal static async Task<int> RunAsync(string temporary)
