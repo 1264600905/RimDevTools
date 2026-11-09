@@ -76,9 +76,11 @@ squad PawnGroup 必须且只能给 count/combatPowerBudget 之一，禁止 templ
 
 ## 冻结、复现与扩展生成器
 
-群战在执行前解析预算与混编名单，同 Case 同种子的换边轮复用同一名单和冻结配装；新种子可产生新名单。擂台在开战前解析所有参赛队，混编成员及其原生配装在后续比赛/重赛中复用，战斗状态每场新建。普通 pawnKind 队没有完整混编成员快照，不应把种子变化后的原生随机配装解释为固定名单复用。
+群战在执行前解析预算与混编名单，同 Case 同种子的换边轮复用同一名单和冻结配装；新种子可产生新名单。擂台在每届规则页首次绘制后准备本届参赛队，混编成员及其原生配装在后续比赛/重赛中复用，战斗状态每场新建。普通 pawnKind 队没有完整混编成员快照，不应把种子变化后的原生随机配装解释为固定名单复用。
 
 核对 ResolvedRosters 的 SquadId、FactionDef、CostMode、GroupMakerIndex/Fingerprint、Members（PawnKind/Xenotype/BaseCombatPower/XenotypeFactor/Cost/Seed/PawnTemplateXml）及真实初始单位快照；仅有代表 PawnKind 不证明整队组成。换边结果还应核对实际生成坐标和装备。配置静态编译成功不证明该兵种池在游戏中可生成。
+
+极限挑战的人数增长循环重复冻结基准成员，保留兵种、异种和原生配装，旧档快照不变；CP 预算增长每档重新配兵，魔王保持基准阵容，换魔王时挑战者恢复初值。固定 Composition 不能用于 CP 增长，改用人数增长或加权混编。加法/乘法、上限与证据核对见 [arena.md](arena.md)。
 
 已有扩展注册时才能用：
 

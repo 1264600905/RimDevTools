@@ -1,0 +1,141 @@
+<ArenaSuite schemaVersion="1" id="arena.bossChallenges" gameVersion="1.7">
+  <SquadTemplates>
+    <SquadTemplate id="mercenaries" source="custom" factionDef="Pirate">
+      <Composition mode="fixed">
+        <Member pawnKind="Mercenary_Gunner" count="1"/>
+        <Member pawnKind="Mercenary_Heavy" count="1"/>
+      </Composition>
+    </SquadTemplate>
+  </SquadTemplates>
+  <Tournament id="roundRobin" name="魔王轮战：双魔王与双对手" format="bossRoundRobin" seed="12345">
+    <testDefName>Arena_BossRoundRobin</testDefName>
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all">
+      <Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/>
+    </Scene>
+    <Roster mode="count" count="1"/>
+    <Entrants>
+      <Entrant id="boss-wolf" pawnKind="Wolf_Timber" role="boss" name="狼魔王"/>
+      <Entrant id="boss-rat" pawnKind="Rat" role="boss" name="鼠魔王"/>
+      <Entrant id="rat" pawnKind="Rat" role="challenger" name="鼠挑战者"/>
+      <Entrant id="wolves" pawnKind="Wolf_Timber" count="2" role="challenger" name="双狼挑战者"/>
+    </Entrants>
+    <Battle timeSpeed="superfast" durationSeconds="90" timeoutRealSeconds="180" confirmationTicks="60"/>
+    <TieBreak maxReplays="1"/>
+    <Presentation><Showcase pageSeconds="3"/></Presentation>
+    <Output width="1280" height="720"/>
+  </Tournament>
+  <Tournament id="count" name="极限挑战：人数增长与跨魔王重置" format="limitChallenge" seed="12345">
+    <testDefName>Arena_LimitCount</testDefName>
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all">
+      <Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/>
+    </Scene>
+    <Roster mode="count" count="1"/>
+    <Entrants>
+      <Entrant id="wolf" pawnKind="Wolf_Timber" role="boss" name="狼魔王"/>
+      <Entrant id="rat-boss" pawnKind="Rat" role="boss" name="鼠魔王"/>
+      <Entrant id="rats" pawnKind="Rat" role="challenger" name="鼠群"/>
+    </Entrants>
+    <Growth multiplier="4" maxValue="16"/>
+    <Battle timeSpeed="superfast" durationSeconds="90" timeoutRealSeconds="180" confirmationTicks="60"/>
+    <TieBreak maxReplays="1"/>
+    <Presentation><Showcase pageSeconds="3"/></Presentation>
+    <Output width="1920" height="1080"/>
+  </Tournament>
+  <Tournament id="cp" name="极限挑战：CP预算增长" format="limitChallenge" seed="12345">
+    <testDefName>Arena_LimitCP</testDefName>
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all">
+      <Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/>
+    </Scene>
+    <Roster mode="combatPower" budget="100"/>
+    <Entrants>
+      <Entrant id="wolf" pawnKind="Wolf_Timber" budget="300" role="boss" name="300CP狼魔王"/>
+      <Entrant id="rats" pawnKind="Rat" role="challenger" name="CP鼠群"/>
+    </Entrants>
+    <Growth target="budget" multiplier="2" maxValue="400"/>
+    <Battle timeSpeed="superfast" durationSeconds="90" timeoutRealSeconds="180" confirmationTicks="60"/>
+    <TieBreak maxReplays="1"/>
+    <Presentation><Showcase pageSeconds="3"/></Presentation>
+    <Output width="1280" height="720"/>
+  </Tournament>
+  <Tournament id="fixed" name="极限挑战：固定混编人数增长" format="limitChallenge" seed="12345">
+    <testDefName>Arena_LimitFixedSquad</testDefName>
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all">
+      <Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/>
+    </Scene>
+    <Roster mode="count" count="2"/>
+    <Entrants>
+      <Entrant id="wolves" pawnKind="Wolf_Timber" count="20" role="boss" name="狼群魔王"/>
+      <Entrant id="mercenaries" squad="mercenaries" role="challenger" name="佣兵混编"/>
+    </Entrants>
+    <Growth multiplier="2" maxValue="8"/>
+    <Battle timeSpeed="superfast" durationSeconds="90" timeoutRealSeconds="180" confirmationTicks="60"/>
+    <TieBreak maxReplays="1"/>
+    <Presentation><Showcase pageSeconds="3"/></Presentation>
+    <Output width="1280" height="720"/>
+  </Tournament>
+<Tournament id="add-count" name="极限挑战：援军逐次增员" format="limitChallenge" seed="12345">
+    <testDefName>Arena_LimitAddCount</testDefName>
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all">
+      <Environment weather="Clear" temperature="21" roof="none" naturalSun="true" />
+    </Scene>
+    <Roster mode="count" count="2" />
+    <Entrants>
+      <Entrant id="wolves" pawnKind="Wolf_Timber" count="20" role="boss" name="狼群魔王" />
+      <Entrant id="mercenaries" squad="mercenaries" role="challenger" name="佣兵混编" />
+    </Entrants>
+    <Growth target="count" mode="add" increment="2" maxValue="8" />
+    <Battle timeSpeed="superfast" durationSeconds="90" timeoutRealSeconds="180" confirmationTicks="60" />
+    <TieBreak maxReplays="1" />
+    <Presentation>
+      <Showcase pageSeconds="3" />
+    </Presentation>
+    <Output width="1920" height="1080" />
+  </Tournament>
+
+<Tournament id="add-cp" name="极限挑战：预算逐次增加" format="limitChallenge" seed="12345">
+    <testDefName>Arena_LimitAddCP</testDefName>
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all">
+      <Environment weather="Clear" temperature="21" roof="none" naturalSun="true" />
+    </Scene>
+    <Roster mode="combatPower" budget="100" />
+    <Entrants>
+      <Entrant id="wolf" pawnKind="Wolf_Timber" budget="300" role="boss" name="300CP狼魔王" />
+      <Entrant id="rats" pawnKind="Rat" role="challenger" name="CP鼠群" />
+    </Entrants>
+    <Growth target="budget" mode="add" increment="150" maxValue="400" />
+    <Battle timeSpeed="superfast" durationSeconds="90" timeoutRealSeconds="180" confirmationTicks="60" />
+    <TieBreak maxReplays="1" />
+    <Presentation>
+      <Showcase pageSeconds="3" />
+    </Presentation>
+    <Output width="1280" height="720" />
+  </Tournament>
+
+<Tournament id="boss-gallery" name="魔王轮战：十位魔王战绩巡礼" format="bossRoundRobin" seed="12345">
+    <testDefName>Arena_BossGallery</testDefName>
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all">
+      <Environment weather="Clear" temperature="21" roof="none" naturalSun="true" />
+    </Scene>
+    <Roster mode="count" count="1" />
+    <Entrants>
+      <Entrant id="boss-1" pawnKind="Rat" role="boss" name="第1位魔王" />
+      <Entrant id="boss-2" pawnKind="Rat" role="boss" name="第2位魔王" />
+      <Entrant id="boss-3" pawnKind="Rat" role="boss" name="第3位魔王" />
+      <Entrant id="boss-4" pawnKind="Rat" role="boss" name="来自遥远边境的第四位鼠群魔王" />
+      <Entrant id="boss-5" pawnKind="Rat" role="boss" name="第5位魔王" />
+      <Entrant id="boss-6" pawnKind="Rat" role="boss" name="第6位魔王" />
+      <Entrant id="boss-7" pawnKind="Rat" role="boss" name="第7位魔王" />
+      <Entrant id="boss-8" pawnKind="Rat" role="boss" name="第8位魔王" />
+      <Entrant id="boss-9" pawnKind="Rat" role="boss" name="第9位魔王" />
+      <Entrant id="boss-10" pawnKind="Rat" role="boss" name="第10位魔王" />
+      <Entrant id="wolves" pawnKind="Wolf_Timber" count="2" role="challenger" name="双狼远征队" />
+    </Entrants>
+    <Battle timeSpeed="superfast" durationSeconds="90" timeoutRealSeconds="180" confirmationTicks="60" />
+    <TieBreak maxReplays="1" />
+    <Presentation>
+      <Showcase pageSeconds="3" />
+    </Presentation>
+    <Output width="1280" height="720" />
+  </Tournament>
+
+</ArenaSuite>

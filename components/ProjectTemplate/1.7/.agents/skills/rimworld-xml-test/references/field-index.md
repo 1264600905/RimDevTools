@@ -197,13 +197,14 @@ Scene 及其 Environment/Layout/Validation 复用上表地图语法，SquadTempl
 | 节点 / 路径 | 允许属性 | 允许子节点 |
 | --- | --- | --- |
 | `ArenaSuite` | `schemaVersion`、`id`、`gameVersion` | `Tournament`、`SquadTemplates` |
-| `Tournament` | `id`、`name`、`seed` | `testDefName`、`Scene`、`Roster`、`Entrants`、`Battle`、`Matchmaking`、`Cleanup`、`Scoring`、`TieBreak`、`Presentation`、`Output` |
+| `Tournament` | `id`、`name`、`seed`、`format` | `testDefName`、`Scene`、`Roster`、`Entrants`、`Battle`、`Matchmaking`、`Growth`、`Cleanup`、`Scoring`、`TieBreak`、`Presentation`、`Output` |
 | `testDefName` | — | — |
 | `Roster` | `mode`、`budget`、`count`、`costMode` | — |
 | `Entrants` | — | `Entrant` |
-| `Entrants/Entrant` | `id`、`pawnKind`、`squad`、`name`、`count`、`budget`、`xenotype` | — |
+| `Entrants/Entrant` | `id`、`pawnKind`、`squad`、`name`、`count`、`budget`、`xenotype`、`role` | — |
 | `Battle` | `durationSeconds`、`timeoutRealSeconds`、`timeSpeed`、`confirmationTicks` | — |
 | `Matchmaking` | `mode` | — |
+| `Growth` | `target`、`mode`、`multiplier`、`increment`、`maxValue` | — |
 | `Cleanup` | `corpses`、`droppedItems` | — |
 | `Scoring` | `survivalWeight`、`suppressionWeight`、`exchangeWeight`、`speedWeight`、`timeReferenceSeconds` | — |
 | `TieBreak` | `onDraw`、`maxReplays` | — |
@@ -268,10 +269,12 @@ source=faction 必须 GroupMaker；source=custom 必须 Composition；source=gen
 | 群战 Metrics 可调项 | detailLimit=10000，范围 0—1000000；requireCompleteAttribution=false；裁明细不裁累计；要求完整归因不等于后端天然具备完整归因 |
 | 群战 Overlay | enabled=true 可调；其余固定为 layout=teamsLeftRight、topUnitsPerMetric=10、topTypesPerTeam=5、humanPortrait=renderedPawn、refreshRealMilliseconds=250；Rankings.damageDealt/damageTaken 仅 true；Summary.dps 仅 livingUnitLifetimeMean，damageTaken 仅 totalAndMeanPerLivingUnit |
 | 群战 Experiments / Output | swapSides=false，无 Seed 时用 Case.seed；最多 128 个显式种子/1024 轮；purpose 仅 benchmark，showAllParticipants 仅 true；width/height 须成对且范围为 800—3840/600—2160 |
+| 擂台 format / role | format 默认 knockout，另可 bossRoundRobin/limitChallenge；新赛制每队 role 必填 boss/challenger，至少各一队，允许重复 PawnKind；淘汰赛禁止 role/Growth，直接 PawnKind 不可重复 |
+| 擂台 Growth | 仅 limitChallenge 且必填；target 默认 count（配 Roster.mode=count），或 budget（配 combatPower）；mode 默认 multiply，仅 multiplier>1；add 仅正 increment（人数为整数）；两参数互斥。maxValue 必填、不低于挑战者初始值，人数为 1—200 整数，CP ≤10000000；人数乘法逐档向上取整，CP 可小数。平局不增长，换魔王重置；固定混编禁止预算增长，详见 [擂台参考](arena.md) |
 | 擂台 Roster / Entrants | mode=count/combatPower，人数默认 20，CP 模式 budget 必填；costMode=pawnKind 或 native；Entrant 仅可按同模式覆写 count/budget，squad 与 pawnKind 二选一 |
 | 擂台 Battle / Scoring / TieBreak | Battle 默认 180 秒/300 实时秒/fast/300 确认 ticks；评分默认 45/25/20/10，权重总和 100，时间参考 180 秒；onDraw 仅 replay，maxReplays=2（0—10） |
-| 擂台 Matchmaking / Cleanup | mode 默认 closestCount，仅 closestCount/random；corpses、droppedItems 独立，均默认 false，只接受小写 true/false；两节点均在 Tournament 下。清理每 300 ticks 分批执行；正午重设、主地图 Pawn 清理、生命条和每秒轮播为自动行为，无额外 XML 字段，详见 [擂台参考](arena.md) |
-| 擂台 Presentation / Showcase | bracketSeconds=3、settlementSeconds=3（1—60）；advanceStartSeconds=3（0—60）；pageSeconds=5，Page.seconds 继承它（1—60）；caption 默认空且最多 80 个单行字符；每页 1—5 个唯一 ref |
+| 擂台 Matchmaking / Cleanup | Matchmaking 仅 knockout，可省略，mode 默认 closestCount，仅 closestCount/random；corpses、droppedItems 独立，均默认 false，只接受小写 true/false；两节点均在 Tournament 下。清理每 300 ticks 分批执行；正午重设、主地图 Pawn 清理、生命条和每秒轮播为自动行为，无额外 XML 字段，详见 [擂台参考](arena.md) |
+| 擂台 Presentation / Showcase | bracketSeconds=3、settlementSeconds=3（1—60）；advanceStartSeconds=3（0—60）；pageSeconds=5，Page.seconds 继承它（1—60）；caption 默认空且最多 80 个单行字符；每页 1—5 个唯一 ref；新赛制按 boss/challenger 拆页。三赛制规则页首绘后准备，至少现实 5 秒且包含准备耗时；新赛制赛后页 5.5 秒、最终每页最多 8 项/至少 10 秒；固定行为，无新增 XML 时长属性 |
 | 混编 GroupMaker / RaidRules | mode 必填 random/specific，kindDef 仅 Combat，referencePoints=5000（0,10000000]；specific.index 必填非负，fingerprint 可选小写 SHA256；strategyDef 默认 ImmediateAttack，若写 RaidRules 块则须显式给该属性 |
 | 混编 Composition / Xenotypes | Composition.mode 必填 weighted/fixed，allocator 仅 native；weight>0，fixed 总人数 ≤200；Xenotypes 省略等于 inherit，出现时 mode 必填 inherit/fixed/weighted；预算上限 10000000 |
 | 动作绑定 | 参数全部显式传 Arg；min/max 省略表示不加声明界限，仍须符合原生标量范围；ExpectHediff.count=1，为精确匹配数量；Result/ExpectHediff.equals 按声明类型解析，不统一按整数处理。Argument/Arg.value 按声明标量类型校验，可使用布尔、字符串和具名枚举；枚举成员及原生签名仍需游戏验证，详见动作绑定参考 |

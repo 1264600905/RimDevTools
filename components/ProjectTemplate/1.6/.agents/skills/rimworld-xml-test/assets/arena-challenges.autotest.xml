@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ArenaSuite schemaVersion="1" id="example.arena.challenges" gameVersion="1.7">
+  <!-- 新赛制禁止 Matchmaking；每队 role 必填。规则页/角色分页/最终成绩自动生成。 -->
+  <!-- 人数增长优先；CP 为配兵预算，不改变角色属性。以下均使用原版 PawnKind。 -->
+  <Tournament id="round-robin" name="魔王轮战：逐一迎战" format="bossRoundRobin" seed="12345">
+    <testDefName>Example_BossRoundRobin</testDefName>
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all">
+      <Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/>
+    </Scene>
+    <Roster mode="count" count="2"/>
+    <Entrants>
+      <Entrant id="wolf-boss" pawnKind="Wolf_Timber" role="boss" count="4" name="群狼魔王"/>
+      <Entrant id="rat-boss" pawnKind="Rat" role="boss" name="鼠群魔王"/>
+      <Entrant id="rats" pawnKind="Rat" role="challenger" name="鼠群远征队"/>
+      <Entrant id="wolves" pawnKind="Wolf_Timber" role="challenger" name="双狼挑战者"/>
+    </Entrants>
+    <Battle durationSeconds="90" timeoutRealSeconds="180" timeSpeed="superfast" confirmationTicks="60"/>
+    <TieBreak onDraw="replay" maxReplays="1"/>
+    <Presentation><Showcase pageSeconds="5"/></Presentation>
+    <Output width="1920" height="1080"/>
+  </Tournament>
+  <Tournament id="count-multiply" name="极限挑战：人数倍增" format="limitChallenge" seed="12345">
+    <testDefName>Example_LimitCountMultiply</testDefName>
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all">
+      <Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/>
+    </Scene>
+    <Roster mode="count" count="2"/>
+    <Entrants>
+      <Entrant id="wolf-boss" pawnKind="Wolf_Timber" role="boss" count="4" name="群狼魔王"/>
+      <Entrant id="rats" pawnKind="Rat" role="challenger" name="鼠群远征队"/>
+    </Entrants>
+    <Growth target="count" mode="multiply" multiplier="1.5" maxValue="16"/>
+    <Battle durationSeconds="90" timeoutRealSeconds="180" timeSpeed="superfast" confirmationTicks="60"/>
+    <TieBreak onDraw="replay" maxReplays="1"/>
+    <Presentation><Showcase pageSeconds="5"/></Presentation>
+    <Output width="1920" height="1080"/>
+  </Tournament>
+  <Tournament id="count-add" name="极限挑战：援军接力" format="limitChallenge" seed="12345">
+    <testDefName>Example_LimitCountAdd</testDefName>
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all">
+      <Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/>
+    </Scene>
+    <Roster mode="count" count="2"/>
+    <Entrants>
+      <Entrant id="wolf-boss" pawnKind="Wolf_Timber" role="boss" count="4" name="群狼魔王"/>
+      <Entrant id="rats" pawnKind="Rat" role="challenger" name="鼠群远征队"/>
+    </Entrants>
+    <Growth target="count" mode="add" increment="2" maxValue="8"/>
+    <Battle durationSeconds="90" timeoutRealSeconds="180" timeSpeed="superfast" confirmationTicks="60"/>
+    <TieBreak onDraw="replay" maxReplays="1"/>
+    <Presentation><Showcase pageSeconds="5"/></Presentation>
+    <Output width="1920" height="1080"/>
+  </Tournament>
+  <Tournament id="budget-multiply" name="极限挑战：预算倍增" format="limitChallenge" seed="12345">
+    <testDefName>Example_LimitBudgetMultiply</testDefName>
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all">
+      <Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/>
+    </Scene>
+    <Roster mode="combatPower" budget="100" costMode="pawnKind"/>
+    <Entrants>
+      <Entrant id="wolf-boss" pawnKind="Wolf_Timber" role="boss" budget="300" name="300 CP 狼群魔王"/>
+      <Entrant id="rats" pawnKind="Rat" role="challenger" name="鼠群远征队"/>
+    </Entrants>
+    <Growth target="budget" mode="multiply" multiplier="2" maxValue="400"/>
+    <Battle durationSeconds="90" timeoutRealSeconds="180" timeSpeed="superfast" confirmationTicks="60"/>
+    <TieBreak onDraw="replay" maxReplays="1"/>
+    <Presentation><Showcase pageSeconds="5"/></Presentation>
+    <Output width="1920" height="1080"/>
+  </Tournament>
+  <Tournament id="budget-add" name="极限挑战：预算递增" format="limitChallenge" seed="12345">
+    <testDefName>Example_LimitBudgetAdd</testDefName>
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all">
+      <Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/>
+    </Scene>
+    <Roster mode="combatPower" budget="100" costMode="pawnKind"/>
+    <Entrants>
+      <Entrant id="wolf-boss" pawnKind="Wolf_Timber" role="boss" budget="300" name="300 CP 狼群魔王"/>
+      <Entrant id="rats" pawnKind="Rat" role="challenger" name="鼠群远征队"/>
+    </Entrants>
+    <Growth target="budget" mode="add" increment="150" maxValue="400"/>
+    <Battle durationSeconds="90" timeoutRealSeconds="180" timeSpeed="superfast" confirmationTicks="60"/>
+    <TieBreak onDraw="replay" maxReplays="1"/>
+    <Presentation><Showcase pageSeconds="5"/></Presentation>
+    <Output width="1920" height="1080"/>
+  </Tournament>
+</ArenaSuite>

@@ -15,8 +15,23 @@ namespace LogSyncMod.AutoTest.Scenarios
                 s.AppendLine($"原主地图清理：地图 {background.MapId}，移除 {background.RemovedPawns} 个 Pawn（殖民者 {background.RemovedColonists}），剩余 {background.RemainingPawns}。\n");
             foreach (var t in report.Tournaments)
             {
-                s.AppendLine("## " + t.Input.Name).AppendLine().AppendLine("冠军：" + (t.Champion ?? "尚未决出")).AppendLine();
-                s.AppendLine($"配对：{t.Input.MatchmakingMode}；清理尸体：{t.Input.ClearCorpses}；清理掉落物：{t.Input.ClearDroppedItems}。\n");
+                s.AppendLine("## " + t.Input.Name).AppendLine();
+                if (t.Input.Format == "knockout") s.AppendLine("冠军：" + (t.Champion ?? "尚未决出")).AppendLine();
+                s.AppendLine($"赛制：{t.Input.Format}；清理尸体：{t.Input.ClearCorpses}；清理掉落物：{t.Input.ClearDroppedItems}。\n");
+                if (t.Input.Format != "knockout")
+                {
+                    s.AppendLine("|魔王|胜场|败场|未决|平均胜利评分|").AppendLine("|---|---:|---:|---:|---:|");
+                    foreach (var row in ArenaChallengeRules.Standings(t))
+                        s.AppendLine($"|{row.EntrantId}|{row.Wins}|{row.Losses}|{row.Unresolved}|{row.AverageVictoryScore?.ToString("F2") ?? "—"}|");
+                    s.AppendLine().AppendLine("平均胜利评分只统计魔王胜局，零胜场为空；平局重赛不增加评分样本。").AppendLine();
+                    s.AppendLine("|挑战者|魔王|初始值|终态|首次获胜值|限制原因|档数|战斗次数|").AppendLine("|---|---|---:|---|---:|---|---:|---:|");
+                    foreach (var pair in t.Challenges)
+                        s.AppendLine($"|{pair.Challenger}|{pair.Boss}|{pair.InitialValue}|{pair.Status}|{pair.WinningValue}|{pair.LimitReason}|{pair.Matches.Count}|{t.Matches.Where(m => m.PairId == pair.Id).Sum(m => m.Attempts.Count)}|");
+                    s.AppendLine().AppendLine("|对局|组|档位|挑战值|本场魔王人数|本场挑战人数|挑战者实际CP|").AppendLine("|---|---|---:|---:|---:|---:|---:|");
+                    foreach (var m in t.Matches.Where(m => m.ResolvedRosters.Count == 2))
+                        s.AppendLine($"|{m.Id}|{m.PairId}|{m.Level + 1}|{m.ChallengeValue}|{m.ResolvedRosters[0].ResolvedCount}|{m.ResolvedRosters[1].ResolvedCount}|{m.ResolvedRosters[1].ActualCombatPower}|");
+                    s.AppendLine();
+                }
                 if (t.TopFive != null)
                 {
                     s.AppendLine("|名次|参赛者|胜场|最近胜利评分|").AppendLine("|---:|---|---:|---:|");

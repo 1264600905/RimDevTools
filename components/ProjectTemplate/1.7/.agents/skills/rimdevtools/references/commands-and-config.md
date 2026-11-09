@@ -77,7 +77,7 @@ test run [--deploy] [--sync-source] [--mode quick|manual|auto|groupcombat|arena]
 
 quick 是启动冒烟测试。manual 是用户手动的。auto 验证结构化的 AutoTest 结果并默认截图。隔离优先级为显式标志、项目设置，然后是模式默认值。
 
-外部 XML 场景仅支持 game_version=1.7 的 auto/groupcombat/arena。auto 用 TestSuite，可加 `--scenario-only` 仅运行外部回归；groupcombat 用 TestSuite 中的 kind=groupCombat，arena 用独立 ArenaSuite，两者必须同时给 `--scenario-path` 和显式 `--test-name`，禁止 `--scenario-only`。擂台按稳定 testDefName 选择完整 Tournament；CLI 超时涵盖整场赛程，省略时工具估算默认预算。群战/擂台使用独立结果文件和验证器，胜负、测量质量与执行状态分开判断，不并入普通回归通过率。XML 语法、AI、地图、混编配兵及评分见 [rimworld-xml-test](../../rimworld-xml-test/SKILL.md)。
+外部 XML 场景仅支持 game_version=1.7 的 auto/groupcombat/arena。auto 用 TestSuite，可加 `--scenario-only` 仅运行外部回归；groupcombat 用 TestSuite 中的 kind=groupCombat，arena 用独立 ArenaSuite，两者必须同时给 `--scenario-path` 和显式 `--test-name`，禁止 `--scenario-only`。擂台按稳定 testDefName 选择完整 Tournament；format 默认为 knockout，另支持 bossRoundRobin 与 limitChallenge。新赛制要求 boss/challenger 角色，极限挑战按人数（优先）或 CP 预算做加法/乘法增长。CLI 超时涵盖全部配对、增长档位、重赛和展示，省略时工具估算默认预算。三赛制先显示至少现实 5 秒的规则页，准备耗时计入其中；新赛制巡礼按角色分页，成绩核对 Challenges/Summary，而非冠军。新赛制平局重赛耗尽只结束当前组，完整赛程仍可正常结束；运行错误或现实超时不能记作战败。群战/擂台使用独立结果文件和验证器，胜负、测量质量与执行状态分开判断，不并入普通回归通过率。XML 语法、AI、地图、混编配兵及评分见 [rimworld-xml-test](../../rimworld-xml-test/SKILL.md)。
 
 外部 XML 运行会先复用实际执行加载器做静态预校验，失败在部署、游戏配置修改和启动前终止，并在 `error.details.validation.diagnostics` 中给出错误、可用的文件/行号/节点和修改建议。可在相同的 mode/scenario-path/test-name 命令上加 `--validate-only` 独立校验：成功返回 `result.validation`（含选中规则与数量、warning 和 `runtimeChecks`），不创建运行产物。只校验需要项目 config_version=2、game_version=1.7，不要求游戏、Steam、ModsConfig 或测试宿主；不接受 deploy、timeout、batch-size 等执行参数。编译器按首条错误停止，修正后重试。静态通过不代表 Def、反射签名、定制 AI、地图/部队生成或战斗断言已通过游戏验证。
 

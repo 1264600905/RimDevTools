@@ -7,6 +7,7 @@ internal static class ArenaResultTests
 {
     internal static void Run(Action<bool, string> check)
     {
+        ArenaChallengeResultTests.Run(check);
         foreach (int n in new[] { 2, 5, 6, 7, 8, 64 })
         {
             var report = Build(n);

@@ -141,7 +141,7 @@ namespace LogSyncMod.AutoTest
                         }
                     }
                 }
-                if (specs.Count < 1 || specs.Count > CombatRoster.MaxTeamMembers) throw new ScenarioConfigurationException("Squad must contain 1..200 members; allocation is never silently clamped");
+                if (specs.Count < 1) throw new ScenarioConfigurationException("Squad must contain at least one member");
                 foreach (var spec in specs)
                 {
                     var kind = Kind(spec.PawnKind);
@@ -159,6 +159,12 @@ namespace LogSyncMod.AutoTest
                 }
                 if (budget.HasValue ? roster.ActualCombatPower > budget : specs.Count != count) throw new ScenarioConfigurationException("Squad does not satisfy its CP/count budget; fixed lists are not truncated or padded");
                 roster.PawnKind = roster.Members[0].PawnKind; roster.ResolvedCount = roster.Members.Count; roster.UnitCombatPower = roster.ActualCombatPower / roster.ResolvedCount;
+                if (specs.Count > CombatRoster.MaxTeamMembers)
+                {
+                    var limit = new ScenarioConfigurationException("Squad exceeds 200 members; allocation is never silently clamped", "COMBAT_ROSTER_LIMIT_EXCEEDED");
+                    limit.Data["RejectedRoster"] = roster;
+                    throw limit;
+                }
                 // Generate fresh native pawns once to freeze their loadouts. No world pawns are borrowed.
                 foreach (var member in roster.Members)
                 {

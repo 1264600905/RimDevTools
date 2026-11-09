@@ -145,6 +145,7 @@ namespace LogSyncMod.AutoTest.Scenarios
         public string Error { get; set; }
         public CombatStartupTiming StartupTiming { get; set; }
         public ArenaMaintenanceResult ArenaMaintenance { get; set; }
+        public ArenaStudioIsolationResult StudioIsolation { get; set; }
         public int ElapsedTicks { get; set; }
         public double SimulatedSeconds { get; set; }
         public string MeasurementQuality { get; set; } = "partial";

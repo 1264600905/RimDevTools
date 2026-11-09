@@ -202,6 +202,72 @@ Scene 沿用群战的严格场景配置。其他字段范围和完整默认值�
 
 荣誉榜沿用赛前真实角色的肖像和属性快照，属性条仍按全体参赛者的同项最大值缩放，前三名用金、银、铜标识。赛前展示后立即清理预览 Pawn 和地图，仅保留肖像纹理至本届结束；荣誉榜不重新生成 Pawn，也不推进模拟。10 秒从首个实际绘制帧开始计时；结束后或取消时释放缓存。结果 `TopFive` 保存名次、胜场、最近胜利评分、截图和实际展示时长，CLI 独立复算名次并检查满 10 秒且模拟 tick 为 0。`arena-status.presentation` 此时为 `topFive`。
 
+## 魔王轮战赛与极限挑战赛
+
+两种赛制与原单败淘汰赛并列，继续使用 `--mode arena`。`Tournament.format` 省略时仍为原淘汰赛；新赛制允许同一 PawnKind 以不同组合 ID、人数或异种配置分别参赛。
+
+| 配置 | 魔王轮战赛 | 极限挑战赛 |
+|---|---|---|
+| `Tournament.format` | `bossRoundRobin` | `limitChallenge` |
+| `Entrant.role` | 至少一个 `boss` 和一个 `challenger` | 同左 |
+| 配对顺序 | 每个对手按名单顺序挑战每个魔王 | 同左，每组独立从初始值开始 |
+| 战败后 | 继续下一组 | 挑战者增长后再打同一魔王 |
+| 最终成绩 | 每个魔王的胜场、败场、未决、平均胜利评分 | 每组攻克状态、首次获胜值、档数、战斗次数与限制原因 |
+
+每场双方重新满编，魔王不会继承上一场伤势。魔王轮战赛不淘汰任何组合，平均胜利评分只统计该魔王的胜局；零胜场显示“—”，败局不记作 0 分掺入平均值。
+
+极限挑战优先使用人数增长：
+
+```xml
+<Roster mode="count" count="1"/>
+<Entrants>
+  <Entrant id="boss" pawnKind="Wolf_Timber" role="boss" count="2" name="双狼魔王"/>
+  <Entrant id="rats" pawnKind="Rat" role="challenger" name="鼠群"/>
+</Entrants>
+<Growth target="count" multiplier="1.5" maxValue="100"/>
+```
+
+以上是 `Tournament format="limitChallenge"` 内的片段，完整赛事还需保留 `testDefName`、`Scene` 等原有字段。`target` 默认 `count`；每次战败后 `下一档人数 = ceil(本档人数 × multiplier)`，例如 10 → 15 → 23 → 35。倍率必须大于 1，人数上限须为 1～200 的整数，且不小于挑战者初始人数。固定混编按冻结成员顺序循环扩编，保留基准成员的兵种、异种和配装，各成员副本数量最多相差一份；基准名单和历史对局不变。
+
+也支持 CP 配兵预算增长：将 Roster 改为 `mode="combatPower" budget="100"`，挑战者可覆盖 `budget`，并使用 `<Growth target="budget" multiplier="2" maxValue="1600"/>`。预算每次直接相乘，允许小数；上限不超过 10000000。预算用于原有配兵，不修改角色伤害或生命，增加预算也不保证每档人数或兵种相同。固定成员数量的混编不能使用预算增长，应使用人数增长或改成加权混编。
+
+加法增长使用 `mode="add"` 和 `increment`，不填写 `multiplier`。人数增量须为正整数，CP 预算增量可为正小数：
+
+```xml
+<!-- 每次失败增加 2 人：2 → 4 → 6 → 8 -->
+<Growth target="count" mode="add" increment="2" maxValue="8"/>
+<!-- 每次失败增加 150 CP 预算：100 → 250 → 400 -->
+<Growth target="budget" mode="add" increment="150" maxValue="400"/>
+```
+
+省略 `mode` 仍使用乘法增长，兼容已有 XML。两种增长方式采用相同的胜负、平局、逐魔王重置与上限规则。完整加法示例为同一配置文件中的 `Arena_LimitAddCount` 和 `Arena_LimitAddCP`。
+
+等于最大值允许继续挑战，下一档超过最大值时该组结束。达到 200 人或地图无法容纳下一档时，记录限制原因；初始阵容就不合法、生成故障、清理失败或现实超时仍报运行错误。每组获胜立即停止，结果中的“首次获胜人数 / 预算”是按配置增长规则逐档尝试的结果，不表示理论最低门槛。
+
+平局在原档位按 `TieBreak.maxReplays` 重赛，不增长。重赛耗尽后该组记录 `unresolvedDraw`，继续其他组；运行完整赛程后可以正常完成并自动退出，最终成绩会单列未决。原淘汰赛仍沿用平局耗尽后停止整届赛事的行为。
+
+新赛制赛后页使用双方大肖像、胜者高亮与胜利评分，显示本档值、下一步安排和每页 4 条的图标交锋记录；最终页为带肖像的成绩卡，每页最多 8 项，自动逐页展示，每页至少 10 秒。轮战展示所有魔王，极限挑战展示所有挑战组。混编肖像沿用初始巡礼代表成员，人数和实际总 CP 使用本场名册，悬停紧凑成绩卡可查看更多数据。
+
+开赛巡礼按“本届魔王”和“本届挑战者”分别分页，手动配置的混合巡礼页也会自动拆开，保留各页时长和说明。单场对阵预览继续同时展示本场双方。
+
+三种赛制都先显示面向观众的比赛规则页，再显示参赛者巡礼。规则页首次绘制后才开始准备本届名册、装备与预览角色，准备期间保持规则页；从首次绘制起至少展示现实 5 秒。准备不足 5 秒时等满 5 秒，超过 5 秒时准备完成便直接进入巡礼，不额外再等 5 秒。结果 `Rules` 保存最低时长、准备耗时、实际停留时长和原始规则截图；预览角色的原生初始化 tick 包含在准备耗时中。
+
+默认空白测试场地隔离原生世界地块变体及生态区附加生成步骤，避免铺平后又生成废墟；不修改原世界地块。每场结果的 `StudioIsolation` 记录屏蔽步骤、生成后残留物和非土壤格数，发现残留会直接报错。隔离只作用于工具自建的默认空白测试地图。
+
+完整样例为 `AutoTest.Core.Tests/Fixtures/ArenaBossChallenges.autotest.xml`：
+
+```powershell
+dotnet run --project RimDevTools -c Release -- test run --deploy --mode arena --scenario-path AutoTest.Core.Tests/Fixtures/ArenaBossChallenges.autotest.xml --test-name Arena_BossRoundRobin
+dotnet run --project RimDevTools -c Release -- test run --deploy --mode arena --scenario-path AutoTest.Core.Tests/Fixtures/ArenaBossChallenges.autotest.xml --test-name Arena_LimitCount
+dotnet run --project RimDevTools -c Release -- test run --deploy --mode arena --scenario-path AutoTest.Core.Tests/Fixtures/ArenaBossChallenges.autotest.xml --test-name Arena_LimitCP
+```
+
+同文件的 `Arena_LimitFixedSquad` 验证固定佣兵混编人数增长。可重复 `--test-name` 连续运行多个赛事。默认总超时按全部组、潜在增长档位、重赛和最终分页估算，也可用现有 `--timeout-seconds` 指定运行截止时间；超时不计为比赛战败。
+
+`Arena_BossGallery` 为 10 位魔王的界面回归样例，覆盖 720p、长组合名、巡礼与最终成绩分页；`Arena_LimitAddCount` 使用固定佣兵混编验证人数加法，`Arena_LimitAddCP` 验证 CP 预算加法。
+
+原始 JSON 的赛事结果增加 `Challenges` 和 `Summary`，每个档位对局记录 `PairId`、`Level`、`ChallengeValue` 和 `ResolvedRosters`。CLI 独立复核配对、逐档值、实际名册、评分、平均值和展示；仍只读取工具原始产物。
+
 ## 群战预算
 
 原群战入口和数量写法继续可用，只增加可选 `PawnGroup.combatPowerBudget`，与显式 `count` 互斥；两者都未写仍为一人。数量群战不新增战力要求，可以在不同编组混用数量和预算；预算不要求双方相等。

@@ -5,6 +5,15 @@ using System.Linq;
 
 namespace LogSyncMod.AutoTest.Scenarios
 {
+    public sealed class ArenaRulesPageResult
+    {
+        public double MinimumSeconds { get; set; } = ArenaPresentation.RulesSeconds;
+        public double LoadingSeconds { get; set; }
+        public double VisibleSeconds { get; set; }
+        public bool Completed { get; set; }
+        public string Screenshot { get; set; }
+    }
+
     public sealed class ArenaEntrantProfile
     {
         public string Id { get; set; }

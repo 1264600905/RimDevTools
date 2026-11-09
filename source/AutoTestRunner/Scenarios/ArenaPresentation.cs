@@ -6,6 +6,8 @@ namespace LogSyncMod.AutoTest.Scenarios
 {
     public static class ArenaPresentation
     {
+        public const double RulesSeconds = 5;
+        public static bool RulesReady(double elapsed, bool prepared) => prepared && elapsed >= RulesSeconds;
         public const float RevealBSeconds = .65f;
         public const float AdvanceSeconds = 1.3f;
         public const float AnimationSeconds = 2.4f;
@@ -13,7 +15,9 @@ namespace LogSyncMod.AutoTest.Scenarios
         public const float PreBattleSeconds = 5;
 
         public static string MatchTitle(ArenaMatch match)
-            => (match.Kind == "extra" ? "低分加赛" : match.Kind == "qualification" ? "资格赛" : "第 " + match.Round + " 轮")
+            => (match.Kind == "limitChallenge" ? "第 " + match.Round + " 组 · 第 " + (match.Level + 1) + " 档 · " + match.ChallengeValue?.ToString("0.##")
+                : match.Kind == "bossRoundRobin" ? "魔王轮战 · 第 " + match.Round + " 组"
+                : match.Kind == "extra" ? "低分加赛" : match.Kind == "qualification" ? "资格赛" : "第 " + match.Round + " 轮")
                 + (match.Attempts.Count > 0 ? " · 第 " + match.Attempts.Count + " 次重赛" : "");
 
         public static double CapturePreparationElapsed(double countdownSeconds, double advanceSeconds)

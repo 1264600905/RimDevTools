@@ -258,6 +258,7 @@ namespace LogSyncMod.AutoTest
             var output = c.Element("Output"); requestedWidth = ScenarioLoader.I(output, "width", 0); requestedHeight = ScenarioLoader.I(output, "height", 0);
             arena = new AutoTestMainMap(Find.CurrentMap, input.Seed, new IntVec3(ScenarioLoader.I(scene, "sizeX", 50), 1, ScenarioLoader.I(scene, "sizeZ", 50)), ScenarioLoader.A(scene, "generatorDef", "LogSync_AutoTestStudioMap"));
             current.MapId = Map.uniqueID; current.IsPocketMap = Map.Parent is PocketMapParent; current.GeneratorDef = Map.generatorDef.defName;
+            current.StudioIsolation = arena.Isolation;
             if (IsArena)
             {
                 arenaMaintenance = new ArenaMaintenance(Map, arenaInput);
@@ -397,6 +398,7 @@ namespace LogSyncMod.AutoTest
             sample.ResolvedRosters = current.ResolvedRosters;
             sample.StartupTiming = current.StartupTiming;
             sample.ArenaMaintenance = current.ArenaMaintenance;
+            sample.StudioIsolation = current.StudioIsolation;
             sample.ScreenshotWidth = current.ScreenshotWidth; sample.ScreenshotHeight = current.ScreenshotHeight;
             sample.Diagnostics.AddRange(current.Diagnostics); sample.Screenshots = current.Screenshots; sample.ExecutionStatus = current.ExecutionStatus;
             sample.CameraScreenshots = current.CameraScreenshots;

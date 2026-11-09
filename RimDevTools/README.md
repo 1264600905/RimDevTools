@@ -71,7 +71,7 @@ RimDevTools.exe mods install-tools [--mods-path <path>] [--dry-run] [--verbose]
 
 1.7 独立群战入口：`test run --mode groupcombat --scenario-path <XML 文件或目录> --test-name <testDefName 或完整 caseId>`，多个名称可重复传入。只接受双方普通主地图评测，普通 auto 扫描不会运行群战；不传名称即报错。完整语法、样例和伤害口径见[第四批使用说明](../策划案/RimDevTools外部场景XML第四批使用说明.md)。
 
-1.7 独立擂台入口：`test run --mode arena --scenario-path <ArenaSuite XML 文件或目录> --test-name <testDefName>`，支持固定数量、统一 combatPower 预算和单败淘汰赛。现有群战也可用 `PawnGroup.combatPowerBudget` 按战力配兵。详见[擂台测试使用说明](../策划案/RimDevTools擂台测试使用说明.md)。
+1.7 独立擂台入口：`test run --mode arena --scenario-path <ArenaSuite XML 文件或目录> --test-name <testDefName>`，支持固定数量、combatPower 预算、单败淘汰赛，以及 `Tournament.format="bossRoundRobin"` 魔王轮战和 `format="limitChallenge"` 极限挑战。极限挑战优先按人数增长，也支持 CP 预算增长；两者均可使用乘法或固定加法。三种赛制开场均以规则页覆盖角色准备过程，现实时间至少 5 秒。现有群战也可用 `PawnGroup.combatPowerBudget` 按战力配兵。详见[擂台测试使用说明](../策划案/RimDevTools擂台测试使用说明.md)。
 
 擂台容忍伤害采集异常：保留异常记录，伤害交换项取中性分，按实际胜负继续晋级。完整赛程正常完成并展示荣誉榜后自动关闭游戏；报错、取消、未决平局或超时保留游戏。返回 JSON 标明 `gameStillRunning` 和 `transactionRetained`。游戏仍运行时保留配置事务，手动退出游戏后执行 `test cleanup` 或在下一次测试启动时恢复。
 

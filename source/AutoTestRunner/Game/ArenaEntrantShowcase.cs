@@ -144,7 +144,7 @@ namespace LogSyncMod.AutoTest
             }
             finally { Rand.PopState(); }
             maxima = Enumerable.Range(0, Labels.Length).Select(i => showcase.Entrants.SelectMany(e => e.Composition.Count > 0 ? e.Composition : new List<ArenaEntrantProfile> { e }).Max(e => e.Values()[i])).ToArray();
-            hues = ArenaPresentation.IdentityHues(tournament.Rosters.Select(r => r.PawnKind));
+            hues = ArenaPresentation.IdentityHues(tournament.Rosters.Select(r => tournament.Input.Format == "knockout" ? r.PawnKind : r.Id));
             Ready = true;
             return true;
         }
@@ -188,6 +188,14 @@ namespace LogSyncMod.AutoTest
             tournament = null; maxima = null; hues = null;
         }
 
+        internal static void DrawIdentity(Rect rect, string entrantId, float elapsed = 0)
+        {
+            var entry = tournament?.Showcase?.Entrants.FirstOrDefault(e => e.Id == entrantId);
+            if (entry == null) return;
+            var detail = entry.Composition.Count == 0 ? entry : entry.Composition[ArenaShowcase.CompositionIndex(elapsed, entry.Composition.Count)];
+            DrawPortrait(rect, detail);
+        }
+
         private static void DrawPortrait(Rect rect, ArenaEntrantProfile entry)
         {
             if (portraits.TryGetValue(entry.Id, out var cached)) { GUI.DrawTexture(rect, cached); return; }
@@ -227,10 +235,7 @@ namespace LogSyncMod.AutoTest
             if (tournament?.Showcase == null) return;
             if (!Ready)
             {
-                Widgets.DrawBoxSolid(new Rect(0, 0, UI.screenWidth, UI.screenHeight), new Color(.025f, .035f, .055f));
-                TextAt(new Rect(0, UI.screenHeight / 2 - 44, UI.screenWidth, 48), "正在准备参赛者", 30, Color.white, TextAnchor.MiddleCenter);
-                TextAt(new Rect(0, UI.screenHeight / 2 + 12, UI.screenWidth, 28), "生成角色与装备 · 初始化身体状态", 17, Muted, TextAnchor.MiddleCenter);
-                if (Widgets.ButtonText(new Rect(UI.screenWidth - 164, 28, 136, 34), "取消擂台")) ArenaService.Cancel();
+                ArenaRulesView.Draw(tournament.Input, 0);
                 return;
             }
             var previousColor = GUI.color; var previousFont = Text.Font; var previousAnchor = Text.Anchor;
@@ -246,6 +251,8 @@ namespace LogSyncMod.AutoTest
                 Widgets.DrawBoxSolid(R(72, 66, 30, 3), Gold);
                 TextAt(R(116, 48, 1180, 36), matchup != null ? "ARENA  /  赛前对阵  ·  " + ArenaPresentation.MatchTitle(matchup) : standings ? "ARENA  /  荣誉榜" : "ARENA  /  参赛者巡礼", 15 * scale, Gold);
                 var title = matchup != null ? tournament.Input.Name : standings ? tournament.TopFive.Entries.Count == 5 ? "本届前五 · 荣耀时刻" : "本届排名 · 荣耀时刻" : "本届参赛者";
+                if (tournament.Input.Format != "knockout" && matchup == null && !standings)
+                    title = tournament.Input.Entrants.Single(e => e.Id == tournament.Input.ShowcasePages[page].EntrantIds[0]).Role == "boss" ? "本届魔王" : "本届挑战者";
                 TextAt(R(72, 94, 930, 68), title, Mathf.Min(46, 930f / Mathf.Max(1, title.Length)) * scale, Color.white);
                 var pageInput = standings ? new ArenaShowcasePageInput {
                     Seconds = tournament.TopFive.DurationSeconds,
@@ -256,7 +263,8 @@ namespace LogSyncMod.AutoTest
                 } : tournament.Input.ShowcasePages[page];
                 TextAt(R(1030, 117, 498, 40), matchup != null ? "第 " + (tournament.Matches.IndexOf(matchup) + 1) + " 场  ·  赛前展示 5 秒" : standings ? "赛事完结  ·  展示 10 秒" : tournament.Rosters.Count + " 种参赛者  ·  本页 " + pageInput.Seconds.ToString("0.##", CultureInfo.InvariantCulture) + " 秒", 17 * scale, Muted, TextAnchor.MiddleRight);
                 var caption = matchup != null ? "即将对战：" + tournament.Rosters.Single(r => r.Id == matchup.Left).DisplayName + "  VS  " + tournament.Rosters.Single(r => r.Id == matchup.Right).DisplayName
-                    : standings ? "晋级越远，名次越高  ·  同阶段按最近胜利评分排序" : pageInput.Caption.Length > 0 ? "“" + pageInput.Caption + "”" : "全员登场  ·  淘汰对决即将开始";
+                    : standings ? "晋级越远，名次越高  ·  同阶段按最近胜利评分排序" : pageInput.Caption.Length > 0 ? "“" + pageInput.Caption + "”"
+                    : tournament.Input.Format == "knockout" ? "全员登场  ·  淘汰对决即将开始" : "魔王与挑战者登场 · 每组独立、满编对战";
                 // User copy is a literal sentence, not rich-text markup.
                 var captionStyle = new GUIStyle(GUI.skin.label) { fontSize = Mathf.RoundToInt(Mathf.Min(20, 1456f / Mathf.Max(1, caption.Length)) * scale), alignment = TextAnchor.MiddleLeft, richText = false, wordWrap = false };
                 captionStyle.normal.textColor = pageInput.Caption.Length > 0 ? new Color(.87f, .8f, .65f) : Muted;
@@ -274,7 +282,7 @@ namespace LogSyncMod.AutoTest
                 for (var i = 0; i < entries.Count; i++)
                 {
                     var entry = entries[i];
-                    var roster = tournament.Rosters.Single(r => r.Id == entry.Id);
+                    var roster = (matchup?.ResolvedRosters.Count > 0 ? matchup.ResolvedRosters : tournament.Rosters).Single(r => r.Id == entry.Id);
                     var selected = selectedTypes.TryGetValue(entry.Id, out var selection) ? selection : 0;
                     if (!standings)
                     {
@@ -288,7 +296,7 @@ namespace LogSyncMod.AutoTest
                         }
                     }
                     var detail = entry.Composition.Count > 0 ? entry.Composition[selected % entry.Composition.Count] : entry;
-                    var color = standings && i == 0 ? Gold : standings && i == 1 ? new Color(.78f, .85f, .93f) : standings && i == 2 ? new Color(.88f, .59f, .37f) : Color.HSVToRGB(hues[entry.PawnKind], .48f, .95f);
+                    var color = standings && i == 0 ? Gold : standings && i == 1 ? new Color(.78f, .85f, .93f) : standings && i == 2 ? new Color(.88f, .59f, .37f) : Color.HSVToRGB(hues[tournament.Input.Format == "knockout" ? entry.PawnKind : entry.Id], .48f, .95f);
                     var reveal = ArenaPresentation.Progress(elapsed, i * .045f, .36f);
                     var x = startX + i * (cardWidth + cardGap); var y = 234 + (1 - reveal) * 16;
                     Widgets.DrawBoxSolid(R(x + 3, y + 7, cardWidth, 554), new Color(0, 0, 0, .2f));
@@ -296,6 +304,7 @@ namespace LogSyncMod.AutoTest
                     Widgets.DrawBoxSolid(R(x, y, cardWidth, 3), color);
                     Widgets.DrawBoxSolid(R(x + 1, y + 4, cardWidth - 2, 169), Color.Lerp(new Color(.065f, .082f, .115f), color, .085f));
                     var rankLabel = matchup != null ? i == 0 ? "A 队 · 本场出战" : "B 队 · 本场出战" : standings ? new[] { "第一名 · 冠军", "第二名 · 亚军", "第三名", "第四名", "第五名" }[i] : "选手 " + (offset + i + 1).ToString("D2");
+                    if (tournament.Input.Format != "knockout") rankLabel = (tournament.Input.Entrants.Single(e => e.Id == entry.Id).Role == "boss" ? "魔王" : "挑战者") + (matchup == null ? " · 初始阵容" : " · 本场出战");
                     TextAt(R(x + 18, y + 15, cardWidth - 85, 26), rankLabel, standings ? 16 * scale : 13 * scale, color);
                     TextAt(R(x + cardWidth - 80, y + 12, 60, 28), "◆", 16 * scale, color, TextAnchor.MiddleRight);
                     DrawPortrait(R(x + (cardWidth - 144) / 2, y + 30, 144, 144), detail);
@@ -312,7 +321,9 @@ namespace LogSyncMod.AutoTest
                         { selectedTypes[entry.Id] = (selected + entry.Composition.Count - 1) % entry.Composition.Count; selectedAt[entry.Id] = elapsed; }
                         if (entry.Composition.Count > 1 && Widgets.ButtonText(R(x + cardWidth - 33, y + 218, 25, 22), "›"))
                         { selectedTypes[entry.Id] = (selected + 1) % entry.Composition.Count; selectedAt[entry.Id] = elapsed; }
-                        TextAt(R(x + 35, y + 216, cardWidth - 70, 23), detail.DisplayName + " ×" + detail.Count, 12 * scale, Muted, TextAnchor.MiddleCenter);
+                        var detailCount = matchup?.ResolvedRosters.Count > 0 && roster.Members.Count > 0
+                            ? roster.Members.Count(m => SquadGeneration.KindLabel(m.PawnKind) == detail.DisplayName) : detail.Count;
+                        TextAt(R(x + 35, y + 216, cardWidth - 70, 23), detail.DisplayName + " ×" + detailCount, 12 * scale, Muted, TextAnchor.MiddleCenter);
                     }
                     Widgets.DrawBoxSolid(R(x + 22, y + 239, cardWidth - 44, 1), new Color(.16f, .2f, .26f));
                     var values = detail.Values();
@@ -342,7 +353,7 @@ namespace LogSyncMod.AutoTest
                     }
                     if (roster.SquadId != null)
                     {
-                        var description = "同名兵种合并计数；属性为该类代表成员，每秒轮播，也可用左右箭头切换。\n" + string.Join("\n", entry.Composition.Select(p => p.DisplayName + " ×" + p.Count + " · CP " + p.TotalCombatPower.ToString("0.##")));
+                        var description = "属性沿用初始巡礼代表成员；本场实际构成：\n" + string.Join("\n", roster.Members.GroupBy(m => SquadGeneration.KindLabel(m.PawnKind)).Select(g => g.Key + " ×" + g.Count() + " · CP " + g.Sum(m => m.Cost).ToString("0.##")));
                         TooltipHandler.TipRegion(R(x, y, cardWidth, 554), description);
                     }
                 }

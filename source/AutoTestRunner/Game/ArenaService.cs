@@ -17,7 +17,10 @@ namespace LogSyncMod.AutoTest
         private static string consumedRunId, outputPath;
         private static ArenaRunReport report;
         private static ArenaTournamentResult tournament;
-        private static ArenaScheduler scheduler;
+        private static IArenaSchedule scheduler;
+        private static int summaryPage;
+        private static bool ShowingSummary => tournament?.Status == "summary";
+        private static string FinalScreenshot => ShowingSummary ? tournament.Summary.Pages[summaryPage].Screenshot : tournament.ChampionScreenshot;
         private static ArenaMatch match;
         private static IDisposable logGuard;
         private static ArenaBackgroundCleanup backgroundCleanup;
@@ -32,6 +35,11 @@ namespace LogSyncMod.AutoTest
         private static string postBattleScreenshot;
         private static TimeSpeed postBattleOriginalSpeed;
         private static bool showcaseActive, showcaseCaptured;
+        private static bool rulesActive, rulesCaptured, entrantsPreparing;
+        private static long rulesStarted;
+        private static float RulesElapsed => rulesStarted < 0 ? 0 : (float)((System.Diagnostics.Stopwatch.GetTimestamp() - rulesStarted) / (double)System.Diagnostics.Stopwatch.Frequency);
+        private static int rulesPaintedFrame;
+        private static TimeSpeed rulesOriginalSpeed;
         private static float showcasePageStarted;
         private static int showcasePage, showcaseStartTick;
         private static TimeSpeed showcaseOriginalSpeed;
@@ -46,9 +54,12 @@ namespace LogSyncMod.AutoTest
         internal static object Status => new {
             busy = Busy, status = report?.Status, runId = report?.RunId, tournament = tournament?.Input.TestDefName,
             match = match?.Id, attempt = match?.Attempts.Count + 1,
-            presentation = showcaseActive ? "showcase" : preBattle != null ? "preBattle" : postBattleMatch != null ? "postBattle" : tournament?.Status == "champion" ? "topFive" : null,
+            format = tournament?.Input.Format, pairId = match?.PairId, level = match?.Level, challengeValue = match?.ChallengeValue,
+            roles = tournament?.Input.Entrants.Select(e => new { e.Id, e.Role }),
+            completedPairs = tournament?.Challenges.Count(p => p.Status != "pending" && p.Status != "running"),
+            presentation = rulesActive ? "rules" : showcaseActive ? "showcase" : preBattle != null ? "preBattle" : postBattleMatch != null ? "postBattle" : ShowingSummary ? "summary" : tournament?.Status == "champion" ? "topFive" : null,
             presentationMatch = preBattle != null ? match?.Id : postBattleMatch?.Id,
-            presentationSeconds = showcaseActive ? showcasePageStarted < 0 ? 0 : Time.realtimeSinceStartup - showcasePageStarted : preBattle != null ? preBattleStarted < 0 ? 0 : Time.realtimeSinceStartup - preBattleStarted : postBattleMatch != null ? Time.realtimeSinceStartup - postBattleStarted : tournament?.Status == "champion" && championStarted >= 0 ? Time.realtimeSinceStartup - championStarted : 0,
+            presentationSeconds = rulesActive ? RulesElapsed : showcaseActive ? showcasePageStarted < 0 ? 0 : Time.realtimeSinceStartup - showcasePageStarted : preBattle != null ? preBattleStarted < 0 ? 0 : Time.realtimeSinceStartup - preBattleStarted : postBattleMatch != null ? Time.realtimeSinceStartup - postBattleStarted : (ShowingSummary || tournament?.Status == "champion") && championStarted >= 0 ? Time.realtimeSinceStartup - championStarted : 0,
             showcasePage = showcaseActive ? showcasePage + 1 : 0, showcasePages = tournament?.Input.ShowcasePages.Count ?? 0,
             artifacts = new { autoTestOutputPath = outputPath }
         };
@@ -67,53 +78,40 @@ namespace LogSyncMod.AutoTest
                     if (settings is not { testSessionActive: true, testSessionKind: "arena" } || consumedRunId == settings.autoTestRunId || Current.ProgramState != ProgramState.Playing || LongEventHandler.AnyEventNowOrWaiting || Find.CurrentMap == null || CombatFightService.Busy || GroupCombatDamageCapture.ProbeActive) return;
                     consumedRunId = settings.autoTestRunId; outputPath = settings.autoTestOutputPath;
                     report = new ArenaRunReport { RunId = consumedRunId, StartedAtUtc = DateTime.UtcNow.ToString("O"), GameVersion = VersionControl.CurrentVersionStringWithRev, LoadedMods = LoadedModManager.RunningMods.Select(m => m.PackageIdPlayerFacing + "@" + m.ModMetaData?.ModVersion).ToList() };
-                    logGuard = global::LogSyncMod.TestLogWindowGuard.RegisterExternalSession(); cancel = false; waiting = false; match = null; tournament = null; postBattleMatch = null; showcaseActive = false; preBattle = null;
+                    logGuard = global::LogSyncMod.TestLogWindowGuard.RegisterExternalSession(); cancel = false; waiting = false; match = null; tournament = null; postBattleMatch = null; showcaseActive = false; rulesActive = false; preBattle = null;
                     var frozen = JsonSerializer.Deserialize<ArenaPlan>(Encoding.UTF8.GetString(Convert.FromBase64String(settings.arenaPlan)));
                     if (frozen?.Purpose != "arena" || frozen.SchemaVersion != 1) throw new ScenarioConfigurationException("Invalid frozen arena plan");
                     report.Plan = ArenaLoader.Compile(frozen.Inputs, frozen.SelectedTestDefNames);
                     report.Plan.SkippedFiles = frozen.SkippedFiles;
                     backgroundCleanup = new ArenaBackgroundCleanup(Find.CurrentMap);
                     report.BackgroundCleanup = backgroundCleanup.Result;
-                    // Freeze every tournament's roster and native loadouts before any battle.
                     foreach (var input in report.Plan.Tournaments)
-                    {
-                        var result = new ArenaTournamentResult { Input = input }; report.Tournaments.Add(result); tournament = result;
-                        foreach (var entrant in input.Entrants)
-                        {
-                            ResolvedCombatRoster roster;
-                            if (entrant.Squad != null)
-                            {
-                                roster = SquadGeneration.Resolve(entrant.Id, input.SquadTemplates[entrant.Squad], entrant.Budget ?? input.Budget,
-                                    entrant.Count ?? input.Count, input.CostMode, SquadTemplates.MemberSeed(input.Seed, entrant.Id, 0), Find.CurrentMap.Tile);
-                                roster.DisplayName = entrant.Name ?? entrant.Squad;
-                            }
-                            else
-                            {
-                                var kind = DefDatabase<PawnKindDef>.GetNamedSilentFail(entrant.PawnKind);
-                                if (kind == null) throw new ScenarioConfigurationException("Unknown loaded PawnKind: " + entrant.PawnKind, "COMBAT_POWER_INVALID");
-                                if (entrant.Xenotype != null && (!ModsConfig.BiotechActive || !kind.RaceProps.Humanlike
-                                    || DefDatabase<XenotypeDef>.GetNamedSilentFail(entrant.Xenotype) == null))
-                                    throw new ScenarioConfigurationException("Invalid arena xenotype for " + entrant.Id + ": " + entrant.Xenotype);
-                                var power = CombatRoster.Power(kind.combatPower);
-                                if (input.CostMode == "native" && entrant.Xenotype != null) power *= CombatRoster.Power(DefDatabase<XenotypeDef>.GetNamed(entrant.Xenotype).combatPowerFactor);
-                                roster = CombatRoster.Resolve(entrant.Id, entrant.PawnKind, power, entrant.Budget ?? input.Budget, entrant.Count ?? input.Count);
-                                roster.DisplayName = entrant.Name ?? kind.LabelCap.ToString(); roster.CostMode = input.CostMode;
-                            }
-                            roster.Source = input.Source;
-                            result.Rosters.Add(roster);
-                        }
-                        // Validate the largest formations against every entrant before battle.
-                        foreach (var roster in result.Rosters)
-                        {
-                            var other = result.Rosters.First(r => r.Id != roster.Id);
-                            ArenaLoader.CompileBattle(input, result.Rosters, new ArenaMatch { Id = "validation", Left = roster.Id, Right = other.Id }, 0);
-                        }
-                    }
+                        report.Tournaments.Add(new ArenaTournamentResult { Input = input });
                     tournament = null; Write();
                 }
                 backgroundCleanup?.Poll();
                 if (waiting || CombatFightService.Busy) return;
                 if (cancel) { Finish("cancelled", "Cancelled by user"); return; }
+                if (rulesActive)
+                {
+                    if (!entrantsPreparing && rulesStarted >= 0 && RulesElapsed > 20
+                        && (!rulesCaptured || !AutoTestViewComposite.IsReady(tournament.Rules.Screenshot)))
+                        throw new IOException("Rules screenshot did not become ready: " + tournament.Rules.Screenshot);
+                    if (rulesStarted < 0 || Time.frameCount <= rulesPaintedFrame + 1 || !rulesCaptured
+                        || !AutoTestViewComposite.IsReady(tournament.Rules.Screenshot)) return;
+                    if (!entrantsPreparing) { entrantsPreparing = true; PrepareEntrants(); }
+                    var prepared = ArenaEntrantShowcase.InitializeFrame();
+                    var elapsed = RulesElapsed;
+                    if (prepared && tournament.Rules.LoadingSeconds == 0) tournament.Rules.LoadingSeconds = elapsed;
+                    if (!ArenaPresentation.RulesReady(elapsed, prepared)) return;
+                    tournament.Rules.VisibleSeconds = elapsed; tournament.Rules.Completed = true;
+                    scheduler = tournament.Input.Format == "knockout" ? new ArenaScheduler(tournament) : new ArenaChallengeScheduler(tournament);
+                    rulesActive = false;
+                    showcaseOriginalSpeed = rulesOriginalSpeed;
+                    Find.TickManager.CurTimeSpeed = TimeSpeed.Paused;
+                    showcaseActive = true; showcasePage = 0; StartShowcasePage();
+                    return;
+                }
                 if (showcaseActive)
                 {
                     if (!ArenaEntrantShowcase.InitializeFrame()) return;
@@ -170,16 +168,29 @@ namespace LogSyncMod.AutoTest
                     return;
                 }
                 if (report.Status != "running") { Finish(report.Status, report.Error); return; }
-                if (tournament?.Status == "champion")
+                if (ShowingSummary || tournament?.Status == "champion")
                 {
                     Find.TickManager.CurTimeSpeed = TimeSpeed.Paused;
                     if (championStarted < 0) return;
-                    if (Time.realtimeSinceStartup - championStarted > 20 && (!championCaptured || !AutoTestViewComposite.IsReady(tournament.ChampionScreenshot))) throw new IOException("Champion screenshot did not become ready");
-                    if (championCaptured && AutoTestViewComposite.IsReady(tournament.ChampionScreenshot) && Time.realtimeSinceStartup - championStarted >= ArenaStandings.DisplaySeconds)
+                    if (Time.realtimeSinceStartup - championStarted > 20 && (!championCaptured || !AutoTestViewComposite.IsReady(FinalScreenshot))) throw new IOException("Champion screenshot did not become ready");
+                    if (championCaptured && AutoTestViewComposite.IsReady(FinalScreenshot) && Time.realtimeSinceStartup - championStarted >= ArenaStandings.DisplaySeconds)
                     {
-                        tournament.TopFive.VisibleSeconds = Time.realtimeSinceStartup - championStarted;
-                        tournament.TopFive.SimulationTicks = Find.TickManager.TicksGame - championStartTick;
-                        tournament.TopFive.Completed = true; tournament.Status = "completed";
+                        if (ShowingSummary)
+                        {
+                            var page = tournament.Summary.Pages[summaryPage];
+                            page.VisibleSeconds = Time.realtimeSinceStartup - championStarted;
+                            page.SimulationTicks = Find.TickManager.TicksGame - championStartTick;
+                            if (++summaryPage < tournament.Summary.Pages.Count)
+                            { championStarted = -1; championCaptured = false; Write(); return; }
+                            tournament.Summary.Completed = true;
+                        }
+                        else
+                        {
+                            tournament.TopFive.VisibleSeconds = Time.realtimeSinceStartup - championStarted;
+                            tournament.TopFive.SimulationTicks = Find.TickManager.TicksGame - championStartTick;
+                            tournament.TopFive.Completed = true;
+                        }
+                        tournament.Status = "completed";
                         ArenaEntrantShowcase.Clear(); Find.TickManager.CurTimeSpeed = championOriginalSpeed; Write();
                     }
                     return;
@@ -188,23 +199,47 @@ namespace LogSyncMod.AutoTest
                 {
                     tournament = report.Tournaments.FirstOrDefault(t => t.Status != "completed");
                     if (tournament == null) { Finish("completed", null); return; }
-                    scheduler = new ArenaScheduler(tournament); match = null;
-                    showcaseOriginalSpeed = Find.TickManager.CurTimeSpeed;
+                    match = null;
+                    rulesOriginalSpeed = Find.TickManager.CurTimeSpeed;
                     Find.TickManager.CurTimeSpeed = TimeSpeed.Paused;
-                    showcaseActive = true; showcasePage = 0;
-                    ArenaEntrantShowcase.Begin(tournament);
-                    StartShowcasePage();
+                    rulesActive = true; rulesCaptured = false; entrantsPreparing = false; rulesStarted = -1;
+                    var directory = Path.Combine(outputPath, "arena_" + report.RunId + "_Screenshots"); Directory.CreateDirectory(directory);
+                    tournament.Rules = new ArenaRulesPageResult { Screenshot = Path.Combine(directory,
+                        "tournament_" + (report.Tournaments.IndexOf(tournament) + 1).ToString("D3") + "_rules.png") };
+                    Write();
                     return;
                 }
                 if (match == null) match = scheduler.Next();
+                if (match != null && tournament.Input.Format != "knockout")
+                {
+                    try { ArenaChallengeRoster.Prepare(tournament, match); }
+                    catch (ScenarioConfigurationException ex) when (match.Level > 0 && ex.Code is "COMBAT_ROSTER_LIMIT_EXCEEDED" or "COMBAT_FORMATION_LIMIT_EXCEEDED")
+                    {
+                        var rejected = ex.Data["RejectedRoster"] as ResolvedCombatRoster ?? match.ResolvedRosters.LastOrDefault();
+                        ((ArenaChallengeScheduler)scheduler).ReachRosterLimit(ex.Code, rejected);
+                        match = null; Write(); return;
+                    }
+                }
                 if (match == null)
                 {
-                    tournament.Champion = scheduler.Champion; tournament.Status = "champion";
+                    tournament.Champion = scheduler.Champion; tournament.Status = tournament.Input.Format == "knockout" ? "champion" : "summary";
                     championOriginalSpeed = Find.TickManager.CurTimeSpeed; Find.TickManager.CurTimeSpeed = TimeSpeed.Paused;
                     championStarted = -1; championCaptured = false;
                     var directory = Path.Combine(outputPath, "arena_" + report.RunId + "_Screenshots"); Directory.CreateDirectory(directory);
                     tournament.ChampionScreenshot = Path.Combine(directory, "tournament_" + (report.Tournaments.IndexOf(tournament) + 1).ToString("D3") + "_champion.png");
-                    tournament.TopFive = new ArenaTopFiveResult { Entries = ArenaStandings.Build(tournament), Screenshot = tournament.ChampionScreenshot };
+                    if (ShowingSummary)
+                    {
+                        tournament.ChampionScreenshot = null;
+                        summaryPage = 0;
+                        tournament.Summary = new ArenaChallengeSummary { Bosses = ArenaChallengeRules.Standings(tournament) };
+                        var entries = ArenaChallengeRules.SummaryEntries(tournament);
+                        for (var offset = 0; offset < entries.Count; offset += ArenaChallengeRules.SummaryPageSize)
+                            tournament.Summary.Pages.Add(new ArenaSummaryPage {
+                                EntryIds = entries.Skip(offset).Take(ArenaChallengeRules.SummaryPageSize).ToList(),
+                                Screenshot = Path.Combine(directory, "tournament_" + (report.Tournaments.IndexOf(tournament) + 1).ToString("D3") + "_summary_" + (tournament.Summary.Pages.Count + 1).ToString("D3") + ".png")
+                            });
+                    }
+                    else tournament.TopFive = new ArenaTopFiveResult { Entries = ArenaStandings.Build(tournament), Screenshot = tournament.ChampionScreenshot };
                     Write(); return;
                 }
                 if (match.PreBattles.Count == match.Attempts.Count)
@@ -221,8 +256,9 @@ namespace LogSyncMod.AutoTest
                     match.PreBattles.Add(preBattle);
                     Write(); return;
                 }
-                var fight = ArenaLoader.CompileBattle(tournament.Input, tournament.Rosters, match, match.Attempts.Count);
-                fight.ResolvedRosters = new() { tournament.Rosters.Single(r => r.Id == match.Left), tournament.Rosters.Single(r => r.Id == match.Right) };
+                var rosters = tournament.Input.Format == "knockout" ? tournament.Rosters : match.ResolvedRosters;
+                var fight = ArenaLoader.CompileBattle(tournament.Input, rosters, match, match.Attempts.Count);
+                fight.ResolvedRosters = new() { rosters.Single(r => r.Id == match.Left), rosters.Single(r => r.Id == match.Right) };
                 waiting = true; Write();
                 CombatFightService.BeginArenaFight(report.RunId, outputPath, fight, tournament.Input, OnFightCompleted);
             }
@@ -232,6 +268,41 @@ namespace LogSyncMod.AutoTest
                 if (CombatFightService.Busy) { report.Error = ex.ToString(); report.Status = "error"; report.ErrorCode = (ex as ScenarioConfigurationException)?.Code; CombatFightService.Cancel(); }
                 else { if (report != null) report.ErrorCode = (ex as ScenarioConfigurationException)?.Code; Finish("error", ex.ToString()); }
             }
+        }
+        private static void PrepareEntrants()
+        {
+            var input = tournament.Input;
+            foreach (var entrant in input.Entrants)
+            {
+                ResolvedCombatRoster roster;
+                if (entrant.Squad != null)
+                {
+                    roster = SquadGeneration.Resolve(entrant.Id, input.SquadTemplates[entrant.Squad], entrant.Budget ?? input.Budget,
+                        entrant.Count ?? input.Count, input.CostMode, SquadTemplates.MemberSeed(input.Seed, entrant.Id, 0), Find.CurrentMap.Tile);
+                    roster.DisplayName = entrant.Name ?? entrant.Squad;
+                }
+                else
+                {
+                    var kind = DefDatabase<PawnKindDef>.GetNamedSilentFail(entrant.PawnKind);
+                    if (kind == null) throw new ScenarioConfigurationException("Unknown loaded PawnKind: " + entrant.PawnKind, "COMBAT_POWER_INVALID");
+                    if (entrant.Xenotype != null && (!ModsConfig.BiotechActive || !kind.RaceProps.Humanlike
+                        || DefDatabase<XenotypeDef>.GetNamedSilentFail(entrant.Xenotype) == null))
+                        throw new ScenarioConfigurationException("Invalid arena xenotype for " + entrant.Id + ": " + entrant.Xenotype);
+                    var power = CombatRoster.Power(kind.combatPower);
+                    if (input.CostMode == "native" && entrant.Xenotype != null) power *= CombatRoster.Power(DefDatabase<XenotypeDef>.GetNamed(entrant.Xenotype).combatPowerFactor);
+                    roster = CombatRoster.Resolve(entrant.Id, entrant.PawnKind, power, entrant.Budget ?? input.Budget, entrant.Count ?? input.Count);
+                    roster.DisplayName = entrant.Name ?? kind.LabelCap.ToString(); roster.CostMode = input.CostMode;
+                }
+                roster.Source = input.Source;
+                tournament.Rosters.Add(roster);
+            }
+            // Validate the largest formations against every entrant before battle.
+            foreach (var roster in tournament.Rosters)
+            {
+                var other = tournament.Rosters.First(r => r.Id != roster.Id);
+                ArenaLoader.CompileBattle(input, tournament.Rosters, new ArenaMatch { Id = "validation", Left = roster.Id, Right = other.Id }, 0);
+            }
+            ArenaEntrantShowcase.Begin(tournament);
         }
         private static void OnFightCompleted(GroupCombatRoundResult result)
         {
@@ -243,7 +314,11 @@ namespace LogSyncMod.AutoTest
             var completedMatch = match;
             if (winner == null)
             {
-                if (match.Attempts.Count > tournament.Input.MaxReplays) { report.Status = "unresolvedDraw"; report.Error = "Draw replay limit exhausted: " + match.Id; }
+                if (match.Attempts.Count > tournament.Input.MaxReplays)
+                {
+                    if (scheduler is ArenaChallengeScheduler challenges) { challenges.ResolveDraw(); match = null; }
+                    else { report.Status = "unresolvedDraw"; report.Error = "Draw replay limit exhausted: " + match.Id; }
+                }
             }
             else
             {
@@ -258,18 +333,20 @@ namespace LogSyncMod.AutoTest
             var directory = Path.Combine(outputPath, "arena_" + report.RunId + "_Screenshots"); Directory.CreateDirectory(directory);
             postBattleScreenshot = Path.Combine(directory, "tournament_" + (report.Tournaments.IndexOf(tournament) + 1).ToString("D3") + "_match_" + tournament.Matches.Count.ToString("D4") + "_attempt_" + completedMatch.Attempts.Count.ToString("D2") + "_postbattle.png");
             completedMatch.PostBattleScreenshots.Add(postBattleScreenshot);
-            ArenaPostBattleView.Begin(tournament, completedMatch);
+            if (tournament.Input.Format == "knockout") ArenaPostBattleView.Begin(tournament, completedMatch);
+            else ArenaChallengeView.Reset();
             Write();
         }
         private static void Finish(string status, string error)
         {
             if (report == null || report.CompletedAtUtc != null) return;
+            if (rulesActive) { Find.TickManager.CurTimeSpeed = rulesOriginalSpeed; rulesActive = false; }
             if (showcaseActive) { Find.TickManager.CurTimeSpeed = showcaseOriginalSpeed; showcaseActive = false; }
             if (preBattle != null) { Find.TickManager.CurTimeSpeed = preBattleOriginalSpeed; preBattle = null; }
             ArenaEntrantShowcase.Clear();
             backgroundCleanup = null;
             if (postBattleMatch != null) { Find.TickManager.CurTimeSpeed = postBattleOriginalSpeed; postBattleMatch = null; }
-            if (tournament?.Status == "champion") Find.TickManager.CurTimeSpeed = championOriginalSpeed;
+            if (ShowingSummary || tournament?.Status == "champion") Find.TickManager.CurTimeSpeed = championOriginalSpeed;
             report.Status = status; report.Error = error; report.CompletedAtUtc = DateTime.UtcNow.ToString("O");
             foreach (var item in report.Tournaments.Where(t => t.Status != "completed"))
             { item.Status = item == tournament ? status : "notRun"; item.Error = item == tournament ? error : "Stopped before this tournament"; }
@@ -301,6 +378,15 @@ namespace LogSyncMod.AutoTest
         internal static void OnGui()
         {
             if (!Busy) return;
+            if (rulesActive)
+            {
+                ArenaRulesView.Draw(tournament.Input, RulesElapsed);
+                if (rulesStarted < 0 && Event.current.type == EventType.Repaint)
+                { rulesStarted = System.Diagnostics.Stopwatch.GetTimestamp(); rulesPaintedFrame = Time.frameCount; }
+                if (!rulesCaptured && Event.current.type == EventType.Repaint && AutoTestScreenshotService.PrepareCaptureFrame())
+                { CapturePresentation(tournament.Rules.Screenshot); rulesCaptured = true; }
+                return;
+            }
             if (showcaseActive)
             {
                 if (ArenaEntrantShowcase.Ready && showcasePageStarted < 0 && Event.current.type == EventType.Repaint)
@@ -330,7 +416,8 @@ namespace LogSyncMod.AutoTest
             if (postBattleMatch != null)
             {
                 var elapsed = Time.realtimeSinceStartup - postBattleStarted;
-                ArenaPostBattleView.Draw(elapsed);
+                if (tournament.Input.Format == "knockout") ArenaPostBattleView.Draw(elapsed);
+                else ArenaChallengeView.Draw(tournament, postBattleMatch, elapsed);
                 if (!postBattleCaptured && Event.current.type == EventType.Repaint && elapsed >= ArenaPresentation.AnimationSeconds && AutoTestScreenshotService.PrepareCaptureFrame())
                 {
                     CapturePresentation(postBattleScreenshot);
@@ -338,14 +425,15 @@ namespace LogSyncMod.AutoTest
                 }
                 return;
             }
-            if (tournament?.Status == "champion")
+            if (ShowingSummary || tournament?.Status == "champion")
             {
                 if (championStarted < 0 && Event.current.type == EventType.Repaint)
                 { championStarted = Time.realtimeSinceStartup; championStartTick = Find.TickManager.TicksGame; }
-                ArenaEntrantShowcase.Draw(0, championStarted < 0 ? 0 : Time.realtimeSinceStartup - championStarted, standings: true);
+                if (ShowingSummary) ArenaChallengeView.DrawSummary(tournament, summaryPage);
+                else ArenaEntrantShowcase.Draw(0, championStarted < 0 ? 0 : Time.realtimeSinceStartup - championStarted, standings: true);
                 if (!championCaptured && Event.current.type == EventType.Repaint && Time.realtimeSinceStartup - championStarted >= 1 && AutoTestScreenshotService.PrepareCaptureFrame())
                 {
-                    CapturePresentation(tournament.ChampionScreenshot);
+                    CapturePresentation(FinalScreenshot);
                     championCaptured = true;
                 }
                 return;
@@ -353,7 +441,7 @@ namespace LogSyncMod.AutoTest
             if (!CombatFightService.IsArena) return;
             if (CombatFightService.Measuring && match != null)
             {
-                var label = "擂台 · " + (tournament.Matches.Count) + "/" + (tournament.Rosters.Count - 1) + " 场 · " + (match.Kind == "extra" ? "低分加赛" : match.Kind == "qualification" ? "资格赛" : "第 " + match.Round + " 轮");
+                var label = tournament.Input.Format != "knockout" ? ArenaPresentation.MatchTitle(match) + " · " + tournament.Challenges.Count(p => p.Status != "pending" && p.Status != "running") + "/" + tournament.Challenges.Count + " 组完成" : "擂台 · " + (tournament.Matches.Count) + "/" + (tournament.Rosters.Count - 1) + " 场 · " + (match.Kind == "extra" ? "低分加赛" : match.Kind == "qualification" ? "资格赛" : "第 " + match.Round + " 轮");
                 Widgets.DrawWindowBackground(new Rect(UI.screenWidth / 2 - 200, 106, 400, 28));
                 Widgets.Label(new Rect(UI.screenWidth / 2 - 190, 109, 380, 24), label);
             }

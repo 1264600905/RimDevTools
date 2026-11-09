@@ -18,13 +18,15 @@ namespace LogSyncMod.AutoTest.Scenarios
         public List<ScenarioInput> Inputs { get; set; } = new();
         public List<string> SelectedTestDefNames { get; set; } = new();
         public List<ArenaTournamentInput> Tournaments { get; set; } = new();
-        public int DefaultDeadlineSeconds => checked(Tournaments.Sum(t => 180 + (int)ArenaStandings.DisplaySeconds + (int)Math.Ceiling(t.ShowcasePages.Sum(p => p.Seconds)) + (t.Entrants.Count - 1) * (t.MaxReplays + 1) * (t.TimeoutRealSeconds + (int)Math.Ceiling(t.BracketSeconds + t.SettlementSeconds + ArenaPresentation.PreBattleSeconds + ArenaPresentation.PostBattleSeconds) + 45)));
+        public int DefaultDeadlineSeconds => checked(Tournaments.Sum(ArenaChallengeRules.DeadlineSeconds));
     }
     public sealed class ArenaTournamentInput
     {
         public string Id { get; set; }
         public string Name { get; set; }
         public string TestDefName { get; set; }
+        public string Format { get; set; } = "knockout";
+        public ArenaGrowth Growth { get; set; }
         public string Xml { get; set; }
         public string Source { get; set; }
         public string InputHash { get; set; }
@@ -56,6 +58,7 @@ namespace LogSyncMod.AutoTest.Scenarios
     public sealed class ArenaEntrant
     {
         public string Id { get; set; }
+        public string Role { get; set; }
         public string PawnKind { get; set; }
         public string Squad { get; set; }
         public string Xenotype { get; set; }
@@ -141,6 +144,10 @@ namespace LogSyncMod.AutoTest.Scenarios
     public sealed class ArenaMatch
     {
         public string Id { get; set; }
+        public string PairId { get; set; }
+        public int Level { get; set; }
+        public decimal? ChallengeValue { get; set; }
+        public List<ResolvedCombatRoster> ResolvedRosters { get; set; } = new();
         public int Round { get; set; }
         public string Kind { get; set; }
         public string Left { get; set; }
@@ -168,7 +175,10 @@ namespace LogSyncMod.AutoTest.Scenarios
         public ArenaTournamentInput Input { get; set; }
         public List<ResolvedCombatRoster> Rosters { get; set; } = new();
         public ArenaShowcaseResult Showcase { get; set; }
+        public ArenaRulesPageResult Rules { get; set; }
         public ArenaTopFiveResult TopFive { get; set; }
+        public List<ArenaChallengePair> Challenges { get; set; } = new();
+        public ArenaChallengeSummary Summary { get; set; }
         public List<ArenaMatch> Matches { get; set; } = new();
         public string Status { get; set; } = "running";
         public string Champion { get; set; }
@@ -190,6 +200,15 @@ namespace LogSyncMod.AutoTest.Scenarios
         public List<string> LoadedMods { get; set; } = new();
         public List<ArenaTournamentResult> Tournaments { get; set; } = new();
         public ArenaBackgroundCleanupResult BackgroundCleanup { get; set; }
+    }
+
+    public sealed class ArenaStudioIsolationResult
+    {
+        public List<string> OriginalTileMutators { get; set; } = new();
+        public List<string> SuppressedGenSteps { get; set; } = new();
+        public bool WorldTileUnchanged { get; set; }
+        public int RemainingThingsBeforeActors { get; set; }
+        public int NonSoilCellsBeforeActors { get; set; }
     }
 
     public sealed class ArenaBackgroundCleanupResult
@@ -222,7 +241,7 @@ namespace LogSyncMod.AutoTest.Scenarios
     }
 
     // Scheduling knows no Pawn objects, maps, clocks or presentation state.
-    public sealed class ArenaScheduler
+    public sealed class ArenaScheduler : IArenaSchedule
     {
         private readonly ArenaTournamentResult tournament;
         private List<string> pool;
@@ -246,7 +265,9 @@ namespace LogSyncMod.AutoTest.Scenarios
             using var sha = SHA256.Create();
             return BitConverter.ToString(sha.ComputeHash(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(parts)))).Replace("-", "");
         }
-        public static int AttemptSeed(ArenaTournamentInput input, ArenaMatch match, int attempt) => unchecked((int)uint.Parse(Stable(input.Seed, match.PairKey, attempt).Substring(0, 8), NumberStyles.HexNumber, CultureInfo.InvariantCulture));
+        public static int AttemptSeed(ArenaTournamentInput input, ArenaMatch match, int attempt) => unchecked((int)uint.Parse((input.Format == "knockout"
+            ? Stable(input.Seed, match.PairKey, attempt)
+            : Stable(input.Seed, input.Format, match.Left, match.Right, match.Level, attempt)).Substring(0, 8), NumberStyles.HexNumber, CultureInfo.InvariantCulture));
         private string Tie(string a, string b) => Stable(tournament.Input.Seed, Pair(a, b));
         private string[] Closest(List<string> ids) => ids.SelectMany((a, i) => ids.Skip(i + 1).Select(b => Pair(a, b)))
             .OrderBy(p => Math.Abs(tournament.Rosters.Single(r => r.Id == p[0]).ResolvedCount - tournament.Rosters.Single(r => r.Id == p[1]).ResolvedCount))

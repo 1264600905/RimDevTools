@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using LogSyncMod.AutoTest.Scenarios;
 using RimWorld;
 using RimWorld.Planet;
 using UnityEngine;
@@ -17,6 +18,7 @@ namespace LogSyncMod.AutoTest
         private readonly WorldRenderMode originalWorldMode;
         internal Map Map;
         internal MapParent Parent;
+        internal ArenaStudioIsolationResult Isolation;
         internal Map Original => original;
 
         internal AutoTestMainMap(Map source, int seed, IntVec3 size, string generator = "LogSync_AutoTestStudioMap")
@@ -43,6 +45,7 @@ namespace LogSyncMod.AutoTest
                     requestedSeed.Verify();
                 }
                 if (Map == null || Map.Parent is PocketMapParent) throw new InvalidOperationException("The test studio must be an ordinary main map");
+                Isolation = AutoTestStudioIsolation.Inspect(Map);
                 foreach (var cell in Map.AllCells) Map.fogGrid.Unfog(cell);
                 Current.Game.CurrentMap = Map; Find.World.renderer.wantedMode = WorldRenderMode.None; Find.Selector.ClearSelection();
                 Find.CameraDriver.JumpToCurrentMapLoc(Map.Center);

@@ -48,7 +48,7 @@ namespace LogSyncMod.AutoTest.Scenarios
                 var ids = new HashSet<string>(StringComparer.Ordinal);
                 foreach (var t in root.Elements("Tournament"))
                 {
-                    Check(t, "id name seed", "testDefName Scene Roster Entrants Battle Scoring TieBreak Presentation Output Cleanup Matchmaking", input.Path);
+                    Check(t, "id name seed format", "testDefName Scene Roster Entrants Battle Scoring TieBreak Presentation Output Cleanup Matchmaking Growth", input.Path);
                     var id = Required(t, "id", input.Path);
                     if (!ids.Add(id)) ScenarioLoader.Fail(t, input.Path, "duplicate Tournament id");
                     var testName = t.Element("testDefName")?.Value.Trim();
@@ -61,19 +61,28 @@ namespace LogSyncMod.AutoTest.Scenarios
                     if (mode == "count" && roster.Attribute("budget") != null || mode == "combatPower" && roster.Attribute("count") != null) ScenarioLoader.Fail(roster, input.Path, "count and budget modes are mutually exclusive");
                     var entrants = t.Element("Entrants"); Check(entrants, "", "Entrant", input.Path, true);
                     var result = new ArenaTournamentInput { Id = id, Name = ScenarioLoader.A(t, "name", testName), TestDefName = testName, Seed = ScenarioLoader.I(t, "seed", 12345), Xml = t.ToString(SaveOptions.DisableFormatting), Source = input.Path, InputHash = input.Sha256, RosterMode = mode, CostMode = costMode, SquadTemplates = squadTemplates, Budget = mode == "combatPower" ? CombatRoster.Positive(Required(roster, "budget", input.Path)) : null, Count = Integer(roster, "count", 20, 1, CombatRoster.MaxTeamMembers, input.Path) };
+                    result.Format = ScenarioLoader.A(t, "format", "knockout");
+                    var growth = t.Element("Growth"); Check(growth, "target mode multiplier increment maxValue", "", input.Path);
+                    if (growth != null) result.Growth = new ArenaGrowth { Target = ScenarioLoader.A(growth, "target", "count"),
+                        Mode = ScenarioLoader.A(growth, "mode", "multiply"),
+                        Multiplier = growth.Attribute("multiplier") == null ? 0 : CombatRoster.Positive(Required(growth, "multiplier", input.Path)),
+                        Increment = growth.Attribute("increment") == null ? 0 : CombatRoster.Positive(Required(growth, "increment", input.Path)),
+                        MaxValue = CombatRoster.Positive(Required(growth, "maxValue", input.Path)) };
                     foreach (var e in entrants.Elements("Entrant"))
                     {
-                        Check(e, "id pawnKind squad name count budget xenotype", "", input.Path);
+                        Check(e, "id pawnKind squad name count budget xenotype role", "", input.Path);
                         if (mode == "combatPower" && e.Attribute("count") != null) ScenarioLoader.Fail(e, input.Path, "budget mode forbids entrant count overrides");
                         if (mode == "count" && e.Attribute("budget") != null) ScenarioLoader.Fail(e, input.Path, "count mode forbids entrant budget overrides");
                         if ((e.Attribute("pawnKind") == null) == (e.Attribute("squad") == null)) ScenarioLoader.Fail(e, input.Path, "Entrant requires exactly one of pawnKind/squad");
                         var squadId = ScenarioLoader.A(e, "squad");
                         if (squadId != null && (!squadTemplates.ContainsKey(squadId) || e.Attribute("xenotype") != null)) ScenarioLoader.Fail(e, input.Path, "unknown squad or conflicting entrant xenotype");
-                        result.Entrants.Add(new ArenaEntrant { Id = Required(e, "id", input.Path), PawnKind = e.Attribute("pawnKind") == null ? null : Required(e, "pawnKind", input.Path), Squad = squadId, Xenotype = e.Attribute("xenotype") == null ? null : Required(e, "xenotype", input.Path), Name = ScenarioLoader.A(e, "name"), Count = e.Attribute("count") == null ? null : Integer(e, "count", 20, 1, CombatRoster.MaxTeamMembers, input.Path), Budget = e.Attribute("budget") == null ? null : CombatRoster.Positive(Required(e, "budget", input.Path)) });
+                        result.Entrants.Add(new ArenaEntrant { Id = Required(e, "id", input.Path), Role = ScenarioLoader.A(e, "role"), PawnKind = e.Attribute("pawnKind") == null ? null : Required(e, "pawnKind", input.Path), Squad = squadId, Xenotype = e.Attribute("xenotype") == null ? null : Required(e, "xenotype", input.Path), Name = ScenarioLoader.A(e, "name"), Count = e.Attribute("count") == null ? null : Integer(e, "count", 20, 1, CombatRoster.MaxTeamMembers, input.Path), Budget = e.Attribute("budget") == null ? null : CombatRoster.Positive(Required(e, "budget", input.Path)) });
                     }
-                    if (result.Entrants.Count < 2 || result.Entrants.Count > 64 || result.Entrants.Select(e => e.Id).Distinct(StringComparer.Ordinal).Count() != result.Entrants.Count || result.Entrants.Where(e => e.PawnKind != null).Select(e => e.PawnKind).Distinct(StringComparer.Ordinal).Count() != result.Entrants.Count(e => e.PawnKind != null)) ScenarioLoader.Fail(entrants, input.Path, "requires 2..64 distinct entrant IDs and PawnKinds");
+                    if (result.Entrants.Count < 2 || result.Entrants.Count > 64 || result.Entrants.Select(e => e.Id).Distinct(StringComparer.Ordinal).Count() != result.Entrants.Count || result.Format == "knockout" && result.Entrants.Where(e => e.PawnKind != null).Select(e => e.PawnKind).Distinct(StringComparer.Ordinal).Count() != result.Entrants.Count(e => e.PawnKind != null)) ScenarioLoader.Fail(entrants, input.Path, "requires 2..64 distinct entrant IDs; knockout also requires distinct PawnKinds");
+                    ArenaChallengeRules.Validate(result);
                     var battle = t.Element("Battle"); Check(battle, "durationSeconds timeoutRealSeconds timeSpeed confirmationTicks", "", input.Path);
                     var matchmaking = t.Element("Matchmaking"); Check(matchmaking, "mode", "", input.Path);
+                    if (result.Format != "knockout" && matchmaking != null) ScenarioLoader.Fail(matchmaking, input.Path, "Matchmaking only applies to knockout tournaments");
                     result.MatchmakingMode = ScenarioLoader.A(matchmaking, "mode", "closestCount");
                     if (!new[] { "closestCount", "random" }.Contains(result.MatchmakingMode)) ScenarioLoader.Fail(matchmaking, input.Path, "Matchmaking mode must be closestCount/random");
                     var cleanup = t.Element("Cleanup"); Check(cleanup, "corpses droppedItems", "", input.Path);
@@ -108,6 +117,7 @@ namespace LogSyncMod.AutoTest.Scenarios
                     // This validates Scene/Environment/Layout without maintaining a second whitelist.
                     var scene = t.Element("Scene"); if (scene == null) ScenarioLoader.Fail(t, input.Path, "Scene is required");
                     CompileBattle(result, result.Entrants.Take(2).Select(e => new ResolvedCombatRoster { Id = e.Id, PawnKind = e.PawnKind ?? "Colonist", ResolvedCount = 1 }).ToList(), null, 0);
+                    _ = ArenaChallengeRules.DeadlineSeconds(result);
                     all.Add(result);
                 }
             }
@@ -131,6 +141,8 @@ namespace LogSyncMod.AutoTest.Scenarios
                 var xenotype = input.Entrants.Single(e => e.Id == r.Id).Xenotype;
                 if (xenotype != null) actor.Add(new XElement("Xenotype", new XAttribute("def", xenotype)));
                 var extent = PawnGroupFormation.Extents(actor, verticalFirst: true);
+                if (input.Format != "knockout" && (extent.x > width - 3 || extent.z > height - 3))
+                    throw new ScenarioConfigurationException("Challenge roster does not fit the arena map", "COMBAT_FORMATION_LIMIT_EXCEEDED");
                 var x = i == 0 ? Math.Max(1, width / 5 - extent.x / 2) : Math.Min(width - extent.x - 2, width * 4 / 5 - extent.x / 2);
                 var z = Math.Max(1, height / 2 - extent.z / 2);
                 actor.SetAttributeValue("originX", x); actor.SetAttributeValue("originZ", z);
@@ -166,11 +178,24 @@ namespace LogSyncMod.AutoTest.Scenarios
                     compiled.EntrantIds.Add(id);
                 }
                 if (compiled.EntrantIds.Count < 1 || compiled.EntrantIds.Count > ArenaShowcase.PageSize) ScenarioLoader.Fail(page, path, "showcase Page requires 1..5 entrant references");
-                input.ShowcasePages.Add(compiled);
+                if (input.Format == "knockout") input.ShowcasePages.Add(compiled);
+                else
+                {
+                    // Preserve configured captions/durations while separating roles.
+                    foreach (var role in new[] { "boss", "challenger" })
+                    {
+                        var roleIds = compiled.EntrantIds.Where(id => input.Entrants.Single(e => e.Id == id).Role == role).ToList();
+                        if (roleIds.Count > 0) input.ShowcasePages.Add(new ArenaShowcasePageInput { Seconds = compiled.Seconds,
+                            Caption = compiled.Caption, EntrantIds = roleIds });
+                    }
+                }
             }
-            var remaining = input.Entrants.Where(e => !used.Contains(e.Id)).Select(e => e.Id).ToList();
-            for (var offset = 0; offset < remaining.Count; offset += ArenaShowcase.PageSize)
-                input.ShowcasePages.Add(new ArenaShowcasePageInput { Seconds = input.ShowcasePageSeconds, EntrantIds = remaining.Skip(offset).Take(ArenaShowcase.PageSize).ToList() });
+            foreach (var role in input.Format == "knockout" ? new string[] { null } : new[] { "boss", "challenger" })
+            {
+                var remaining = input.Entrants.Where(e => !used.Contains(e.Id) && (role == null || e.Role == role)).Select(e => e.Id).ToList();
+                for (var offset = 0; offset < remaining.Count; offset += ArenaShowcase.PageSize)
+                    input.ShowcasePages.Add(new ArenaShowcasePageInput { Seconds = input.ShowcasePageSeconds, EntrantIds = remaining.Skip(offset).Take(ArenaShowcase.PageSize).ToList() });
+            }
         }
         private static string Required(XElement e, string a, string path)
         { var s = ScenarioLoader.A(e, a); if (string.IsNullOrWhiteSpace(s)) ScenarioLoader.Fail(e, path, a + " is required"); return s; }

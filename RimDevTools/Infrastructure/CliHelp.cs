@@ -535,6 +535,12 @@ public static class CliHelp
           RimDevTools.exe test run --mode groupcombat --scenario-path benchmark.xml --test-name MyMod_HumanGroups
           RimDevTools.exe test run --mode arena --scenario-path arena.autotest.xml --test-name Arena_3000CP
 
+        Arena formats (Tournament.format in XML):
+          knockout (default), bossRoundRobin, limitChallenge.
+          Challenge entrants require role=boss/challenger. Limit challenges grow count
+          (default) or CP budget after a loss. Growth mode=multiply (default) uses
+          multiplier; mode=add uses increment. Both require maxValue.
+
         Scope values:
           standard, ui, combat, view, misc.
           Legacy detailed values remain accepted with their original narrow behavior.

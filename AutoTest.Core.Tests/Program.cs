@@ -39,6 +39,7 @@ internal sealed class CoreTestSuite
         GroupCombatTests.Run(Assert);
         GroupCombatOverlayTests.Run(Assert);
         ArenaTests.Run(Assert);
+        ArenaChallengeTests.Run(Assert);
         ArenaCameraTests.Run(Assert);
         SquadTests.Run(Assert);
         TestSessionExitTests.Run(Assert);
