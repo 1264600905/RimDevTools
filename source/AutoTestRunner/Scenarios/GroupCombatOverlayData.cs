@@ -11,6 +11,7 @@ namespace LogSyncMod.AutoTest.Scenarios
         {
             internal GroupCombatUnit Representative;
             internal string Label;
+            internal int Count;
         }
 
         internal sealed class Rank
@@ -85,7 +86,8 @@ namespace LogSyncMod.AutoTest.Scenarios
         private static Group MakeGroup(IGrouping<string, GroupCombatUnit> group)
         {
             var first = group.First();
-            return new Group { Representative = first, Label = (first.KindLabel ?? first.Kind) + " ×" + group.Count() };
+            var count = group.Count();
+            return new Group { Representative = first, Label = (first.KindLabel ?? first.Kind) + " ×" + count, Count = count };
         }
 
         private static Rank[] Rankings(List<GroupCombatUnit> members, Func<GroupCombatUnit, double> metric)

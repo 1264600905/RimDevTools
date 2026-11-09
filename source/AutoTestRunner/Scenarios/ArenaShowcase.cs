@@ -58,6 +58,14 @@ namespace LogSyncMod.AutoTest.Scenarios
         public bool PreviewCleanupComplete { get; set; }
         public List<ArenaEntrantProfile> Entrants { get; set; } = new();
         public List<ArenaShowcasePage> Pages { get; set; } = new();
+        public List<ArenaCompositionSwitch> CompositionSwitches { get; set; } = new();
+    }
+
+    public sealed class ArenaCompositionSwitch
+    {
+        public string EntrantId { get; set; }
+        public int Index { get; set; }
+        public float Seconds { get; set; }
     }
 
     public sealed class ArenaPlacement
@@ -104,6 +112,8 @@ namespace LogSyncMod.AutoTest.Scenarios
     {
         public const int PageSize = 5;
         public const double PageSeconds = 5;
+        public static int CompositionIndex(double elapsed, int count, int selected = 0, double selectedAt = 0)
+            => count <= 1 ? 0 : (selected + (int)Math.Floor(Math.Max(0, elapsed - selectedAt))) % count;
         public static int PageCount(int count) => (count + PageSize - 1) / PageSize;
         public static double Duration(int count) => PageCount(count) * PageSeconds;
         public static double Fill(double value, double maximum) => double.IsFinite(value) && double.IsFinite(maximum) && maximum > 0

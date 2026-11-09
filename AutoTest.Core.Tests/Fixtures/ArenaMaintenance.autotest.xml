@@ -1,0 +1,62 @@
+<ArenaSuite schemaVersion="1" id="arena.maintenance" gameVersion="1.7">
+  <SquadTemplates>
+    <SquadTemplate id="mixed" source="custom" factionDef="Pirate">
+      <Composition mode="fixed">
+        <Member pawnKind="Mercenary_Gunner" count="2"/>
+        <Member pawnKind="Mercenary_Heavy" count="2"/>
+      </Composition>
+      <Xenotypes mode="fixed" def="Baseliner"/>
+    </SquadTemplate>
+  </SquadTemplates>
+  <Tournament id="random" name="随机匹配、混编轮播与战场清理" seed="12345">
+    <testDefName>Arena_MaintenanceRandom</testDefName>
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all">
+      <Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/>
+      <Layout><ThingRect def="Steel" x="48" z="48" width="2" height="2"/></Layout>
+    </Scene>
+    <Roster mode="count" count="4"/>
+    <Entrants>
+      <Entrant id="mixed" squad="mixed" name="混编雇佣兵"/>
+      <Entrant id="wolves" pawnKind="Wolf_Timber" count="6" name="森林狼"/>
+      <Entrant id="mercenaries" pawnKind="Mercenary_Gunner" count="3" name="枪手"/>
+      <Entrant id="scythers" pawnKind="Mech_Scyther" count="2" name="镰刀机甲"/>
+      <Entrant id="thrumbo" pawnKind="Thrumbo" count="1" name="敲击兽"/>
+    </Entrants>
+    <Matchmaking mode="random"/>
+    <Cleanup corpses="true" droppedItems="true"/>
+    <Battle timeSpeed="superfast" durationSeconds="240" timeoutRealSeconds="240" confirmationTicks="300"/>
+    <TieBreak maxReplays="1"/>
+    <Presentation><Showcase pageSeconds="5"/></Presentation>
+    <Output width="1920" height="1080"/>
+  </Tournament>
+  <Tournament id="closest" name="人数接近匹配与关闭清理" seed="12345">
+    <testDefName>Arena_MaintenanceClosest</testDefName>
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all">
+      <Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/>
+      <Layout><ThingRect def="Steel" x="48" z="48" width="2" height="2"/></Layout>
+    </Scene>
+    <Roster mode="count" count="1"/>
+    <Entrants>
+      <Entrant id="thrumbo" pawnKind="Thrumbo" name="敲击兽"/>
+      <Entrant id="squirrels" pawnKind="Squirrel" count="8" name="松鼠"/>
+    </Entrants>
+    <Matchmaking mode="closestCount"/>
+    <Cleanup corpses="false" droppedItems="false"/>
+    <Battle timeSpeed="superfast" durationSeconds="180" timeoutRealSeconds="180" confirmationTicks="300"/>
+    <Output width="1280" height="720"/>
+  </Tournament>
+  <Tournament id="revival" name="开启清理时保留拒死者复活" seed="12345">
+    <testDefName>Arena_MaintenanceRevival</testDefName>
+    <Scene type="mainMap" sizeX="100" sizeZ="100">
+      <Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/>
+    </Scene>
+    <Roster mode="count" count="8"/>
+    <Entrants>
+      <Entrant id="horaxians" pawnKind="Horaxian_Gunner" count="4"/>
+      <Entrant id="mercenaries" pawnKind="Mercenary_Gunner"/>
+    </Entrants>
+    <Cleanup corpses="true" droppedItems="true"/>
+    <Battle durationSeconds="240" timeoutRealSeconds="240" timeSpeed="superfast" confirmationTicks="300"/>
+    <Output width="1920" height="1080"/>
+  </Tournament>
+</ArenaSuite>

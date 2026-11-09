@@ -76,6 +76,12 @@ CLI `--timeout-seconds` 限制整个进程，不随游戏暂停延长。省略�
 
 Presentation 可省略。bracketSeconds 是开战倒计时长度（1—60），settlementSeconds 是结算展示长度（1—60）；advanceStartSeconds（0—60）只控制提前多少秒准备开战截图，**不提前启动模拟**，还须等截图完成。Showcase 默认每页 5 秒，所有页时长 1—60；每个 Page 引用 1—5 个参赛 id，不得跨页重复，caption 为最多 80 字符的单行。未列参赛队按原输入顺序自动每 5 队补页。
 
+混编卡存在多个可切换兵种时每 1 个现实秒循环切换，箭头可手动切换并重置 1 秒计时；单构成固定展示。页面时长不足时不会自动延长，可按构成数量配置 `pageSeconds`。
+
+`Tournament` 下可写 `<Matchmaking mode="closestCount"/>`（默认）或 `<Matchmaking mode="random"/>`。前者选择初始人数差最小的一对，后者每轮按 `Tournament.seed` 随机排序后两两配对；相同输入、种子及晋级结果可复现。奇数队的资格赛也使用所选模式，后续低分两队加赛仍按原评分规则选择。
+
+`<Cleanup corpses="true" droppedItems="true"/>` 两项独立配置，缺省均为 false；每 250 ticks 清理当前擂台尸体和地面物资，不碰装备中的物品和建筑。原生拒死及已注册模组的待复活尸体保留。擂台会话自动清理原主地图全部 Pawn（含殖民者），每场准备时设为当地中午，每经过 5000 ticks 再设中午。只变更日历偏移，战斗 tick 持续递增；每场结束或异常退出恢复偏移。左右伤害排名的姓名后显示综合健康度条，护盾不计入。原始 JSON 的 `BackgroundCleanup`、`ArenaMaintenance`、`HealthPercent`、`CompositionSwitches` 提供对应观察值。
+
 赛前展示采样实际生成、出生并初始化后的角色，护甲含服装与身体覆盖；属性条按本场参赛者相对归一化并用六档品质色显示，不是绝对平衡评级。混编展示成员组成，不能只用代表 PawnKind 解释整队。最终前五按淘汰阶段、最近胜利评分等稳定排序，冠军优先；沿用参赛者卡片展示 10 秒，少于 5 队时显示实际队数。
 
 读取 artifacts 返回的原始 `arena_<runId>_Result.json`、`_Report.md` 与 `_Screenshots`，核对冻结计划、实际 rosters、每场 attempts 的 ExecutionStatus/CleanupComplete/MeasurementQuality、Score、赛程依赖、冠军、Showcase.Completed/PreviewCleanupComplete、TopFive.Completed 和实际截图。缺失文件如实报告，不创建替代证据。JSON 中胜者/参赛者用 entrant id，各战斗内部队伍是 A/B，须按 Left/Right 映射。结果与回归、独立群战文件分开，不能把冠军展示或截图存在当作所有机制均正确。

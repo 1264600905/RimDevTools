@@ -29,6 +29,7 @@ namespace LogSyncMod.AutoTest.Scenarios
         public string KindLabel { get; set; }
         public string Name { get; set; }
         public string State { get; set; } = "standing";
+        public float HealthPercent { get; set; } = 1;
         public bool JoinedDuringBattle { get; set; }
         public int JoinedAtTick { get; set; }
         public bool PendingRevival { get; set; }
@@ -143,6 +144,7 @@ namespace LogSyncMod.AutoTest.Scenarios
         public string EndReason { get; set; }
         public string Error { get; set; }
         public CombatStartupTiming StartupTiming { get; set; }
+        public ArenaMaintenanceResult ArenaMaintenance { get; set; }
         public int ElapsedTicks { get; set; }
         public double SimulatedSeconds { get; set; }
         public string MeasurementQuality { get; set; } = "partial";

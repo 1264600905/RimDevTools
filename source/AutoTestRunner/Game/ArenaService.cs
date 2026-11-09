@@ -20,6 +20,7 @@ namespace LogSyncMod.AutoTest
         private static ArenaScheduler scheduler;
         private static ArenaMatch match;
         private static IDisposable logGuard;
+        private static ArenaBackgroundCleanup backgroundCleanup;
         private static bool waiting, cancel;
         private static float championStarted;
         private static bool championCaptured;
@@ -66,6 +67,8 @@ namespace LogSyncMod.AutoTest
                     if (frozen?.Purpose != "arena" || frozen.SchemaVersion != 1) throw new ScenarioConfigurationException("Invalid frozen arena plan");
                     report.Plan = ArenaLoader.Compile(frozen.Inputs, frozen.SelectedTestDefNames);
                     report.Plan.SkippedFiles = frozen.SkippedFiles;
+                    backgroundCleanup = new ArenaBackgroundCleanup(Find.CurrentMap);
+                    report.BackgroundCleanup = backgroundCleanup.Result;
                     // Freeze every tournament's roster and native loadouts before any battle.
                     foreach (var input in report.Plan.Tournaments)
                     {
@@ -103,6 +106,7 @@ namespace LogSyncMod.AutoTest
                     }
                     tournament = null; Write();
                 }
+                backgroundCleanup?.Poll();
                 if (waiting || CombatFightService.Busy) return;
                 if (cancel) { Finish("cancelled", "Cancelled by user"); return; }
                 if (showcaseActive)
@@ -229,6 +233,7 @@ namespace LogSyncMod.AutoTest
             if (report == null || report.CompletedAtUtc != null) return;
             if (showcaseActive) { Find.TickManager.CurTimeSpeed = showcaseOriginalSpeed; showcaseActive = false; }
             ArenaEntrantShowcase.Clear();
+            backgroundCleanup = null;
             if (postBattleMatch != null) { Find.TickManager.CurTimeSpeed = postBattleOriginalSpeed; postBattleMatch = null; }
             if (tournament?.Status == "champion") Find.TickManager.CurTimeSpeed = championOriginalSpeed;
             report.Status = status; report.Error = error; report.CompletedAtUtc = DateTime.UtcNow.ToString("O");

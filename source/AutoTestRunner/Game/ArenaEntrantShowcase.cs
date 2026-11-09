@@ -16,6 +16,8 @@ namespace LogSyncMod.AutoTest
         private static double[] maxima;
         private static Dictionary<string, float> hues;
         private static readonly Dictionary<string, int> selectedTypes = new();
+        private static readonly Dictionary<string, float> selectedAt = new();
+        private static readonly Dictionary<string, int> lastDrawnTypes = new();
         private static readonly Dictionary<string, List<(string id, int count, decimal totalPower)>> sampleTypes = new();
         private static readonly Dictionary<string, Pawn> previewPawns = new();
         private static readonly Dictionary<string, RenderTexture> portraits = new();
@@ -182,7 +184,7 @@ namespace LogSyncMod.AutoTest
         {
             ReleasePreviews();
             foreach (var texture in portraits.Values) { texture.Release(); UnityEngine.Object.Destroy(texture); }
-            portraits.Clear(); selectedTypes.Clear(); Ready = false;
+            portraits.Clear(); selectedTypes.Clear(); selectedAt.Clear(); lastDrawnTypes.Clear(); Ready = false;
             tournament = null; maxima = null; hues = null;
         }
 
@@ -263,6 +265,17 @@ namespace LogSyncMod.AutoTest
                     var entry = entries[i];
                     var roster = tournament.Rosters.Single(r => r.Id == entry.Id);
                     var selected = selectedTypes.TryGetValue(entry.Id, out var selection) ? selection : 0;
+                    if (!standings)
+                    {
+                        selected = ArenaShowcase.CompositionIndex(elapsed, entry.Composition.Count, selected,
+                            selectedAt.TryGetValue(entry.Id, out var changedAt) ? changedAt : 0);
+                        if (entry.Composition.Count > 1 && Event.current.type == EventType.Repaint
+                            && (!lastDrawnTypes.TryGetValue(entry.Id, out var last) || last != selected))
+                        {
+                            lastDrawnTypes[entry.Id] = selected;
+                            tournament.Showcase.CompositionSwitches.Add(new ArenaCompositionSwitch { EntrantId = entry.Id, Index = selected, Seconds = elapsed });
+                        }
+                    }
                     var detail = entry.Composition.Count > 0 ? entry.Composition[selected % entry.Composition.Count] : entry;
                     var color = standings && i == 0 ? Gold : standings && i == 1 ? new Color(.78f, .85f, .93f) : standings && i == 2 ? new Color(.88f, .59f, .37f) : Color.HSVToRGB(hues[entry.PawnKind], .48f, .95f);
                     var reveal = ArenaPresentation.Progress(elapsed, i * .045f, .36f);
@@ -284,8 +297,10 @@ namespace LogSyncMod.AutoTest
                     }
                     if (!standings && entry.Composition.Count > 0)
                     {
-                        if (Widgets.ButtonText(R(x + 8, y + 218, 25, 22), "‹")) selectedTypes[entry.Id] = (selected + entry.Composition.Count - 1) % entry.Composition.Count;
-                        if (Widgets.ButtonText(R(x + cardWidth - 33, y + 218, 25, 22), "›")) selectedTypes[entry.Id] = (selected + 1) % entry.Composition.Count;
+                        if (entry.Composition.Count > 1 && Widgets.ButtonText(R(x + 8, y + 218, 25, 22), "‹"))
+                        { selectedTypes[entry.Id] = (selected + entry.Composition.Count - 1) % entry.Composition.Count; selectedAt[entry.Id] = elapsed; }
+                        if (entry.Composition.Count > 1 && Widgets.ButtonText(R(x + cardWidth - 33, y + 218, 25, 22), "›"))
+                        { selectedTypes[entry.Id] = (selected + 1) % entry.Composition.Count; selectedAt[entry.Id] = elapsed; }
                         TextAt(R(x + 35, y + 216, cardWidth - 70, 23), detail.DisplayName + " ×" + detail.Count, 12 * scale, Muted, TextAnchor.MiddleCenter);
                     }
                     Widgets.DrawBoxSolid(R(x + 22, y + 239, cardWidth - 44, 1), new Color(.16f, .2f, .26f));
@@ -313,13 +328,13 @@ namespace LogSyncMod.AutoTest
                     if (roster.SquadId != null)
                     {
                         TextAt(R(x + 18, y + 527, cardWidth - 36, 23), roster.ResolvedCount + " 人 · 总 CP " + roster.ActualCombatPower.ToString("0.##"), 12 * scale, Muted, TextAnchor.MiddleCenter);
-                        var description = "同名兵种合并计数；属性为该类代表成员，左右箭头切换。\n" + string.Join("\n", entry.Composition.Select(p => p.DisplayName + " ×" + p.Count + " · CP " + p.TotalCombatPower.ToString("0.##")));
+                        var description = "同名兵种合并计数；属性为该类代表成员，每秒轮播，也可用左右箭头切换。\n" + string.Join("\n", entry.Composition.Select(p => p.DisplayName + " ×" + p.Count + " · CP " + p.TotalCombatPower.ToString("0.##")));
                         TooltipHandler.TipRegion(R(x, y, cardWidth, 554), description);
                     }
                 }
 
                 var pages = standings ? 1 : tournament.Input.ShowcasePages.Count;
-                TextAt(R(72, 805, 1150, 26), standings ? "沿用赛前角色与属性快照  ·  条长仍以本届全体同项最高值为满格" : "原生装备与实际角色属性  ·  混编箭头切换兵种代表，悬停查看构成  ·  同项最高值为满格", 14 * scale, Muted);
+                TextAt(R(72, 805, 1150, 26), standings ? "沿用赛前角色与属性快照  ·  条长仍以本届全体同项最高值为满格" : "原生装备与实际角色属性  ·  混编每秒轮播，可用箭头切换，悬停查看构成  ·  同项最高值为满格", 14 * scale, Muted);
                 for (var i = 0; i < GradeColors.Length; i++)
                 {
                     Widgets.DrawBoxSolid(R(72 + i * 193, 841, 7, 7), GradeColors[i]);

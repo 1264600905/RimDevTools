@@ -55,6 +55,27 @@ internal static class ArenaTests
         const string xml = "<ArenaSuite schemaVersion='1' id='suite'><Tournament id='main'><testDefName>ArenaTest</testDefName><Scene type='mainMap' sizeX='100' sizeZ='100'/><Roster mode='combatPower' budget='3000'/><Entrants><Entrant id='a' pawnKind='Wolf_Timber'/><Entrant id='b' pawnKind='Mercenary_Gunner'/></Entrants></Tournament></ArenaSuite>";
         ArenaPlan Parse(string text) => ArenaLoader.Compile(new[] { new ScenarioInput { Path = "arena.xml", Sha256 = "h", Xml = text } }, new[] { "ArenaTest" });
         var plan = Parse(xml);
+        check(plan.Tournaments[0].MatchmakingMode == "closestCount" && !plan.Tournaments[0].ClearCorpses && !plan.Tournaments[0].ClearDroppedItems,
+            "legacy arena XML keeps count pairing and disables optional floor cleanup");
+        var configured = Parse(xml.Replace("</Tournament>", "<Matchmaking mode='random'/><Cleanup corpses='true' droppedItems='false'/></Tournament>")).Tournaments.Single();
+        check(configured.MatchmakingMode == "random" && configured.ClearCorpses && !configured.ClearDroppedItems,
+            "arena XML independently freezes matchmaking and cleanup flags");
+        Reject(() => Parse(xml.Replace("</Tournament>", "<Matchmaking mode='typo'/></Tournament>")), "unknown pairing policy fails before game launch");
+        Reject(() => Parse(xml.Replace("</Tournament>", "<Cleanup corpses='yes'/></Tournament>")), "invalid cleanup boolean fails before game launch");
+        check(ArenaShowcase.CompositionIndex(.99, 3) == 0 && ArenaShowcase.CompositionIndex(1, 3) == 1
+            && ArenaShowcase.CompositionIndex(3, 3) == 0 && ArenaShowcase.CompositionIndex(100, 1) == 0,
+            "composition rotates on real-second boundaries, wraps, and leaves single types stationary");
+        check(ArenaShowcase.CompositionIndex(2.9, 3, 2, 2) == 2 && ArenaShowcase.CompositionIndex(3, 3, 2, 2) == 0,
+            "manual composition selection gets a full second before automatic rotation resumes");
+        var healthLedger = new GroupCombatLedger(new[] { new GroupCombatUnit { Id = "a", Team = "A" }, new GroupCombatUnit { Id = "b", Team = "B" } },
+            new[] { KeyValuePair.Create("A", "left"), KeyValuePair.Create("B", "right") });
+        healthLedger.SetHealth("a", .4f);
+        var healthSnapshot = healthLedger.Snapshot(0);
+        healthLedger.SetHealth("a", 2);
+        healthLedger.SetHealth("b", float.NaN);
+        var boundedHealth = healthLedger.Snapshot(1);
+        check(healthSnapshot.Units[0].HealthPercent == .4f && boundedHealth.Units[0].HealthPercent == 1 && boundedHealth.Units[1].HealthPercent == 0,
+            "health snapshots retain sampled wounds independently and reject invalid health ranges");
         var largeInput = Parse(xml.Replace("mode='combatPower' budget='3000'", "mode='count' count='200'")).Tournaments.Single();
         var largeRosters = new List<ResolvedCombatRoster> { CombatRoster.Resolve("a", "Wolf_Timber", 75, null, 200), CombatRoster.Resolve("b", "Mercenary_Gunner", 85, null, 200) };
         var largeBattle = XElement.Parse(ArenaLoader.CompileBattle(largeInput, largeRosters, null, 0).Xml);
@@ -318,6 +339,26 @@ internal static class ArenaTests
         check(stableOrder && scheduleA.Champion == scheduleB.Champion, "equal counts and scores remain stable when XML entrant order is reversed");
         var counts = Tournament(input, 4); counts.Rosters[0].ResolvedCount = 1; counts.Rosters[1].ResolvedCount = 30; counts.Rosters[2].ResolvedCount = 31; counts.Rosters[3].ResolvedCount = 100;
         check(new ArenaScheduler(counts).Next().PairKey.SequenceEqual(new[] { "e1", "e2" }), "greedy pairing chooses globally closest initial roster counts");
+        var randomInput = JsonSerializer.Deserialize<ArenaTournamentInput>(JsonSerializer.Serialize(input));
+        randomInput.MatchmakingMode = "random";
+        string RandomTrace(int seed, bool reverse, bool alterCounts)
+        {
+            var t = Tournament(JsonSerializer.Deserialize<ArenaTournamentInput>(JsonSerializer.Serialize(randomInput)), 7);
+            t.Input.Seed = seed;
+            if (alterCounts) for (int i = 0; i < t.Rosters.Count; i++) t.Rosters[i].ResolvedCount = i * 11 + 1;
+            if (reverse) t.Rosters.Reverse();
+            var scheduler = new ArenaScheduler(t); var keys = new List<string>(); ArenaMatch m;
+            while ((m = scheduler.Next()) != null)
+            {
+                keys.Add(m.Kind + JsonSerializer.Serialize(m.PairKey));
+                scheduler.Resolve(m.Left, new ArenaScore { IsRankable = true, Value = 50 });
+            }
+            check(keys.Count == 6 && scheduler.Champion != null, "random bracket retains N-1 eliminations including odd entrant qualification");
+            return string.Join(";", keys);
+        }
+        var randomTrace = RandomTrace(12345, false, false);
+        check(randomTrace == RandomTrace(12345, true, true), "random pairing is reproducible and independent of XML order and roster counts");
+        check(randomTrace != RandomTrace(54321, false, false), "different seeds redraw random pairings");
         var left = new GroupCombatTeamResult { Id = "A", Initial = 20, Standing = 10, Alive = 10 }; var right = new GroupCombatTeamResult { Id = "B", Initial = 2, Standing = 2, Alive = 2 };
         var battle = new GroupCombatRoundResult { ElapsedTicks = 600, Teams = new() { left, right }, Units = Enumerable.Range(0, 20).Select(i => new GroupCombatUnit { Id = "a" + i, Team = "A", State = i < 10 ? "standing" : "downed" }).Concat(Enumerable.Range(0, 2).Select(i => new GroupCombatUnit { Id = "b" + i, Team = "B" })).ToList() };
         check(new ArenaEndRule(0).Evaluate(battle, 600) && right.Outcome == "win", "arena time-limit compares standing proportions rather than larger absolute survivor counts");

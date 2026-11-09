@@ -14,6 +14,13 @@ internal static class ArenaResultTests
             check(error == null, "arena independent validator reconstructs " + n + " entrant tournament: " + error);
         }
         var valid = Build(6);
+        foreach (var n in new[] { 5, 6, 8 })
+        {
+            var random = Build(n, matchmaking: "random");
+            check(ArenaResultValidator.ValidateIntegrity(random, random.Plan, false) == null, "independent validator accepts seeded random bracket with " + n + " entrants");
+            random.Tournaments[0].Input.MatchmakingMode = "closestCount";
+            check(ArenaResultValidator.ValidateIntegrity(random, random.Plan, false) != null, "validator rejects a result-side matchmaking substitution");
+        }
         void Reject(Action<ArenaRunReport> mutation, string label)
         {
             var copy = JsonSerializer.Deserialize<ArenaRunReport>(JsonSerializer.Serialize(valid))!; mutation(copy);
@@ -65,6 +72,14 @@ internal static class ArenaResultTests
         Reject(r => r.Tournaments[0].Input.ShowcasePages[0].EntrantIds.Reverse(), "arena rejects result-side changes to XML showcase order");
         Reject(r => r.Tournaments[0].Rosters[0].ResolvedCount++, "arena rejects actual rosters inconsistent with count mode input");
         Reject(r => r.Tournaments[0].Matches[0].Attempts[0].EndReason = "timeLimitRatio", "arena rejects time-limit decisions before the configured simulated deadline");
+        var maintained = Build(2);
+        var maintenance = new ArenaMaintenanceResult { CalendarRestored = true, NoonResetTicks = new() { 0 }, NoonResetHours = new() { 12 } };
+        maintained.Tournaments[0].Matches[0].Attempts[0].ArenaMaintenance = maintenance;
+        check(ArenaResultValidator.ValidateIntegrity(maintained, maintained.Plan, false) == null, "arena accepts original maintenance observations at local noon with restored calendar");
+        maintenance.NoonResetHours[0] = 14;
+        check(ArenaResultValidator.ValidateIntegrity(maintained, maintained.Plan, false) != null, "arena rejects an incorrectly calibrated local noon");
+        maintenance.NoonResetHours[0] = 12; maintenance.CalendarRestored = false;
+        check(ArenaResultValidator.ValidateIntegrity(maintained, maintained.Plan, false) != null, "arena rejects an unrestored calendar after cleanup");
         var budget = Build(5, true);
         check(ArenaResultValidator.ValidateIntegrity(budget, budget.Plan, false) == null, "arena budget tournament validates maximal allocation from loaded combatPower snapshots");
         var mixedBudget = Build(25, true, entrantBudget: 3200);
@@ -78,13 +93,13 @@ internal static class ArenaResultTests
         budget.Tournaments[0].Rosters[0].UnitCombatPower = 1000;
         check(ArenaResultValidator.ValidateIntegrity(budget, budget.Plan, false) != null, "arena rejects claimed combatPower inconsistent with maximal budget count");
     }
-    private static ArenaRunReport Build(int count, bool budget = false, decimal? extremePower = null, decimal? entrantBudget = null)
+    private static ArenaRunReport Build(int count, bool budget = false, decimal? extremePower = null, decimal? entrantBudget = null, string matchmaking = "closestCount")
     {
         var xml = new XElement("ArenaSuite", new XAttribute("schemaVersion", 1), new XAttribute("id", "fixture"),
             new XElement("Tournament", new XAttribute("id", "main"), new XElement("testDefName", "ArenaFixture"), new XElement("Scene", new XAttribute("type", "mainMap"), new XAttribute("sizeX", 100), new XAttribute("sizeZ", 100)),
             budget ? new XElement("Roster", new XAttribute("mode", "combatPower"), new XAttribute("budget", extremePower ?? 3000)) : new XElement("Roster", new XAttribute("mode", "count"), new XAttribute("count", 2)),
             new XElement("Entrants", Enumerable.Range(0, count).Select(i => new XElement("Entrant", new XAttribute("id", "e" + i), new XAttribute("pawnKind", "Kind" + i), i == 0 && entrantBudget.HasValue ? new XAttribute("budget", entrantBudget.Value) : null))),
-            new XElement("Battle", new XAttribute("confirmationTicks", 0))));
+            new XElement("Battle", new XAttribute("confirmationTicks", 0)), new XElement("Matchmaking", new XAttribute("mode", matchmaking))));
         var plan = ArenaLoader.Compile(new[] { new ScenarioInput { Path = "fixture.xml", Sha256 = "frozen", Xml = xml.ToString(SaveOptions.DisableFormatting) } }, new[] { "ArenaFixture" });
         var input = plan.Tournaments.Single();
         var t = new ArenaTournamentResult { Input = input };

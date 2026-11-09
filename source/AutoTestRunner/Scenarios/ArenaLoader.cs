@@ -48,7 +48,7 @@ namespace LogSyncMod.AutoTest.Scenarios
                 var ids = new HashSet<string>(StringComparer.Ordinal);
                 foreach (var t in root.Elements("Tournament"))
                 {
-                    Check(t, "id name seed", "testDefName Scene Roster Entrants Battle Scoring TieBreak Presentation Output", input.Path);
+                    Check(t, "id name seed", "testDefName Scene Roster Entrants Battle Scoring TieBreak Presentation Output Cleanup Matchmaking", input.Path);
                     var id = Required(t, "id", input.Path);
                     if (!ids.Add(id)) ScenarioLoader.Fail(t, input.Path, "duplicate Tournament id");
                     var testName = t.Element("testDefName")?.Value.Trim();
@@ -73,6 +73,14 @@ namespace LogSyncMod.AutoTest.Scenarios
                     }
                     if (result.Entrants.Count < 2 || result.Entrants.Count > 64 || result.Entrants.Select(e => e.Id).Distinct(StringComparer.Ordinal).Count() != result.Entrants.Count || result.Entrants.Where(e => e.PawnKind != null).Select(e => e.PawnKind).Distinct(StringComparer.Ordinal).Count() != result.Entrants.Count(e => e.PawnKind != null)) ScenarioLoader.Fail(entrants, input.Path, "requires 2..64 distinct entrant IDs and PawnKinds");
                     var battle = t.Element("Battle"); Check(battle, "durationSeconds timeoutRealSeconds timeSpeed confirmationTicks", "", input.Path);
+                    var matchmaking = t.Element("Matchmaking"); Check(matchmaking, "mode", "", input.Path);
+                    result.MatchmakingMode = ScenarioLoader.A(matchmaking, "mode", "closestCount");
+                    if (!new[] { "closestCount", "random" }.Contains(result.MatchmakingMode)) ScenarioLoader.Fail(matchmaking, input.Path, "Matchmaking mode must be closestCount/random");
+                    var cleanup = t.Element("Cleanup"); Check(cleanup, "corpses droppedItems", "", input.Path);
+                    foreach (var attr in new[] { "corpses", "droppedItems" })
+                        if (!new[] { "true", "false" }.Contains(ScenarioLoader.A(cleanup, attr, "false"))) ScenarioLoader.Fail(cleanup, input.Path, attr + " must be true/false");
+                    result.ClearCorpses = ScenarioLoader.A(cleanup, "corpses", "false") == "true";
+                    result.ClearDroppedItems = ScenarioLoader.A(cleanup, "droppedItems", "false") == "true";
                     result.DurationSeconds = Number(battle, "durationSeconds", 180, 0, 86400, input.Path, true);
                     result.TimeoutRealSeconds = Integer(battle, "timeoutRealSeconds", 300, 1, 86400, input.Path);
                     result.ConfirmationTicks = Integer(battle, "confirmationTicks", 300, 0, 36000, input.Path);

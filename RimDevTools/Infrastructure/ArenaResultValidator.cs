@@ -55,7 +55,11 @@ public static class ArenaResultValidator
                 if (alive.Count < 2 || m.Id != input.TestDefName + "/match-" + (seen.Count + 1)) return "淘汰后继续对局或对局编号无效";
                 if (queue.Count == 0)
                 {
-                    if (initialOdd) { queue.Enqueue(Closest(alive, t)); kind = "qualification"; initialOdd = false; }
+                    if (initialOdd)
+                    {
+                        var ordered = input.MatchmakingMode == "random" ? RandomOrder(alive, input.Seed, 0, "qualification") : null;
+                        queue.Enqueue(ordered == null ? Closest(alive, t) : ArenaScheduler.Pair(ordered[0], ordered[1])); kind = "qualification"; initialOdd = false;
+                    }
                     else if (alive.Count % 2 == 1)
                     {
                         kind = "extra";
@@ -64,8 +68,10 @@ public static class ArenaResultValidator
                     }
                     else
                     {
-                        round++; kind = "round"; var remaining = alive.ToList();
-                        while (remaining.Count > 0) { var pair = Closest(remaining, t); queue.Enqueue(pair); remaining.Remove(pair[0]); remaining.Remove(pair[1]); }
+                        round++; kind = "round";
+                        var random = input.MatchmakingMode == "random";
+                        var remaining = random ? RandomOrder(alive, input.Seed, round, kind) : alive.ToList();
+                        while (remaining.Count > 0) { var pair = random ? ArenaScheduler.Pair(remaining[0], remaining[1]) : Closest(remaining, t); queue.Enqueue(pair); remaining.Remove(pair[0]); remaining.Remove(pair[1]); }
                     }
                 }
                 var pairExpected = queue.Dequeue();
@@ -76,6 +82,17 @@ public static class ArenaResultValidator
                 for (int ai = 0; ai < m.Attempts.Count; ai++)
                 {
                     var a = m.Attempts[ai]; var battle = ArenaLoader.CompileBattle(input, t.Rosters, m, ai);
+                    if (a.ArenaMaintenance is { } maintenance)
+                    {
+                        if (maintenance.ClearCorpses != input.ClearCorpses || maintenance.ClearDroppedItems != input.ClearDroppedItems
+                            || !maintenance.CalendarRestored || maintenance.NoonResetTicks.Count == 0 || maintenance.NoonResetTicks[0] != 0
+                            || maintenance.NoonResetTicks.Count != maintenance.NoonResetHours.Count
+                            || maintenance.NoonResetTicks.Count != a.ElapsedTicks / 5000 + 1
+                            || maintenance.NoonResetTicks.Where((tick, i) => tick != i * 5000 || tick > a.ElapsedTicks).Any()
+                            || maintenance.NoonResetHours.Any(hour => !float.IsFinite(hour) || Math.Abs(hour - 12) > .001f)
+                            || !input.ClearCorpses && maintenance.ClearedCorpses != 0 || !input.ClearDroppedItems && maintenance.ClearedItems != 0)
+                            return "擂台清理配置、正午重设或日历恢复不符";
+                    }
                     if (a.CaseId != battle.CaseId || a.TestDefName != input.TestDefName || a.InputHash != input.InputHash || a.Seed != battle.Seed || a.ExecutionStatus != "completed" || !a.CleanupComplete || a.IsPocketMap || a.Teams.Count != 2 || a.Teams.Select(x => x.Id).Order().SequenceEqual(new[] { "A", "B" }) == false) return "战斗身份、种子或清理不符";
                     foreach (var side in new[] { "A", "B" })
                     {
@@ -160,6 +177,9 @@ public static class ArenaResultValidator
         }
         return null;
     }
+    private static List<string> RandomOrder(List<string> ids, int seed, int round, string kind) => ids
+        .OrderBy(id => ArenaScheduler.Stable(seed, "arena.matchmaking", round, kind, id), StringComparer.Ordinal)
+        .ThenBy(id => id, StringComparer.Ordinal).ToList();
     private static string[] Closest(List<string> ids, ArenaTournamentResult t)
     {
         var pairs = new List<string[]>();

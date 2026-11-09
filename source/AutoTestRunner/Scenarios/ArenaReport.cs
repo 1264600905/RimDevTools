@@ -11,9 +11,12 @@ namespace LogSyncMod.AutoTest.Scenarios
         public static string Write(ArenaRunReport report)
         {
             var s = new StringBuilder("# 擂台测试\n\n").AppendLine("Run: " + report.RunId + " · " + report.Status).AppendLine();
+            if (report.BackgroundCleanup is { } background)
+                s.AppendLine($"原主地图清理：地图 {background.MapId}，移除 {background.RemovedPawns} 个 Pawn（殖民者 {background.RemovedColonists}），剩余 {background.RemainingPawns}。\n");
             foreach (var t in report.Tournaments)
             {
                 s.AppendLine("## " + t.Input.Name).AppendLine().AppendLine("冠军：" + (t.Champion ?? "尚未决出")).AppendLine();
+                s.AppendLine($"配对：{t.Input.MatchmakingMode}；清理尸体：{t.Input.ClearCorpses}；清理掉落物：{t.Input.ClearDroppedItems}。\n");
                 if (t.TopFive != null)
                 {
                     s.AppendLine("|名次|参赛者|胜场|最近胜利评分|").AppendLine("|---:|---|---:|---:|");

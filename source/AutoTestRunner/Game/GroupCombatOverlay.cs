@@ -162,7 +162,10 @@ namespace LogSyncMod.AutoTest
                 foreach (var group in panel.LivingGroups)
                 {
                     var representative = group.Representative; DrawPortrait(new Rect(0, y, 20 * scale, 20 * scale), representative);
-                    DrawName(new Rect(24 * scale, y, width - 24 * scale, 20 * scale), group.Label, 12 * scale, representative.State); y += 21 * scale;
+                    var nameRect = new Rect(24 * scale, y, width - 24 * scale, 20 * scale);
+                    if (group.Count == 1) DrawHealthName(nameRect, group.Label, 12 * scale, representative, nameRect.width * .6f);
+                    else DrawName(nameRect, group.Label, 12 * scale, representative.State);
+                    y += 21 * scale;
                 }
                 if (panel.RemainingKinds != null)
                 {
@@ -194,7 +197,7 @@ namespace LogSyncMod.AutoTest
                 var name = row.Name;
                 if (rowHeight >= 32 * uiScale)
                 {
-                    DrawName(new Rect(bar.x, y, bar.width, 19 * uiScale), name, 12 * uiScale, unit.State);
+                    DrawHealthName(new Rect(bar.x, y, bar.width, 19 * uiScale), name, 12 * uiScale, unit);
                     DrawText(new Rect(bar.x, y + 17 * uiScale, bar.width, rowHeight - 17 * uiScale), row.DetailedValue, 12 * uiScale);
                 }
                 else
@@ -205,11 +208,25 @@ namespace LogSyncMod.AutoTest
                     var fontSize = Mathf.Min(12 * uiScale, rowHeight - 2);
                     var valueWidth = Mathf.Min(bar.width * .45f, Mathf.Max(30 * uiScale, amount.Length * fontSize * .65f));
                     var nameWidth = bar.width - valueWidth - 8 * uiScale;
-                    DrawName(new Rect(bar.x, y, nameWidth, rowHeight), name, Mathf.Min(fontSize, nameWidth / Mathf.Max(1, name.Length)), unit.State);
+                    DrawHealthName(new Rect(bar.x, y, nameWidth, rowHeight), name, fontSize, unit);
                     DrawText(new Rect(bar.xMax - valueWidth, y, valueWidth, rowHeight), amount, fontSize, TextAnchor.MiddleRight);
                 }
                 y += rowHeight;
             }
+        }
+        private static void DrawHealthName(Rect rect, string name, float fontSize, GroupCombatUnit unit, float? barWidth = null)
+        {
+            var healthWidth = barWidth ?? Mathf.Min(55, rect.width * .35f);
+            var nameRect = new Rect(rect.x, rect.y, Mathf.Max(1, rect.width - healthWidth - 4), rect.height);
+            var shownName = name;
+            var maxCharacters = Mathf.Max(1, Mathf.FloorToInt(nameRect.width / (fontSize * .7f)));
+            if (shownName.Length > maxCharacters) shownName = shownName.Substring(0, Mathf.Max(0, maxCharacters - 1)) + "…";
+            DrawName(nameRect, shownName, fontSize, unit.State);
+            var health = unit.State == "dead" ? 0 : Mathf.Clamp01(unit.HealthPercent);
+            var bar = new Rect(rect.xMax - healthWidth, rect.center.y - 3, healthWidth, 6);
+            Widgets.DrawBoxSolid(bar, new Color(.12f, .14f, .15f, .95f));
+            var color = unit.State == "downed" ? new Color(1f, .68f, .2f) : Color.Lerp(new Color(.94f, .22f, .2f), new Color(.3f, .85f, .4f), health);
+            if (health > 0) Widgets.DrawBoxSolid(new Rect(bar.x, bar.y, bar.width * health, bar.height), color);
         }
         private static void DrawCountdown(float width, float height)
         {

@@ -29,6 +29,9 @@ namespace LogSyncMod.AutoTest.Scenarios
         public string Source { get; set; }
         public string InputHash { get; set; }
         public int Seed { get; set; } = 12345;
+        public string MatchmakingMode { get; set; } = "closestCount";
+        public bool ClearCorpses { get; set; }
+        public bool ClearDroppedItems { get; set; }
         public string CostMode { get; set; } = "pawnKind";
         public Dictionary<string, SquadTemplate> SquadTemplates { get; set; } = new();
         public string RosterMode { get; set; }
@@ -171,6 +174,36 @@ namespace LogSyncMod.AutoTest.Scenarios
         public ArenaPlan Plan { get; set; }
         public List<string> LoadedMods { get; set; } = new();
         public List<ArenaTournamentResult> Tournaments { get; set; } = new();
+        public ArenaBackgroundCleanupResult BackgroundCleanup { get; set; }
+    }
+
+    public sealed class ArenaBackgroundCleanupResult
+    {
+        public int MapId { get; set; }
+        public int Passes { get; set; }
+        public int RemovedPawns { get; set; }
+        public int RemovedColonists { get; set; }
+        public int RemainingPawns { get; set; }
+    }
+
+    public sealed class ArenaMaintenanceResult
+    {
+        public bool ClearCorpses { get; set; }
+        public bool ClearDroppedItems { get; set; }
+        public int CleanupPasses { get; set; }
+        public List<int> CleanupTicks { get; set; } = new();
+        public int? MinimumClearedCorpseAgeTicks { get; set; }
+        public int? MinimumClearedItemGroundTicks { get; set; }
+        public int ClearedCorpses { get; set; }
+        public int ClearedItems { get; set; }
+        public int ProtectedRevivalCorpses { get; set; }
+        public int InitialRevivalUses { get; set; }
+        public int RevivalsObserved { get; set; }
+        public int RemainingCorpses { get; set; }
+        public int RemainingItems { get; set; }
+        public List<int> NoonResetTicks { get; set; } = new();
+        public List<float> NoonResetHours { get; set; } = new();
+        public bool CalendarRestored { get; set; }
     }
 
     // Scheduling knows no Pawn objects, maps, clocks or presentation state.
@@ -203,6 +236,9 @@ namespace LogSyncMod.AutoTest.Scenarios
         private string[] Closest(List<string> ids) => ids.SelectMany((a, i) => ids.Skip(i + 1).Select(b => Pair(a, b)))
             .OrderBy(p => Math.Abs(tournament.Rosters.Single(r => r.Id == p[0]).ResolvedCount - tournament.Rosters.Single(r => r.Id == p[1]).ResolvedCount))
             .ThenBy(p => Tie(p[0], p[1]), StringComparer.Ordinal).ThenBy(p => p[0], StringComparer.Ordinal).ThenBy(p => p[1], StringComparer.Ordinal).First();
+        private List<string> RandomOrder(List<string> ids, int nextRound, string kind) => ids
+            .OrderBy(id => Stable(tournament.Input.Seed, "arena.matchmaking", nextRound, kind, id), StringComparer.Ordinal)
+            .ThenBy(id => id, StringComparer.Ordinal).ToList();
         private ArenaMatch Make(string[] pair, string kind)
         {
             var leftFirst = (uint.Parse(Tie(pair[0], pair[1]).Substring(0, 8), NumberStyles.HexNumber, CultureInfo.InvariantCulture) & 1) == 0;
@@ -215,7 +251,11 @@ namespace LogSyncMod.AutoTest.Scenarios
             if (queued.Count == 0)
             {
                 if (pool.Count == 1) { Champion = pool[0]; return null; }
-                if (qualification) { queued.Enqueue(Make(Closest(pool), "qualification")); qualification = false; }
+                if (qualification)
+                {
+                    var ordered = tournament.Input.MatchmakingMode == "random" ? RandomOrder(pool, 0, "qualification") : null;
+                    queued.Enqueue(Make(ordered == null ? Closest(pool) : Pair(ordered[0], ordered[1]), "qualification")); qualification = false;
+                }
                 else if (pool.Count % 2 == 1)
                 {
                     var lowest = pool.OrderBy(id => scores[id]).ThenBy(id => Stable(tournament.Input.Seed, id), StringComparer.Ordinal).ThenBy(id => id, StringComparer.Ordinal).Take(2).ToArray();
@@ -224,8 +264,9 @@ namespace LogSyncMod.AutoTest.Scenarios
                 else
                 {
                     round++;
-                    var remaining = pool.ToList();
-                    while (remaining.Count > 0) { var pair = Closest(remaining); queued.Enqueue(Make(pair, "round")); remaining.Remove(pair[0]); remaining.Remove(pair[1]); }
+                    var random = tournament.Input.MatchmakingMode == "random";
+                    var remaining = random ? RandomOrder(pool, round, "round") : pool.ToList();
+                    while (remaining.Count > 0) { var pair = random ? Pair(remaining[0], remaining[1]) : Closest(remaining); queued.Enqueue(Make(pair, "round")); remaining.Remove(pair[0]); remaining.Remove(pair[1]); }
                 }
             }
             Active = queued.Dequeue(); tournament.Matches.Add(Active); return Active;

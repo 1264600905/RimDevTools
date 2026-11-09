@@ -22,6 +22,8 @@ namespace LogSyncMod.AutoTest
         private static Action<GroupCombatRoundResult> completed;
         private static Action stateChanged;
         private static ArenaEndRule arenaEndRule;
+        private static ArenaTournamentInput arenaInput;
+        private static ArenaMaintenance arenaMaintenance;
         private static double arenaIntroSeconds, arenaSettlementSeconds, arenaAdvanceStartSeconds;
         internal static bool IsArena => arenaEndRule != null;
         private static string ArtifactPrefix => IsArena ? "arena" : "groupcombat";
@@ -34,6 +36,7 @@ namespace LogSyncMod.AutoTest
             if (Busy || GroupCombatDamageCapture.ProbeActive) throw new InvalidOperationException("Another fight/probe owns the native context");
             completed = callback ?? throw new ArgumentNullException(nameof(callback)); stateChanged = changed;
             arenaEndRule = tournament == null ? null : new ArenaEndRule(tournament.ConfirmationTicks);
+            arenaInput = tournament;
             arenaIntroSeconds = tournament?.BracketSeconds ?? GroupCombatPresentation.IntroDuration;
             arenaAdvanceStartSeconds = tournament?.AdvanceStartSeconds ?? 0;
             initialCaptureReady = false;
@@ -113,14 +116,14 @@ namespace LogSyncMod.AutoTest
         }
         internal static void NotifyExit(Pawn pawn) { if (rosterIds.ContainsKey(pawn)) exited.Add(pawn); }
         internal static void NotifyDowned(Pawn pawn) { if (rosterIds.TryGetValue(pawn, out var id)) ledger?.MarkDowned(id); }
-        internal static void NotifyDead(Pawn pawn) { if (rosterIds.TryGetValue(pawn, out var id)) ledger?.MarkDead(id); }
+        internal static void NotifyDead(Pawn pawn) { if (rosterIds.TryGetValue(pawn, out var id)) { ledger?.MarkDead(id); arenaMaintenance?.NotifyDead(pawn); } }
         internal static string RosterId(Thing thing) => thing is Pawn pawn && rosterIds.TryGetValue(pawn, out var id) ? id : null;
         internal static string Team(Faction faction) => factions.FirstOrDefault(f => f.Value == faction).Key;
 
         internal static void NotifySpawn(Pawn pawn)
         {
             if (!Measuring || pawn == null || pawn.MapHeld != Map) return;
-            if (rosterIds.ContainsKey(pawn)) { exited.Remove(pawn); return; }
+            if (rosterIds.ContainsKey(pawn)) { exited.Remove(pawn); arenaMaintenance?.NotifySpawn(pawn); return; }
             var team = Team(pawn.Faction) ?? Team(pawn.GetLord()?.faction) ?? Team(GroupCombatLifecycleAdapters.OwnerFaction(pawn));
             if (team == null) return;
             var ticks = Math.Max(0, Find.TickManager.TicksGame - startTick);
@@ -249,6 +252,11 @@ namespace LogSyncMod.AutoTest
             var output = c.Element("Output"); requestedWidth = ScenarioLoader.I(output, "width", 0); requestedHeight = ScenarioLoader.I(output, "height", 0);
             arena = new AutoTestMainMap(Find.CurrentMap, input.Seed, new IntVec3(ScenarioLoader.I(scene, "sizeX", 50), 1, ScenarioLoader.I(scene, "sizeZ", 50)), ScenarioLoader.A(scene, "generatorDef", "LogSync_AutoTestStudioMap"));
             current.MapId = Map.uniqueID; current.IsPocketMap = Map.Parent is PocketMapParent; current.GeneratorDef = Map.generatorDef.defName;
+            if (IsArena)
+            {
+                arenaMaintenance = new ArenaMaintenance(Map, arenaInput);
+                current.ArenaMaintenance = arenaMaintenance.Result;
+            }
             foreach (var team in c.Element("Teams").Elements("Team"))
             {
                 var teamId = ScenarioLoader.A(team, "id");
@@ -297,6 +305,8 @@ namespace LogSyncMod.AutoTest
             ledger = new GroupCombatLedger(roster, c.Element("Teams").Elements("Team").Select(t => new KeyValuePair<string, string>(ScenarioLoader.A(t, "id"), ScenarioLoader.A(t, "name", ScenarioLoader.A(t, "id")))), ScenarioLoader.I(settings.Element("Metrics"), "detailLimit", 10000));
             SyncUnitNames();
             foreach (var unit in roster) unit.InitialSnapshot = TemporaryPawnData.Serialize(TemporaryPawnCapture.Capture(pawns[unit.Id]));
+            if (arenaMaintenance != null)
+                arenaMaintenance.Result.InitialRevivalUses = pawns.Values.Sum(p => p.health.hediffSet.hediffs.OfType<Hediff_DeathRefusal>().Sum(h => h.UsesLeft));
             endRule = new GroupCombatEndRule(ScenarioLoader.I(settings.Element("End"), "confirmationTicks", 300));
             foreach (var node in c.Element("Teams").Elements("Team"))
             {
@@ -357,6 +367,7 @@ namespace LogSyncMod.AutoTest
                 // This callback runs after the entire native simulation tick, so simultaneous
                 // knockouts in that tick are evaluated together.
                 Refresh(ticks);
+                arenaMaintenance?.Tick(ticks);
                 if (EvaluateEnd()) { Freeze("completed", current.EndReason, null); return; }
                 if (ticks % 120 == 0) GroupCombatAiDiagnostics.Observe();
             }
@@ -372,11 +383,14 @@ namespace LogSyncMod.AutoTest
                 ledger.SetState(pair.Key, p.Dead ? "dead" : exited.Contains(p) ? "escaped" : p.Destroyed || p.MapHeld != Map ? "removed" : p.Downed ? "downed" : "standing", ticks);
                 var nativeRevival = p.Dead && !p.Destroyed && p.Corpse?.MapHeld == Map && p.health.hediffSet.hediffs.OfType<Hediff_DeathRefusal>().Any(h => h.InProgress || h.AIEnabled && !h.PlayerControlled && h.UsesLeft > 0);
                 ledger.SetPendingRevival(pair.Key, nativeRevival || GroupCombatLifecycleAdapters.PendingRevival(p));
+                if (includeEventDetails || ticks % 15 == 0 || p.Dead)
+                    ledger.SetHealth(pair.Key, p.Dead || p.Destroyed ? 0 : p.health.summaryHealth.SummaryHealthPercent);
             }
             var sample = ledger.Snapshot(ticks, includeEventDetails);
             sample.CaseId = current.CaseId; sample.TestDefName = current.TestDefName; sample.Name = current.Name; sample.Seed = current.Seed; sample.Swapped = current.Swapped; sample.Source = current.Source; sample.InputHash = current.InputHash; sample.MapId = current.MapId; sample.IsPocketMap = current.IsPocketMap; sample.GeneratorDef = current.GeneratorDef; sample.Environment = current.Environment;
             sample.ResolvedRosters = current.ResolvedRosters;
             sample.StartupTiming = current.StartupTiming;
+            sample.ArenaMaintenance = current.ArenaMaintenance;
             sample.ScreenshotWidth = current.ScreenshotWidth; sample.ScreenshotHeight = current.ScreenshotHeight;
             sample.Diagnostics.AddRange(current.Diagnostics); sample.Screenshots = current.Screenshots; sample.ExecutionStatus = current.ExecutionStatus;
             sample.MeasurementLimits.Add("Main metric is native DamageResult.totalDamageDealt for Pawn damage, not raw weapon damage or capped absolute health loss.");
@@ -451,6 +465,8 @@ namespace LogSyncMod.AutoTest
             phase = "cleaning"; introFacing.Clear(); teamLords.Clear(); lifecyclePawns.Clear();
             GroupCombatCamera.End();
             var errors = new List<string>();
+            try { arenaMaintenance?.Dispose(); } catch (Exception ex) { errors.Add(ex.ToString()); }
+            arenaMaintenance = null; arenaInput = null;
             try { backend?.Cleanup(); } catch (Exception ex) { errors.Add(ex.ToString()); }
             try { arena?.Dispose(); } catch (Exception ex) { errors.Add(ex.ToString()); }
             foreach (var faction in factions.Values)
