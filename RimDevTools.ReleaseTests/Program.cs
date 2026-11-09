@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.IO.Compression;
 using System.Reflection;
 using System.Runtime.Versioning;
 using System.Security.Cryptography;
@@ -15,6 +16,28 @@ var tools = Path.Combine(release, ".tools");
 var data = Path.Combine(tools, "Data");
 
 var passed = 0;
+if (File.Exists(release + ".zip"))
+{
+    using var archive = ZipFile.OpenRead(release + ".zip");
+    Assert(archive.Entries.All(entry => !entry.FullName.Contains('\\')),
+        "published ZIP uses forward slash paths accepted by existing updaters");
+    Assert(archive.Entries.Select(entry => entry.FullName).Distinct(StringComparer.OrdinalIgnoreCase).Count() == archive.Entries.Count,
+        "published ZIP contains no Windows path collisions");
+    var archiveFiles = archive.Entries.Where(entry => !entry.FullName.EndsWith('/')).ToArray();
+    var directoryFiles = Directory.EnumerateFiles(release, "*", SearchOption.AllDirectories)
+        .Select(path => Path.GetRelativePath(release, path).Replace('\\', '/')).ToHashSet(StringComparer.Ordinal);
+    Assert(directoryFiles.SetEquals(archiveFiles.Select(entry => entry.FullName)), "published ZIP contains exactly the validated package files");
+    Assert(archiveFiles.All(entry =>
+    {
+        using var stream = entry.Open();
+        var source = Path.Combine(release, entry.FullName);
+        return entry.Length == new FileInfo(source).Length
+            && Convert.ToHexString(SHA256.HashData(stream)).Equals(ToolPackageManifest.Hash(source), StringComparison.OrdinalIgnoreCase);
+    }), "published ZIP payload matches every validated package file");
+    var checksum = File.ReadAllText(release + ".zip.sha256").Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+    Assert(checksum.Length == 2 && checksum[1] == Path.GetFileName(release) + ".zip"
+        && checksum[0].Equals(ToolPackageManifest.Hash(release + ".zip"), StringComparison.OrdinalIgnoreCase), "published ZIP matches its SHA-256 attachment");
+}
 var package = ToolPackageManifest.Load(release);
 package.VerifyFiles(release);
 Assert(package.ToolVersion == releaseToolVersion, "tool manifest matches built CLI version");

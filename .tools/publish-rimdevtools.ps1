@@ -339,13 +339,32 @@ finally {
 Write-Host "发布完成: $output"
 
 if ($CreateZip) {
+    Add-Type -AssemblyName System.IO.Compression
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     if (Test-Path -LiteralPath $archive) { Remove-Item -LiteralPath $archive -Force }
-    [System.IO.Compression.ZipFile]::CreateFromDirectory(
-        $output,
-        $archive,
-        [System.IO.Compression.CompressionLevel]::Optimal,
-        $false)
+    # Windows PowerShell can enable the legacy backslash ZIP path switch.
+    # Write portable names explicitly so existing updaters accept the archive.
+    $archiveStream = [System.IO.File]::Create($archive)
+    $zip = $null
+    try {
+        $zip = [System.IO.Compression.ZipArchive]::new($archiveStream, [System.IO.Compression.ZipArchiveMode]::Create, $false)
+        foreach ($entry in Get-ChildItem -LiteralPath $output -Recurse -Force | Sort-Object FullName) {
+            $relative = (Get-RelativePath $output $entry.FullName).Replace('\', '/')
+            if ($entry.PSIsContainer) { $null = $zip.CreateEntry($relative.TrimEnd('/') + '/'); continue }
+            $zipEntry = $zip.CreateEntry($relative, [System.IO.Compression.CompressionLevel]::Optimal)
+            $inputStream = [System.IO.File]::OpenRead($entry.FullName)
+            try {
+                $entryStream = $zipEntry.Open()
+                try { $inputStream.CopyTo($entryStream) }
+                finally { $entryStream.Dispose() }
+            }
+            finally { $inputStream.Dispose() }
+        }
+    }
+    finally {
+        if ($null -ne $zip) { $zip.Dispose() }
+        $archiveStream.Dispose()
+    }
     Write-Host "压缩包已生成: $archive"
     $archiveHash = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
     [System.IO.File]::WriteAllText($archive + ".sha256", "$archiveHash  $([System.IO.Path]::GetFileName($archive))`n", [System.Text.UTF8Encoding]::new($false))
