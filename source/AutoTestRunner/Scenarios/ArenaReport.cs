@@ -32,10 +32,10 @@ namespace LogSyncMod.AutoTest.Scenarios
                     s.AppendLine("|兵种|异种|人数|合计CP|").AppendLine("|---|---|---:|---:|");
                     foreach (var g in r.Members.GroupBy(m => (m.PawnKind, m.Xenotype))) s.AppendLine($"|{g.Key.PawnKind}|{g.Key.Xenotype}|{g.Count()}|{g.Sum(m => m.Cost)}|");
                 }
-                s.AppendLine().AppendLine("评分：百分制胜利质量；保全/压制按初始成员，倒地保全权重 0.25；交换按已记录伤害，速度扣除最终胜负确认等待。")
+                s.AppendLine().AppendLine("评分：百分制胜利质量；保全/压制按初始成员，倒地保全权重 0.25；交换按已记录伤害，采集异常时取中性分并继续晋级；速度扣除最终胜负确认等待。")
                     .AppendLine("|对局|类型|双方|胜者|总分 / 100|保全|压制|交换|速度|有效秒数|伤害口径|可排序|尝试次数|")
                     .AppendLine("|---|---|---|---|---:|---:|---:|---:|---:|---:|---|---|---:|");
-                foreach (var m in t.Matches) s.AppendLine($"|{m.Id}|{m.Kind}|{m.Left} / {m.Right}|{m.Winner ?? "待定"}|{m.Score?.Value:F2}|{m.Score?.PreservationPoints:F2}|{m.Score?.SuppressionPoints:F2}|{m.Score?.ExchangePoints:F2}|{m.Score?.SpeedPoints:F2}|{m.Score?.EffectiveElapsedTicks / 60d:F2}|{m.Score?.DamageQuality}{(m.Score?.NeutralExchange == true ? " / 无伤害取中性分" : "")}|{m.Score?.IsRankable}|{m.Attempts.Count}|");
+                foreach (var m in t.Matches) s.AppendLine($"|{m.Id}|{m.Kind}|{m.Left} / {m.Right}|{m.Winner ?? "待定"}|{m.Score?.Value:F2}|{m.Score?.PreservationPoints:F2}|{m.Score?.SuppressionPoints:F2}|{m.Score?.ExchangePoints:F2}|{m.Score?.SpeedPoints:F2}|{m.Score?.EffectiveElapsedTicks / 60d:F2}|{m.Score?.DamageQuality}{(m.Score?.UsedDamageFallback == true ? " / 采集异常，交换取中性分" : m.Score?.NeutralExchange == true ? " / 无伤害取中性分" : "")}|{m.Score?.IsRankable}|{m.Attempts.Count}|");
                 s.AppendLine();
             }
             if (report.Error != null) s.AppendLine(report.Error);

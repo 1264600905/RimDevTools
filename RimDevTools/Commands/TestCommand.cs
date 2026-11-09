@@ -348,6 +348,7 @@ public static class TestCommand
         WorkshopAssetVerificationScope? assetScope = null;
         TestOutcome outcome;
         var gameExited = true;
+        int? gameProcessId = null;
         var resultSnapshot = AutoResultValidator.Snapshot(outputPath);
         var logOffset = 0L;
         try
@@ -369,7 +370,8 @@ public static class TestCommand
                 gameArguments.Add("--rimdevtools-verify-workshop-assets=" + assetScope.RequestPath);
             }
             var deadline = DateTimeOffset.UtcNow.AddSeconds(timeout);
-            gameSession = GameProcessLauncher.Start(gamePath, environment.References.RimWorldDirectory, gameArguments, isolation.Enabled, runId);
+            gameSession = GameProcessLauncher.Start(gamePath, environment.References.RimWorldDirectory, gameArguments, isolation.Enabled, runId, keepAlive: mode == "arena");
+            gameProcessId = gameSession.Process.Id;
             if (mode == "auto") LastAutoTestProject.Record(context, configDirectory, runId);
             outcome = await WaitForModeAsync(mode, gameSession.Process, timeout, syncLogPath, logOffset, outputPath, targetPackageId, runId, resultSnapshot, cancellationToken, verbose, scenarioPlan);
             if (verifyWorkshopAssets && outcome.Ok && !await WorkshopAssetVerificationScope.WaitForSignalAsync(syncLogPath, runId, deadline, cancellationToken))
@@ -391,11 +393,19 @@ public static class TestCommand
         {
             if (gameSession is not null)
             {
-                var termination = await ProcessUtil.TerminateAsync(gameSession.Process);
-                if (!termination.Exited)
+                if (mode == "arena")
                 {
-                    gameExited = false;
-                    outcome = TestOutcome.Failure(ExitCodes.TaskFailed, "GAME_TERMINATION_FAILED", $"无法终止 RimWorld，已保留配置事务: {termination.Error}");
+                    // Never close a spectator's game, including on errors, timeouts or cancellation.
+                    gameExited = gameSession.Process.HasExited;
+                }
+                else
+                {
+                    var termination = await ProcessUtil.TerminateAsync(gameSession.Process);
+                    if (!termination.Exited)
+                    {
+                        gameExited = false;
+                        outcome = TestOutcome.Failure(ExitCodes.TaskFailed, "GAME_TERMINATION_FAILED", $"无法终止 RimWorld，已保留配置事务: {termination.Error}");
+                    }
                 }
                 gameSession.Dispose();
                 if (gameExited && gameSession.CleanupError is { } cleanupError)
@@ -411,7 +421,7 @@ public static class TestCommand
         };
         var logSummary = TestLogSummary.Read(syncLogPath, gameExited);
 
-        if (!gameExited)
+        if (!gameExited && mode != "arena")
             return CliResult.WriteFailure(command, outcome.ExitCode, outcome.Code, outcome.Message, context.Root, new
             {
                 runId,
@@ -429,7 +439,7 @@ public static class TestCommand
                 transactionRetained = transaction is not null
             }, runWarnings);
 
-        if (transaction is not null)
+        if (gameExited && transaction is not null)
         {
             try { await transaction.RestoreAsync(force: true); }
             catch (Exception ex) { outcome = TestOutcome.Failure(ExitCodes.TaskFailed, "TRANSACTION_RESTORE_FAILED", ex.Message); }
@@ -473,6 +483,10 @@ public static class TestCommand
                 isolatedDesktop = isolation.Enabled,
                 isolatedDesktopSource = isolation.Source,
                 activeModCount = modList.Mods.Count,
+                gameStillRunning = !gameExited,
+                gameProcessId = !gameExited ? gameProcessId : null,
+                transactionRetained = !gameExited && transaction is not null,
+                cleanupCommand = !gameExited ? "test cleanup（游戏退出后执行）" : null,
                 mods = verbose ? modList.Mods : null,
                 additions = verbose ? modList.Additions : null,
                 outcome.Details
@@ -495,6 +509,10 @@ public static class TestCommand
             isolatedDesktop = isolation.Enabled,
             isolatedDesktopSource = isolation.Source,
             activeModCount = modList.Mods.Count,
+            gameStillRunning = !gameExited,
+            gameProcessId = !gameExited ? gameProcessId : null,
+            transactionRetained = !gameExited && transaction is not null,
+            cleanupCommand = !gameExited ? "test cleanup（游戏退出后执行）" : null,
             additionCount = modList.Additions.Count,
             mods = verbose ? modList.Mods : null,
             additions = verbose ? modList.Additions : null,

@@ -2,12 +2,13 @@ internal static class TestSessionExitTests
 {
     internal static void Run(Action<bool, string> check)
     {
-        foreach (var kind in new[] { "quick", "auto", "groupcombat", "arena", "manual" })
+        foreach (var kind in new[] { "quick", "auto", "groupcombat", "manual" })
         {
             var gate = new LogSyncMod.TestSessionExitPolicy();
             check(gate.Request(kind, "run", true, kind, "run", 100, 4) && !gate.ShouldExit(true, kind, "run", 1099, 5) && gate.ShouldExit(true, kind, "run", 1100, 5) && !gate.ShouldExit(true, kind, "run", 1200, 6), "CLI " + kind + " completion exits once after a later main-thread heartbeat and artifact flush grace");
         }
         var regular = new LogSyncMod.TestSessionExitPolicy();
+        check(!regular.Request("arena", "run", true, "arena", "run", 0, 0) && !regular.Pending, "arena completion or failure never arms automatic game exit");
         check(!regular.Request("manual", "run", false, "manual", "run", 0, 0) && !regular.Pending, "ordinary in-game manual tests never arm game exit");
         check(!regular.Request("auto", "foreign", true, "auto", "run", 0, 0) && !regular.Request("quick", "run", true, "manual", "run", 0, 0), "stale run and wrong-mode completion cannot close a CLI session");
         var pending = new LogSyncMod.TestSessionExitPolicy(); pending.Request("auto", "run", true, "auto", "run", 0, 8);

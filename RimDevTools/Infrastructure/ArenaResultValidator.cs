@@ -16,7 +16,7 @@ public static class ArenaResultValidator
             if (report.Status != "completed") return new(false, report.Status == "unresolvedDraw" ? "ARENA_UNRESOLVED_DRAW" : report.ErrorCode ?? "ARENA_EXECUTION_INCOMPLETE", report.Error ?? report.Status, new { path, report.Status, tournaments = report.Tournaments.Select(t => new { t.Input.TestDefName, t.Status, t.Champion, matches = t.Matches.Count }) });
             var error = ValidateIntegrity(report, expected);
             if (error != null) return new(false, "ARENA_RESULT_INVALID", error, new { path });
-            return new(true, "", "擂台测试完成，配兵、晋级和评分校验通过", new { path, reportPath = Path.Combine(outputPath, "arena_" + runId + "_Report.md"), tournaments = report.Tournaments.Select(t => new { t.Input.TestDefName, t.Champion, entrants = t.Rosters.Select(r => new { r.Id, r.PawnKind, r.UnitCombatPower, r.ResolvedCount, r.RequestedBudget, r.ActualCombatPower, r.UnusedBudget }), matches = t.Matches.Count, attempts = t.Matches.Sum(m => m.Attempts.Count), cleanupComplete = t.Matches.All(m => m.Attempts.All(a => a.CleanupComplete)) }) });
+            return new(true, "", "擂台测试完成，配兵、晋级和评分校验通过", new { path, reportPath = Path.Combine(outputPath, "arena_" + runId + "_Report.md"), tournaments = report.Tournaments.Select(t => new { t.Input.TestDefName, t.Champion, entrants = t.Rosters.Select(r => new { r.Id, r.PawnKind, r.UnitCombatPower, r.ResolvedCount, r.RequestedBudget, r.ActualCombatPower, r.UnusedBudget }), matches = t.Matches.Count, damageFallbackMatches = t.Matches.Count(m => m.Score?.UsedDamageFallback == true), attempts = t.Matches.Sum(m => m.Attempts.Count), cleanupComplete = t.Matches.All(m => m.Attempts.All(a => a.CleanupComplete)) }) });
         }
         catch (Exception ex) when (ex is IOException or JsonException or InvalidOperationException or ArgumentException or NullReferenceException or OverflowException or ScenarioConfigurationException or System.Xml.XmlException)
         { return new(false, "ARENA_RESULT_INVALID", ex.Message, new { path }); }
@@ -126,7 +126,7 @@ public static class ArenaResultValidator
                         || verifyArtifactFiles && !File.Exists(p.Screenshot)))) return "赛前对阵展示缺失、双方不符、未满五秒或展示期间推进了模拟";
                 var last = m.Attempts.Last(); var winner = last.Teams.Single(x => x.Outcome == "win");
                 var enemy = last.Teams.Single(x => x.Outcome == "loss");
-                if (!last.MeasurementRequirementsMet || last.MeasurementQuality is not ("partial" or "complete")) return "伤害采集异常的暂定分数不得参与晋级";
+                var damageFallback = !last.MeasurementRequirementsMet || last.MeasurementQuality is not ("partial" or "complete");
                 if (!double.IsFinite(winner.EnemyDamage) || !double.IsFinite(winner.DamageTaken) || winner.EnemyDamage < 0 || winner.DamageTaken < 0) return "评分伤害输入无效";
                 // Recompute each component independently from the final ledger, not the runtime scorer.
                 var standing = last.Units.Count(u => u.Team == winner.Id && !u.JoinedDuringBattle && u.State == "standing");
@@ -136,7 +136,7 @@ public static class ArenaResultValidator
                 if (effectiveTicks < 0 || effectiveTicks > last.ElapsedTicks) return "评分有效战斗时钟无效";
                 var preservation = (standing + .25m * downed) / winner.Initial;
                 var suppression = 1 - (decimal)enemyStanding / enemy.Initial;
-                var neutral = winner.EnemyDamage == 0 && winner.DamageTaken == 0;
+                var neutral = damageFallback || winner.EnemyDamage == 0 && winner.DamageTaken == 0;
                 var culture = System.Globalization.CultureInfo.InvariantCulture;
                 var dealt = double.Parse(winner.EnemyDamage.ToString("G15", culture), culture);
                 var taken = double.Parse(winner.DamageTaken.ToString("G15", culture), culture);
@@ -156,7 +156,7 @@ public static class ArenaResultValidator
                     PreservationRatio = preservation, SuppressionRatio = suppression, ExchangeRatio = exchange, SpeedFactor = speed,
                     PreservationPoints = input.SurvivalWeight * preservation, SuppressionPoints = input.SuppressionWeight * suppression,
                     ExchangePoints = input.ExchangeWeight * exchange, SpeedPoints = input.SpeedWeight * speed,
-                    DamageQuality = last.MeasurementQuality, NeutralExchange = neutral, IsRankable = true
+                    DamageQuality = last.MeasurementQuality, NeutralExchange = neutral, UsedDamageFallback = damageFallback, IsRankable = true
                 };
                 computed.Value = computed.PreservationPoints + computed.SuppressionPoints + computed.ExchangePoints + computed.SpeedPoints;
                 if (m.Score == null || computed.Value < 0 || computed.Value > 100) return "缺少有效的百分制评分";

@@ -73,9 +73,9 @@ public static class GameProcessLauncher
 {
     internal static bool CloseDesktop(IntPtr desktop) => NativeMethods.CloseDesktop(desktop);
 
-    public static GameProcessSession Start(string executable, string? workingDirectory, IEnumerable<string> arguments, bool isolated, string runId)
-        => isolated
-            ? StartIsolated(executable, workingDirectory, arguments, runId)
+    public static GameProcessSession Start(string executable, string? workingDirectory, IEnumerable<string> arguments, bool isolated, string runId, bool keepAlive = false)
+        => isolated || keepAlive
+            ? StartNative(executable, workingDirectory, arguments, runId, isolated)
             : StartNormal(executable, workingDirectory, arguments);
 
     public static string? CurrentDesktopName()
@@ -114,16 +114,16 @@ public static class GameProcessLauncher
         return new GameProcessSession(process, false, null, IntPtr.Zero);
     }
 
-    private static GameProcessSession StartIsolated(string executable, string? workingDirectory, IEnumerable<string> arguments, string runId)
+    private static GameProcessSession StartNative(string executable, string? workingDirectory, IEnumerable<string> arguments, string runId, bool isolated)
     {
         if (!OperatingSystem.IsWindows())
             throw new GameProcessLaunchException("ISOLATED_DESKTOP_CREATE_FAILED", "隔离桌面仅支持 Windows");
 
         var suffix = new string(runId.Where(char.IsLetterOrDigit).Take(32).ToArray());
         if (suffix.Length == 0) suffix = Guid.NewGuid().ToString("N");
-        var desktopName = $"RimDevTools.{Environment.ProcessId}.{suffix}";
-        var desktop = NativeMethods.CreateDesktop(desktopName, IntPtr.Zero, IntPtr.Zero, 0, NativeMethods.DesktopAllAccess, IntPtr.Zero);
-        if (desktop == IntPtr.Zero)
+        var desktopName = isolated ? $"RimDevTools.{Environment.ProcessId}.{suffix}" : null;
+        var desktop = isolated ? NativeMethods.CreateDesktop(desktopName!, IntPtr.Zero, IntPtr.Zero, 0, NativeMethods.DesktopAllAccess, IntPtr.Zero) : IntPtr.Zero;
+        if (isolated && desktop == IntPtr.Zero)
         {
             var error = Marshal.GetLastWin32Error();
             throw new GameProcessLaunchException("ISOLATED_DESKTOP_CREATE_FAILED", new Win32Exception(error).Message, error);
@@ -156,13 +156,13 @@ public static class GameProcessLauncher
                     out var processInfo))
             {
                 var error = Marshal.GetLastWin32Error();
-                throw new GameProcessLaunchException("ISOLATED_GAME_START_FAILED", new Win32Exception(error).Message, error);
+                throw new GameProcessLaunchException(isolated ? "ISOLATED_GAME_START_FAILED" : "GAME_START_FAILED", new Win32Exception(error).Message, error);
             }
 
             try
             {
                 var process = Process.GetProcessById(unchecked((int)processInfo.ProcessId));
-                return new GameProcessSession(process, true, desktopName, desktop);
+                return new GameProcessSession(process, isolated, desktopName, desktop);
             }
             finally
             {
@@ -172,7 +172,7 @@ public static class GameProcessLauncher
         }
         catch
         {
-            NativeMethods.CloseDesktop(desktop);
+            if (desktop != IntPtr.Zero) NativeMethods.CloseDesktop(desktop);
             throw;
         }
         finally

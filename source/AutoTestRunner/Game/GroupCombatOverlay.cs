@@ -356,7 +356,7 @@ namespace LogSyncMod.AutoTest
                     for (var row = 0; row < lines.Length; row++)
                         DrawText(new Rect(x, rect.y + (348 + row * 30) * scale, w, 28 * scale), lines[row], Mathf.Min(19 * scale, w / 17), TextAnchor.MiddleCenter);
                 }
-                var footer = score == null ? "赛后天梯将显示重赛结果" : !score.IsRankable ? "伤害统计异常 · 本场暂停晋级" : score.NeutralExchange ? "双方无伤害记录 · 交换项取中性分" : "伤害交换按已记录伤害计算，不含全部流血与身体状态效果";
+                var footer = score == null ? "赛后天梯将显示重赛结果" : score.UsedDamageFallback ? "伤害统计异常 · 交换项取中性分，继续晋级" : score.NeutralExchange ? "双方无伤害记录 · 交换项取中性分" : "伤害交换按已记录伤害计算，不含全部流血与身体状态效果";
                 DrawText(new Rect(rect.x + 8, rect.y + 524 * scale, rect.width - 16, 26 * scale), footer, 13 * scale, TextAnchor.MiddleCenter);
             }
             finally { GUI.color = previous; }

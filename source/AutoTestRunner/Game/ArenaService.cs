@@ -249,12 +249,8 @@ namespace LogSyncMod.AutoTest
             {
                 var id = winner.Id == "A" ? match.Left : match.Right;
                 var score = ScoreFor(result);
-                if (!score.IsRankable)
-                {
-                    match.Score = score; report.Status = "error"; report.ErrorCode = "ARENA_SCORING_DATA_INCOMPLETE";
-                    report.Error = "Damage measurement failed; provisional score cannot determine advancement or low-score extra matches: " + match.Id;
-                    Write(); return;
-                }
+                if (score.UsedDamageFallback)
+                    Log.Warning("[LogSyncArena] Damage measurement incomplete; using neutral damage exchange and advancing the battle winner: " + match.Id);
                 scheduler.Resolve(id, score); match = null;
             }
             postBattleMatch = completedMatch; postBattleStarted = Time.realtimeSinceStartup; postBattleCaptured = false;
@@ -283,7 +279,7 @@ namespace LogSyncMod.AutoTest
                 logGuard?.Dispose(); logGuard = null;
                 global::LogSyncMod.TestAudioController.Restore("arena_completed");
                 Log.Message("[LogSyncArena] COMPLETED runId=" + report.RunId + " status=" + report.Status);
-                global::LogSyncMod.TestSessionCompletion.Complete("arena", report.RunId);
+                // Arena is a spectator session. Completion or failure must leave the game open.
             }
         }
         private static void Write()

@@ -252,13 +252,18 @@ internal static class ArenaTests
         foreach (var quality in new[] { "partial", "complete", "incomplete", "unknown" })
         {
             perfect.MeasurementQuality = quality;
-            check(ArenaScore.Calculate(input, perfect).IsRankable == (quality is "partial" or "complete"), "rankability reflects the recorded damage quality: " + quality);
+            var measured = ArenaScore.Calculate(input, perfect);
+            check(measured.IsRankable && measured.UsedDamageFallback == (quality is not ("partial" or "complete"))
+                && (!measured.UsedDamageFallback || measured.NeutralExchange && measured.ExchangePoints == input.ExchangeWeight / 2),
+                "damage quality remains recorded while incomplete capture uses neutral exchange: " + quality);
         }
         perfect.MeasurementQuality = "partial"; perfect.MeasurementRequirementsMet = false;
-        check(!ArenaScore.Calculate(input, perfect).IsRankable, "failed damage measurement produces only a provisional score");
-        var unrankableScheduler = new ArenaScheduler(Tournament(input, 2)); unrankableScheduler.Next();
-        try { unrankableScheduler.Resolve(unrankableScheduler.Active.Left, ArenaScore.Calculate(input, perfect)); check(false, "unrankable scores block tournament advancement"); }
-        catch (InvalidOperationException) { check(true, "unrankable scores block tournament advancement"); }
+        var fallback = ArenaScore.Calculate(input, perfect);
+        check(fallback.IsRankable && fallback.UsedDamageFallback && fallback.ExchangePoints == input.ExchangeWeight / 2, "failed damage measurement uses a marked neutral exchange score");
+        var fallbackScheduler = new ArenaScheduler(Tournament(input, 2)); fallbackScheduler.Next();
+        var fallbackWinner = fallbackScheduler.Active.Left;
+        fallbackScheduler.Resolve(fallbackWinner, fallback);
+        check(fallbackScheduler.Next() == null && fallbackScheduler.Champion == fallbackWinner, "damage measurement failure preserves the native winner and completes advancement");
         for (int n = 2; n <= 64; n++)
         {
             var tournament = Tournament(input, n); var schedule = new ArenaScheduler(tournament);

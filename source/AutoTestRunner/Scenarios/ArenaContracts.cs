@@ -85,6 +85,7 @@ namespace LogSyncMod.AutoTest.Scenarios
         public decimal SpeedPoints { get; set; }
         public string DamageQuality { get; set; }
         public bool NeutralExchange { get; set; }
+        public bool UsedDamageFallback { get; set; }
         public bool IsRankable { get; set; }
         public decimal Value { get; set; }
         public static ArenaScore Calculate(ArenaTournamentInput input, GroupCombatRoundResult fight)
@@ -108,9 +109,13 @@ namespace LogSyncMod.AutoTest.Scenarios
                 ElapsedTicks = fight.ElapsedTicks, EffectiveElapsedTicks = ticks,
                 EnemyDamage = winner.EnemyDamage, DamageTaken = winner.DamageTaken,
                 DamageQuality = fight.MeasurementQuality,
-                IsRankable = fight.MeasurementRequirementsMet && (fight.MeasurementQuality == "partial" || fight.MeasurementQuality == "complete"),
+                IsRankable = true,
+                UsedDamageFallback = !fight.MeasurementRequirementsMet || (fight.MeasurementQuality != "partial" && fight.MeasurementQuality != "complete"),
                 NeutralExchange = winner.EnemyDamage == 0 && winner.DamageTaken == 0
             };
+            // A failed damage sample does not invalidate the native battle winner.
+            // Use a neutral exchange component rather than favoring the side whose hits were captured.
+            score.NeutralExchange |= score.UsedDamageFallback;
             score.PreservationRatio = (score.Standing + .25m * score.Downed) / score.Initial;
             score.SuppressionRatio = 1 - (decimal)score.EnemyStanding / score.EnemyInitial;
             // Canonicalize to the game's JSON precision, then divide in decimal so

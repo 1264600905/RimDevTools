@@ -91,6 +91,7 @@ namespace LogSyncMod.AutoTest
                     DrawTree(Vector2.zero, 1, elapsed); Widgets.EndScrollView();
                 }
                 var footer = champion ? "冠军已决出 · " + tournament.Matches.Count + " 场淘汰对决完成" : elapsed < ArenaPresentation.AnimationSeconds ? "A队 → B队 → 胜者晋级" : winner == null ? "平局不晋级 · 双方重新满编后重赛" : "本场已结算 · 下一场双方重新满编";
+                if (match.Score?.UsedDamageFallback == true) footer += " · 伤害统计异常，交换项取中性分";
                 TextAt(new Rect(26, h - 43, w - 52, 25), footer, 15, champion ? Gold : new Color(.7f, .76f, .83f));
             }
             finally { GUI.color = oldColor; Text.Font = oldFont; Text.Anchor = oldAnchor; }
