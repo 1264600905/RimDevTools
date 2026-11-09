@@ -1,5 +1,9 @@
 # 从写模组到发布工坊：RimDevTools 功能与命令入门
 
+**简体中文** | [English](RimDevTools项目功能与命令入门.en.md)
+
+本文对应 **RimDevTools 1.5.3.0**。当前正式包支持 RimWorld 1.6、1.7；外部 XML 场景回归、群战与擂台后端目前仅支持 **1.7**。下载入口见 [1.5.3.0 发布页](https://github.com/1264600905/RimDevTools/releases/tag/v1.5.3.0)。
+
 本文按实际开发顺序组织：先认识工具和准备项目，再查参考、部署、收集日志与测试；需要 AI 协作时阅读 Skills 和 MCP，准备发布时再进入创意工坊流程。首次阅读可以顺着章节推进，遇到具体问题时也可以按下面的导航直接查阅。
 
 **阅读导航**
@@ -12,7 +16,7 @@
 - [六、测试准备：模式、ModList 与配置恢复](#六测试准备模式modlist-与配置恢复)
 - [七、自动测试：支持什么，具体怎样测试](#七自动测试支持什么具体怎样测试)
 - [八、DebugAction：在游戏内准备与验证](#八debugaction在游戏内准备与验证)
-- [九、六套 Skill：组织 AI 的开发工作](#九六套-skill组织-ai-的开发工作)
+- [九、七套 Skill：组织 AI 的开发工作](#九七套-skill组织-ai-的开发工作)
 - [十、RimSage MCP：连接官方资料与源码研究](#十rimsage-mcp连接官方资料与源码研究)
 - [十一、创意工坊：查询、订阅与发布](#十一创意工坊查询订阅与发布)
 - [十二、命令速查与常见使用路线](#十二命令速查与常见使用路线)
@@ -55,6 +59,16 @@ RimDevTools 就是为这些日常工作准备的一套 Windows 开发工具。�
 
 ### 2.1 放置项目并修改配置
 
+1.5.3 发布页提供三个成品 ZIP，按用途选择一个即可：
+
+| 下载包 | 适用情况 |
+| --- | --- |
+| `RimDevTools-1.5.3.0-Template-RimWorld-1.6.zip` | 新建 RimWorld 1.6 模组项目 |
+| `RimDevTools-1.5.3.0-Template-RimWorld-1.7.zip` | 新建 RimWorld 1.7 模组项目 |
+| `RimDevTools-1.5.3.0-Tools.zip` | 已有项目接入工具，不需要示例模组工程 |
+
+三个包都包含正式工具和 Codex、Claude 两套各 7 个完整 Skill。Tools 包还包含两版工具 Mod、ILSpy、许可证和配置参考，但不包含示例模组、项目 README、`.gitignore` 或 MCP 客户端配置。发布页另外两项 `Source code` 是 GitHub 自动生成的源码下载，日常使用无需下载。当前不再提供 `Tools-Full`、旧版兼容包或独立 `.sha256` 附件。
+
 第一次使用时，先把项目准备好。从发布包解压出来的开发目录，应当放在独立的工作位置。源码在这个目录里维护，游戏实际使用的副本由工具部署到 RimWorld 的 `Mods` 目录。
 
 模板中最需要认识的文件是 `mod_config.jsonc`。它相当于这个项目的工作说明书，记录模组名称、目标游戏版本、RimWorld 安装位置、游戏实际读取的 `ModsConfig.xml`、工坊目录、需要编译的工程、需要同步的文件，以及日志关键词。JSONC 允许写注释，可以结合文件中的说明逐项修改。
@@ -63,7 +77,7 @@ RimDevTools 就是为这些日常工作准备的一套 Windows 开发工具。�
 
 ### 2.2 安装运行环境并执行体检
 
-运行工具需要 Windows x64 和 .NET 10 Runtime。编译 C# 项目还需要相应的开发环境：1.6 模组通常需要 .NET Framework 4.8 的开发或目标包，1.7 模组使用 .NET 10 SDK；参考模组反编译功能使用随包 ILSpy，还需要 .NET 8 Runtime。这些环境不必全部靠自己猜，完成基本配置后，可以先让工具检查：
+运行工具需要 Windows x64 和 .NET 10 Runtime。编译 C# 项目还需要 .NET SDK 和对应版本的引用环境：1.6 模组通常需要 .NET Framework 4.8 的开发或目标包，也支持 4.7.2；1.7 模组使用 .NET 10 SDK 与对应游戏程序集。参考模组反编译功能使用随包 ILSpy，还需要 .NET 8 Runtime。完成基本配置后，可以先让工具检查：
 
 ```powershell
 .\.tools\RimDevTools.exe doctor
@@ -78,6 +92,33 @@ RimDevTools 就是为这些日常工作准备的一套 Windows 开发工具。�
 RimDevTools 的命令执行结果通常会输出为一个 JSON 对象，也就是按固定字段组织的一份文字结果。人可以查看摘要，AI 和脚本则可以读取成功状态、错误、产物路径等字段，再决定下一步操作。默认输出保持简洁，需要更多诊断时添加 `--verbose`；查看某个命令的用法时添加 `--help`，查看工具和模板版本时单独运行 `--version`。
 
 对新手来说，阅读命令结果时，可以先关注几个问题：这次操作是否成功，当前是哪个项目，实际目标在哪里，失败原因是什么，是否产生了可读取的结果。测试结果进一步看运行标识、范围、日志摘要和产物路径；上传结果则看对应条目与提交状态。不同阶段回答的问题不同，应该按当前操作理解成功的含义。
+
+### 2.4 已有项目接入：保留原工程和配置
+
+已有模组不必重新建立模板工程。使用 Tools 包提供的工具与 Skill，在原有 `mod_config.jsonc` 中设置 `"existing_project_mode": true`，继续使用自己的 `mod_name`、`game_version`、`csproj_paths`、`sync_items` 和日志配置。包内配置只是人工填写参考，不要直接覆盖已经配置好的文件；没有配置的项目需自行填写这些字段。
+
+旧项目模式会放宽模板专属的名称、程序集和日志关键词门禁，仍会检查必要元数据、目标游戏版本、构建依赖和路径安全。纯 XML 项目可把 `csproj_paths` 设为 `[]`；多工程项目按实际情况列出全部工程。缺失模式字段或设为 `false` 时，继续使用模板模式。
+
+接入时还应核对同名 Skill 的本地修改。Tools 包不自动扫描工程、生成配置或修改 `.gitignore`，也没有首次接入的 `init` 命令。项目自行忽略 `.tools/ProjectData/` 等运行数据，避免把收据、缓存和更新事务提交到源码仓库。
+
+### 2.5 更新项目中的工具
+
+正式解压安装可按下面顺序检查、预览和安装更新，每条完成后再执行下一条：
+
+```powershell
+.\.tools\RimDevTools.exe update --check
+.\.tools\RimDevTools.exe update --dry-run
+.\.tools\RimDevTools.exe update
+.\.tools\RimDevTools.exe update status
+```
+
+`--check` 查询官方最新正式版；`--dry-run` 会下载并校验 Tools 包，预览文件变化和冲突，但不提交替换。正式 `update` 交给独立助手完成文件更新，返回 `scheduled` 仅表示已接收任务；应继续查询 `update status`，看到 `succeeded` 后再运行 `--version` 核对版本。
+
+**1.5.2 及更早版本不能直接自动更新到 1.5.3，需要手动安装一次。** 1.5.3 已支持完整 Tools 包的更新校验，后续可继续使用新版更新器。源码仓库或没有可信发行清单的旧安装也不属于自动更新对象。
+
+更新器核对 GitHub 附件的 SHA-256、大小、平台、Runtime 和游戏版本，更新 EXE、私有工具载荷及两份核心 `rimdevtools` Skill。项目源码、资源、配置值、工坊身份、原模板身份及其他 Skill 保留；受管理文件被本地修改或删除时，会以 `UPDATE_CONFLICT` 停止整次更新。配置迁移保留注释和未知字段，只按已支持规则补齐缺失项。其他 Skill 随完整包分发，不会由自动更新新增或替换。
+
+普通业务命令的版本检查使用 24 小时缓存，最多占用 2 秒联网时间，不会自动安装；帮助、版本和状态查询不联网检查。若更新需要恢复，先让已有更新进程退出，再按 `update status` 返回的 `recoveryCommand` 处理。更新成功后让 AI 重新读取完整 `rimdevtools` Skill；项目中的工具载荷更新后，游戏 Mods 目录里的 LogSyncMod 仍由 `mods install-tools` 单独管理。
 
 ## 三、查找参考模组与使用 ILSpy
 
@@ -192,15 +233,17 @@ LogSyncMod 还承担着游戏内外的运行状态沟通。游戏完成初始化
 
 ## 六、测试准备：模式、ModList 与配置恢复
 
-### 6.1 选择 quick、manual 或 auto
+### 6.1 选择 quick、manual、auto、groupcombat 或 arena
 
-除了收集日志，RimDevTools 还将测试分成 quick、manual 和 auto 三种模式，分别适合不同阶段。
+除了收集日志，RimDevTools 还提供五种测试模式。日常开发常用 quick、manual 和 auto；1.7 的群战与擂台评测分别使用 groupcombat 和 arena。
 
 **quick 是启动检查。** 它主要用于尽早发现模组无法正常加载、启动阶段报错等问题。刚改完代码，可以先跑一轮，确认具备继续验证的基础。
 
 **manual 是人工操作模式。** 工具准备测试环境并启动游戏，你在游戏里检查界面、操作流程和实际体验。需要亲眼看效果、手动点击或验证复杂交互时，这种方式更直接。
 
 **auto 是游戏内自动测试。** AutoTestRunner 会根据当前项目的内容和选择的范围组织测试，输出结构化结果、过程证据和相应截图。常见内容由工具识别，普通项目不需要为了开始使用它先编写一套测试 Spec XML。
+
+**groupcombat 是双方群战评测，arena 是多队擂台淘汰赛。** 两者都要求外部 XML 场景和明确的 `--test-name`，不会由普通 auto 扫描自动启动，当前只支持 1.7。auto 也可以运行外部 XML 编写的效果回归，详见第 7.15—7.17 节。
 
 下面两条命令分别演示“部署后做启动检查”和“部署后检查战斗与外观”：
 
@@ -270,7 +313,7 @@ quick 和 auto 可以通过 `--isolated-desktop` 选择单独的 Windows 桌面�
 | `misc` | 目前主要用于技能口袋地图测试，观察技能施放和相关运行情况 |
 | `standard` | 执行默认的常规组合，不额外包含战斗 Pawn 和技能口袋地图专项 |
 
-如果只想检查一件武器、一套衣服或一个技能，可以用 `--defname` 指定精确对象。DefName 就是 XML 中 `<defName>` 对应的内部名称；`--defname` 和 `--scope` 都可以重复传入。需要检查多少对象，则可以通过 `--batch-size` 调整。
+如果只想检查一件武器、一套衣服或一个技能，可以用 `--defname` 指定精确对象。DefName 就是 XML 中 `<defName>` 对应的内部名称；`--defname` 和 `--scope` 都可以重复传入。未指定精确 DefName 的枚举测试，可以通过 `--batch-size` 调整计划上限。
 
 精确选择时，要使用对应测试入口的定义名称。例如，配方测试使用配方的 RecipeDef 名称，技能测试使用 AbilityDef 名称，PawnKind 相关测试使用相应角色种类的名称。物品的显示名称、产品名和配方名可能不同，选择时可以先核对 XML，或查看工具发现的目标与本轮清单。
 
@@ -404,6 +447,73 @@ quick 和 auto 可以通过 `--isolated-desktop` 选择单独的 Windows 桌面�
 
 工具返回的成功结果中，`result.artifacts` 会给出本轮产物位置；失败结果中则查看 `error.details.artifacts`。以这些实际返回的路径为准，直接读取原始产物即可。不同模式产生的文件不同，路径被分配并不意味着其中一定已经生成自动测试结果；在启动前就失败的操作，也可能还没有本轮产物。
 
+产物对象常见字段是 `directoryPath`、`syncLogPath`、`autoTestOutputPath`。日志、截图、结果与测试存档只读取工具生成的原始位置；除非明确要求导出，不另建证据目录、不重定向或复制保存 stdout/stderr，也不另写测试报告。原始文件不改写，保留和清理由工具管理。
+
+### 7.15 外部 XML：编写自己的效果回归
+
+内置测试适合快速检查受支持内容；需要验证“施放后目标获得某个状态”“这一套配装能完成某个动作”等具体机制时，可以编写外部 XML。当前后端只支持 1.7，测试输入不需要注册为游戏 Def，也不要放进 `Defs`、`Patches` 或模组发布内容中。
+
+普通回归使用 `<TestSuite>`，由 Case 描述场景、角色、准备动作、等待和断言。支持角色模板、精确配装、地图环境、显式参数矩阵及截图；测试自身的稳定名称使用 `<testDefName>`。可从 `.agents/skills/rimworld-xml-test/assets` 或 `.claude/skills/rimworld-xml-test/assets` 的示例开始，将修改后的输入保存在项目的 `Tests/Scenarios` 等测试源码目录。
+
+先用随包原版示例理解入口。以下命令直接读取已有文件，第一条仅静态校验，第二条才启动游戏：
+
+```powershell
+.\.tools\RimDevTools.exe test run --mode auto --scenario-path ".agents/skills/rimworld-xml-test/assets/basic.autotest.xml" --test-name Example_PawnAlive --validate-only
+.\.tools\RimDevTools.exe test run --mode auto --scenario-only --scenario-path ".agents/skills/rimworld-xml-test/assets/basic.autotest.xml" --test-name Example_PawnAlive --batch-size 1 --timeout-seconds 360
+```
+
+`--validate-only` 检查 XML 结构、字段、引用、矩阵和已有约束，不启动游戏、不部署、不创建运行产物；不要同时附加 `--deploy`、批量或超时等执行参数。成功读取 `result.validation`，失败读取 `error.details.validation`，其中的诊断尽可能指出文件、行列、节点和修改建议。静态通过不能证明 Def 已加载、反射接口可用或游戏机制正确，实际运行仍会自动先做同一项预校验。
+
+`--scenario-only` 只运行外部回归；省略它时，可与普通 `--scope`、`--defname` 测试混合。`--test-name` 选择外部规则，`--defname` 选择普通定义，两者用途不同。`--scenario-path` 可指向单文件或目录；目录只读取当前层的 `*.autotest.xml`，不递归。一条规则可能展开成多个矩阵实例，仍需核对批量选择和实际执行数，不能按 XML 文件数量判断覆盖。
+
+可用动作、断言和覆盖替代规则按同包 `rimworld-xml-test` 的参考编写，当前没有 `--mode xml`。测试目标属于自己的模组时，使用真实 PackageId 和定义；需要验证刚修改的源码时，另外加入 `--deploy`。示例只证明示例条件，不代表自己的机制已被覆盖。
+
+### 7.16 群战：比较两队实际交战表现
+
+groupcombat 使用 `TestSuite` 中的 `kind="groupCombat"` Case，定义 A/B 两队、地图、阵型和战斗参数。可以固定人数，也可以通过 `combatPowerBudget` 按战力配兵；混编队伍通过 `SquadTemplates` 定义。当前每队初始最多 200 人，只支持双方评测。
+
+```powershell
+.\.tools\RimDevTools.exe test run --mode groupcombat --scenario-path ".agents/skills/rimworld-xml-test/assets/groupcombat.autotest.xml" --test-name Example_WolvesVsBears --validate-only
+.\.tools\RimDevTools.exe test run --mode groupcombat --scenario-path ".agents/skills/rimworld-xml-test/assets/groupcombat.autotest.xml" --test-name Example_WolvesVsBears --timeout-seconds 900
+```
+
+群战必须显式指定 `--test-name`，支持稳定 testDefName、完整 caseId 或唯一显示名，可重复选择多项；不使用 `--scenario-only`，也不会被普通 auto 扫描执行。普通回归、群战与擂台宜分别存放，避免目录输入混用。
+
+所有游戏测试应串行运行，等本轮结束并完成配置恢复后再开始下一轮。CLI 的 `--timeout-seconds` 限制整轮进程，包含多轮生成、交战和清理；示例预算应按实际 XML 的轮次和时限调整。
+
+默认使用原生即时进攻控制器 `assaultColony`，保留原生索敌、攻击和模组行为。每轮独立生成并清理地图、角色和临时阵营，可配置换边和多个种子进行比较。读取结果时分别核对胜负、执行与清理状态、伤害归属和测量质量；某方获胜不等于全部伤害都能完整归因，更不等于所有技能都已验证。
+
+### 7.17 擂台：多队淘汰赛与展示
+
+arena 使用独立的 `<ArenaSuite>`，每个 Tournament 配置参赛者、地图、统一人数或战力预算，以及战斗和展示规则。支持 2—64 队，参赛项可以是单一 PawnKind，也可以引用混编模板。擂台只接受稳定的 `testDefName` 选择，不用群战 caseId、普通 Case 或 `--scenario-only`。
+
+```powershell
+.\.tools\RimDevTools.exe test run --mode arena --scenario-path ".agents/skills/rimworld-xml-test/assets/arena.autotest.xml" --test-name Example_AnimalArena --validate-only
+.\.tools\RimDevTools.exe test run --mode arena --scenario-path ".agents/skills/rimworld-xml-test/assets/arena.autotest.xml" --test-name Example_AnimalArena
+```
+
+整个赛事可能包含多场战斗、重赛和展示。省略 `--timeout-seconds` 时工具会估算默认总预算；若显式指定，应覆盖完整赛程，而非只按单场战斗时长填写。胜利质量按保全、压制、交换和速度评分，用于展示与后续奇数轮次的低分加赛；平局按配置重赛，耗尽后保留未决结果，不随机指定冠军。
+
+当前擂台的常用 XML 配置如下，节点放在 `Tournament` 下；这是配置片段，不是完整赛事文件：
+
+```xml
+<!-- 默认按人数接近配对；改为 random 按赛事种子随机配对 -->
+<Matchmaking mode="closestCount"/>
+<!-- 两个清理开关独立，省略时均为 false -->
+<Cleanup corpses="true" droppedItems="true"/>
+```
+
+随机模式可通过赛事 `seed` 复现抽签；初始奇数队的资格赛也采用所选匹配方式，之后的奇数晋级轮次仍遵循低分加赛规则。开启清理后，每 300 ticks 检查战斗地图：尸体死亡、地面物品被首次发现后至少等待 300 ticks 才清理，正在使用的目标和已识别的待复活尸体暂缓处理。角色穿戴、背包和建筑不受此开关清理；预放在地面的物资也会被清理，依赖尸体或地面补给的测试应按目标关闭对应项。
+
+以下行为自动生效，不需要额外 XML 字段：
+
+- **减少后台模拟**：会话开始清理本轮 quicktest 原主地图中的 Pawn，包含殖民者、动物及容器内 Pawn，比赛期间每 250 ticks 补清；这与战斗地图的 Cleanup 开关分别处理。
+- **保持正午**：每场准备时设为当地中午 12 点，战斗每经过 5000 ticks，也就是 2 个游戏小时，再设为中午；战斗计时继续递增，场后恢复原日历偏移。
+- **姓名后生命条**：左右数据栏的个人输出、承伤排行显示综合健康度条，单人兵种汇总行也显示；倒地为橙色、死亡为空条，不包含护盾。
+- **混编展示轮播**：开场卡片有多种可切换构成时，每 1 个现实秒循环切换；手动箭头会重置轮播计时，单构成固定展示。
+
+原主地图清理只作用于本轮测试环境；日历调整可能影响依赖绝对时间的模组机制。赛前卡片与最终前五展示用于观察外观和参赛构成，最终判断仍应读取原始 `arena_<runId>_Result.json`、报告与截图，核对每场尝试、实际名单、测量质量、冠军及清理完成状态。群战和擂台结果不并入普通回归通过率。
+
 ## 八、DebugAction：在游戏内准备与验证
 
 ### 8.1 入口、适用对象与操作反馈
@@ -485,7 +595,7 @@ quick 和 auto 可以通过 `--isolated-desktop` 选择单独的 Windows 桌面�
 
 物资方案、需求开关、工作强化和快速治愈各自承担不同任务，组合使用时也会改变测试条件。游戏内测试状态与前文的 ModList 配置事务是两层机制：CLI 结束时恢复启用列表和工具配置，角色是否仍带有状态、物资是否存在、存档是否包含这些变化，要按游戏内实际操作和保存行为判断。
 
-## 九、六套 Skill：组织 AI 的开发工作
+## 九、七套 Skill：组织 AI 的开发工作
 
 ### 9.1 Skill 是什么，放在哪里
 
@@ -497,9 +607,9 @@ quick 和 auto 可以通过 `--isolated-desktop` 选择单独的 Windows 桌面�
 
 Skill 的存在也能减少重复沟通。你不必每次重新解释参考资料放在哪里、应该使用哪条部署命令、测试产物怎样定位。随包规则已经把项目常用的工作路径和证据要求写下来，客户端加载后即可据此协作；实际生效情况仍以客户端是否发现并读取这些文件为准。
 
-当前模板提供六套 Skill，在 `.agents/skills` 与 `.claude/skills` 中提供相应的项目级入口。不同客户端对技能发现方式的支持有所不同，可以结合客户端显示的技能清单确认。部分目录还包含 `references` 参考文档和 `agents/openai.yaml` 等展示配置；前者保存详细工作规范，后者提供技能展示名称、简介和默认提示等信息。
+当前 1.6、1.7 模板和 Tools 包均提供七套 Skill：Codex 使用 `.agents/skills`，Claude 使用 `.claude/skills`，每个客户端各一套完整目录。不同客户端对技能发现方式的支持有所不同，可以结合客户端显示的技能清单确认。部分目录还包含 `references` 参考文档和 `agents/openai.yaml` 等展示配置；前者保存详细工作规范，后者提供技能展示名称、简介和默认提示等信息。
 
-### 9.2 六套 Skill 的职责总览
+### 9.2 七套 Skill 的职责总览
 
 | Skill 名称 | 主要职责 | 适合提出的需求 |
 | --- | --- | --- |
@@ -507,6 +617,7 @@ Skill 的存在也能减少重复沟通。你不必每次重新解释参考资�
 | `rimsage` | 研究官方 Def、XML 和 C# 实现 | 查清官方机制、继承结果、类型成员和补丁目标 |
 | `rimworld-plan-engineer` | 基于证据写实施计划 | 先分析可行性、修改位置、步骤、风险和验证方式 |
 | `rimworld-development-engineer` | 实施并诊断模组改动 | 实现 C#、XML、资源调整或修复游戏内问题 |
+| `rimworld-xml-test` | 编写与运行外部 XML 测试 | 效果回归、精确配装、群战、战力预算与擂台淘汰赛 |
 | `test-result-validation` | 解读自动测试结果 | 区分真实问题、测试误报和环境问题，给出处理依据 |
 | `about-write-description` | 编写玩家可读的模组简介 | 根据已有功能更新 About 中的双语工坊文案 |
 
@@ -578,9 +689,17 @@ Skill 的存在也能减少重复沟通。你不必每次重新解释参考资�
 
 例如，你可以说：“根据当前已经实现的功能，更新中英文模组简介，讲清楚用途、使用条件和限制。”这适合功能完成或准备发布时使用，也有助于及时发现“代码已经变了，页面介绍还停留在旧状态”的情况。
 
-### 9.9 在同一任务中配合使用
+### 9.9 自定义测试：rimworld-xml-test
 
-六套 Skill 可以在一个项目中相互配合：规划 Skill 确定路线，研究 Skill 查明官方机制，开发 Skill 实施变更，工具 Skill 执行项目操作，校验 Skill 解释测试失败，简介 Skill 更新玩家文案。实际使用时，按当前任务加载所需部分即可。它们写在项目里，也便于作者查看并维护自己的工作约定。
+**`rimworld-xml-test` Skill 负责把验证目标写成可重复执行的外部 XML。** 它根据真实定义选择角色、装备、地图、动作和结果判据，并提供回归、矩阵、三视图、群战、混编与擂台的参考和示例。它随两个版本的模板与 Tools 包一起分发，但当前场景运行后端仅支持 1.7。
+
+这套 Skill 区分“准备了一个对象”“动作开始执行”和“预期效果确实发生”。先用 `--validate-only` 查结构和引用，再按已经授权的范围执行游戏验证，核对实际用例、原始诊断和覆盖限制。普通 Def/Patch 编辑、XML 热重载和仅运行内置 auto 无需使用这套自定义场景流程。
+
+适合的需求是：“为这项技能编写 XML，验证命中后确实施加指定状态。”或者：“用统一战力预算比较这几支队伍，再运行擂台。”需要只分析、只编写或实际运行时，把范围说清楚即可。
+
+### 9.10 在同一任务中配合使用
+
+七套 Skill 可以在一个项目中相互配合：规划 Skill 确定路线，研究 Skill 查明官方机制，开发 Skill 实施变更，工具 Skill 执行项目操作，XML 测试 Skill 构造专项验证，校验 Skill 解释测试失败，简介 Skill 更新玩家文案。实际使用时，按当前任务加载所需部分即可。它们写在项目里，也便于作者查看并维护自己的工作约定。
 
 ## 十、RimSage MCP：连接官方资料与源码研究
 
@@ -594,7 +713,7 @@ RimSage 在此工作流中承担只读研究角色，资料范围主要是官方
 
 ### 10.2 随包配置与服务连接
 
-当前模板为以下客户端提供 RimSage 相关配置：
+当前完整模板为以下客户端提供 RimSage 相关配置；Tools 包只附带 Skill，不包含这些客户端连接文件：
 
 | 配置文件 | 随包内容 |
 | --- | --- |
@@ -685,13 +804,20 @@ RimSage 在此工作流中承担只读研究角色，资料范围主要是官方
 | --- | --- |
 | 查看工具和模板版本 | `--version` |
 | 检查项目与本地环境 | `doctor` |
+| 查看全部体检项 | `doctor --verbose` |
+| 检查与预览工具更新 | `update --check`、`update --dry-run` |
+| 安装工具更新并查询最终状态 | `update`、`update status` |
 | 编译并同步到游戏 | `deploy` |
 | 游戏运行时同步非 DLL 内容并请求 XML 重载 | `deploy --xml-hot` |
 | 在本机查找参考模组 | `mod search` |
 | 复制参考并调用 ILSpy 反编译 | `mod copy` |
 | 查看一个本地模组需要哪些前置 | `mod dependencies` |
 | 查看本机哪些模组依赖它 | `mod dependents` |
-| 选择启动、人工或自动测试 | `test run` |
+| 选择启动、人工或内置自动测试 | `test run --mode quick`，模式可换成 `manual` 或 `auto` |
+| 静态检查外部场景 XML | `test run --mode auto --scenario-path <路径> --test-name <名称> --validate-only`，群战／擂台换对应模式 |
+| 只运行外部 XML 回归（1.7） | `test run --mode auto --scenario-only --scenario-path <路径>` |
+| 运行双方群战评测（1.7） | `test run --mode groupcombat --scenario-path <路径> --test-name <名称>` |
+| 运行多队擂台（1.7） | `test run --mode arena --scenario-path <路径> --test-name <名称>` |
 | 为手动启动的游戏保存工具设置 | `test settings` |
 | 查看或恢复中断后的事务状态 | `test cleanup` |
 | 安装或更新随包 LogSyncMod | `mods install-tools` |
@@ -723,4 +849,4 @@ RimSage 在此工作流中承担只读研究角色，资料范围主要是官方
 
 如果你准备发布一个版本，可以先明确需要验证的内容，完成对应检查，再核对普通部署和上传计划。上传模组内容、编辑页面资料、更新双语简介是几项可以配合的工作；使用本地 About 文案和工坊语言字段时，也应确认它们分别要维护什么内容。
 
-对于刚开始的作者，日常可以先建立一个习惯：准备好模板和配置，用 `doctor` 解决环境问题；完成改动后部署，先做 quick 检查；再根据功能选择人工操作或专项自动测试，结合日志、结果和截图判断效果。随着项目变复杂，再逐步用上参考模组、ILSpy、精确对象测试、XML 热重载，以及 Skills 和 MCP 支持的研究与开发流程。
+对于刚开始的作者，日常可以先建立一个习惯：准备好模板和配置，用 `doctor` 解决环境问题；完成改动后部署，先做 quick 检查；再根据功能选择人工操作或专项自动测试，结合日志、结果和截图判断效果。随着项目变复杂，再逐步用上参考模组、ILSpy、精确对象测试、XML 热重载、外部 XML 回归、群战与擂台，以及 Skills 和 MCP 支持的研究与开发流程。
