@@ -24,6 +24,7 @@ namespace LogSyncMod.AutoTest.Scenarios
         internal sealed class Team
         {
             internal GroupCombatTeamResult Result;
+            internal bool HasCombatActivity;
             internal Group[] LivingGroups, IntroGroups;
             internal Rank[] Output, Taken;
             internal string Population, Reinforcements, RemainingKinds, Mean, Total, Outcome;
@@ -62,6 +63,9 @@ namespace LogSyncMod.AutoTest.Scenarios
             return new Team
             {
                 Result = team,
+                HasCombatActivity = team.EnemyDamage > 0 || team.FriendlyDamage > 0 || team.SelfDamage > 0 || team.DamageTaken > 0
+                    || team.Downed > 0 || team.Dead > 0 || team.Escaped > 0 || team.Removed > 0
+                    || members.Any(u => u.WasDowned || u.WasDead),
                 LivingGroups = groups.Take(5).Select(MakeGroup).ToArray(),
                 IntroGroups = members.GroupBy(u => GroupCombatPresentation.UnitTypeName(u.KindLabel, u.Kind), StringComparer.Ordinal).Select(MakeGroup).ToArray(),
                 Output = Rankings(members, u => u.EnemyDamage), Taken = Rankings(members, u => u.DamageTaken),

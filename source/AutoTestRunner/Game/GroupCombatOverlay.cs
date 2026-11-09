@@ -139,6 +139,7 @@ namespace LogSyncMod.AutoTest
         }
         private static void DrawTeam(Rect rect, GroupCombatOverlayData.Team panel, int index)
         {
+            if (CombatFightService.IsArena && !panel.HasCombatActivity) return;
             if (GroupCombatCamera.CompactPanels) { DrawCompactTeam(rect, panel, index); return; }
             var team = panel.Result;
             Widgets.DrawBoxSolid(rect, new Color(.055f, .075f, .09f, .62f));
