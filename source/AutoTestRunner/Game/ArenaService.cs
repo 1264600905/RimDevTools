@@ -35,15 +35,20 @@ namespace LogSyncMod.AutoTest
         private static float showcasePageStarted;
         private static int showcasePage, showcaseStartTick;
         private static TimeSpeed showcaseOriginalSpeed;
+        private static ArenaPreBattleResult preBattle;
+        private static float preBattleStarted;
+        private static int preBattleStartTick;
+        private static bool preBattleCaptured;
+        private static TimeSpeed preBattleOriginalSpeed;
         private static readonly JsonSerializerOptions Json = new() { WriteIndented = true };
         internal static bool Busy => report != null && report.CompletedAtUtc == null;
         internal static void Cancel() { cancel = true; CombatFightService.Cancel(); }
         internal static object Status => new {
             busy = Busy, status = report?.Status, runId = report?.RunId, tournament = tournament?.Input.TestDefName,
             match = match?.Id, attempt = match?.Attempts.Count + 1,
-            presentation = showcaseActive ? "showcase" : postBattleMatch != null ? "postBattle" : tournament?.Status == "champion" ? "topFive" : null,
-            presentationMatch = postBattleMatch?.Id,
-            presentationSeconds = showcaseActive ? showcasePageStarted < 0 ? 0 : Time.realtimeSinceStartup - showcasePageStarted : postBattleMatch != null ? Time.realtimeSinceStartup - postBattleStarted : tournament?.Status == "champion" && championStarted >= 0 ? Time.realtimeSinceStartup - championStarted : 0,
+            presentation = showcaseActive ? "showcase" : preBattle != null ? "preBattle" : postBattleMatch != null ? "postBattle" : tournament?.Status == "champion" ? "topFive" : null,
+            presentationMatch = preBattle != null ? match?.Id : postBattleMatch?.Id,
+            presentationSeconds = showcaseActive ? showcasePageStarted < 0 ? 0 : Time.realtimeSinceStartup - showcasePageStarted : preBattle != null ? preBattleStarted < 0 ? 0 : Time.realtimeSinceStartup - preBattleStarted : postBattleMatch != null ? Time.realtimeSinceStartup - postBattleStarted : tournament?.Status == "champion" && championStarted >= 0 ? Time.realtimeSinceStartup - championStarted : 0,
             showcasePage = showcaseActive ? showcasePage + 1 : 0, showcasePages = tournament?.Input.ShowcasePages.Count ?? 0,
             artifacts = new { autoTestOutputPath = outputPath }
         };
@@ -62,7 +67,7 @@ namespace LogSyncMod.AutoTest
                     if (settings is not { testSessionActive: true, testSessionKind: "arena" } || consumedRunId == settings.autoTestRunId || Current.ProgramState != ProgramState.Playing || LongEventHandler.AnyEventNowOrWaiting || Find.CurrentMap == null || CombatFightService.Busy || GroupCombatDamageCapture.ProbeActive) return;
                     consumedRunId = settings.autoTestRunId; outputPath = settings.autoTestOutputPath;
                     report = new ArenaRunReport { RunId = consumedRunId, StartedAtUtc = DateTime.UtcNow.ToString("O"), GameVersion = VersionControl.CurrentVersionStringWithRev, LoadedMods = LoadedModManager.RunningMods.Select(m => m.PackageIdPlayerFacing + "@" + m.ModMetaData?.ModVersion).ToList() };
-                    logGuard = global::LogSyncMod.TestLogWindowGuard.RegisterExternalSession(); cancel = false; waiting = false; match = null; tournament = null; postBattleMatch = null; showcaseActive = false;
+                    logGuard = global::LogSyncMod.TestLogWindowGuard.RegisterExternalSession(); cancel = false; waiting = false; match = null; tournament = null; postBattleMatch = null; showcaseActive = false; preBattle = null;
                     var frozen = JsonSerializer.Deserialize<ArenaPlan>(Encoding.UTF8.GetString(Convert.FromBase64String(settings.arenaPlan)));
                     if (frozen?.Purpose != "arena" || frozen.SchemaVersion != 1) throw new ScenarioConfigurationException("Invalid frozen arena plan");
                     report.Plan = ArenaLoader.Compile(frozen.Inputs, frozen.SelectedTestDefNames);
@@ -133,6 +138,24 @@ namespace LogSyncMod.AutoTest
                     }
                     return;
                 }
+                if (preBattle != null)
+                {
+                    Find.TickManager.CurTimeSpeed = TimeSpeed.Paused;
+                    if (preBattleStarted < 0) return;
+                    var elapsed = Time.realtimeSinceStartup - preBattleStarted;
+                    var ready = preBattleCaptured && AutoTestViewComposite.IsReady(preBattle.Screenshot);
+                    if (elapsed > 20 && !ready) throw new IOException("Pre-battle screenshot did not become ready: " + preBattle.Screenshot);
+                    if (ready && elapsed >= ArenaPresentation.PreBattleSeconds)
+                    {
+                        preBattle.VisibleSeconds = elapsed;
+                        preBattle.SimulationTicks = Find.TickManager.TicksGame - preBattleStartTick;
+                        preBattle.Completed = true;
+                        preBattle = null;
+                        Find.TickManager.CurTimeSpeed = preBattleOriginalSpeed;
+                        Write();
+                    }
+                    return;
+                }
                 if (postBattleMatch != null)
                 {
                     Find.TickManager.CurTimeSpeed = TimeSpeed.Paused;
@@ -184,6 +207,20 @@ namespace LogSyncMod.AutoTest
                     tournament.TopFive = new ArenaTopFiveResult { Entries = ArenaStandings.Build(tournament), Screenshot = tournament.ChampionScreenshot };
                     Write(); return;
                 }
+                if (match.PreBattles.Count == match.Attempts.Count)
+                {
+                    preBattleOriginalSpeed = Find.TickManager.CurTimeSpeed;
+                    Find.TickManager.CurTimeSpeed = TimeSpeed.Paused;
+                    preBattleStarted = -1; preBattleCaptured = false;
+                    ArenaEntrantShowcase.ResetMatchupSelection();
+                    var directory = Path.Combine(outputPath, "arena_" + report.RunId + "_Screenshots"); Directory.CreateDirectory(directory);
+                    preBattle = new ArenaPreBattleResult {
+                        EntrantIds = new() { match.Left, match.Right },
+                        Screenshot = Path.Combine(directory, "tournament_" + (report.Tournaments.IndexOf(tournament) + 1).ToString("D3") + "_match_" + (tournament.Matches.IndexOf(match) + 1).ToString("D4") + "_attempt_" + (match.Attempts.Count + 1).ToString("D2") + "_prebattle.png")
+                    };
+                    match.PreBattles.Add(preBattle);
+                    Write(); return;
+                }
                 var fight = ArenaLoader.CompileBattle(tournament.Input, tournament.Rosters, match, match.Attempts.Count);
                 fight.ResolvedRosters = new() { tournament.Rosters.Single(r => r.Id == match.Left), tournament.Rosters.Single(r => r.Id == match.Right) };
                 waiting = true; Write();
@@ -232,6 +269,7 @@ namespace LogSyncMod.AutoTest
         {
             if (report == null || report.CompletedAtUtc != null) return;
             if (showcaseActive) { Find.TickManager.CurTimeSpeed = showcaseOriginalSpeed; showcaseActive = false; }
+            if (preBattle != null) { Find.TickManager.CurTimeSpeed = preBattleOriginalSpeed; preBattle = null; }
             ArenaEntrantShowcase.Clear();
             backgroundCleanup = null;
             if (postBattleMatch != null) { Find.TickManager.CurTimeSpeed = postBattleOriginalSpeed; postBattleMatch = null; }
@@ -275,6 +313,19 @@ namespace LogSyncMod.AutoTest
                 {
                     CapturePresentation(tournament.Showcase.Pages[showcasePage].Screenshot);
                     showcaseCaptured = true;
+                }
+                return;
+            }
+            if (preBattle != null)
+            {
+                if (preBattleStarted < 0 && Event.current.type == EventType.Repaint)
+                { preBattleStarted = Time.realtimeSinceStartup; preBattleStartTick = Find.TickManager.TicksGame; }
+                var elapsed = preBattleStarted < 0 ? 0 : Time.realtimeSinceStartup - preBattleStarted;
+                ArenaEntrantShowcase.Draw(0, elapsed, matchup: match);
+                if (!preBattleCaptured && Event.current.type == EventType.Repaint && elapsed >= 1 && AutoTestScreenshotService.PrepareCaptureFrame())
+                {
+                    CapturePresentation(preBattle.Screenshot);
+                    preBattleCaptured = true;
                 }
                 return;
             }

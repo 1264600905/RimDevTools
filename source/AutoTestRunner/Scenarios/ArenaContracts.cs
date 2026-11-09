@@ -18,7 +18,7 @@ namespace LogSyncMod.AutoTest.Scenarios
         public List<ScenarioInput> Inputs { get; set; } = new();
         public List<string> SelectedTestDefNames { get; set; } = new();
         public List<ArenaTournamentInput> Tournaments { get; set; } = new();
-        public int DefaultDeadlineSeconds => checked(Tournaments.Sum(t => 180 + (int)ArenaStandings.DisplaySeconds + (int)Math.Ceiling(t.ShowcasePages.Sum(p => p.Seconds)) + (t.Entrants.Count - 1) * (t.MaxReplays + 1) * (t.TimeoutRealSeconds + (int)Math.Ceiling(t.BracketSeconds + t.SettlementSeconds + ArenaPresentation.PostBattleSeconds) + 45)));
+        public int DefaultDeadlineSeconds => checked(Tournaments.Sum(t => 180 + (int)ArenaStandings.DisplaySeconds + (int)Math.Ceiling(t.ShowcasePages.Sum(p => p.Seconds)) + (t.Entrants.Count - 1) * (t.MaxReplays + 1) * (t.TimeoutRealSeconds + (int)Math.Ceiling(t.BracketSeconds + t.SettlementSeconds + ArenaPresentation.PreBattleSeconds + ArenaPresentation.PostBattleSeconds) + 45)));
     }
     public sealed class ArenaTournamentInput
     {
@@ -147,6 +147,16 @@ namespace LogSyncMod.AutoTest.Scenarios
         public List<GroupCombatRoundResult> Attempts { get; set; } = new();
         public List<string> BracketScreenshots { get; set; } = new();
         public List<string> PostBattleScreenshots { get; set; } = new();
+        public List<ArenaPreBattleResult> PreBattles { get; set; } = new();
+    }
+    public sealed class ArenaPreBattleResult
+    {
+        public List<string> EntrantIds { get; set; } = new();
+        public double DurationSeconds { get; set; } = ArenaPresentation.PreBattleSeconds;
+        public double VisibleSeconds { get; set; }
+        public int SimulationTicks { get; set; }
+        public bool Completed { get; set; }
+        public string Screenshot { get; set; }
     }
     public sealed class ArenaTournamentResult
     {

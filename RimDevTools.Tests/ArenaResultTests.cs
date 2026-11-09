@@ -52,6 +52,16 @@ internal static class ArenaResultTests
         Reject(r => r.Tournaments[0].Matches[0].Attempts[0].Screenshots.RemoveAt(0), "arena requires separate bracket, initial battlefield and final captures");
         Reject(r => r.Tournaments[0].Matches[0].PostBattleScreenshots.Add("unfinished.png"), "arena rejects an invalid post-battle capture name");
         Reject(r => r.Tournaments[0].Matches[0].PostBattleScreenshots.AddRange(new[] { "one_postbattle.png", "two_postbattle.png" }), "arena rejects post-battle captures that do not match attempt count");
+        Reject(r => r.Tournaments[0].Matches[0].PreBattles[0].VisibleSeconds = 4.99, "arena requires a full five-second matchup presentation");
+        Reject(r => r.Tournaments[0].Matches[0].PreBattles[0].DurationSeconds = 6, "arena matchup duration is fixed at five seconds");
+        Reject(r => r.Tournaments[0].Matches[0].PreBattles[0].SimulationTicks = 1, "arena matchup keeps simulation paused");
+        Reject(r => r.Tournaments[0].Matches[0].PreBattles[0].Completed = false, "arena rejects an unfinished matchup presentation");
+        Reject(r => r.Tournaments[0].Matches[0].PreBattles[0].EntrantIds.Reverse(), "arena matchup cards follow the actual A/B sides");
+        Reject(r => r.Tournaments[0].Matches[0].PreBattles[0].Screenshot = "unfinished.png", "arena requires a matchup screenshot");
+        Reject(r => r.Tournaments[0].Matches[0].PreBattles.Add(r.Tournaments[0].Matches[0].PreBattles[0]), "arena requires one matchup presentation per attempt");
+        var legacy = Build(2);
+        foreach (var m in legacy.Tournaments[0].Matches) m.PreBattles.Clear();
+        check(ArenaResultValidator.ValidateIntegrity(legacy, legacy.Plan, false) == null, "arena retains compatibility with reports from before matchup presentations");
         var presented = Build(6);
         foreach (var m in presented.Tournaments[0].Matches) m.PostBattleScreenshots.Add(m.Id + "_postbattle.png");
         check(ArenaResultValidator.ValidateIntegrity(presented, presented.Plan, false) == null, "arena accepts per-attempt post-battle captures while retaining original three battle captures");
@@ -125,6 +135,10 @@ internal static class ArenaResultTests
             result.Screenshots = new() { m.Id + "_bracket.png", m.Id + "_initial.png", m.Id + "_final.png" };
             new ArenaEndRule(0).Evaluate(result, 10800);
             m.Attempts.Add(result); m.BracketScreenshots.Add(result.Screenshots[0]);
+            m.PreBattles.Add(new ArenaPreBattleResult {
+                EntrantIds = new() { m.Left, m.Right }, Completed = true, VisibleSeconds = 5,
+                Screenshot = m.Id + "_prebattle.png"
+            });
             schedule.Resolve(m.Left, ArenaScore.Calculate(input, result));
         }
         t.Champion = schedule.Champion; t.Status = "completed"; t.ChampionScreenshot = "champion.png";

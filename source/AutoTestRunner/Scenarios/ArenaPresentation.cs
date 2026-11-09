@@ -10,6 +10,11 @@ namespace LogSyncMod.AutoTest.Scenarios
         public const float AdvanceSeconds = 1.3f;
         public const float AnimationSeconds = 2.4f;
         public const float PostBattleSeconds = 5.5f;
+        public const float PreBattleSeconds = 5;
+
+        public static string MatchTitle(ArenaMatch match)
+            => (match.Kind == "extra" ? "低分加赛" : match.Kind == "qualification" ? "资格赛" : "第 " + match.Round + " 轮")
+                + (match.Attempts.Count > 0 ? " · 第 " + match.Attempts.Count + " 次重赛" : "");
 
         public static double CapturePreparationElapsed(double countdownSeconds, double advanceSeconds)
             => Math.Max(0, countdownSeconds - advanceSeconds);

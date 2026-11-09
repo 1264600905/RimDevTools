@@ -157,7 +157,7 @@ namespace LogSyncMod.AutoTest
                     .Select(a => (double)a.GetStatValue(stat)).ToArray() ?? Array.Empty<double>())));
         }
 
-        // Keep the frozen portraits and scales for the final standings; release all
+        // Keep the frozen portraits and scales for match previews and final standings; release all
         // live pawns and their map before any battle starts.
         internal static void ReleasePreviews()
         {
@@ -217,7 +217,12 @@ namespace LogSyncMod.AutoTest
             GroupCombatOverlay.DrawText(rect, value, size, anchor); GUI.color = previous;
         }
 
-        internal static void Draw(int page, float elapsed, bool standings = false)
+        internal static void ResetMatchupSelection()
+        {
+            selectedTypes.Clear(); selectedAt.Clear();
+        }
+
+        internal static void Draw(int page, float elapsed, bool standings = false, ArenaMatch matchup = null)
         {
             if (tournament?.Showcase == null) return;
             if (!Ready)
@@ -239,15 +244,19 @@ namespace LogSyncMod.AutoTest
                 Widgets.DrawBoxSolid(new Rect(0, 0, w, h), new Color(.025f, .035f, .055f));
                 Widgets.DrawBoxSolid(R(0, 0, 1600, 6), Gold);
                 Widgets.DrawBoxSolid(R(72, 66, 30, 3), Gold);
-                TextAt(R(116, 48, 500, 36), standings ? "ARENA  /  荣誉榜" : "ARENA  /  参赛者巡礼", 15 * scale, Gold);
-                TextAt(R(72, 94, 930, 68), standings ? tournament.TopFive.Entries.Count == 5 ? "本届前五 · 荣耀时刻" : "本届排名 · 荣耀时刻" : "本届参赛者", 46 * scale, Color.white);
+                TextAt(R(116, 48, 1180, 36), matchup != null ? "ARENA  /  赛前对阵  ·  " + ArenaPresentation.MatchTitle(matchup) : standings ? "ARENA  /  荣誉榜" : "ARENA  /  参赛者巡礼", 15 * scale, Gold);
+                var title = matchup != null ? tournament.Input.Name : standings ? tournament.TopFive.Entries.Count == 5 ? "本届前五 · 荣耀时刻" : "本届排名 · 荣耀时刻" : "本届参赛者";
+                TextAt(R(72, 94, 930, 68), title, Mathf.Min(46, 930f / Mathf.Max(1, title.Length)) * scale, Color.white);
                 var pageInput = standings ? new ArenaShowcasePageInput {
                     Seconds = tournament.TopFive.DurationSeconds,
                     EntrantIds = tournament.TopFive.Entries.Select(p => p.EntrantId).ToList(),
                     Caption = ""
+                } : matchup != null ? new ArenaShowcasePageInput {
+                    Seconds = ArenaPresentation.PreBattleSeconds, EntrantIds = new() { matchup.Left, matchup.Right }, Caption = ""
                 } : tournament.Input.ShowcasePages[page];
-                TextAt(R(1030, 117, 498, 40), standings ? "赛事完结  ·  展示 10 秒" : tournament.Rosters.Count + " 种参赛者  ·  本页 " + pageInput.Seconds.ToString("0.##", CultureInfo.InvariantCulture) + " 秒", 17 * scale, Muted, TextAnchor.MiddleRight);
-                var caption = standings ? "晋级越远，名次越高  ·  同阶段按最近胜利评分排序" : pageInput.Caption.Length > 0 ? "“" + pageInput.Caption + "”" : "全员登场  ·  淘汰对决即将开始";
+                TextAt(R(1030, 117, 498, 40), matchup != null ? "第 " + (tournament.Matches.IndexOf(matchup) + 1) + " 场  ·  赛前展示 5 秒" : standings ? "赛事完结  ·  展示 10 秒" : tournament.Rosters.Count + " 种参赛者  ·  本页 " + pageInput.Seconds.ToString("0.##", CultureInfo.InvariantCulture) + " 秒", 17 * scale, Muted, TextAnchor.MiddleRight);
+                var caption = matchup != null ? "即将对战：" + tournament.Rosters.Single(r => r.Id == matchup.Left).DisplayName + "  VS  " + tournament.Rosters.Single(r => r.Id == matchup.Right).DisplayName
+                    : standings ? "晋级越远，名次越高  ·  同阶段按最近胜利评分排序" : pageInput.Caption.Length > 0 ? "“" + pageInput.Caption + "”" : "全员登场  ·  淘汰对决即将开始";
                 // User copy is a literal sentence, not rich-text markup.
                 var captionStyle = new GUIStyle(GUI.skin.label) { fontSize = Mathf.RoundToInt(Mathf.Min(20, 1456f / Mathf.Max(1, caption.Length)) * scale), alignment = TextAnchor.MiddleLeft, richText = false, wordWrap = false };
                 captionStyle.normal.textColor = pageInput.Caption.Length > 0 ? new Color(.87f, .8f, .65f) : Muted;
@@ -258,8 +267,10 @@ namespace LogSyncMod.AutoTest
                 var profiles = tournament.Showcase.Entrants.ToDictionary(e => e.Id);
                 var entries = pageInput.EntrantIds.Select(id => profiles[id]).ToList();
                 var offset = tournament.Input.ShowcasePages.Take(page).Sum(p => p.EntrantIds.Count);
-                const float cardWidth = 276.8f;
-                var startX = (1600 - entries.Count * cardWidth - (entries.Count - 1) * 18) / 2;
+                var cardWidth = matchup != null ? 400f : 276.8f;
+                var cardGap = matchup != null ? 160f : 18f;
+                var startX = (1600 - entries.Count * cardWidth - (entries.Count - 1) * cardGap) / 2;
+                if (matchup != null) TextAt(R(720, 420, 160, 90), "VS", 48 * scale, Gold, TextAnchor.MiddleCenter);
                 for (var i = 0; i < entries.Count; i++)
                 {
                     var entry = entries[i];
@@ -269,7 +280,7 @@ namespace LogSyncMod.AutoTest
                     {
                         selected = ArenaShowcase.CompositionIndex(elapsed, entry.Composition.Count, selected,
                             selectedAt.TryGetValue(entry.Id, out var changedAt) ? changedAt : 0);
-                        if (entry.Composition.Count > 1 && Event.current.type == EventType.Repaint
+                        if (matchup == null && entry.Composition.Count > 1 && Event.current.type == EventType.Repaint
                             && (!lastDrawnTypes.TryGetValue(entry.Id, out var last) || last != selected))
                         {
                             lastDrawnTypes[entry.Id] = selected;
@@ -279,12 +290,12 @@ namespace LogSyncMod.AutoTest
                     var detail = entry.Composition.Count > 0 ? entry.Composition[selected % entry.Composition.Count] : entry;
                     var color = standings && i == 0 ? Gold : standings && i == 1 ? new Color(.78f, .85f, .93f) : standings && i == 2 ? new Color(.88f, .59f, .37f) : Color.HSVToRGB(hues[entry.PawnKind], .48f, .95f);
                     var reveal = ArenaPresentation.Progress(elapsed, i * .045f, .36f);
-                    var x = startX + i * (cardWidth + 18); var y = 234 + (1 - reveal) * 16;
+                    var x = startX + i * (cardWidth + cardGap); var y = 234 + (1 - reveal) * 16;
                     Widgets.DrawBoxSolid(R(x + 3, y + 7, cardWidth, 554), new Color(0, 0, 0, .2f));
                     Widgets.DrawBoxSolid(R(x, y, cardWidth, 554), new Color(.065f, .082f, .115f));
                     Widgets.DrawBoxSolid(R(x, y, cardWidth, 3), color);
                     Widgets.DrawBoxSolid(R(x + 1, y + 4, cardWidth - 2, 169), Color.Lerp(new Color(.065f, .082f, .115f), color, .085f));
-                    var rankLabel = standings ? new[] { "第一名 · 冠军", "第二名 · 亚军", "第三名", "第四名", "第五名" }[i] : "选手 " + (offset + i + 1).ToString("D2");
+                    var rankLabel = matchup != null ? i == 0 ? "A 队 · 本场出战" : "B 队 · 本场出战" : standings ? new[] { "第一名 · 冠军", "第二名 · 亚军", "第三名", "第四名", "第五名" }[i] : "选手 " + (offset + i + 1).ToString("D2");
                     TextAt(R(x + 18, y + 15, cardWidth - 85, 26), rankLabel, standings ? 16 * scale : 13 * scale, color);
                     TextAt(R(x + cardWidth - 80, y + 12, 60, 28), "◆", 16 * scale, color, TextAnchor.MiddleRight);
                     DrawPortrait(R(x + (cardWidth - 144) / 2, y + 30, 144, 144), detail);
@@ -325,22 +336,25 @@ namespace LogSyncMod.AutoTest
                         for (var segment = 1; segment < 10; segment++)
                             Widgets.DrawBoxSolid(new Rect(bar.x + bar.width * segment / 10, bar.y, scale, bar.height), new Color(.055f, .075f, .1f, .65f));
                     }
+                    if (roster.SquadId != null || matchup != null)
+                    {
+                        TextAt(R(x + 18, y + 527, cardWidth - 36, 23), "数量 " + roster.ResolvedCount + " · 总 CP " + roster.ActualCombatPower.ToString("0.##"), 12 * scale, Muted, TextAnchor.MiddleCenter);
+                    }
                     if (roster.SquadId != null)
                     {
-                        TextAt(R(x + 18, y + 527, cardWidth - 36, 23), roster.ResolvedCount + " 人 · 总 CP " + roster.ActualCombatPower.ToString("0.##"), 12 * scale, Muted, TextAnchor.MiddleCenter);
                         var description = "同名兵种合并计数；属性为该类代表成员，每秒轮播，也可用左右箭头切换。\n" + string.Join("\n", entry.Composition.Select(p => p.DisplayName + " ×" + p.Count + " · CP " + p.TotalCombatPower.ToString("0.##")));
                         TooltipHandler.TipRegion(R(x, y, cardWidth, 554), description);
                     }
                 }
 
-                var pages = standings ? 1 : tournament.Input.ShowcasePages.Count;
-                TextAt(R(72, 805, 1150, 26), standings ? "沿用赛前角色与属性快照  ·  条长仍以本届全体同项最高值为满格" : "原生装备与实际角色属性  ·  混编每秒轮播，可用箭头切换，悬停查看构成  ·  同项最高值为满格", 14 * scale, Muted);
+                var pages = standings || matchup != null ? 1 : tournament.Input.ShowcasePages.Count;
+                TextAt(R(72, 805, 1150, 26), matchup != null ? "沿用参赛者巡礼属性快照  ·  混编每秒轮播，可用箭头切换  ·  同项最高值为满格" : standings ? "沿用赛前角色与属性快照  ·  条长仍以本届全体同项最高值为满格" : "原生装备与实际角色属性  ·  混编每秒轮播，可用箭头切换，悬停查看构成  ·  同项最高值为满格", 14 * scale, Muted);
                 for (var i = 0; i < GradeColors.Length; i++)
                 {
                     Widgets.DrawBoxSolid(R(72 + i * 193, 841, 7, 7), GradeColors[i]);
                     TextAt(R(86 + i * 193, 832, 179, 24), GradeLabels[i], 12.5f * scale, GradeColors[i]);
                 }
-                TextAt(R(1300, 814, 228, 32), (page + 1).ToString("D2") + "  /  " + pages.ToString("D2"), 22 * scale, Color.white, TextAnchor.MiddleRight);
+                TextAt(R(1300, 814, 228, 32), matchup != null ? "即将开战 · " + ArenaPresentation.CountdownLabel(elapsed, ArenaPresentation.PreBattleSeconds) : (page + 1).ToString("D2") + "  /  " + pages.ToString("D2"), 22 * scale, Color.white, TextAnchor.MiddleRight);
                 var segmentWidth = (1456f - (pages - 1) * 8) / pages;
                 for (var i = 0; i < pages; i++)
                 {

@@ -116,6 +116,14 @@ public static class ArenaResultValidator
                 // Older schema-1 reports have no post-battle captures. When present,
                 // require a distinct, completed presentation for every attempt.
                 if (m.PostBattleScreenshots.Count > 0 && (m.PostBattleScreenshots.Count != m.Attempts.Count || m.PostBattleScreenshots.Distinct(StringComparer.Ordinal).Count() != m.Attempts.Count || m.PostBattleScreenshots.Any(p => !p.EndsWith("_postbattle.png", StringComparison.Ordinal) || verifyArtifactFiles && !File.Exists(p)))) return "赛后天梯截图与每次尝试不一致";
+                // Preserve compatibility with schema-1 reports produced before match previews.
+                if (m.PreBattles.Count > 0 && (m.PreBattles.Count != m.Attempts.Count
+                    || m.PreBattles.Select(p => p.Screenshot).Distinct(StringComparer.Ordinal).Count() != m.Attempts.Count
+                    || m.PreBattles.Any(p => !p.Completed || p.DurationSeconds != ArenaPresentation.PreBattleSeconds
+                        || !double.IsFinite(p.VisibleSeconds) || p.VisibleSeconds < p.DurationSeconds || p.SimulationTicks != 0
+                        || !p.EntrantIds.SequenceEqual(new[] { m.Left, m.Right })
+                        || string.IsNullOrEmpty(p.Screenshot) || !p.Screenshot.EndsWith("_prebattle.png", StringComparison.Ordinal)
+                        || verifyArtifactFiles && !File.Exists(p.Screenshot)))) return "赛前对阵展示缺失、双方不符、未满五秒或展示期间推进了模拟";
                 var last = m.Attempts.Last(); var winner = last.Teams.Single(x => x.Outcome == "win");
                 var enemy = last.Teams.Single(x => x.Outcome == "loss");
                 if (!last.MeasurementRequirementsMet || last.MeasurementQuality is not ("partial" or "complete")) return "伤害采集异常的暂定分数不得参与晋级";
