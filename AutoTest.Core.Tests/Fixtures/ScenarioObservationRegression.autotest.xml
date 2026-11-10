@@ -1,0 +1,59 @@
+<TestSuite schemaVersion="1" id="observation.regression" gameVersion="1.7" packageId="ludeon.rimworld">
+  <Requirements><DLC packageId="ludeon.rimworld.anomaly" /></Requirements>
+  <Templates>
+    <PawnTemplate id="subject"><basePawnKind>SpaceRefugee</basePawnKind><minGenerationAge>25</minGenerationAge><maxGenerationAge>25</maxGenerationAge></PawnTemplate>
+  </Templates>
+  <Case id="expect" timeoutRealSeconds="30">
+    <testDefName>Observation_ExpectAfterAction</testDefName>
+    <Scene /><Actors><Pawn id="p" template="subject" /></Actors>
+    <Steps>
+      <DebugAction id="fill" actionId="native.fillNeeds">
+        <Select mode="single" actor="p" />
+        <Expect><All><ActorState actor="p" state="alive" /><NeedLevel actor="p" def="Food" min="0.99" /></All></Expect>
+      </DebugAction>
+    </Steps>
+    <Success><StepSucceeded ref="fill" /></Success>
+  </Case>
+  <Case id="expectTransition" timeoutRealSeconds="30">
+    <testDefName>Observation_ExpectOwnTransition</testDefName>
+    <Scene /><Actors><Pawn id="p" template="subject"><Hediffs><Remove def="Metalblood" /></Hediffs></Pawn></Actors>
+    <Steps>
+      <DebugAction id="inject" actionId="native.addHediff" def="Metalblood" severity="1">
+        <Select mode="single" actor="p" />
+        <Expect><HasHediff actor="p" def="Metalblood" transition="added" since="inject" /></Expect>
+      </DebugAction>
+    </Steps>
+    <Success><StepSucceeded ref="inject" /></Success>
+  </Case>
+  <Case id="eventuallyNot" timeoutRealSeconds="30">
+    <testDefName>Observation_EventuallyNotExpires</testDefName>
+    <Scene /><Actors><Pawn id="p" template="subject"><Hediffs><Ensure def="Metalblood" severity="1" durationTicks="120" /></Hediffs></Pawn></Actors>
+    <Steps>
+      <Require id="present"><HasHediff actor="p" def="Metalblood" /></Require>
+      <Wait id="gone" observation="eventually" timeoutRealSeconds="15"><Not><HasHediff actor="p" def="Metalblood" /></Not></Wait>
+    </Steps>
+    <Success><StepSucceeded ref="gone" /><Not><HasHediff actor="p" def="Metalblood" /></Not></Success>
+  </Case>
+  <Case id="always" timeoutRealSeconds="30">
+    <testDefName>Observation_AlwaysAlive</testDefName>
+    <Scene /><Actors><Pawn id="p" template="subject" /></Actors>
+    <Steps><Wait id="alive" observation="always" durationTicks="120" timeoutRealSeconds="15"><ActorState actor="p" state="alive" /></Wait></Steps>
+    <Success><StepSucceeded ref="alive" /></Success>
+  </Case>
+  <Case id="stable" timeoutRealSeconds="30">
+    <testDefName>Observation_StableAfterExpiry</testDefName>
+    <Scene /><Actors><Pawn id="p" template="subject"><Hediffs><Ensure def="Metalblood" severity="1" durationTicks="120" /></Hediffs></Pawn></Actors>
+    <Steps><Wait id="stable" stableTicks="120" timeoutRealSeconds="15"><Not><HasHediff actor="p" def="Metalblood" /></Not></Wait></Steps>
+    <Success><StepSucceeded ref="stable" /></Success>
+  </Case>
+  <Case id="preparedHistory" timeoutRealSeconds="30">
+    <testDefName>Observation_PreparedHistory</testDefName>
+    <Scene /><Actors><Pawn id="p" template="subject"><Hediffs><Remove def="Metalblood" /></Hediffs></Pawn></Actors>
+    <Steps>
+      <AddHediff id="add" actor="p" def="Metalblood" severity="1" />
+      <RemoveHediff id="remove" actor="p" def="Metalblood" />
+      <Wait id="observed" timeoutRealSeconds="5"><HasHediff actor="p" def="Metalblood" transition="added" since="prepared" observation="eventually" /></Wait>
+    </Steps>
+    <Success><StepSucceeded ref="observed" /><Not><HasHediff actor="p" def="Metalblood" /></Not></Success>
+  </Case>
+</TestSuite>

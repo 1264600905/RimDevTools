@@ -1,0 +1,8 @@
+<TestSuite schemaVersion="1" id="observation.reserved" gameVersion="1.7">
+  <Case id="reserved">
+    <testDefName>Observation_RejectReservedBaseline</testDefName>
+    <Scene /><Actors><Pawn id="p"><basePawnKind>SpaceRefugee</basePawnKind></Pawn></Actors>
+    <Steps><Checkpoint id="prepared" /></Steps>
+    <Success><ActorState actor="p" state="alive" /></Success>
+  </Case>
+</TestSuite>

@@ -286,7 +286,7 @@
       <DebugAction id="needs" actionId="native.fillNeeds">
         <Select mode="single" actor="shooter" />
       </DebugAction>
-      <Require id="prepared">
+      <Require id="prepared-check">
         <Equipped actor="shooter" def="${weapon}" />
         <NeedLevel actor="shooter" def="Food" min="0.9" />
       </Require>
@@ -298,7 +298,7 @@
     </Steps>
     <Success>
       <All>
-        <StepSucceeded ref="prepared" />
+        <StepSucceeded ref="prepared-check" />
         <StepSucceeded ref="damage" />
         <StepSucceeded ref="hit-image" />
       </All>

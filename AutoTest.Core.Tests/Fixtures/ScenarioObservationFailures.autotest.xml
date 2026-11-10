@@ -1,0 +1,30 @@
+<!-- Negative controls: a healthy runner must reject these at the declared condition. -->
+<TestSuite schemaVersion="1" id="observation.failures" gameVersion="1.7" packageId="ludeon.rimworld">
+  <Requirements><DLC packageId="ludeon.rimworld.anomaly" /></Requirements>
+  <Case id="expect" timeoutRealSeconds="30">
+    <testDefName>Observation_RejectFalseExpect</testDefName>
+    <Scene /><Actors><Pawn id="p"><basePawnKind>SpaceRefugee</basePawnKind></Pawn></Actors>
+    <Steps>
+      <DebugAction id="fill" actionId="native.fillNeeds"><Select mode="single" actor="p" /><Expect><ActorState actor="p" state="dead" /></Expect></DebugAction>
+    </Steps>
+    <Success><StepSucceeded ref="fill" /></Success>
+  </Case>
+  <Case id="always" timeoutRealSeconds="30">
+    <testDefName>Observation_RejectContinuousLoss</testDefName>
+    <Scene /><Actors><Pawn id="p"><basePawnKind>SpaceRefugee</basePawnKind><Hediffs><Ensure def="Metalblood" severity="1" durationTicks="120" /></Hediffs></Pawn></Actors>
+    <Steps><Wait id="continuous" observation="always" durationTicks="600" timeoutRealSeconds="15"><HasHediff actor="p" def="Metalblood" /></Wait></Steps>
+    <Success><StepSucceeded ref="continuous" /></Success>
+  </Case>
+  <Case id="neverAbsent" timeoutRealSeconds="30">
+    <testDefName>Observation_RejectNeverAbsent</testDefName>
+    <Scene /><Actors><Pawn id="p"><basePawnKind>SpaceRefugee</basePawnKind><Hediffs><Ensure def="Metalblood" severity="1" durationTicks="60000" /></Hediffs></Pawn></Actors>
+    <Steps><Wait id="gone" observation="eventually" timeoutRealSeconds="2"><Not><HasHediff actor="p" def="Metalblood" /></Not></Wait></Steps>
+    <Success><StepSucceeded ref="gone" /></Success>
+  </Case>
+  <Case id="pastStep" timeoutRealSeconds="30">
+    <testDefName>Observation_RejectPastStepNegation</testDefName>
+    <Scene /><Actors><Pawn id="p"><basePawnKind>SpaceRefugee</basePawnKind></Pawn></Actors>
+    <Steps><Checkpoint id="before" /><Wait id="notCompleted" observation="eventually" timeoutRealSeconds="2"><Not><StepSucceeded ref="before" /></Not></Wait></Steps>
+    <Success><StepSucceeded ref="notCompleted" /></Success>
+  </Case>
+</TestSuite>

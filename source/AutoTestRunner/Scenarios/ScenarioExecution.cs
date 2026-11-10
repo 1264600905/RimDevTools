@@ -16,15 +16,15 @@ namespace LogSyncMod.AutoTest.Scenarios
         private readonly List<XElement> steps;
         private readonly List<XElement> leaves;
         private readonly Dictionary<string, Dictionary<XElement, ScenarioSample>> baselines = new Dictionary<string, Dictionary<XElement, ScenarioSample>>();
-        private readonly Dictionary<string, Dictionary<XElement, bool>> ever = new Dictionary<string, Dictionary<XElement, bool>>();
+        private readonly HashSet<XElement> temporalConditions;
+        private readonly HashSet<XElement> observedConditions = new HashSet<XElement>();
         private readonly HashSet<string> succeeded = new HashSet<string>();
-        private readonly HashSet<XElement> seen = new HashSet<XElement>();
         private readonly HashSet<string> observedTransitions = new HashSet<string>();
         private readonly Dictionary<string, HashSet<XElement>> interventionChanges = new Dictionary<string, HashSet<XElement>>();
         private long started, stepStarted;
         private int index, stableStart = -1, observationStart;
         private bool prepared, stepEntered, observing, cleaning;
-        private XElement activeNode, failedCondition, probeFailure;
+        private XElement activeNode, failedCondition, probeFailure, continuousFailure;
         public ScenarioOutcome Outcome { get; }
         public bool Completed { get; private set; }
 
@@ -36,7 +36,13 @@ namespace LogSyncMod.AutoTest.Scenarios
             root = XElement.Parse(definition.Xml);
             activeNode = root;
             steps = root.Element("Steps").Elements().ToList();
-            leaves = root.Descendants().Where(e => e.Parent != null && new[] { "Require", "Wait", "All", "Any", "Not", "Success" }.Contains(e.Parent.Name.LocalName) && !new[] { "All", "Any", "Not", "StepSucceeded" }.Contains(e.Name.LocalName)).ToList();
+            var conditions = steps.Where(e => e.Name == "Require" || e.Name == "Wait")
+                .Concat(steps.SelectMany(e => e.Elements("Expect"))).Concat(root.Elements("Success"))
+                .SelectMany(e => e.DescendantsAndSelf()).ToList();
+            leaves = conditions.Where(e => !e.HasElements && e.Name != "StepSucceeded").ToList();
+            temporalConditions = new HashSet<XElement>(conditions.Where(e => e.Name != "StepSucceeded" &&
+                (e.HasElements ? ScenarioLoader.A(e.AncestorsAndSelf("Wait").FirstOrDefault(), "observation") == "eventually"
+                    && !e.Descendants().Any(c => ScenarioLoader.A(c, "observation") == "current") : Eventually(e))));
             Outcome = new ScenarioOutcome { TestDefName = definition.TestDefName, CaseId = definition.CaseId, Source = definition.Source, InputHash = definition.InputHash, TargetDefNames = root.Element("Targets")?.Elements("Def").Select(e => ScenarioLoader.A(e, "defName")).ToList() ?? new List<string>() };
             Outcome.CaseType = definition.CaseType;
             Outcome.CoverageMode = definition.CoverageMode;
@@ -81,7 +87,7 @@ namespace LogSyncMod.AutoTest.Scenarios
                     stepStarted = clock.RealtimeMilliseconds;
                     stableStart = -1;
                     observationStart = tick;
-                    seen.Clear();
+                    continuousFailure = null;
                     Baseline(ScenarioLoader.A(step, "id"));
                     Mark("step.started", tick, step.ToString(SaveOptions.DisableFormatting));
                 }
@@ -95,6 +101,12 @@ namespace LogSyncMod.AutoTest.Scenarios
                 }
                 else if (type == "Wait")
                 {
+                    // Native callbacks only latch failure. Finish and clean up here, outside the native mutation.
+                    if (continuousFailure != null)
+                    {
+                        failedCondition = continuousFailure;
+                        throw new InvalidOperationException("Continuous predicate violated: " + step);
+                    }
                     bool match = Evaluate(step);
                     var mode = ScenarioLoader.A(step, "observation", "current");
                     if (mode == "always" && !match) throw new InvalidOperationException("Continuous predicate violated: " + step);
@@ -112,12 +124,12 @@ namespace LogSyncMod.AutoTest.Scenarios
                     finally
                     {
                         observing = false;
-                        foreach (var leaf in leaves.Where(e => ScenarioLoader.A(e, "transition") != null))
+                        foreach (var leaf in leaves.Where(e => ScenarioLoader.A(e, "transition") != null && !e.Ancestors().Contains(step.Element("Expect"))))
                         {
                             var after = ReadSample(leaf);
                             if (before[leaf].Matches.SetEquals(after.Matches) && before[leaf].Existing.SetEquals(after.Existing)) continue;
-                            foreach (var baseline in baselines.Keys) { interventionChanges[baseline].Add(leaf); ever[baseline][leaf] = false; }
-                            seen.Remove(leaf);
+                            foreach (var baseline in baselines.Keys) interventionChanges[baseline].Add(leaf);
+                            observedConditions.RemoveWhere(e => e.DescendantsAndSelf().Contains(leaf));
                             Mark("debug.interference", tick, "Explicit intervention changed observed objects; take a new checkpoint before attributing later transitions: " + leaf);
                         }
                     }
@@ -125,8 +137,11 @@ namespace LogSyncMod.AutoTest.Scenarios
                 else done = backend.Execute(step, first);
                 if (done)
                 {
-                    if (type == "Require" || type == "Wait")
-                        foreach (var leaf in step.Descendants().Where(leaves.Contains))
+                    var expectation = step.Element("Expect");
+                    if (expectation != null && !Evaluate(expectation))
+                        throw new InvalidOperationException("Action postcondition failed: " + expectation);
+                    if (type == "Require" || type == "Wait" || expectation != null)
+                        foreach (var leaf in (expectation ?? step).Descendants().Where(leaves.Contains))
                         {
                             var observation = ReadSample(leaf);
                             Mark("predicate.observation", tick, leaf.ToString(SaveOptions.DisableFormatting) + "; currentMatches=" + string.Join(",", observation.Matches) + "; " + observation.Details);
@@ -151,20 +166,42 @@ namespace LogSyncMod.AutoTest.Scenarios
             observing = true;
             try
             {
+                // Every expression in this observation uses the same sample, including Not/All/Any.
+                var samples = leaves.ToDictionary(e => e, ReadSample);
                 foreach (var baseline in baselines)
                 foreach (var leaf in leaves)
                 {
                     if (interventionChanges[baseline.Key].Contains(leaf)) continue;
-                    var current = ReadSample(leaf);
+                    var current = samples[leaf];
                     if (Match(leaf, current, baseline.Value[leaf]))
                     {
-                        ever[baseline.Key][leaf] = true;
                         if (ScenarioLoader.A(leaf, "transition") != null && ScenarioLoader.A(leaf, "since", "prepared") == baseline.Key)
                         {
                             var key = baseline.Key + ":" + leaf.ToString(SaveOptions.DisableFormatting);
                             if (observedTransitions.Add(key)) Mark("effect.observed", tick, key + "; matches=" + string.Join(",", current.Matches));
                         }
                     }
+                }
+                foreach (var condition in temporalConditions)
+                {
+                    var observedLeaves = condition.DescendantsAndSelf().Where(leaves.Contains);
+                    // StepSucceeded has no leaf sample/since attribute: its observation window is the Wait itself.
+                    if (condition.DescendantsAndSelf("StepSucceeded").Any()
+                        && !baselines.ContainsKey(ScenarioLoader.A(condition.AncestorsAndSelf("Wait").First(), "id"))) continue;
+                    if (observedLeaves.Any(e => !baselines.ContainsKey(BaselineId(e)) || interventionChanges[BaselineId(e)].Contains(e))) continue;
+                    if (Evaluate(condition, out _, currentOnly: true, samples: samples)) observedConditions.Add(condition);
+                }
+                if (stepEntered && index < steps.Count && steps[index].Name == "Wait")
+                {
+                    var wait = steps[index];
+                    if (!Evaluate(wait, out var failure, samples: samples))
+                    {
+                        if (stableStart >= 0 || continuousFailure == null && ScenarioLoader.A(wait, "observation") == "always")
+                            Mark("predicate.interrupted", tick, (failure ?? wait).ToString(SaveOptions.DisableFormatting));
+                        stableStart = -1;
+                        if (ScenarioLoader.A(wait, "observation") == "always") continuousFailure = continuousFailure ?? failure ?? wait;
+                    }
+                    else if (stableStart < 0) stableStart = tick;
                 }
             }
             finally { observing = false; }
@@ -174,16 +211,30 @@ namespace LogSyncMod.AutoTest.Scenarios
 
         private void Baseline(string id)
         {
+            if (baselines.ContainsKey(id)) throw new ScenarioConfigurationException("Baseline already exists: " + id);
             baselines[id] = leaves.ToDictionary(e => e, ReadSample);
-            ever[id] = leaves.ToDictionary(e => e, e => false);
             interventionChanges[id] = new HashSet<XElement>();
+        }
+
+        private static bool Eventually(XElement e) => ScenarioLoader.A(e, "observation", ScenarioLoader.A(e.Ancestors("Wait").FirstOrDefault(), "observation")) == "eventually";
+        private static string BaselineId(XElement e)
+        {
+            var wait = e.Ancestors("Wait").FirstOrDefault();
+            return ScenarioLoader.A(e, "since", Eventually(e) && wait != null ? ScenarioLoader.A(wait, "id") : "prepared");
         }
 
         private bool Evaluate(XElement e) => Evaluate(e, out failedCondition);
 
-        private bool Evaluate(XElement e, out XElement failure)
+        private bool Evaluate(XElement e, out XElement failure, bool currentOnly = false, IReadOnlyDictionary<XElement, ScenarioSample> samples = null)
         {
             failure = null;
+            if (!currentOnly && temporalConditions.Contains(e))
+            {
+                var current = Evaluate(e, out failure, currentOnly: true, samples: samples);
+                if (current) observedConditions.Add(e);
+                if (observedConditions.Contains(e)) { failure = null; return true; }
+                return false;
+            }
             if (e.Name == "StepSucceeded")
             {
                 var passed = succeeded.Contains(ScenarioLoader.A(e, "ref"));
@@ -192,32 +243,29 @@ namespace LogSyncMod.AutoTest.Scenarios
             }
             if (e.Name == "Not")
             {
-                var passed = e.Descendants().Where(leaf => leaves.Contains(leaf)).All(leaf => ReadSample(leaf).TargetCount > 0) && !Evaluate(e.Elements().Single(), out _);
+                var passed = e.Descendants().Where(leaf => leaves.Contains(leaf)).All(leaf => (samples == null ? ReadSample(leaf) : samples[leaf]).TargetCount > 0)
+                    && !Evaluate(e.Elements().Single(), out _, currentOnly, samples);
                 if (!passed) failure = e;
                 return passed;
             }
             if (e.Name == "Any")
             {
-                foreach (var child in e.Elements()) if (Evaluate(child, out _)) return true;
+                foreach (var child in e.Elements()) if (Evaluate(child, out _, currentOnly, samples)) return true;
                 failure = e;
                 return false;
             }
             if (e.HasElements)
             {
-                foreach (var child in e.Elements()) if (!Evaluate(child, out failure)) return false;
+                foreach (var child in e.Elements()) if (!Evaluate(child, out failure, currentOnly, samples)) return false;
                 return true;
             }
-            var wait = e.Ancestors("Wait").FirstOrDefault();
-            var eventually = ScenarioLoader.A(e, "observation", ScenarioLoader.A(wait, "observation")) == "eventually";
-            var baselineId = ScenarioLoader.A(e, "since", eventually && wait != null ? ScenarioLoader.A(wait, "id") : "prepared");
+            var baselineId = BaselineId(e);
             if (!baselines.TryGetValue(baselineId, out var baseline)) throw new InvalidOperationException("Baseline has not been reached: " + baselineId);
             if (interventionChanges[baselineId].Contains(e)) throw new InvalidOperationException("DebugAction changed this transition after baseline '" + baselineId + "'; it cannot be attributed to the tested ability. Establish a new checkpoint: " + e);
-            var sample = ReadSample(e);
+            var sample = samples == null ? ReadSample(e) : samples[e];
             var match = Match(e, sample, baseline[e]);
-            if (match) seen.Add(e);
-            var satisfied = eventually ? match || seen.Contains(e) || ever[baselineId][e] : match;
-            if (!satisfied) failure = e;
-            return satisfied;
+            if (!match) failure = e;
+            return match;
         }
 
         public static bool Match(XElement condition, ScenarioSample sample, ScenarioSample baseline)

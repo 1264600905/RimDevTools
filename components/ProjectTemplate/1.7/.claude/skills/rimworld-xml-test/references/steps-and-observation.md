@@ -2,7 +2,7 @@
 
 ## 基线与窗口
 
-所有步骤必须有唯一 `id`，步骤开始前自动建立同名基线；场景准备后有 `prepared`，`Checkpoint` 可新增基线。先核对准备，执行原生动作，再用状态或身份变化断言实际效果。
+所有步骤必须有唯一 `id`，步骤开始前自动建立同名基线；场景准备后有内置基线 `prepared`，该名称保留，不能用作步骤 ID。`Checkpoint` 可新增其他名称的基线。先核对准备，执行原生动作，再用状态或身份变化断言实际效果。
 
 ```xml
 <Steps>
@@ -19,7 +19,9 @@
 这段只能证明 Hediff 添加与观察通路；若要证明技能造成它，改为真实 CastAbility 并配置原生前提，不能用 AddHediff 代替施放。
 
 - Require 当前不满足立即失败。Wait 反复观察，默认实际超时 15 秒；`stableTicks` 按模拟 tick 连续满足计数，同帧/重复帧不增加。
-- Wait/叶子 `observation="current|eventually"`；eventually 保留窗口内发生过的匹配，指定 since 则从对应基线观察，适合瞬时效果。
+- Wait/叶子 `observation="current|eventually"`；eventually 保留窗口内发生过的匹配，指定 since 则从对应基线观察，适合瞬时效果。Wait 上的 eventually 观察完整组合条件：Not 记忆条件不成立的时刻，All 要求其子条件曾在同一观察时刻一起成立；叶子显式 current 仍按当前状态判断。
+- 原生事件观察到失败也会中断 always 或重置 stableTicks；同一 tick 内恢复不会抹去中断。失败在正常轮询中结束用例并清理，不在原生事件回调中清理地图。
+- DebugAction 可包含 Expect，动作返回后先核对后置条件，通过后才记录步骤成功。Expect 可断言该调试动作自身的变化，但不会让其他步骤把调试注入归因于技能。
 - `Wait observation="always" durationTicks="..."` 要求整个窗口始终满足，任一不满足立即失败；不要与“最终曾出现过”混淆。
 - HasHediff/ThingExists 的 `transition="added|removed" since="基线或步骤ID"` 按实例身份判断。改旧 Hediff 严重度不算新增；掉落、转移旧物也不算创建新物。tick 采样与原生事件保留瞬时变化。
 - HasHediff/ThingExists/ActorState/HealthPercent/NeedLevel/ResourceLevel 可用 `quantifier="any|all|count"`，默认 any；count 配 equals。HasHediff 的 count 计命中的角色数，不是 Hediff 实例数。空的显式目标集合不能通过 all/Not 空真。

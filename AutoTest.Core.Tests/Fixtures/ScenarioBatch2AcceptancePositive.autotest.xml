@@ -232,7 +232,7 @@
       <DebugAction id="needs" actionId="native.fillNeeds">
         <Select mode="single" actor="shooter" />
       </DebugAction>
-      <Require id="prepared">
+      <Require id="prepared-check">
         <Equipped actor="shooter" def="${weapon}" />
         <NeedLevel actor="shooter" def="Food" min="0.9" />
       </Require>
@@ -244,7 +244,7 @@
     </Steps>
     <Success>
       <All>
-        <StepSucceeded ref="prepared" />
+        <StepSucceeded ref="prepared-check" />
         <StepSucceeded ref="damage" />
         <StepSucceeded ref="hit-image" />
       </All>
@@ -686,8 +686,8 @@
       <DebugAction id="charge" actionId="native.chargeBattery"><Select mode="single" actor="battery" /></DebugAction>
       <DebugAction id="heal" actionId="native.healInjuries"><Select mode="single" actor="p" /></DebugAction>
       <DebugAction id="remove" actionId="native.removeHediff" def="AlcoholHigh"><Select mode="single" actor="p" /></DebugAction>
-      <Require id="prepared"><ComponentState actor="battery" component="battery" min="0.99" /><Not><HasHediff actor="p" def="Cut" /></Not><Not><HasHediff actor="p" def="AlcoholHigh" /></Not></Require>
+      <Require id="prepared-check"><ComponentState actor="battery" component="battery" min="0.99" /><Not><HasHediff actor="p" def="Cut" /></Not><Not><HasHediff actor="p" def="AlcoholHigh" /></Not></Require>
     </Steps>
-    <Success><StepSucceeded ref="focus" /><StepSucceeded ref="charge" /><StepSucceeded ref="heal" /><StepSucceeded ref="remove" /><StepSucceeded ref="prepared" /></Success>
+    <Success><StepSucceeded ref="focus" /><StepSucceeded ref="charge" /><StepSucceeded ref="heal" /><StepSucceeded ref="remove" /><StepSucceeded ref="prepared-check" /></Success>
   </Case>
 </TestSuite>

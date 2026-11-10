@@ -6,6 +6,7 @@ internal static class ScenarioTests
 {
     internal static void Run(Action<bool, string> check)
     {
+        ScenarioObservationTests.Run(check);
         const string body = "<Scene type='pocketMap'/><Actors><Pawn id='p'><basePawnKind>SpaceRefugee</basePawnKind></Pawn></Actors><Steps><Require id='ready'><ActorState actor='p' state='alive'/></Require></Steps><Success><StepSucceeded ref='ready'/></Success>";
         string Suite(string name = "Rule_A", string extra = "", string caseBody = body) => "<TestSuite schemaVersion='1' id='suite'><Case id='a'><testDefName>" + name + "</testDefName>" + caseBody + "</Case>" + extra + "</TestSuite>";
         ScenarioInput Input(string xml, string path = "中文路径/测试.autotest.xml") => new() { Path = path, Sha256 = "frozen-hash", Xml = xml };

@@ -39,7 +39,7 @@
       <Equip id="equip" actor="knights[0]" def="Gun_SniperRifle"/>
       <RemoveHediff id="remove" actor="knights[0]" def="FoodPoisoning"/>
       <DebugAction id="hemogen" actionId="native.fillHemogen" value="0.9"><Select mode="single" actor="knights[0]"/><Expect><ResourceLevel actor="knights[0]" def="Hemogenic" min="0.89" max="0.91"/></Expect></DebugAction>
-      <Require id="prepared"><StepSucceeded ref="equip"/><Equipped actor="knights[0]" def="Gun_SniperRifle"/><Not><HasHediff actor="knights[0]" def="FoodPoisoning"/></Not><SkillLevel actor="knights[0]" def="Shooting" min="10" max="10"/><ResourceLevel actor="knights[0]" def="Hemogenic" min="0.89" max="0.91"/></Require>
+      <Require id="prepared-check"><StepSucceeded ref="equip"/><Equipped actor="knights[0]" def="Gun_SniperRifle"/><Not><HasHediff actor="knights[0]" def="FoodPoisoning"/></Not><SkillLevel actor="knights[0]" def="Shooting" min="10" max="10"/><ResourceLevel actor="knights[0]" def="Hemogenic" min="0.89" max="0.91"/></Require>
     </Steps>
     <Output width="1280" height="720"/>
   </Case>

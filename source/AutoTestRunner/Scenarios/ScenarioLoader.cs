@@ -246,7 +246,12 @@ namespace LogSyncMod.AutoTest.Scenarios
             var steps = new HashSet<string>();
             if (new[] { "PlantGrowthView", "BuildingView", "TerrainPatchView" }.Contains(type))
                 foreach (var viewStep in c.Element("Steps").Elements("View").Where(v => v.Attribute("directions") == null)) viewStep.SetAttributeValue("directions", "North");
-            foreach (var step in c.Element("Steps").Elements()) if (!steps.Add(Required(step, "id", path))) Fail(step, path, "duplicate step id");
+            foreach (var step in c.Element("Steps").Elements())
+            {
+                var id = Required(step, "id", path);
+                if (id == "prepared") Fail(step, path, "step id 'prepared' is reserved for the scene preparation baseline");
+                if (!steps.Add(id)) Fail(step, path, "duplicate step id");
+            }
             foreach (var step in c.Element("Steps").Elements().Where(s => s.Attribute("output") != null))
                 if (!actors.Add(Required(step, "output", path))) Fail(step, path, "duplicate generated actor id");
             foreach (var element in c.Descendants())

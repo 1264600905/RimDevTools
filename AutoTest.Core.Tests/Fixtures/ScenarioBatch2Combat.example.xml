@@ -21,11 +21,11 @@
     </Actors>
     <Steps>
       <DebugAction id="needs" actionId="native.fillNeeds"><Select mode="single" actor="shooter" /></DebugAction>
-      <Require id="prepared"><Equipped actor="shooter" def="${weapon}" /><NeedLevel actor="shooter" def="Food" min="0.9" /></Require>
+      <Require id="prepared-check"><Equipped actor="shooter" def="${weapon}" /><NeedLevel actor="shooter" def="Food" min="0.9" /></Require>
       <Attack id="shoot" actor="shooter" target="target" timeoutRealSeconds="10" />
       <Wait id="damage" timeoutRealSeconds="20"><HealthPercent actor="target" max="0.99" /></Wait>
       <Screenshot id="hit-image" focus="target" />
     </Steps>
-    <Success><All><StepSucceeded ref="prepared" /><StepSucceeded ref="damage" /><StepSucceeded ref="hit-image" /></All></Success>
+    <Success><All><StepSucceeded ref="prepared-check" /><StepSucceeded ref="damage" /><StepSucceeded ref="hit-image" /></All></Success>
   </Case>
 </TestSuite>
