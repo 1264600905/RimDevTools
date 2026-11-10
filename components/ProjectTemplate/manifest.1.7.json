@@ -1,6 +1,8 @@
 {
   "schemaVersion": 2,
-  "supportedVersions": ["1.7"],
+  "supportedVersions": [
+    "1.7"
+  ],
   "requiredFiles": [
     ".gitignore",
     "LICENSE",
@@ -81,7 +83,11 @@
     ".tools/Data/LogSyncMod/1.7/Defs/Internal/TestDefs.xml",
     ".tools/Ilspy/ilspycmd.exe",
     ".tools/modlist/defaultMods.xml",
-    ".tools/log/精选日志.log"
+    ".tools/log/精选日志.log",
+    ".agents/skills/rimworld-xml-test/assets/arena-template-groups.autotest.xml",
+    ".agents/skills/rimworld-xml-test/assets/groupcombat-template-groups.autotest.xml",
+    ".claude/skills/rimworld-xml-test/assets/arena-template-groups.autotest.xml",
+    ".claude/skills/rimworld-xml-test/assets/groupcombat-template-groups.autotest.xml"
   ],
   "requiredDirectories": [
     ".tools/log/AutoTestOutput",

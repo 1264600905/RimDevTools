@@ -37,6 +37,14 @@ if (File.Exists(release + ".zip"))
 }
 var package = ToolPackageManifest.Load(release);
 package.VerifyFiles(release);
+var xmlSkills = new[] { ".agents", ".claude" }.Select(client => Path.Combine(release, client, "skills", "rimworld-xml-test")).ToArray();
+var xmlSkillFiles = Directory.EnumerateFiles(xmlSkills[0], "*", SearchOption.AllDirectories).ToArray();
+Assert(xmlSkillFiles.All(file => File.Exists(Path.Combine(xmlSkills[1], Path.GetRelativePath(xmlSkills[0], file)))
+    && ToolPackageManifest.Hash(file) == ToolPackageManifest.Hash(Path.Combine(xmlSkills[1], Path.GetRelativePath(xmlSkills[0], file)))),
+    "Codex and Claude contain identical XML skill instructions, references and examples");
+foreach (var skill in xmlSkills)
+foreach (var example in new[] { "arena-template-groups.autotest.xml", "groupcombat-template-groups.autotest.xml" })
+    Assert(File.Exists(Path.Combine(skill, "assets", example)), "packaged template groups example: " + Path.GetFileName(Path.GetDirectoryName(Path.GetDirectoryName(skill))) + "/" + example);
 Assert(package.ToolVersion == releaseToolVersion, "tool manifest matches built CLI version");
 Assert(package.SupportedGameVersions.SequenceEqual(["1.6", "1.7"]), "tool manifest supports both game versions");
 var actualManaged = Directory.EnumerateFiles(release, "*", SearchOption.AllDirectories)
@@ -166,14 +174,14 @@ using (var manifestDocument = JsonDocument.Parse(File.ReadAllText(Path.Combine(d
 
 var logSyncAbout = XDocument.Load(Path.Combine(data, "LogSyncMod", "About", "About.xml"));
 Assert(logSyncAbout.Root?.Element("packageId")?.Value.Equals("trigger.logsyncmod", StringComparison.OrdinalIgnoreCase) == true, "packaged LogSyncMod has the expected packageId");
-Assert(logSyncAbout.Root?.Element("modVersion")?.Value == "1.2.7", "packaged LogSyncMod declares version 1.2.7");
+Assert(logSyncAbout.Root?.Element("modVersion")?.Value == "1.2.8", "packaged LogSyncMod declares version 1.2.8");
 var supportedVersions = logSyncAbout.Root?.Element("supportedVersions")?.Elements("li").Select(element => element.Value).ToHashSet(StringComparer.OrdinalIgnoreCase);
 Assert(supportedVersions?.SetEquals(["1.6", "1.7"]) == true, "packaged LogSyncMod declares both RimWorld versions");
 var logSyncAssembly = AssemblyName.GetAssemblyName(Path.Combine(data, "LogSyncMod", "1.6", "Assemblies", "LogSyncMod.dll")).Version;
 var autoTestAssembly = AssemblyName.GetAssemblyName(Path.Combine(data, "LogSyncMod", "1.6", "Assemblies", "AutoTestRunner.dll")).Version;
 Assert(logSyncAssembly is not null && autoTestAssembly is not null && logSyncAssembly.Major == autoTestAssembly.Major && logSyncAssembly.Minor == autoTestAssembly.Minor && logSyncAssembly.Build == autoTestAssembly.Build, "packaged LogSync assemblies share a product version");
 var logSyncAssembly17 = AssemblyName.GetAssemblyName(Path.Combine(data, "LogSyncMod", "1.7", "Assemblies", "LogSyncMod.dll")).Version;
-Assert(logSyncAssembly17 is not null && logSyncAssembly17.Major == 1 && logSyncAssembly17.Minor == 2 && logSyncAssembly17.Build == 7, "packaged LogSyncMod includes the current RimWorld 1.7 build");
+Assert(logSyncAssembly17 is not null && logSyncAssembly17.Major == 1 && logSyncAssembly17.Minor == 2 && logSyncAssembly17.Build == 8, "packaged LogSyncMod includes the current RimWorld 1.7 build");
 var logSyncAssembly17Path = Path.Combine(data, "LogSyncMod", "1.7", "Assemblies", "LogSyncMod.dll");
 Assert(File.ReadAllBytes(logSyncAssembly17Path).SequenceEqual(File.ReadAllBytes(Path.Combine(Environment.CurrentDirectory, "1.7", "Assemblies", "LogSyncMod.dll"))), "packaged RimWorld 1.7 assembly matches the current source build");
 foreach (var version in new[] { "1.6", "1.7" })
@@ -236,6 +244,20 @@ Assert(modCopyHelp.Contains("--include-ignored", StringComparison.Ordinal)
     && modCopyHelp.Contains("--dry-run", StringComparison.Ordinal)
     && modCopyHelp.Contains("project_paths.reference_docs", StringComparison.Ordinal), "packaged CLI exposes reference copy options and the configured destination");
 var testRunHelp = Run(Path.Combine(tools, "RimDevTools.exe"), release, "test", "run", "--help");
+if (templateGameVersion == "1.7")
+{
+    foreach (var (mode, file, names) in new[] {
+        ("arena", "arena-template-groups.autotest.xml", new[] { "Example_TemplateGroupsKnockout", "Example_TemplateGroupsRoundRobin", "Example_TemplateGroupsLimit" }),
+        ("groupcombat", "groupcombat-template-groups.autotest.xml", new[] { "Example_TemplateGroupsCombat" }) })
+    {
+        var arguments = new List<string> { "test", "run", "--mode", mode, "--scenario-path", Path.Combine(xmlSkills[0], "assets", file), "--validate-only" };
+        foreach (var name in names) arguments.AddRange(["--test-name", name]);
+        using var validation = JsonDocument.Parse(Run(Path.Combine(tools, "RimDevTools.exe"), release, arguments.ToArray()));
+        Assert(validation.RootElement.GetProperty("ok").GetBoolean()
+            && validation.RootElement.GetProperty("result").GetProperty("validation").GetProperty("valid").GetBoolean(),
+            "packaged CLI accepts template groups through " + mode);
+    }
+}
 Assert(testRunHelp.Contains("--batch-size", StringComparison.Ordinal)
     && testRunHelp.Contains("defaults to 40", StringComparison.Ordinal)
     && testRunHelp.Contains("including Standard", StringComparison.Ordinal)
@@ -273,6 +295,15 @@ try
     var dryRun = Run(Path.Combine(testTools, "RimDevTools.exe"), gameRoot, "mods", "install-tools", "--mods-path", temporaryMods, "--dry-run");
     using var dryJson = JsonDocument.Parse(dryRun);
     Assert(dryJson.RootElement.GetProperty("ok").GetBoolean() && dryJson.RootElement.GetProperty("result").GetProperty("components").GetArrayLength() == 1, "packaged tool Mod dry-run plans one component in an explicit Mods directory");
+    var previousAbout = Path.Combine(temporaryMods, "LogSyncMod", "About");
+    Directory.CreateDirectory(previousAbout);
+    new XDocument(new XElement("ModMetaData", new XElement("name", "LogSyncMod"), new XElement("packageId", "trigger.logsyncmod"),
+        new XElement("modVersion", "1.2.7"), new XElement("supportedVersions", new XElement("li", "1.6"), new XElement("li", "1.7"))))
+        .Save(Path.Combine(previousAbout, "About.xml"));
+    using var upgrade = JsonDocument.Parse(Run(Path.Combine(testTools, "RimDevTools.exe"), gameRoot, "mods", "install-tools", "--mods-path", temporaryMods, "--dry-run"));
+    Assert(upgrade.RootElement.GetProperty("ok").GetBoolean()
+        && upgrade.RootElement.GetProperty("result").GetProperty("components")[0].GetProperty("action").GetString() == "updated",
+        "packaged host upgrades 1.2.7 instead of reporting a same-version conflict");
 }
 finally
 {

@@ -14,6 +14,14 @@ description: 编写、调整和运行 RimDevTools 外部 XML 自动测试，包�
 - 新输入可放在项目 `Tests/Scenarios/`，也可沿用已有测试源码目录；它是测试输入，不能进入游戏 `Defs`、`Patches`、`sync_items` 或模组发布载荷。不要在日志或运行暂存目录编写测试源码。
 - 单文件输入可用任意 XML 后缀；传目录时仅非递归读取当前层 `*.autotest.xml`。普通回归、群战和擂台宜分目录：前两者不可混用，擂台目录入口会跳过根节点不是 `ArenaSuite` 的文件，须核对 `SkippedFiles` 和实际选中项。
 
+## 队伍配置与准备（1.5.7.0 起，限 1.7 后端）
+
+精确混编优先复用 `PawnTemplate → PawnGroup(template/count) → SquadTemplate source="groups"`，由群战 PawnGroup 或三种擂台 Entrant 引用整队。不要为不同赛制复制单兵字段，或新增专用 PawnKind/配装回调。固定名单不会为了另一队的 CP 预算扩缩；Entrant 可独立覆盖 mode/count/budget/costMode。
+
+`costMode=native` 按实际成员基础 CP × 异种倍率核算，不是按装备、品质或技能估价。显式异种和生理年龄在原生生成时生效；同 PawnKind 的不同配置用稳定 id 区分，显示名和随机颜色不承担身份。
+
+擂台 `Preparation` 用 entrant/role/group 过滤范围，步骤内用 entrant 占位符，先执行同步动作，再用 Require 或 DebugAction/Expect 核对。准备前 GeneratedSnapshot、逐步 Preparation、开战 InitialSnapshot 分开保留；合法换装不会重写原冻结预期，也不能通过删除证据让校验通过。核对公开 XML 字段，能力冷却、充能及未注册组件私有状态仍按原生初始化。
+
 ## 按目标读取
 
 | 当前任务 | 必要参考 / 可改用的起点 |
@@ -26,6 +34,7 @@ description: 编写、调整和运行 RimDevTools 外部 XML 自动测试，包�
 | 三视图、整套配装、暂存角色输入 | [views-and-staging.md](references/views-and-staging.md)、[配装视图](assets/loadout-view.autotest.xml) |
 | 双方群战、整场继承、换边与伤害统计 | [groupcombat.md](references/groupcombat.md)、[群战实验](assets/groupcombat.autotest.xml) |
 | 擂台三赛制、角色分组、人数/CP 加法与乘法增长、规则页及成绩核对 | [arena.md](references/arena.md)、[淘汰赛](assets/arena.autotest.xml)、[魔王轮战与极限挑战](assets/arena-challenges.autotest.xml) |
+| 同一角色模板组合多人，群战与三种擂台复用 | [squads-and-rosters.md](references/squads-and-rosters.md)、[模板混编擂台](assets/arena-template-groups.autotest.xml)、[模板混编群战](assets/groupcombat-template-groups.autotest.xml) |
 | 战力配兵、派系/自定义混编、异种与扩展生成器 | [squads-and-rosters.md](references/squads-and-rosters.md)、[混编群战](assets/groupcombat-squads.autotest.xml) |
 
 这些参考按当前加载器、运行后端与测试夹具整理；宿主源码可用时，以 `ScenarioLoader`、`GroupCombatLoader`、`ArenaLoader`、`SquadTemplates`、`CombatFightService` 及地图生成实现为准。不要把历史策划案或旧夹具名称当作当前行为：最新实现默认 `assaultColony`，`battle/seekAndAttack/native` 均兼容到同一原生即时进攻控制器，已撤回早先自定义攻击 Job 调度。模板使用原版定义演示结构，Def、DLC、原生约束和实际画面仍需在宿主核对。
@@ -36,7 +45,7 @@ description: 编写、调整和运行 RimDevTools 外部 XML 自动测试，包�
 2. **最小化准备。** 优先继承真实 `basePawnKind`，只覆盖相关字段；将资源补充和调试准备放在实际动作之前。用 `Require` 核对关键前提，再以新的 `Checkpoint` 或动作自带基线开始效果观察。
 3. **编写稳定输入。** 每条规则填写唯一 `testDefName`，局部对象与步骤使用稳定 `id`。重复配装用 `PawnTemplate`，重复环境用 `ScenePresets`；变体使用显式 Matrix。先跑一个实例再按需要扩展；不要为了通过而增加隐式冷却重置、无敌、强制成功或日志豁免。
 4. **采用与目标匹配的判据。** 技能“接受/开始/完成”不等于效果发生；截图存在不等于画面正确；仅装备目标或填入目标名不等于执行了目标机制。使用原生状态、对象身份变化和实际观察窗口证明结果。`ApplyDamage` 只能证明受击机制，不能证明另一把武器命中。
-5. **按已授权范围验证。** 编写或修改 XML 后先用相同模式、路径和测试名加 `--validate-only` 做静态预校验，读取 `validation.diagnostics` 的定位和建议；校验错误按首条逐次修复，warning 需核对。此入口不启动游戏、不部署、不创建运行产物，也不能证明游戏机制通过。普通运行同样自动执行这一步。只编写测试时交付输入与命令；用户已要求运行或验证时执行相应测试。先核对版本与依赖，使用范围最小的输入。须覆盖当前源码时用 `--deploy`，沿用 `rimdevtools` 的构建部署要求。源码仓库中的 AutoTestRunner 若已修改，须先构建相应宿主，通用部署不会自行构建它。
+5. **按已授权范围验证。** 编写或修改 XML 后先用相同模式、路径和测试名加 `--validate-only` 做静态预校验，读取 `validation.diagnostics` 的定位和建议；校验错误按首条逐次修复，warning 需核对。此入口不启动游戏、不部署、不创建运行产物，也不能证明游戏机制通过。普通运行同样自动执行这一步。只编写测试时交付输入与命令；用户已要求运行或验证时执行相应测试。先核对版本与依赖，使用范围最小的输入。须覆盖当前源码时用 `--deploy`，沿用 `rimdevtools` 的构建部署要求。开发工具宿主时，确认 csproj_paths 包含对应 AutoTestRunner 工程或先构建相应宿主；仅更新 CLI 或技能文件不会更新游戏中已安装的宿主。
 6. **核对本轮实际执行。** 解析 stdout 最终 JSON，再读取工具返回的原始结果。核对选中的物理实例、缺失用例、失败断言、`scenario` 阶段、依赖与输入哈希；混合模式还需核对替代关系及 `verifiedCoverageKeys`。失败后根据原生前提、配置、测试方式和正常游戏可复现性区分原因。
 
 ## 命令起点

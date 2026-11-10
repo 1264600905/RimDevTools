@@ -109,6 +109,8 @@ auto 测试参数遵循以下规则：
   --defname DMS_StunBaton --defname DMS_TacticalPistol
 ```
 
+1.5.7.0 的 1.7 场景后端支持 PawnTemplate 组合队伍、独立人数/CP 和成本口径、按参赛者/角色/配置组选择同步准备，以及生成/准备/开战快照校验。精确装备与属性优先写模板，具体配置和验收见同模板 `rimworld-xml-test`，不把 1.7 后端能力当成已回迁到 1.6。
+
 测试必须覆盖当前源代码变更时使用 `--deploy`。`--sync-source` 需要 `--deploy`。quick 和 auto 使用配置的桌面隔离默认值；manual 除非明确覆盖，否则使用当前桌面。
 
 运行期间绝不编辑活动 RimWorld 的 `ModsConfig.xml`、LogSync 设置、事务清单或请求/结果文件。RimDevTools 负责事务性还原。失败时报告稳定错误代码并保留恢复产物。

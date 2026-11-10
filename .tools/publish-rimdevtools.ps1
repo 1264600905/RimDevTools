@@ -222,8 +222,8 @@ try {
             }
         }
 
-        $logSyncVersion = Get-ModVersion $logSyncComponent "1.6\Assemblies\LogSyncMod.dll"
-        $autoTestVersion = [System.Reflection.AssemblyName]::GetAssemblyName((Join-Path $logSyncComponent "1.6\Assemblies\AutoTestRunner.dll")).Version.ToString()
+        $logSyncVersion = Get-ModVersion $logSyncComponent "1.7\Assemblies\LogSyncMod.dll"
+        $autoTestVersion = [System.Reflection.AssemblyName]::GetAssemblyName((Join-Path $logSyncComponent "1.7\Assemblies\AutoTestRunner.dll")).Version.ToString()
         $logSyncVersionParsed = [System.Version]$logSyncVersion
         $autoTestVersionParsed = [System.Version]$autoTestVersion
         if ($logSyncVersionParsed.Major -ne $autoTestVersionParsed.Major -or $logSyncVersionParsed.Minor -ne $autoTestVersionParsed.Minor -or $logSyncVersionParsed.Build -ne $autoTestVersionParsed.Build) { throw "LogSyncMod 与 AutoTest 程序集版本不一致" }
@@ -234,7 +234,7 @@ try {
                     folder = "LogSyncMod"
                     packageId = "trigger.logsyncmod"
                     version = $logSyncVersion
-                    primaryAssembly = "1.6/Assemblies/LogSyncMod.dll"
+                    primaryAssembly = "1.7/Assemblies/LogSyncMod.dll"
                     contentHash = Get-DirectoryContentHash $logSyncComponent
                 }
             )

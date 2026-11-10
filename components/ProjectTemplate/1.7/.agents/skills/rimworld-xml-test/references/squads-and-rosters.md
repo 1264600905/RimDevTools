@@ -2,7 +2,7 @@
 
 ## 选择单位配置方式
 
-- 精确技能、装备、Hediff 等机制对比：群战用 PawnTemplate + Pawn/PawnGroup，在真实 basePawnKind 上覆盖。
+- 精确技能、装备、Hediff 等机制对比：群战用 PawnTemplate + Pawn/PawnGroup；群战混编和三种擂台也可用下述 source=groups 组合模板，在真实 basePawnKind 上覆盖。
 - 同一 PawnKind 按战力凑数：群战 PawnGroup 的 combatPowerBudget，或擂台 Roster mode=combatPower。
 - 复现派系袭击兵种池、混合兵种/异种：使用 Suite 级 SquadTemplates；群战 PawnGroup 引用 squad，擂台 Entrant 引用 squad。普通 auto 回归不接受 SquadTemplates。
 
@@ -15,7 +15,7 @@
 </PawnGroup>
 ```
 
-count 与 combatPowerBudget 互斥。加载游戏后用真实 `PawnKindDef.combatPower` 做十进制预算解析，人数向下取整，报告 UnitCombatPower、ResolvedCount、ActualCombatPower、UnusedBudget；不足一人或超过 200 人直接失败，不补到一人或截成 200。普通群战 PawnGroup 不支持 costMode（只有 squad 支持），所以即使覆写 Xenotype，它的预算仍按基础 PawnKind CP；需要计入异种倍率时选择混编或擂台相应入口。
+count 与 combatPowerBudget 互斥。普通群战 PawnGroup 也接受 costMode=pawnKind/native，默认 pawnKind。加载游戏后逐成员解析真实基础 CP 和实际异种倍率；成本相同时人数等于预算向下取整。native 继承异种时，按成员种子依次生成并核算，下一成员超出余额时停止，不跳过高成本成员重新抽取；NextMemberCost 记录停止边界。报告成员成本、平均 UnitCombatPower、ResolvedCount、ActualCombatPower、UnusedBudget；不足一人或超过 200 人直接失败，不补员或截断。native 不按武器、盔甲或技能重新估算战力。
 
 ## Suite 级 SquadTemplates
 
@@ -43,6 +43,7 @@ count 与 combatPowerBudget 互斥。加载游戏后用真实 `PawnKindDef.comba
 | faction | 必须有 GroupMaker，禁止 Composition/Generator。kindDef 目前仅 Combat；mode=random 按合格原生 maker 权重选择，specific 必须给非负 index，可附 64 位小写 SHA256 fingerprint 锁定定义 |
 | custom | 必须有 Composition，禁止 GroupMaker/Generator。weighted 用 Option(pawnKind/正 weight)，以原生选择器分配；权重不是固定人数。fixed 用 Member(pawnKind/count) 精确名单 |
 | generator | 必须有 Generator，禁止 GroupMaker/Composition；通过已注册扩展 ID 获取名单，不从 XML 反射任意 CLR 类型 |
+| groups | 一个或多个 PawnGroup(id/template/count)，引用单角色模板，组成固定人数队伍；禁止 GroupMaker/Composition/Xenotypes/Generator，单兵异种写在角色模板中 |
 
 GroupMaker 的 referencePoints 默认为 5000，范围 (0,10000000]；人数模式用它评估原生编队/袭击规则，CP 模式以实际 budget 为 points。specific 的 index 依赖实际加载的 FactionDef.pawnGroupMakers；先读本轮 GroupMakers 中的 Eligible、Options、Fingerprint，再锁定，不能照抄其他模组列表下的 index。`RaidRules strategyDef` 默认 ImmediateAttack，影响编队和生成可用性，不是切换战场 AI 的配置。
 
@@ -70,13 +71,45 @@ costMode 默认 pawnKind，只按成员基础 combatPower；native 为基础 com
            originX="70" originZ="30" formation="grid" columns="10" spacing="2"/>
 ```
 
-squad PawnGroup 必须且只能给 count/combatPowerBudget 之一，禁止 template、basePawnKind、Equipment、Xenotype 等单兵覆盖子节点；配置放到模板，精确配装则用普通 PawnTemplate。SquadTemplate 内联节点由工具冻结，不是额外单兵覆盖接口。混编预算上限 10000000，解析后的名单须 1—200 人，不超预算；原生兵种池、袭击规则和出生占地仍可能拒绝配置。
+squad PawnGroup 必须且只能给 count/combatPowerBudget 之一，禁止 template、basePawnKind、Equipment、Xenotype 等单兵覆盖子节点；精确配装放在 source=groups 所引用的 PawnTemplate。SquadTemplate 内联节点由工具冻结，不是额外单兵覆盖接口。混编预算上限 10000000，解析后的名单须 1—200 人，不超预算；原生兵种池、袭击规则和出生占地仍可能拒绝配置。
 
-擂台用 `<Entrant id="raiders" squad="mixedRaid"/>`，继承 Roster 的 count/budget/costMode，可按对应模式单独覆盖 count 或 budget。模板仅限当前 Suite，squad 项不再另设 xenotype。
+擂台用 `<Entrant id="raiders" squad="mixedRaid"/>`，继承 Roster 的 count/budget/costMode，也可显式设置 mode=count/combatPower、costMode，并按自己的模式覆盖 count 或 budget。模板仅限当前 Suite，squad 项不再另设 xenotype。
+
+## PawnGroup 引用 PawnTemplate（1.7 新增）
+
+```xml
+<Templates>
+  <PawnTemplate id="gunner">
+    <basePawnKind>Colonist</basePawnKind>
+    <Traits mode="replace"/>
+    <Skills><Set def="Shooting" level="10"/></Skills>
+    <Equipment mode="replace"><SetPrimary def="Gun_Minigun" quality="Normal"/></Equipment>
+  </PawnTemplate>
+  <PawnTemplate id="swordsman" extends="gunner">
+    <Equipment mode="replace"><SetPrimary def="MeleeWeapon_LongSword" stuff="Steel" quality="Normal"/></Equipment>
+  </PawnTemplate>
+</Templates>
+<SquadTemplates>
+  <SquadTemplate id="mixed" source="groups" factionDef="Pirate">
+    <PawnGroup id="gunners" template="gunner" count="15"/>
+    <PawnGroup id="swordsmen" template="swordsman" count="5"/>
+  </SquadTemplate>
+</SquadTemplates>
+```
+
+上述两个块可放在 TestSuite（仅群战）或 ArenaSuite 下。模板继承、file 导入与单兵覆盖使用现有群战编译器；同名字段块整体替换。内层 PawnGroup 的属性仅支持 id/template/count，可在其内使用同样的单兵覆盖字段；不得另给 team、站位、squad 或预算。不同 group 可以使用相同 PawnKind，id 在该队内唯一，队伍总人数最多 200。
+
+群战用 `<PawnGroup id="mixedTeam" squad="mixed" count="20" team="A" .../>` 设置整队站位；三种擂台用 `<Entrant id="mixedTeam" squad="mixed" mode="count"/>`，人数从 15+5 推导，若另填 count 必须等于 20。CP 模式仅检查预算能否容纳完整名单，不按预算增减成员。每个 squad 仍只有一个生成 factionDef；模板可引用不同模组的已加载 PawnKind，尚不支持同队不同生成派系。
+
+新来源先生成配置后的成员，再冻结公开属性/配装和成员种子；巡礼、预览、比赛及重赛按该快照重建。ConfigurationId/ConfigurationXml 保留 group 身份，同兵种的枪手与剑士在混编展示和统计中分别分组。显式配置的 Hediffs/Abilities/Resources 使用现有捕获与恢复能力；不覆盖未注册模组组件、能力冷却/充能等私有状态，不代表完整存档复制。结果按 XML 显式要求和冻结成员分别核对实际种族、性别、年龄、特性、技能、基因、外观、配装、健康、能力和公开资源；浮点值使用绝对 0.0001 容差，显式年龄使用一 tick 对应年数的容差。这些是初始属性核对，不代替战斗机制断言。
+
+faction/custom/generator 的原生编队选择和极限增长算法保留；直接 pawnKind、普通 Pawn/PawnGroup 现在也建立逐成员冻结名单，使用 GenerationPolicy=frozen 记录实际政策。完整示例：[三种擂台](../assets/arena-template-groups.autotest.xml)、[独立群战](../assets/groupcombat-template-groups.autotest.xml)。
 
 ## 冻结、复现与扩展生成器
 
-群战在执行前解析预算与混编名单，同 Case 同种子的换边轮复用同一名单和冻结配装；新种子可产生新名单。擂台在每届规则页首次绘制后准备本届参赛队，混编成员及其原生配装在后续比赛/重赛中复用，战斗状态每场新建。普通 pawnKind 队没有完整混编成员快照，不应把种子变化后的原生随机配装解释为固定名单复用。
+群战在执行前解析预算与混编名单，同 Case 同种子的换边轮复用同一名单和冻结配装；新种子可产生新名单。擂台在每届规则页首次绘制后准备本届参赛队，混编成员及其原生配装在后续比赛/重赛中复用，战斗状态每场新建。直接 pawnKind、普通 Pawn/PawnGroup 与混编均保留逐成员名单。显式 Xenotype 在原生生成请求中生效并检查战斗合法性；显式生理年龄也在生成前传入。
+
+角色出生完成后先核对 GeneratedSnapshot；同步准备动作逐条记录 Preparation，合法换装或健康修改按动作核对，最后核对 InitialSnapshot。缺失任一阶段或必需记录均拒绝，不用准备后的实际值覆盖原冻结预期。绑定动作若改变额外公开属性，须用 DebugAction/Expect 明确后置条件；未声明字段仍须保持。
 
 核对 ResolvedRosters 的 SquadId、FactionDef、CostMode、GroupMakerIndex/Fingerprint、Members（PawnKind/Xenotype/BaseCombatPower/XenotypeFactor/Cost/Seed/PawnTemplateXml）及真实初始单位快照；仅有代表 PawnKind 不证明整队组成。换边结果还应核对实际生成坐标和装备。配置静态编译成功不证明该兵种池在游戏中可生成。
 

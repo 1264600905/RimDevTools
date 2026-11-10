@@ -271,7 +271,7 @@ source=faction 必须 GroupMaker；source=custom 必须 Composition；source=gen
 | 群战 Metrics 可调项 | detailLimit=10000，范围 0—1000000；requireCompleteAttribution=false；裁明细不裁累计；要求完整归因不等于后端天然具备完整归因 |
 | 群战 Overlay | enabled=true 可调；其余固定为 layout=teamsLeftRight、topUnitsPerMetric=10、topTypesPerTeam=5、humanPortrait=renderedPawn、refreshRealMilliseconds=250；Rankings.damageDealt/damageTaken 仅 true；Summary.dps 仅 livingUnitLifetimeMean，damageTaken 仅 totalAndMeanPerLivingUnit |
 | 群战 Experiments / Output | swapSides=false，无 Seed 时用 Case.seed；最多 128 个显式种子/1024 轮；purpose 仅 benchmark，showAllParticipants 仅 true；width/height 须成对且范围为 800—3840/600—2160 |
-| 擂台 format / role | format 默认 knockout，另可 bossRoundRobin/limitChallenge；新赛制每队 role 必填 boss/challenger，至少各一队，允许重复 PawnKind；淘汰赛禁止 role/Growth，直接 PawnKind 不可重复 |
+| 擂台 format / role | format 默认 knockout，另可 bossRoundRobin/limitChallenge；新赛制每队 role 必填 boss/challenger，至少各一队，允许重复 PawnKind；淘汰赛禁止 role/Growth；三种赛制的直接 PawnKind 均可重复，以 entrant id 区分 |
 | 擂台 Growth | 仅 limitChallenge 且必填；target 默认 count（匹配每个挑战者实际 mode=count），或 budget（匹配其 combatPower）；mode 默认 multiply，仅 multiplier>1；add 仅正 increment（人数为整数）；两参数互斥。maxValue 必填、不低于挑战者初始值，人数为 1—200 整数，CP ≤10000000；人数乘法逐档向上取整，CP 可小数。平局不增长，换魔王重置；固定混编禁止预算增长，详见 [擂台参考](arena.md) |
 | 擂台 Roster / Entrants | mode=count/combatPower，人数默认 20，CP 模式 budget 必填；costMode=pawnKind 或 native；Entrant 可独立覆写 mode/costMode，并按自身模式覆写 count/budget，squad 与 pawnKind 二选一；groups 来源的人数模式由组内求和 |
 | 擂台 Battle / Scoring / TieBreak | Battle 默认 180 秒/300 实时秒/fast/300 确认 ticks；评分默认 45/25/20/10，权重总和 100，时间参考 180 秒；onDraw 仅 replay，maxReplays=2（0—10） |

@@ -8,7 +8,7 @@
 - TestSuite 必填 schemaVersion=1、id；gameVersion 默认 1.7，packageId 默认 ludeon.rimworld。Case 必填 id 和 testDefName 子节点；普通回归须 Scene/Actors/Steps/Success，群战须 Scene/Teams/Actors/GroupCombat，缺 Steps 会补空块。
 - Actors 每项必须 id；Pawn/Corpse/PawnGroup 需 basePawnKind 或有效模板，squad 群组走独立契约。Steps 每个直属步骤必须唯一 id。Def/DefRef 用 defType+defName，Mod/DLC 用 packageId。各动作、配装和条件的必需参数见 [结构与角色](schema-and-actors.md)、[步骤](steps-and-observation.md)。
 - 除明确可重复的列表项外单值节点不重复；Not 恰好一个条件，其余条件组合/Require/Wait/Success 不允许空。actor/group/target/focus/relativeTo/instigator/worktable/ref/since 等须符合对应引用范围。
-- Case.extends/abstract/Patches 仅群战预处理；PawnTemplate.file 仅群战 Load 导入，file 节点只填 id/file；SquadTemplates 仅群战/擂台。不能将源输入预处理字段泛化到普通 auto 或 ArenaSuite。
+- Case.extends/abstract/Patches 仅群战预处理；PawnTemplate.file 在群战及擂台 Load 导入，file 节点只填 id/file；SquadTemplates 仅群战/擂台。不能将其余源输入预处理字段泛化到普通 auto 或 ArenaSuite。
 - 未列的 Class、任意字段路径和 AI 类入口不支持。ActionBinding.type/method 是明确声明、限定所属包的公开静态方法签名，见 [动作绑定](action-bindings.md)，不开放其他节点的反射入口。
 
 ## TestSuite：节点、属性和子节点
@@ -48,7 +48,7 @@
 | `Coverage` | `mode` | `Target` |
 | `CreateThing` | `id`、`def`、`stuff`、`x`、`z`、`count` | — |
 | `DLC` | `packageId` | — |
-| `DebugAction` | `id`、`actionId`、`value`、`def`、`severity`、`part`、`durationTicks` | `Select`、`Arg` |
+| `DebugAction` | `id`、`actionId`、`value`、`def`、`severity`、`part`、`durationTicks` | `Select`、`Arg`、`Expect` |
 | `Def` | `defType`、`defName` | — |
 | `DefRef` | `id`、`defType`、`defName` | — |
 | `Destroy` | `id`、`actor` | — |
@@ -196,13 +196,14 @@ Scene 及其 Environment/Layout/Validation 复用上表地图语法，SquadTempl
 
 | 节点 / 路径 | 允许属性 | 允许子节点 |
 | --- | --- | --- |
-| `ArenaSuite` | `schemaVersion`、`id`、`gameVersion` | `Tournament`、`SquadTemplates` |
-| `Tournament` | `id`、`name`、`seed`、`format` | `testDefName`、`Scene`、`Roster`、`Entrants`、`Battle`、`Matchmaking`、`Growth`、`Cleanup`、`Scoring`、`TieBreak`、`Presentation`、`Output` |
+| `ArenaSuite` | `schemaVersion`、`id`、`gameVersion` | `Tournament`、`SquadTemplates`、`Templates`、`Requirements`、`ScenePresets`、`ActionBindings` |
+| `Tournament` | `id`、`name`、`seed`、`format` | `testDefName`、`Scene`、`Roster`、`Entrants`、`Battle`、`Matchmaking`、`Growth`、`Cleanup`、`Scoring`、`TieBreak`、`Presentation`、`Output`、`Requirements`、`Metrics`、`Overlay`、`ActionBindings`、`Preparation` |
 | `testDefName` | — | — |
 | `Roster` | `mode`、`budget`、`count`、`costMode` | — |
 | `Entrants` | — | `Entrant` |
-| `Entrants/Entrant` | `id`、`pawnKind`、`squad`、`name`、`count`、`budget`、`xenotype`、`role` | — |
-| `Battle` | `durationSeconds`、`timeoutRealSeconds`、`timeSpeed`、`confirmationTicks` | — |
+| `Entrants/Entrant` | `id`、`pawnKind`、`squad`、`name`、`count`、`budget`、`xenotype`、`role`、`mode`、`costMode` | — |
+| `Battle` | `durationSeconds`、`timeoutRealSeconds`、`timeSpeed`、`confirmationTicks`、`aiPolicy` | — |
+| `Preparation` | — | `Require`、`DebugAction`、`Equip`、`DropEquipment`、`AddHediff`、`RemoveHediff`、`ApplyDamage`；每步另可用 entrant/role/group 选择范围；引用占位符 entrant |
 | `Matchmaking` | `mode` | — |
 | `Growth` | `target`、`mode`、`multiplier`、`increment`、`maxValue` | — |
 | `Cleanup` | `corpses`、`droppedItems` | — |
@@ -216,12 +217,13 @@ Scene 及其 Environment/Layout/Validation 复用上表地图语法，SquadTempl
 
 ## 混编模板：独立字段表
 
-source=faction 必须 GroupMaker；source=custom 必须 Composition；source=generator 必须 Generator，不能混填来源块。SquadTemplate 必填 id/source/factionDef；出现 GroupMaker、Composition、Xenotypes 时须 mode；specific maker 须 index，fixed Xenotypes 须 def；Option 的 weight、Member 的 count、Generator 的 id、Param 的 name/value 均必填。细节见 [混编与预算](squads-and-rosters.md)。
+source=faction 必须 GroupMaker；source=custom 必须 Composition；source=generator 必须 Generator；source=groups 只接受 PawnGroup 子节点，复用 Templates，不能混填来源块。SquadTemplate 必填 id/source/factionDef；出现 GroupMaker、Composition、Xenotypes 时须 mode；specific maker 须 index，fixed Xenotypes 须 def；Option 的 weight、Member 的 count、Generator 的 id、Param 的 name/value 均必填。细节见 [混编与预算](squads-and-rosters.md)。
 
 | 节点 / 路径 | 允许属性 | 允许子节点 |
 | --- | --- | --- |
 | `SquadTemplates` | — | `SquadTemplate` |
-| `SquadTemplate` | `id`、`source`、`factionDef` | `GroupMaker`、`RaidRules`、`Composition`、`Xenotypes`、`Generator` |
+| `SquadTemplate` | `id`、`source`、`factionDef` | `GroupMaker`、`RaidRules`、`Composition`、`Xenotypes`、`Generator`、`PawnGroup` |
+| `SquadTemplate/PawnGroup`（仅 groups） | `id`、`template`、`count` | 单兵配置字段同上表 PawnTemplate；不接受部署、squad 或预算 |
 | `GroupMaker` | `mode`、`kindDef`、`index`、`fingerprint`、`referencePoints` | — |
 | `RaidRules` | `strategyDef` | — |
 | `Composition` | `mode`、`allocator` | `Option`、`Member` |
@@ -269,9 +271,9 @@ source=faction 必须 GroupMaker；source=custom 必须 Composition；source=gen
 | 群战 Metrics 可调项 | detailLimit=10000，范围 0—1000000；requireCompleteAttribution=false；裁明细不裁累计；要求完整归因不等于后端天然具备完整归因 |
 | 群战 Overlay | enabled=true 可调；其余固定为 layout=teamsLeftRight、topUnitsPerMetric=10、topTypesPerTeam=5、humanPortrait=renderedPawn、refreshRealMilliseconds=250；Rankings.damageDealt/damageTaken 仅 true；Summary.dps 仅 livingUnitLifetimeMean，damageTaken 仅 totalAndMeanPerLivingUnit |
 | 群战 Experiments / Output | swapSides=false，无 Seed 时用 Case.seed；最多 128 个显式种子/1024 轮；purpose 仅 benchmark，showAllParticipants 仅 true；width/height 须成对且范围为 800—3840/600—2160 |
-| 擂台 format / role | format 默认 knockout，另可 bossRoundRobin/limitChallenge；新赛制每队 role 必填 boss/challenger，至少各一队，允许重复 PawnKind；淘汰赛禁止 role/Growth，直接 PawnKind 不可重复 |
-| 擂台 Growth | 仅 limitChallenge 且必填；target 默认 count（配 Roster.mode=count），或 budget（配 combatPower）；mode 默认 multiply，仅 multiplier>1；add 仅正 increment（人数为整数）；两参数互斥。maxValue 必填、不低于挑战者初始值，人数为 1—200 整数，CP ≤10000000；人数乘法逐档向上取整，CP 可小数。平局不增长，换魔王重置；固定混编禁止预算增长，详见 [擂台参考](arena.md) |
-| 擂台 Roster / Entrants | mode=count/combatPower，人数默认 20，CP 模式 budget 必填；costMode=pawnKind 或 native；Entrant 仅可按同模式覆写 count/budget，squad 与 pawnKind 二选一 |
+| 擂台 format / role | format 默认 knockout，另可 bossRoundRobin/limitChallenge；新赛制每队 role 必填 boss/challenger，至少各一队，允许重复 PawnKind；淘汰赛禁止 role/Growth；三种赛制的直接 PawnKind 均可重复，以 entrant id 区分 |
+| 擂台 Growth | 仅 limitChallenge 且必填；target 默认 count（匹配每个挑战者实际 mode=count），或 budget（匹配其 combatPower）；mode 默认 multiply，仅 multiplier>1；add 仅正 increment（人数为整数）；两参数互斥。maxValue 必填、不低于挑战者初始值，人数为 1—200 整数，CP ≤10000000；人数乘法逐档向上取整，CP 可小数。平局不增长，换魔王重置；固定混编禁止预算增长，详见 [擂台参考](arena.md) |
+| 擂台 Roster / Entrants | mode=count/combatPower，人数默认 20，CP 模式 budget 必填；costMode=pawnKind 或 native；Entrant 可独立覆写 mode/costMode，并按自身模式覆写 count/budget，squad 与 pawnKind 二选一；groups 来源的人数模式由组内求和 |
 | 擂台 Battle / Scoring / TieBreak | Battle 默认 180 秒/300 实时秒/fast/300 确认 ticks；评分默认 45/25/20/10，权重总和 100，时间参考 180 秒；onDraw 仅 replay，maxReplays=2（0—10） |
 | 擂台 Matchmaking / Cleanup | Matchmaking 仅 knockout，可省略，mode 默认 closestCount，仅 closestCount/random；corpses、droppedItems 独立，均默认 false，只接受小写 true/false；两节点均在 Tournament 下。清理每 300 ticks 分批执行；正午重设、主地图 Pawn 清理、生命条和每秒轮播为自动行为，无额外 XML 字段，详见 [擂台参考](arena.md) |
 | 擂台 Presentation / Showcase | bracketSeconds=3、settlementSeconds=3（1—60）；advanceStartSeconds=3（0—60）；pageSeconds=5，Page.seconds 继承它（1—60）；caption 默认空且最多 80 个单行字符；每页 1—5 个唯一 ref；新赛制按 boss/challenger 拆页。三赛制规则页首绘后准备，至少现实 5 秒且包含准备耗时；新赛制赛后页 5.5 秒、最终每页最多 8 项/至少 10 秒；固定行为，无新增 XML 时长属性 |
@@ -286,3 +288,5 @@ source=faction 必须 GroupMaker；source=custom 必须 Composition；source=gen
 `TurretPocketMap`、`RangedWeaponPocketMap`、`MeleeWeaponPocketMap`、`ApparelCombat`、`AnimalCombat`、`MechanoidCombat`、`AlienCombat`、`SkillPocketMap`、`HumanoidThreeView`、`AnimalThreeView`、`MechanoidThreeView`、`AlienThreeView`、`ApparelThreeView`、`WeaponThreeView`、`PlantGrowthView`、`BuildingView`、`TerrainPatchView`、`PawnLifeStageThreeView`、`HairThreeView`、`HeadTypeThreeView`、`BodyTypeThreeView`、`GeneThreeView`、`XenotypeThreeView`、`RecipeExecution`、`HediffEffect`、`CorpseLifecycle`、`ThingBehavior`、`LoadoutView`、`GroupCombat`。
 
 类型名不会自动创建所需对象或动作；GroupCombat 只能走独立群战入口，UI 用例不能靠填写这些类型名替代。完整效果和覆盖判据见各模式参考。
+
+Preparation 的作用域属性只属于擂台步骤源节点，展开时移除；不是普通 Steps 或 Select 的通用属性。DebugAction/Expect 使用与 Require 相同的条件子节点，绑定方法自身的 Result/ExpectHediff 继续保留。普通群战 PawnGroup 的 costMode 与 squad 同义，非群战禁止此字段。

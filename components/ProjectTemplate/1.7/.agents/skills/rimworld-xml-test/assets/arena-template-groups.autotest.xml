@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ArenaSuite schemaVersion="1" id="example.arena.templateGroups" gameVersion="1.7">
+  <Requirements>
+    <DLC packageId="ludeon.rimworld.royalty"/>
+    <DLC packageId="ludeon.rimworld.biotech"/>
+  </Requirements>
+  <Templates>
+    <PawnTemplate id="knight">
+      <basePawnKind>Colonist</basePawnKind>
+      <Xenotype def="Baseliner"/>
+      <Traits mode="replace"/>
+      <Skills><Set def="Shooting" level="10"/><Set def="Melee" level="10"/></Skills>
+      <Apparel mode="replace">
+        <Add def="Apparel_ArmorCataphract" quality="Normal"/>
+        <Add def="Apparel_ArmorHelmetCataphract" quality="Normal"/>
+      </Apparel>
+    </PawnTemplate>
+    <PawnTemplate id="gunner" extends="knight">
+      <Equipment mode="replace"><SetPrimary def="Gun_Minigun" quality="Normal"/></Equipment>
+    </PawnTemplate>
+    <PawnTemplate id="swordsman" extends="knight">
+      <!-- 同名配置块整体替换；加护盾时须同时列出要保留的护甲。 -->
+      <Apparel mode="replace">
+        <Add def="Apparel_ArmorCataphract" quality="Normal"/>
+        <Add def="Apparel_ArmorHelmetCataphract" quality="Normal"/>
+        <Add def="Apparel_ShieldBelt" quality="Normal"/>
+      </Apparel>
+      <Equipment mode="replace"><SetPrimary def="MeleeWeapon_MonoSword" quality="Normal"/></Equipment>
+    </PawnTemplate>
+  </Templates>
+  <SquadTemplates>
+    <SquadTemplate id="knights" source="groups" factionDef="Pirate">
+      <PawnGroup id="gunners" template="gunner" count="15"/>
+      <PawnGroup id="swordsmen" template="swordsman" count="5"/>
+    </SquadTemplate>
+    <SquadTemplate id="raiders" source="faction" factionDef="Pirate">
+      <GroupMaker mode="random" kindDef="Combat"/>
+    </SquadTemplate>
+  </SquadTemplates>
+  <ScenePresets>
+    <Scene id="studio" type="mainMap" sizeX="120" sizeZ="120" revealFog="all">
+      <Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/>
+    </Scene>
+  </ScenePresets>
+  <!-- 仅配置示例；预校验不启动比赛。每个赛制复用完全相同的队伍定义。 -->
+  <Tournament id="knockout" format="knockout" name="模板混编淘汰赛">
+    <testDefName>Example_TemplateGroupsKnockout</testDefName>
+    <Scene preset="studio"/>
+    <Roster mode="combatPower" budget="5000" costMode="native"/>
+    <Entrants>
+      <Entrant id="knights" squad="knights" mode="count" name="骑士甲 15 枪手＋5 剑盾"/>
+      <Entrant id="raiders" squad="raiders" name="5000 CP 海盗"/>
+    </Entrants>
+    <Battle durationSeconds="180" timeSpeed="normal" aiPolicy="assaultColony"/>
+    <Metrics detailLimit="20000"/>
+    <Overlay enabled="true"/>
+  </Tournament>
+  <Tournament id="roundRobin" format="bossRoundRobin" name="模板混编魔王轮战">
+    <testDefName>Example_TemplateGroupsRoundRobin</testDefName>
+    <Scene preset="studio"/>
+    <Roster mode="combatPower" budget="5000" costMode="native"/>
+    <Entrants>
+      <Entrant id="knights" squad="knights" mode="count" role="boss" name="骑士甲 15 枪手＋5 剑盾"/>
+      <Entrant id="raiders" squad="raiders" role="challenger" name="5000 CP 海盗"/>
+    </Entrants>
+    <Battle durationSeconds="180" timeSpeed="normal" aiPolicy="assaultColony"/>
+  </Tournament>
+  <Tournament id="limit" format="limitChallenge" name="模板混编极限挑战">
+    <testDefName>Example_TemplateGroupsLimit</testDefName>
+    <Scene preset="studio"/>
+    <Roster mode="combatPower" budget="5000" costMode="native"/>
+    <Entrants>
+      <Entrant id="knights" squad="knights" mode="count" role="boss" name="固定 20 人魔王"/>
+      <Entrant id="raiders" squad="raiders" role="challenger"/>
+    </Entrants>
+    <Growth target="budget" mode="add" increment="1000" maxValue="7000"/>
+    <Battle durationSeconds="180" timeSpeed="normal"/>
+  </Tournament>
+</ArenaSuite>

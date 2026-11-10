@@ -4,7 +4,7 @@
 
 RimDevTools is a Windows toolchain for RimWorld mod development. It provides repeatable CLI operations for environment checks, builds, deployment, dependency discovery, log collection, game testing and Workshop publishing. The bundled templates and tool Mod contain files for RimWorld **1.6 and 1.7**. The CLI also recognizes the 1.7+ modern layout; the release manifest defines which game versions its components and updates actually support.
 
-The current version is **1.5.6.0**, with [RimWorld 1.6 and 1.7 templates and a Tools Package](https://github.com/1264600905/RimDevTools/releases/tag/v1.5.6.0). This release adds boss round-robin and limit challenges alongside knockout tournaments, with additive or multiplicative growth in challenger count or CP budget. Bosses and challengers have separate showcase pages, followed by portrait-based match results and paginated standings. All three formats begin with a spectator rules page lasting at least five real seconds, including roster preparation time. Default test arenas now prevent ruins from reappearing after flattening. Template skills include the new rules, XML examples and result checks. The custom scenario backend currently supports RimWorld 1.7 only.
+The current version is **1.5.7.0**, with [RimWorld 1.6 and 1.7 templates and a Tools Package](https://github.com/1264600905/RimDevTools/releases/tag/v1.5.7.0). Group combat and all three arena formats can compose squads from PawnTemplates, with independent count/CP and cost modes, scoped synchronous preparation and assertions, stable configuration identities, and public attribute validation. Frozen roster reconstruction now preserves gender, gene-linked traits and prosthetic child parts, and preview preparation uses the correct context. Codex and Claude template skills include the updated fields, examples and result checks. The custom scenario backend still supports RimWorld 1.7 only.
 
 ## Repository components
 
@@ -200,7 +200,7 @@ Generate unpacked release directories:
 powershell -ExecutionPolicy Bypass -File .tools\publish-rimdevtools.ps1
 ```
 
-The default build creates two templates and one Tools Package using the same common payload build. `--version` reports the tool version and original template metadata; the Tools Package reports `unpackaged` for its template version. To generate ZIPs and checksums:
+The default build creates two templates and one Tools Package using the same common payload build. `--version` reports the tool version and original template metadata; the Tools Package reports `unpackaged` for its template version. To generate the three ZIPs (GitHub provides the asset digests):
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .tools\publish-rimdevtools.ps1 -CreateZip
@@ -209,9 +209,9 @@ powershell -ExecutionPolicy Bypass -File .tools\publish-rimdevtools.ps1 -CreateZ
 Output:
 
 ```text
-artifacts/RimDevTools-1.5.6.0-Template-RimWorld-1.6/
-artifacts/RimDevTools-1.5.6.0-Template-RimWorld-1.7/
-artifacts/RimDevTools-1.5.6.0-Tools/
+artifacts/RimDevTools-1.5.7.0-Template-RimWorld-1.6/
+artifacts/RimDevTools-1.5.7.0-Template-RimWorld-1.7/
+artifacts/RimDevTools-1.5.7.0-Tools/
 ```
 
 Each directory has one `.zip`; upload only these three ZIPs. Verify all three release layouts, then run the isolated Windows update integration tests:
@@ -219,11 +219,11 @@ Each directory has one `.zip`; upload only these three ZIPs. Verify all three re
 ```powershell
 dotnet build RimDevTools.ReleaseTests\RimDevTools.ReleaseTests.csproj
 dotnet RimDevTools.ReleaseTests\bin\Debug\net10.0\RimDevTools.ReleaseTests.dll `
-  artifacts\RimDevTools-1.5.6.0-Template-RimWorld-1.6
+  artifacts\RimDevTools-1.5.7.0-Template-RimWorld-1.6
 dotnet RimDevTools.ReleaseTests\bin\Debug\net10.0\RimDevTools.ReleaseTests.dll `
-  artifacts\RimDevTools-1.5.6.0-Template-RimWorld-1.7
+  artifacts\RimDevTools-1.5.7.0-Template-RimWorld-1.7
 dotnet RimDevTools.ReleaseTests\bin\Debug\net10.0\RimDevTools.ReleaseTests.dll `
-  artifacts\RimDevTools-1.5.6.0-Tools
+  artifacts\RimDevTools-1.5.7.0-Tools
 dotnet RimDevTools.Tests\bin\Debug\net10.0\RimDevTools.Tests.dll --tool-update
 dotnet RimDevTools.Tests\bin\Debug\net10.0\RimDevTools.Tests.dll --tool-update-live
 ```

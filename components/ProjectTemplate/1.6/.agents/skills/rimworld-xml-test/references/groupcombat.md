@@ -42,14 +42,14 @@ Team 的 `ai` 优先于 `GroupCombat.aiPolicy`，默认 **assaultColony**。当�
 
 排查不交战时读取本轮原始日志中的 `group.ai`（`controller=native`、`customJobScheduler=false`、duty 等）、`group.ai_native_job` 和 `group.ai_shot`（首次成功发射的武器、距离、射程）。job 诊断每 120 ticks 采样，发射日志不等于命中；结合实际伤害和原生前提判断。XML 不提供任意 C# AI 类入口，也不要另写强制逐 tick 攻击脚本来掩盖原生行为。
 
-Steps 仅同步准备，接受 DebugAction、AddHediff、RemoveHediff、Equip、DropEquipment、ApplyDamage、Kill、Destroy、SetRot、BindMech、Require。准备伤害不纳入战斗统计。错误保留并清理后继续，清理失败停止。
+Steps 仅同步准备，接受 DebugAction、AddHediff、RemoveHediff、Equip、DropEquipment、ApplyDamage、Kill、Destroy、SetRot、BindMech、Require。准备伤害不纳入战斗统计。执行错误或清理失败会保留诊断并停止后续轮次。
 
 ## 时间、复活与结算
 
 - GroupCombat.timeSpeed 为 normal/fast/superfast，默认 normal。durationSeconds 默认 180（10800 ticks），范围 `(0,86400]`。
 - 全部准备与初始图完成后共同开始战斗计时。原生暂停会冻结战斗、单位存活时钟、DPS 分母及 Case.timeoutRealSeconds；CLI.timeout-seconds 仍是整个进程独立实际上限，须留出多轮生成、倒计时和清理开销。
 - 一方所有已登记单位倒地/死亡且无待复活者时进入默认 300 ticks 胜负确认。`<End confirmationTicks="600"/>` 放在 GroupCombat 内可调整，范围 0—36000。新单位、起身或复活重新判定；原生拒绝死亡待复活期阻止提前结束。
-- 双方均失能时等待双方确认后平局；达到模拟上限比较仍在场活人数（含倒地），少者落败，相等平局。死亡/逃离/未知移除分列，不使用“无伤害”提前结束。
+- 双方均失能时等待双方确认后平局；达到模拟上限比较仍 standing 的绝对人数，少者落败，相等平局；倒地不计入该人数。死亡/逃离/未知移除分列，不使用“无伤害”提前结束。
 - 新召唤/分裂成员按临时阵营、Lord 阵营或明确适配器归属，不猜站位或最近攻击者。同 Pawn 复活不增加累计参战人数，新 Pawn 单独记录；待复活与新增生命周期受支持范围影响。
 - 私有系统延迟召唤/复活不能凭空预测，可配置更长 confirmationTicks，或由模组提供明确 `GroupCombatLifecycleAdapters.Register(id, ownerFaction, pendingRevival)` 适配；不要为某怪物种类硬编码推断。
 
@@ -108,3 +108,5 @@ Patches 顺序执行 SetAttribute(xpath/name/value)、SetText(xpath/value)、Add
 默认无边框全屏。Case 的 `<Output width="1280" height="720"/>` 仅设原始截图输出尺寸，不缩小游戏窗口；宽高一起填，分别 800—3840 / 600—2160。GroupCombat 内 `<Overlay enabled="false"/>` 可关榜单。相机跟踪只含本轮从未倒地/死亡且当前在场活单位，起身/复活后也不恢复资格，故镜头没跟随不等于角色没参战。
 
 在聊天中分别说明执行完成与清理状态、胜负/轮数/种子/换边、指标口径、测量质量、实际日志及原始路径；不要把一轮胜负当作普适平衡结论或回归通过率。
+
+全部普通 Pawn/PawnGroup 和 squad 现在共用逐成员冻结及准备证据校验。GeneratedSnapshot 核对出生配置，Preparation 逐条保留目标与动作后快照，InitialSnapshot 记录开战状态；Equip/DropEquipment 等合法动作不会与准备前冻结名单冲突。配置身份用于榜单分组，同名兵种不会覆盖不同配置。普通 PawnGroup 可使用 costMode=pawnKind/native，详见混编与预算参考。
