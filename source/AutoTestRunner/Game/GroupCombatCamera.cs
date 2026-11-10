@@ -163,11 +163,19 @@ namespace LogSyncMod.AutoTest
                     var target = pawn.CurJob?.targetA.Thing;
                     values.Add(new ArenaCameraSubject { Id = pair.Key, Team = team,
                         TargetId = CombatFightService.RosterId(target), X = pawn.DrawPos.x, Z = pawn.DrawPos.z,
+                        AttackingId = Find.TickManager.TicksGame - pawn.mindState.lastAttackTargetTick <= 300
+                            ? CombatFightService.RosterId(pawn.mindState.lastAttackedTarget.Thing) : null,
                         Health = unit?.HealthPercent ?? 1, DamageDealt = unit?.EnemyDamage ?? 0, DamageTaken = unit?.DamageTaken ?? 0 });
                 }
                 director.Observe(values);
             }
-            if (observing || director.IntroductionStage >= 0 || arenaWidth != UI.screenWidth || arenaHeight != UI.screenHeight)
+            var following = director.Shot == ArenaCameraMode.Follow;
+            if (following)
+            {
+                RefreshFollowPosition(director.FocusId);
+                RefreshFollowPosition(director.OpponentId);
+            }
+            if (following || observing || director.IntroductionStage >= 0 || arenaWidth != UI.screenWidth || arenaHeight != UI.screenHeight)
             {
                 arenaFrame = director.Frame(UI.screenWidth, UI.screenHeight, CombatFightService.OverlayEnabled) ?? arenaFrame;
                 arenaWidth = UI.screenWidth; arenaHeight = UI.screenHeight;
@@ -176,6 +184,8 @@ namespace LogSyncMod.AutoTest
             var frame = arenaFrame.Value;
             markerThreshold = MarkerThreshold();
             maximumProjectionSize = GroupCombatPresentation.CameraSizeLimit(UI.screenHeight, markerThreshold);
+            // Follow must fit both participants, including a distant shooter behind a side panel.
+            if (following) maximumProjectionSize = Math.Max(maximumProjectionSize, frame.size + 1);
             var introduction = director.IntroductionStage >= 0;
             var nextProjection = introduction ? Math.Min(frame.size + 1, maximumProjectionSize)
                 : arenaZoom.Target(targetProjectionSize, frame.size, Math.Min(maximumProjectionSize, director.MaximumSize), elapsed);
@@ -189,7 +199,13 @@ namespace LogSyncMod.AutoTest
             // The introduction follows its timed path exactly, including both full holds.
             // Keep this same motion state when the countdown and battle take over.
             var returningToOverview = !introduction && director.Shot == ArenaCameraMode.Overview && previousShot != ArenaCameraMode.Overview;
-            if (introduction || cameraFrames == 0 || leavingIntroduction || returningToOverview)
+            if (following)
+            {
+                if (previousShot != ArenaCameraMode.Follow) motion.Set(frame.x, frame.z, nextProjection);
+                else motion.Follow(frame.x, frame.z, nextProjection);
+                arenaPan.Reset(motion.X, motion.Z);
+            }
+            else if (introduction || cameraFrames == 0 || leavingIntroduction || returningToOverview)
             {
                 motion.Set(frame.x, frame.z, nextProjection);
                 arenaPan.Reset(frame.x, frame.z);
@@ -212,6 +228,17 @@ namespace LogSyncMod.AutoTest
             maximumObservedProjectionSize = Math.Max(maximumObservedProjectionSize, camera.orthographicSize);
             cameraFrames++;
             if (camera.orthographicSize > maximumProjectionSize + .001f) limitViolations++;
+        }
+
+        private static void RefreshFollowPosition(string id)
+        {
+            if (id == null || !CombatFightService.Pawns.TryGetValue(id, out var pawn)
+                || !pawn.Spawned || pawn.Map != CombatFightService.Map || pawn.Dead || pawn.Downed) return;
+            // DrawPos also contains hit jitter, attack leaning and other visual offsets.
+            // Follow actual movement interpolation, before those offsets are applied.
+            pawn.Drawer.tweener.PreDrawPosCalculation();
+            var position = pawn.Drawer.tweener.TweenedPos;
+            director.RefreshFollowPosition(id, position.x, position.z);
         }
 
         internal static void DrawArenaControls()

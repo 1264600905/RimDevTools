@@ -1,0 +1,16 @@
+<ArenaSuite schemaVersion="1" id="arena.nociosphere-follow" gameVersion="1.7">
+  <Tournament id="teleport-follow" name="跟随镜头实测：苦痛之球对战50人" seed="73109">
+    <testDefName>Arena_NociosphereVs50_Follow</testDefName>
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all">
+      <Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/>
+    </Scene>
+    <Roster mode="count" count="1"/>
+    <Entrants>
+      <Entrant id="sphere" pawnKind="Nociosphere" name="苦痛之球"/>
+      <Entrant id="gunners" pawnKind="Mercenary_Gunner" name="50名雇佣枪手" count="50"/>
+    </Entrants>
+    <Battle timeSpeed="normal" durationSeconds="60" timeoutRealSeconds="180" confirmationTicks="120"/>
+    <TieBreak maxReplays="0"/>
+    <Output width="1920" height="1080"/>
+  </Tournament>
+</ArenaSuite>

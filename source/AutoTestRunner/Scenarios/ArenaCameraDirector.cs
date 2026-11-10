@@ -8,7 +8,7 @@ namespace LogSyncMod.AutoTest.Scenarios
 
     internal sealed class ArenaCameraSubject
     {
-        internal string Id, Team, TargetId;
+        internal string Id, Team, TargetId, AttackingId;
         internal float X, Z, Health = 1;
         internal double DamageDealt, DamageTaken;
     }
@@ -69,7 +69,8 @@ namespace LogSyncMod.AutoTest.Scenarios
         internal string Reason { get; private set; } = "开场阵形";
         internal int Switches { get; private set; }
         internal bool Compact => false;
-        internal float MaximumSize => introductionStage >= 0 || Shot == ArenaCameraMode.Overview ? 28 : Shot == ArenaCameraMode.Follow ? 16 : 20;
+        internal float MaximumSize => introductionStage >= 0 || Shot == ArenaCameraMode.Overview ? 28
+            : Shot == ArenaCameraMode.Follow ? float.MaxValue : 20;
 
         internal void SetMode(ArenaCameraMode mode)
         {
@@ -89,6 +90,13 @@ namespace LogSyncMod.AutoTest.Scenarios
             fighting = running;
             if (running && !paused) clock += Math.Max(0, realDelta);
             return forceObservation || running && !paused && clock >= nextObservation;
+        }
+
+        // Only follow shots bypass the observation interval; other shots retain stabilization.
+        internal void RefreshFollowPosition(string id, float x, float z)
+        {
+            if (Shot != ArenaCameraMode.Follow || id != FocusId && id != OpponentId || !subjects.TryGetValue(id, out var subject)) return;
+            subject.X = x; subject.Z = z;
         }
 
         internal void Observe(IEnumerable<ArenaCameraSubject> values)
@@ -227,6 +235,12 @@ namespace LogSyncMod.AutoTest.Scenarios
 
         private ArenaCameraSubject EnemyFor(ArenaCameraSubject actor)
         {
+            // Keep an incoming attacker in view even when the followed pawn targets someone else.
+            var attackers = roster.Where(p => p.Team != actor.Team && (p.TargetId == actor.Id || p.AttackingId == actor.Id)).ToList();
+            var retained = attackers.FirstOrDefault(p => p.Id == OpponentId);
+            if (retained != null) return retained;
+            var attacker = attackers.OrderBy(p => Distance(actor, p)).ThenBy(p => p.Id, StringComparer.Ordinal).FirstOrDefault();
+            if (attacker != null) return attacker;
             if (actor.TargetId != null && subjects.TryGetValue(actor.TargetId, out var target) && target.Team != actor.Team) return target;
             var nearby = contacts.FirstOrDefault(c => c.Actor.Id == actor.Id)?.Enemy;
             if (OpponentId != null && subjects.TryGetValue(OpponentId, out var previous) && previous.Team != actor.Team
@@ -248,9 +262,14 @@ namespace LogSyncMod.AutoTest.Scenarios
             if (Shot == ArenaCameraMode.Overview) return OverviewFrame(width, height, overlay);
             var actor = FocusId != null && subjects.TryGetValue(FocusId, out var found) ? found : roster[0];
             if (Shot == ArenaCameraMode.Follow)
-                return GroupCombatPresentation.Frame(new[] { (actor.X, actor.Z) }, width, height, overlay,
+            {
+                var followed = new List<(float x, float z)> { (actor.X, actor.Z) };
+                if (OpponentId != null && subjects.TryGetValue(OpponentId, out var opponent) && opponent.Team != actor.Team)
+                    followed.Add((opponent.X, opponent.Z));
+                return GroupCombatPresentation.Frame(followed, width, height, overlay,
                     roster.Count <= 6 ? 8 : roster.Count <= 16 ? 11 : 14,
                     GroupCombatPresentation.PanelWidth(width), 160, MaximumSize);
+            }
             var cx = anchor?.X ?? actor.X; var cz = anchor?.Z ?? actor.Z;
             var points = roster.Where(p => Square(p.X - cx) + Square(p.Z - cz) <= 13 * 13).Select(p => (p.X, p.Z)).ToList();
             if (points.Count == 0) points.Add((actor.X, actor.Z));

@@ -14,6 +14,22 @@ namespace LogSyncMod.AutoTest.Scenarios
             X = x; Z = z; Size = size; initialized = true;
         }
 
+        // A small spatial quiet area filters recoil without waiting for a dwell timer.
+        // Larger jumps (including teleports) move to the new framing immediately.
+        public void Follow(float x, float z, float size)
+        {
+            var dx = x - X; var dz = z - Z;
+            var distance = (float)Math.Sqrt(dx * dx + dz * dz);
+            if (!initialized || distance >= 3) { Set(x, z, size); return; }
+            const float quietRadius = .35f;
+            if (distance > quietRadius)
+            {
+                X = x - dx / distance * quietRadius;
+                Z = z - dz / distance * quietRadius;
+            }
+            Size = size;
+        }
+
         public void Step(float targetX, float targetZ, float targetSize, float realDeltaSeconds,
             float positionSeconds = .5f, float maximumMoveSpeed = float.MaxValue, bool smoothZoom = true)
         {

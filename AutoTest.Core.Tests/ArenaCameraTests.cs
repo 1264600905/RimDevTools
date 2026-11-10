@@ -54,12 +54,110 @@ internal static class ArenaCameraTests
             "manual battle-region mode remains available and does not rotate away");
         director.SetMode(ArenaCameraMode.Follow); director.Select("duelist-A"); Advance(0);
         check(director.Mode == ArenaCameraMode.Follow && director.FocusId == "duelist-A"
-            && director.Frame(1920, 1080, true).Value.size == 8, "manual follow frames the participant closer in a small fight");
+            && director.Frame(1920, 1080, true).Value.size >= 8 && director.Frame(1920, 1080, true).Value.size < 16,
+            "manual follow keeps both duelists in a close view in a small fight");
 
         TestIntroduction(check);
         TestZoom(check);
         TestPan(check);
+        TestImmediateFollow(check);
+        TestFollowStabilityAndAttacker(check);
         TestSmallFights(check);
+    }
+
+    private static void TestImmediateFollow(Action<bool, string> check)
+    {
+        foreach (var mode in new[] { ArenaCameraMode.Auto, ArenaCameraMode.Follow })
+        {
+            var director = new ArenaCameraDirector();
+            director.SetMode(mode); director.Select("runner");
+            director.Advance(0, true, false);
+            director.Observe(new[] {
+                new ArenaCameraSubject { Id = "runner", Team = "A", X = 40, Z = 50 },
+                new ArenaCameraSubject { Id = "ally", Team = "A", X = 44, Z = 50 }
+            });
+            var initial = director.Frame(1920, 1080, true).Value;
+            var maximumError = 0f;
+            // Move far faster than the old ten-cell/second cap, with an abrupt reversal.
+            // No combat observation runs between these render-position updates.
+            for (var frame = 1; frame <= 20; frame++)
+            {
+                var dx = frame <= 10 ? frame * 2f : 40 - frame * 2f;
+                director.RefreshFollowPosition("runner", 40 + dx, 50 - dx);
+                var current = director.Frame(1920, 1080, true).Value;
+                maximumError = Math.Max(maximumError, Math.Abs(current.x - initial.x - dx));
+                maximumError = Math.Max(maximumError, Math.Abs(current.z - initial.z + dx));
+            }
+            check(maximumError < .001f && !director.Advance(.016f, true, false),
+                mode + " follow tracks fast movement and reversals in the current frame between combat observations");
+            director.RefreshFollowPosition("runner", 41, 51);
+            var nearby = director.Frame(1920, 1080, true).Value;
+            check(Math.Abs(nearby.x - initial.x - 1) < .001f && Math.Abs(nearby.z - initial.z - 1) < .001f,
+                mode + " follow also tracks movement inside the old three-cell quiet area");
+        }
+
+        foreach (var mode in new[] { ArenaCameraMode.Overview, ArenaCameraMode.Battle })
+        {
+            var director = new ArenaCameraDirector();
+            director.SetMode(mode); director.Advance(0, true, false);
+            director.Observe(new[] {
+                new ArenaCameraSubject { Id = "A", Team = "A", X = 40, Z = 50 },
+                new ArenaCameraSubject { Id = "B", Team = "B", X = 44, Z = 50 }
+            });
+            var initial = director.Frame(1920, 1080, true).Value;
+            director.RefreshFollowPosition("A", 100, 100);
+            check(director.Frame(1920, 1080, true).Value == initial && !director.Advance(.016f, true, false),
+                mode + " keeps its observation interval and ignores immediate follow updates");
+        }
+    }
+
+    private static void TestFollowStabilityAndAttacker(Action<bool, string> check)
+    {
+        var motion = new GroupCombatCameraMotion();
+        motion.Set(50, 50, 15);
+        for (var i = 0; i < 120; i++) motion.Follow(50 + (i % 2 == 0 ? .25f : -.25f), 50, 15);
+        check(motion.X == 50 && motion.Z == 50, "follow ignores repeated small hit-sized offsets without a timer");
+        var maximumLag = 0f;
+        for (var i = 1; i < 60; i++)
+        {
+            motion.Follow(50 + i * 1.5f, 50, 15);
+            maximumLag = Math.Max(maximumLag, 50 + i * 1.5f - motion.X);
+        }
+        check(maximumLag <= .351f, "fast follow movement never accumulates more than the small quiet radius of lag");
+        motion.Follow(25, 80, 24);
+        check(motion.X == 25 && motion.Z == 80 && motion.Size == 24, "teleporting immediately resets follow position and the required framing");
+
+        foreach (var viewport in new[] { (1920f, 1080f), (1280f, 720f) })
+        {
+            var actors = new[] {
+                new ArenaCameraSubject { Id = "focus", Team = "A", X = 70, Z = 60, TargetId = "own-target" },
+                new ArenaCameraSubject { Id = "own-target", Team = "B", X = 72, Z = 60 },
+                new ArenaCameraSubject { Id = "attacker", Team = "B", X = 15, Z = 35, AttackingId = "focus" }
+            };
+            var director = new ArenaCameraDirector();
+            director.SetMode(ArenaCameraMode.Follow); director.Select("focus");
+            director.Advance(0, true, false); director.Observe(actors);
+            check(director.OpponentId == "attacker", "follow prioritizes an incoming attacker over the followed pawn's own target");
+            void CheckVisible(float ax, float az, float bx, float bz)
+            {
+                var frame = director.Frame(viewport.Item1, viewport.Item2, true).Value;
+                var size = frame.size + 1;
+                var left = GroupCombatPresentation.PanelWidth(viewport.Item1) + 22;
+                bool Visible(float x, float z)
+                {
+                    var sx = viewport.Item1 / 2 + (x - frame.x) * viewport.Item2 / (2 * size);
+                    var sy = viewport.Item2 / 2 - (z - frame.z) * viewport.Item2 / (2 * size);
+                    return sx > left && sx < viewport.Item1 - left && sy > 122 && sy < viewport.Item2 - 160;
+                }
+                check(Visible(ax, az) && Visible(bx, bz), "follow keeps both participants between the panels even in a distant ranged fight");
+            }
+            CheckVisible(70, 60, 15, 35);
+            director.RefreshFollowPosition("focus", 90, 75);
+            director.RefreshFollowPosition("attacker", 30, 45);
+            CheckVisible(90, 75, 30, 45);
+            director.Advance(.4f, true, false); director.Observe(actors.Take(2));
+            check(director.OpponentId == "own-target", "follow replaces an unavailable attacker with a valid opponent");
+        }
     }
 
     private static void TestSmallFights(Action<bool, string> check)
