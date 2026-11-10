@@ -84,6 +84,40 @@ namespace LogSyncMod.AutoTest.Scenarios
         {
             var content = Serialize(snapshot);
             var path = PathFor(projectRoot);
+            return WriteSnapshot(path, content);
+        }
+
+        public static string ExportPathFor(string projectRoot, TemporaryPawnSnapshot snapshot, string label)
+        {
+            Serialize(snapshot); // Validate identity/hash before deriving any destination.
+            if (string.IsNullOrWhiteSpace(snapshot.SourceIdentity)) throw new ScenarioConfigurationException("Exported Pawn requires its source identity");
+            string Safe(string value) => new string((value ?? "").Where(c => char.IsLetterOrDigit(c) || c == '-' || c == '_').Take(40).ToArray());
+            var name = Safe(label); if (name.Length == 0) name = "Pawn";
+            var id = Safe(snapshot.SourceIdentity); if (id.Length == 0) throw new ScenarioConfigurationException("Invalid Pawn source identity");
+            return Path.Combine(Path.GetDirectoryName(PathFor(projectRoot)), "PawnTemplates", name + "-" + id + "-" + snapshot.Sha256.Substring(0, 12) + ".xml");
+        }
+
+        public static string Export(string projectRoot, TemporaryPawnSnapshot snapshot, string label)
+        {
+            var path = ExportPathFor(projectRoot, snapshot, label);
+            if (File.Exists(path))
+            {
+                var existing = Parse(File.ReadAllText(path), path);
+                if (existing.Sha256 != snapshot.Sha256 || existing.SourceIdentity != snapshot.SourceIdentity)
+                    throw new ScenarioConfigurationException("An unrelated Pawn template already occupies the export path: " + path);
+                return path;
+            }
+            return WriteSnapshot(path, Serialize(snapshot));
+        }
+
+        public static List<string> ExportedFiles(string projectRoot)
+        {
+            var directory = Path.Combine(Path.GetDirectoryName(PathFor(projectRoot)), "PawnTemplates");
+            return Directory.Exists(directory) ? Directory.GetFiles(directory, "*.xml", SearchOption.TopDirectoryOnly).OrderBy(p => p, StringComparer.CurrentCultureIgnoreCase).ToList() : new List<string>();
+        }
+
+        private static string WriteSnapshot(string path, string content)
+        {
             Directory.CreateDirectory(Path.GetDirectoryName(path));
             var temporary = path + ".tmp." + Guid.NewGuid().ToString("N");
             try

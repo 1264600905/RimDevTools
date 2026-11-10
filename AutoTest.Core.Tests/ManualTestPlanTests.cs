@@ -4,6 +4,7 @@ internal static class ManualTestPlanTests
 {
     internal static void Run(Action<bool, string> check)
     {
+        ManualTestBrowserTests.Run(check);
         var a = new ManualTestTarget { PackageId = "Core", DefType = "ThingDef", DefName = "Rifle" };
         var b = new ManualTestTarget { PackageId = "Other", DefType = "PawnKindDef", DefName = "Wolf" };
         var categories = new[] { "RangedWeaponPocketMap", "AnimalCombat", "ItemInfoCard", "AnimalThreeView", "SkillPocketMap" };

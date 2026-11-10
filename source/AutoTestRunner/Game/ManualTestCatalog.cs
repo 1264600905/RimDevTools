@@ -13,6 +13,7 @@ namespace LogSyncMod.AutoTest
         internal readonly Dictionary<string, Def> Definitions = new Dictionary<string, Def>(StringComparer.Ordinal);
         internal readonly Dictionary<string, Thing> Instances = new Dictionary<string, Thing>(StringComparer.Ordinal);
         internal readonly List<string> Categories = Enum.GetNames(typeof(AutoTestCaseType)).ToList();
+        internal readonly HashSet<string> TestableTargets = new HashSet<string>(StringComparer.Ordinal);
 
         internal ManualTestCatalog(Map map)
         {
@@ -34,7 +35,7 @@ namespace LogSyncMod.AutoTest
             {
                 var name = item.DefName.Split('@')[0];
                 var target = Targets.FirstOrDefault(t => t.PackageId == mod.PackageIdPlayerFacing && t.DefName == name && (t.DefType == item.DefType || item.DefType.StartsWith(t.DefType + "_", StringComparison.Ordinal)));
-                if (target != null) Capabilities.Add(new ManualTestChoice { TargetKey = target.Key, CaseType = item.CaseType, NativeDefName = item.DefName, Applicable = true, Reason = "内置执行器；运行时检查生成和兼容条件" });
+                if (target != null) { Capabilities.Add(new ManualTestChoice { TargetKey = target.Key, CaseType = item.CaseType, NativeDefName = item.DefName, Applicable = true, Reason = "内置执行器；运行时检查生成和兼容条件" }); TestableTargets.Add(target.Key); }
             }
         }
 
@@ -43,7 +44,7 @@ namespace LogSyncMod.AutoTest
         internal void RefreshInstances(Map map)
         {
             Targets.RemoveAll(t => t.InstanceId != null);
-            foreach (var key in Instances.Keys) Definitions.Remove(key);
+            foreach (var key in Instances.Keys) { Definitions.Remove(key); TestableTargets.Remove(key); }
             Capabilities.RemoveAll(c => Instances.ContainsKey(c.TargetKey)); Instances.Clear();
             if (map == null) return;
             var definitions = Targets.ToDictionary(t => t.Key, StringComparer.Ordinal);
@@ -57,6 +58,7 @@ namespace LogSyncMod.AutoTest
                 var matches = capabilities[basis.Key];
                 Targets.Add(target); Definitions.Add(target.Key, def); Instances.Add(target.Key, thing);
                 foreach (var match in matches) Capabilities.Add(new ManualTestChoice { TargetKey = target.Key, CaseType = match.CaseType, NativeDefName = match.NativeDefName, Applicable = match.Applicable, Reason = match.Reason });
+                if (matches.Any(c => c.Applicable)) TestableTargets.Add(target.Key);
             }
         }
     }
