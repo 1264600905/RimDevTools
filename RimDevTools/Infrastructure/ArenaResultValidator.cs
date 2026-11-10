@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using LogSyncMod.AutoTest.Scenarios;
 
 namespace RimDevTools;
@@ -16,6 +16,8 @@ public static class ArenaResultValidator
             if (report.Status != "completed") return new(false, report.Status == "unresolvedDraw" ? "ARENA_UNRESOLVED_DRAW" : report.ErrorCode ?? "ARENA_EXECUTION_INCOMPLETE", report.Error ?? report.Status, new { path, report.Status, tournaments = report.Tournaments.Select(t => new { t.Input.TestDefName, t.Status, t.Champion, matches = t.Matches.Count }) });
             var error = ValidateIntegrity(report, expected);
             if (error != null) return new(false, "ARENA_RESULT_INVALID", error, new { path });
+            if (report.Tournaments.SelectMany(t => t.Matches).SelectMany(m => m.Attempts).Any(a => a.RequireCompleteAttribution && (!a.MeasurementRequirementsMet || a.MeasurementQuality != "complete")))
+                return new(false, "ARENA_MEASUREMENT_REQUIREMENTS_NOT_MET", "赛事已执行并清理，但未达到显式的完整归属测量要求", new { path });
             return new(true, "", "赛事完成，配兵、赛程和评分校验通过", new { path, reportPath = Path.Combine(outputPath, "arena_" + runId + "_Report.md"), tournaments = report.Tournaments.Select(t => new { t.Input.TestDefName, t.Input.Format, t.Champion, t.Challenges, bossStandings = t.Summary?.Bosses, entrants = t.Rosters.Select(r => new { r.Id, r.PawnKind, r.UnitCombatPower, r.ResolvedCount, r.RequestedBudget, r.ActualCombatPower, r.UnusedBudget }), matches = t.Matches.Count, damageFallbackMatches = t.Matches.Count(m => m.Score?.UsedDamageFallback == true), attempts = t.Matches.Sum(m => m.Attempts.Count), cleanupComplete = t.Matches.All(m => m.Attempts.All(a => a.CleanupComplete)) }) });
         }
         catch (Exception ex) when (ex is IOException or JsonException or InvalidOperationException or ArgumentException or NullReferenceException or OverflowException or ScenarioConfigurationException or System.Xml.XmlException)
@@ -29,6 +31,7 @@ public static class ArenaResultValidator
         for (int ti = 0; ti < plan.Tournaments.Count; ti++)
         {
             var input = plan.Tournaments[ti]; var t = report.Tournaments[ti];
+            if (t.Rules == null) return "缺少规则展示记录";
             if (t.Rules is { } rules && (!rules.Completed || rules.MinimumSeconds != 5
                 || !double.IsFinite(rules.LoadingSeconds) || rules.LoadingSeconds < 0
                 || !double.IsFinite(rules.VisibleSeconds) || rules.VisibleSeconds < Math.Max(5, rules.LoadingSeconds)
@@ -38,16 +41,19 @@ public static class ArenaResultValidator
             foreach (var e in input.Entrants)
             {
                 var r = t.Rosters.SingleOrDefault(r => r.Id == e.Id);
-                var budget = e.Budget ?? input.Budget;
+                var budget = ArenaChallengeRules.Budget(input, e);
                 if (e.Squad != null)
                 {
-                    var squadError = SquadTemplates.ValidateRoster(r!, input.SquadTemplates[e.Squad], budget, e.Count ?? input.Count, input.CostMode);
+                    var squadError = SquadTemplates.ValidateRoster(r!, input.SquadTemplates[e.Squad], budget, e.Count ?? input.Count, ArenaChallengeRules.CostMode(input, e));
                     if (squadError != null) return squadError;
                     continue;
                 }
-                if (r == null || r.PawnKind != e.PawnKind || r.UnitCombatPower <= 0 || r.Mode != input.RosterMode || r.RequestedBudget != budget || r.ResolvedCount < 1 || r.ResolvedCount > CombatRoster.MaxTeamMembers) return "配兵身份或 combatPower 快照无效";
-                var count = budget.HasValue ? decimal.Floor(budget.Value / r.UnitCombatPower) : e.Count ?? input.Count;
-                if (r.ResolvedCount != count || budget.HasValue && (r.ActualCombatPower > budget || budget.Value - r.ActualCombatPower >= r.UnitCombatPower)) return "预算配兵不满足最大整数人数";
+                if (r == null || r.PawnKind != e.PawnKind || r.UnitCombatPower <= 0 || r.Mode != ArenaChallengeRules.RosterMode(input, e) || r.RequestedBudget != budget || r.ResolvedCount < 1 || r.ResolvedCount > CombatRoster.MaxTeamMembers) return "配兵身份或 combatPower 快照无效";
+                if (e.CostMode != null && r.CostMode != e.CostMode) return "参赛者独立成本口径与冻结名单不符";
+                var config = new System.Xml.Linq.XElement("PawnTemplate", new System.Xml.Linq.XElement("basePawnKind", e.PawnKind));
+                if (e.Xenotype != null) config.Add(new System.Xml.Linq.XElement("Xenotype", new System.Xml.Linq.XAttribute("def", e.Xenotype)));
+                var generatedError = CombatRoster.ValidateGenerated(r, config, budget, e.Count ?? input.Count, ArenaChallengeRules.CostMode(input, e));
+                if (generatedError != null) return generatedError;
             }
             if (input.Format != "knockout")
             {
@@ -148,10 +154,17 @@ public static class ArenaResultValidator
         }
         if (entrant.Squad != null)
         {
-            var error = SquadTemplates.ValidateRoster(roster, input.SquadTemplates[entrant.Squad], value, input.Count, input.CostMode);
+            var error = SquadTemplates.ValidateRoster(roster, input.SquadTemplates[entrant.Squad], value, input.Count, ArenaChallengeRules.CostMode(input, entrant));
             if (error != null) return error;
             if (roster.DisplayName != baseline.DisplayName || roster.Source != baseline.Source
                 || roster.Members.Where((m, i) => m.Seed != SquadTemplates.MemberSeed(seed, entrant.Id, i)).Any()) return "预算档位名册的种子或来源不符";
+            return null;
+        }
+        if (baseline.GenerationPolicy == "frozen")
+        {
+            var error = CombatRoster.ValidateGenerated(roster, System.Xml.Linq.XElement.Parse(baseline.TemplateXml), value, input.Count, ArenaChallengeRules.CostMode(input, entrant));
+            if (error != null) return error;
+            if (roster.Members.Where((m, i) => m.Seed != SquadTemplates.MemberSeed(seed, entrant.Id, i)).Any()) return "预算档位成员种子不符";
             return null;
         }
         var count = decimal.Floor(value / baseline.UnitCombatPower);
@@ -171,7 +184,7 @@ public static class ArenaResultValidator
         for (var pi = 0; pi < pairs.Count; pi++)
         {
             var pair = t.Challenges[pi]; var expected = pairs[pi];
-            var initial = input.RosterMode == "count" ? expected.challenger.Count ?? input.Count : (expected.challenger.Budget ?? input.Budget)!.Value;
+            var initial = ArenaChallengeRules.InitialValue(input, expected.challenger);
             if (pair.Id != input.TestDefName + "/pair-" + (pi + 1) || pair.Boss != expected.boss.Id || pair.Challenger != expected.challenger.Id
                 || pair.InitialValue != initial || pair.Matches.Count == 0 || input.Format == "bossRoundRobin" && pair.Matches.Count != 1) return "挑战组身份、顺序、初始值或场数不符";
             var value = initial;
@@ -227,7 +240,14 @@ public static class ArenaResultValidator
                         if (input.Growth.Target != "budget") return "人数增长不能超出已校验的人数上限";
                         if (baseline.SquadId == null)
                         {
-                            if (pair.LimitRoster != null || decimal.Floor(next.Value / baseline.UnitCombatPower) <= CombatRoster.MaxTeamMembers) return "伪造预算人数上限";
+                            if (baseline.GenerationPolicy == "frozen")
+                            {
+                                var rejected = pair.LimitRoster;
+                                if (rejected == null || rejected.Id != baseline.Id) return "缺少逐成员超员配兵证据";
+                                var rejectedError = CombatRoster.ValidateGenerated(rejected, System.Xml.Linq.XElement.Parse(baseline.TemplateXml), next, input.Count, baseline.CostMode, rejectedLimit: true);
+                                if (rejectedError != null) return rejectedError;
+                            }
+                            else if (pair.LimitRoster != null || decimal.Floor(next.Value / baseline.UnitCombatPower) <= CombatRoster.MaxTeamMembers) return "伪造预算人数上限";
                         }
                         else
                         {
@@ -250,7 +270,7 @@ public static class ArenaResultValidator
                                 }).ToList();
                                 projected.ResolvedCount = projected.Members.Count; projected.PawnKind = projected.Members[0].PawnKind;
                                 projected.UnitCombatPower = projected.ActualCombatPower / projected.ResolvedCount;
-                                var allocationError = SquadTemplates.ValidateRoster(projected, template, next, input.Count, input.CostMode);
+                                var allocationError = SquadTemplates.ValidateRoster(projected, template, next, input.Count, ArenaChallengeRules.CostMode(input, expected.challenger));
                                 if (allocationError != null) return allocationError;
                             }
                         }
@@ -299,10 +319,11 @@ public static class ArenaResultValidator
         for (int ai = 0; ai < m.Attempts.Count; ai++)
         {
             var a = m.Attempts[ai]; var battle = ArenaLoader.CompileBattle(input, rosters, m, ai);
-            var generator = (string?)System.Xml.Linq.XElement.Parse(input.Xml).Element("Scene")?.Attribute("generatorDef") ?? "LogSync_AutoTestStudioMap";
-            if (input.Format != "knockout" && generator == "LogSync_AutoTestStudioMap" && a.StudioIsolation == null) return "缺少测试场地隔离记录";
+            var generator = (string?)System.Xml.Linq.XElement.Parse(battle.Xml).Element("Scene")?.Attribute("generatorDef") ?? "LogSync_AutoTestStudioMap";
+            if (generator == "LogSync_AutoTestStudioMap" && a.StudioIsolation == null) return "缺少测试场地隔离记录";
             if (a.StudioIsolation is { } isolation && (!isolation.WorldTileUnchanged || isolation.RemainingThingsBeforeActors != 0 || isolation.NonSoilCellsBeforeActors != 0))
                 return "测试场地被额外生成内容污染或源世界地块被修改";
+            if (a.ArenaMaintenance == null) return "缺少擂台环境维护记录";
             if (a.ArenaMaintenance is { } maintenance)
             {
                 if (maintenance.ClearCorpses != input.ClearCorpses || maintenance.ClearDroppedItems != input.ClearDroppedItems
@@ -325,21 +346,25 @@ public static class ArenaResultValidator
                     if (memberError != null) return memberError;
                 }
             }
-            if (input.Format != "knockout" && JsonSerializer.Serialize(a.ResolvedRosters) != JsonSerializer.Serialize(rosters)) return "战斗名册与本档快照不符";
+            if (JsonSerializer.Serialize(a.ResolvedRosters) != JsonSerializer.Serialize(new[] { rosters.Single(r => r.Id == m.Left), rosters.Single(r => r.Id == m.Right) })) return "战斗名册与本档快照不符";
+            var preparationError = CombatPreparation.Validate(a, System.Xml.Linq.XElement.Parse(battle.Xml));
+            if (preparationError != null) return preparationError;
             var ledgerError = GroupCombatResultValidator.ValidateIntegrity(new GroupCombatRunReport { Rounds = new() { a } });
             if (ledgerError != null) return ledgerError;
+            var metrics = System.Xml.Linq.XElement.Parse(battle.Xml).Element("GroupCombat")?.Element("Metrics");
+            if (metrics != null && a.RequireCompleteAttribution != (ScenarioLoader.A(metrics, "requireCompleteAttribution", "false") == "true"))
+                return "战斗测量要求与冻结 XML 不符";
+            if (metrics != null && a.RequireCompleteAttribution && a.MeasurementRequirementsMet && a.MeasurementQuality != "complete")
+                return "完整归属要求被错误标记为已满足";
             var endError = ValidateEnd(a, input);
             if (endError != null) return endError;
             var wins = a.Teams.Where(x => x.Outcome == "win").ToList();
             if (ai < m.Attempts.Count - 1 && wins.Count != 0 || ai == m.Attempts.Count - 1 && (m.Winner == null ? wins.Count != 0 || m.Attempts.Count != input.MaxReplays + 1 : wins.Count != 1 || (wins[0].Id == "A" ? m.Left : m.Right) != m.Winner)) return "平局重赛或晋级胜者不符";
             if (a.Screenshots.Count != 3 || !a.Screenshots.Any(p => p.EndsWith("_bracket.png", StringComparison.Ordinal)) || !a.Screenshots.Any(p => p.EndsWith("_initial.png", StringComparison.Ordinal)) || !a.Screenshots.Any(p => p.EndsWith("_final.png", StringComparison.Ordinal)) || verifyArtifactFiles && a.Screenshots.Any(p => !File.Exists(p))) return "缺少赛前预览、初始战场或战斗结算截图";
         }
-        if (input.Format != "knockout" && (m.PreBattles.Count != m.Attempts.Count || m.PostBattleScreenshots.Count != m.Attempts.Count)) return "挑战赛缺少每场完整展示";
+        if (m.PreBattles.Count != m.Attempts.Count || m.PostBattleScreenshots.Count != m.Attempts.Count) return "赛事缺少每场完整展示";
         if (!m.BracketScreenshots.SequenceEqual(m.Attempts.SelectMany(a => a.Screenshots.Where(p => p.EndsWith("_bracket.png", StringComparison.Ordinal))))) return "对阵图截图与每次尝试不一致";
-        // Older schema-1 reports have no post-battle captures. When present,
-        // require a distinct, completed presentation for every attempt.
         if (m.PostBattleScreenshots.Count > 0 && (m.PostBattleScreenshots.Count != m.Attempts.Count || m.PostBattleScreenshots.Distinct(StringComparer.Ordinal).Count() != m.Attempts.Count || m.PostBattleScreenshots.Any(p => !p.EndsWith("_postbattle.png", StringComparison.Ordinal) || verifyArtifactFiles && !File.Exists(p)))) return "赛后天梯截图与每次尝试不一致";
-        // Preserve compatibility with schema-1 reports produced before match previews.
         if (m.PreBattles.Count > 0 && (m.PreBattles.Count != m.Attempts.Count
             || m.PreBattles.Select(p => p.Screenshot).Distinct(StringComparer.Ordinal).Count() != m.Attempts.Count
             || m.PreBattles.Any(p => !p.Completed || p.DurationSeconds != ArenaPresentation.PreBattleSeconds

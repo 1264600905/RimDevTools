@@ -69,12 +69,19 @@ internal static class ArenaResultTests
         Reject(r => r.Tournaments[0].Matches[0].PreBattles.Add(r.Tournaments[0].Matches[0].PreBattles[0]), "arena requires one matchup presentation per attempt");
         var legacy = Build(2);
         foreach (var m in legacy.Tournaments[0].Matches) m.PreBattles.Clear();
-        check(ArenaResultValidator.ValidateIntegrity(legacy, legacy.Plan, false) == null, "arena retains compatibility with reports from before matchup presentations");
+        check(ArenaResultValidator.ValidateIntegrity(legacy, legacy.Plan, false) != null, "arena requires matchup presentation evidence for every format");
         var presented = Build(6);
-        foreach (var m in presented.Tournaments[0].Matches) m.PostBattleScreenshots.Add(m.Id + "_postbattle.png");
+        foreach (var m in presented.Tournaments[0].Matches) m.PostBattleScreenshots = new() { m.Id + "_postbattle.png" };
         check(ArenaResultValidator.ValidateIntegrity(presented, presented.Plan, false) == null, "arena accepts per-attempt post-battle captures while retaining original three battle captures");
         Reject(r => r.Tournaments[0].ChampionScreenshot = null!, "arena requires a final champion capture");
         Reject(r => r.Tournaments[0].TopFive = null!, "arena requires a completed top-five presentation");
+        Reject(r => r.Tournaments[0].Rules = null!, "knockout cannot omit mandatory rule evidence");
+        Reject(r => r.Tournaments[0].Matches[0].Attempts[0].StudioIsolation = null!, "knockout cannot omit studio isolation evidence");
+        Reject(r => r.Tournaments[0].Matches[0].Attempts[0].ArenaMaintenance = null!, "knockout cannot omit maintenance evidence");
+        Reject(r => r.Tournaments[0].Matches[0].Attempts[0].ResolvedRosters.Clear(), "knockout cannot omit the actual battle roster");
+        Reject(r => r.Tournaments[0].Matches[0].Attempts[0].Units[0].GeneratedSnapshot = null!, "knockout cannot omit generated pawn attributes");
+        Reject(r => r.Tournaments[0].Matches[0].Attempts[0].Units[0].InitialSnapshot = null!, "knockout cannot omit initial pawn attributes");
+        Reject(r => r.Tournaments[0].Rosters[0].GenerationPolicy = null!, "generation policy cannot disappear to bypass member accounting");
         Reject(r => r.Tournaments[0].TopFive.VisibleSeconds = 9.99, "arena rejects a final page shorter than ten seconds");
         Reject(r => r.Tournaments[0].TopFive.DurationSeconds = 5, "arena requires a fixed ten-second final page");
         Reject(r => r.Tournaments[0].TopFive.SimulationTicks = 1, "arena final page must keep simulation paused");
@@ -122,6 +129,8 @@ internal static class ArenaResultTests
         var input = plan.Tournaments.Single();
         var t = new ArenaTournamentResult { Input = input };
         foreach (var e in input.Entrants) t.Rosters.Add(CombatRoster.Resolve(e.Id, e.PawnKind, extremePower ?? (budget ? 100 + int.Parse(e.Id[1..]) : 100), e.Budget ?? input.Budget, input.Count));
+        foreach (var r in t.Rosters) CombatResultFixture.Freeze(r, input.Seed);
+        t.Rules = new ArenaRulesPageResult { Completed = true, VisibleSeconds = 5, Screenshot = "fixture_rules.png" };
         var schedule = new ArenaScheduler(t);
         ArenaMatch m;
         while ((m = schedule.Next()) != null)
@@ -131,18 +140,20 @@ internal static class ArenaResultTests
             foreach (var (id, team) in new[] { (m.Left, "A"), (m.Right, "B") })
             {
                 var r = t.Rosters.Single(r => r.Id == id);
-                units.AddRange(Enumerable.Range(0, r.ResolvedCount).Select(i => new GroupCombatUnit { Id = team + i, Team = team, Kind = r.PawnKind, Name = team + " " + i }));
+                units.AddRange(Enumerable.Range(0, r.ResolvedCount).Select(i => CombatResultFixture.Unit(r, team, i)));
             }
             var ledger = new GroupCombatLedger(units, new[] { KeyValuePair.Create("A", m.Left), KeyValuePair.Create("B", m.Right) });
-            ledger.Record(new GroupCombatDamageEvent { SourceId = "A0", VictimId = "B0", Amount = 249.8938446044921875, RawAmount = 249.8938446044921875 });
-            ledger.Record(new GroupCombatDamageEvent { SourceId = "B0", VictimId = "A0", Amount = 40.712345678912345, RawAmount = 40.712345678912345 });
+            ledger.Record(new GroupCombatDamageEvent { SourceId = "left[0]", VictimId = "right[0]", Amount = 249.8938446044921875, RawAmount = 249.8938446044921875 });
+            ledger.Record(new GroupCombatDamageEvent { SourceId = "right[0]", VictimId = "left[0]", Amount = 40.712345678912345, RawAmount = 40.712345678912345 });
             foreach (var u in units.Where(u => u.Team == "B")) ledger.SetState(u.Id, "downed", 600);
             var result = ledger.Snapshot(600, true);
             result.CaseId = battle.CaseId; result.TestDefName = battle.TestDefName; result.Seed = battle.Seed; result.InputHash = battle.InputHash;
             result.CleanupComplete = true; result.ExecutionStatus = "completed";
+            result.ResolvedRosters = ArenaChallengeRules.Copy(new List<ResolvedCombatRoster> { t.Rosters.Single(r => r.Id == m.Left), t.Rosters.Single(r => r.Id == m.Right) });
+            CombatResultFixture.Environment(result);
             result.Screenshots = new() { m.Id + "_bracket.png", m.Id + "_initial.png", m.Id + "_final.png" };
             new ArenaEndRule(0).Evaluate(result, 10800);
-            m.Attempts.Add(result); m.BracketScreenshots.Add(result.Screenshots[0]);
+            m.Attempts.Add(result); m.BracketScreenshots.Add(result.Screenshots[0]); m.PostBattleScreenshots.Add(m.Id + "_postbattle.png");
             m.PreBattles.Add(new ArenaPreBattleResult {
                 EntrantIds = new() { m.Left, m.Right }, Completed = true, VisibleSeconds = 5,
                 Screenshot = m.Id + "_prebattle.png"

@@ -16,7 +16,7 @@ namespace LogSyncMod.AutoTest
             "unresolvedDraw" => "平局未决", "running" => "挑战继续", _ => "等待挑战"
         };
         internal static string ValueLabel(ArenaTournamentInput input, decimal? value)
-            => value?.ToString("0.##") + (input.RosterMode == "count" ? " 人" : " CP预算");
+            => value?.ToString("0.##") + ((input.Growth?.Target == "count" || input.Growth == null && input.RosterMode == "count") ? " 人" : " CP预算");
         private static string LimitLabel(string reason) => reason switch {
             "maxValue" => "下一档超过上限", "COMBAT_ROSTER_LIMIT_EXCEEDED" => "下一档超过人数上限",
             "COMBAT_FORMATION_LIMIT_EXCEEDED" => "场地无法容纳下一档", _ => "达到增长限制"

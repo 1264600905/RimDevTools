@@ -28,6 +28,7 @@ namespace LogSyncMod.AutoTest.Scenarios
         public string Format { get; set; } = "knockout";
         public ArenaGrowth Growth { get; set; }
         public string Xml { get; set; }
+        public string SharedXml { get; set; }
         public string Source { get; set; }
         public string InputHash { get; set; }
         public int Seed { get; set; } = 12345;
@@ -59,6 +60,8 @@ namespace LogSyncMod.AutoTest.Scenarios
     {
         public string Id { get; set; }
         public string Role { get; set; }
+        public string RosterMode { get; set; }
+        public string CostMode { get; set; }
         public string PawnKind { get; set; }
         public string Squad { get; set; }
         public string Xenotype { get; set; }

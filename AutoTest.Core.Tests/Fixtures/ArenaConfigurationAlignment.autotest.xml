@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ArenaSuite schemaVersion="1" id="alignment.arena" gameVersion="1.7">
+  <Requirements><DLC packageId="ludeon.rimworld.royalty"/><DLC packageId="ludeon.rimworld.biotech"/></Requirements>
+  <Templates>
+    <PawnTemplate id="knight">
+      <basePawnKind>Colonist</basePawnKind><gender>Male</gender><Age biologicalYears="25" chronologicalYears="30"/>
+      <Xenotype def="Baseliner"/><Traits mode="replace"/>
+      <Skills><Set def="Shooting" level="10" passion="None"/><Set def="Melee" level="10" passion="None"/></Skills>
+      <Genes mode="patch"><Add def="Hemogenic" xenogene="false"/></Genes>
+      <Hediffs mode="replace"><Ensure def="FoodPoisoning" severity="0.1"/></Hediffs>
+      <Abilities mode="patch"><Ensure def="Stun"/></Abilities>
+      <Resources><GeneResource def="Hemogenic" value="0.7"/></Resources>
+      <Appearance><hair>Shaved</hair><bodyType>Male</bodyType><hairColor>#000000FF</hairColor><skinColor>#808080FF</skinColor></Appearance>
+      <Apparel mode="replace"><Add def="Apparel_ArmorCataphract" quality="Normal"/><Add def="Apparel_ArmorHelmetCataphract" quality="Normal"/></Apparel>
+      <Equipment mode="replace"><SetPrimary def="Gun_Minigun" quality="Normal"/></Equipment>
+    </PawnTemplate>
+    <PawnTemplate id="sword" extends="knight"><Xenotype def="Hussar"/><Equipment mode="replace"><SetPrimary def="MeleeWeapon_MonoSword" quality="Normal"/></Equipment></PawnTemplate>
+  </Templates>
+  <SquadTemplates>
+    <SquadTemplate id="knights" source="groups" factionDef="Pirate"><PawnGroup id="gunners" template="knight" count="2"/><PawnGroup id="swordsmen" template="sword" count="1"/></SquadTemplate>
+    <SquadTemplate id="twenty" source="groups" factionDef="Pirate"><PawnGroup id="gunners" template="knight" count="15"/><PawnGroup id="swordsmen" template="sword" count="5"/></SquadTemplate>
+    <SquadTemplate id="raiders" source="faction" factionDef="Pirate"><GroupMaker mode="random" kindDef="Combat"/></SquadTemplate>
+  </SquadTemplates>
+  <Tournament id="sameKind" format="knockout" seed="12345">
+    <testDefName>Alignment_SameKindKnockout</testDefName><Scene sizeX="70" sizeZ="70"/><Roster mode="count" count="1"/>
+    <Entrants><Entrant id="pack" pawnKind="Wolf_Timber" count="4"/><Entrant id="single" pawnKind="Wolf_Timber" count="1"/></Entrants>
+    <Battle durationSeconds="60" timeSpeed="superfast" confirmationTicks="30"/><TieBreak maxReplays="0"/><Presentation bracketSeconds="1" settlementSeconds="1"><Showcase pageSeconds="1"/></Presentation><Output width="1280" height="720"/>
+  </Tournament>
+  <Tournament id="knockout" format="knockout" seed="12345">
+    <testDefName>Alignment_GroupsKnockout</testDefName><Scene sizeX="80" sizeZ="80"/><Roster mode="count" count="1"/>
+    <Entrants><Entrant id="knights" squad="knights" mode="count" costMode="native"/><Entrant id="rat" pawnKind="Rat"/></Entrants>
+    <Preparation>
+      <Equip id="equip" entrant="knights" group="gunners" actor="entrant" def="Gun_SniperRifle"/>
+      <RemoveHediff id="remove" entrant="knights" actor="entrant" def="FoodPoisoning"/>
+      <Require id="guns" entrant="knights" group="gunners"><StepSucceeded ref="equip"/><Equipped actor="entrant" def="Gun_SniperRifle"/><SkillLevel actor="entrant" def="Shooting" min="10" max="10"/><HasAbility actor="entrant" def="Stun"/></Require>
+    </Preparation>
+    <Battle durationSeconds="60" timeSpeed="superfast" confirmationTicks="30"/><TieBreak maxReplays="0"/><Presentation bracketSeconds="1" settlementSeconds="1"><Showcase pageSeconds="1"/></Presentation><Output width="1280" height="720"/>
+  </Tournament>
+  <Tournament id="roundRobin" format="bossRoundRobin" seed="12345">
+    <testDefName>Alignment_GroupsRoundRobin</testDefName><Scene sizeX="120" sizeZ="120"/><Roster mode="combatPower" budget="5000" costMode="native"/>
+    <Entrants><Entrant id="knights" squad="twenty" mode="count" role="boss"/><Entrant id="raiders" squad="raiders" role="challenger"/></Entrants>
+    <Preparation>
+      <Equip id="equip" role="boss" group="gunners" actor="entrant" def="Gun_SniperRifle"/>
+      <RemoveHediff id="remove" role="boss" actor="entrant" def="FoodPoisoning"/>
+      <Require id="guns" role="boss" group="gunners"><StepSucceeded ref="equip"/><Equipped actor="entrant" def="Gun_SniperRifle"/><SkillLevel actor="entrant" def="Shooting" min="10" max="10"/><HasAbility actor="entrant" def="Stun"/></Require>
+    </Preparation>
+    <Battle durationSeconds="12" timeSpeed="superfast" confirmationTicks="30"/><TieBreak maxReplays="0"/><Presentation bracketSeconds="1" settlementSeconds="1"><Showcase pageSeconds="1"/></Presentation><Output width="1280" height="720"/>
+  </Tournament>
+  <Tournament id="limit" format="limitChallenge" seed="12345">
+    <testDefName>Alignment_GroupsLimit</testDefName><Scene sizeX="80" sizeZ="80"/><Roster mode="combatPower" budget="100"/>
+    <Entrants><Entrant id="knights" squad="knights" mode="count" role="boss" costMode="native"/><Entrant id="rats" pawnKind="Rat" role="challenger"/></Entrants>
+    <Preparation>
+      <RemoveHediff id="remove" role="boss" actor="entrant" def="FoodPoisoning"/>
+      <Require id="guns" role="boss" group="gunners"><Equipped actor="entrant" def="Gun_Minigun"/><SkillLevel actor="entrant" def="Shooting" min="10" max="10"/></Require>
+    </Preparation>
+    <Growth target="budget" mode="multiply" multiplier="2" maxValue="400"/>
+    <Battle durationSeconds="45" timeSpeed="superfast" confirmationTicks="30"/><TieBreak maxReplays="0"/><Presentation bracketSeconds="1" settlementSeconds="1"><Showcase pageSeconds="1"/></Presentation><Output width="1280" height="720"/>
+  </Tournament>
+</ArenaSuite>

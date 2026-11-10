@@ -30,6 +30,8 @@
     <Compile Include="..\source\AutoTestRunner\Scenarios\GroupCombatContracts.cs" Link="Shared\GroupCombatContracts.cs" />
     <Compile Include="..\source\AutoTestRunner\Scenarios\GroupCombatLoader.cs" Link="Shared\GroupCombatLoader.cs" />
     <Compile Include="..\source\AutoTestRunner\Scenarios\SquadTemplates.cs" Link="Shared\SquadTemplates.cs" />
+    <Compile Include="..\source\AutoTestRunner\Scenarios\PawnConfiguration.cs" Link="Shared\PawnConfiguration.cs" />
+    <Compile Include="..\source\AutoTestRunner\Scenarios\CombatPreparation.cs" Link="Shared\CombatPreparation.cs" />
     <Compile Include="..\source\AutoTestRunner\Scenarios\CombatRoster.cs" Link="Shared\CombatRoster.cs" />
     <Compile Include="..\source\AutoTestRunner\Scenarios\ArenaContracts.cs" Link="Shared\ArenaContracts.cs" />
     <Compile Include="..\source\AutoTestRunner\Scenarios\ArenaChallenges.cs" Link="Shared\ArenaChallenges.cs" />

@@ -275,10 +275,12 @@ namespace LogSyncMod.AutoTest
             foreach (var entrant in input.Entrants)
             {
                 ResolvedCombatRoster roster;
+                var budget = ArenaChallengeRules.Budget(input, entrant);
+                var costMode = ArenaChallengeRules.CostMode(input, entrant);
                 if (entrant.Squad != null)
                 {
-                    roster = SquadGeneration.Resolve(entrant.Id, input.SquadTemplates[entrant.Squad], entrant.Budget ?? input.Budget,
-                        entrant.Count ?? input.Count, input.CostMode, SquadTemplates.MemberSeed(input.Seed, entrant.Id, 0), Find.CurrentMap.Tile);
+                    roster = SquadGeneration.Resolve(entrant.Id, input.SquadTemplates[entrant.Squad], budget,
+                        entrant.Count ?? input.Count, costMode, SquadTemplates.MemberSeed(input.Seed, entrant.Id, 0), Find.CurrentMap.Tile);
                     roster.DisplayName = entrant.Name ?? entrant.Squad;
                 }
                 else
@@ -288,10 +290,10 @@ namespace LogSyncMod.AutoTest
                     if (entrant.Xenotype != null && (!ModsConfig.BiotechActive || !kind.RaceProps.Humanlike
                         || DefDatabase<XenotypeDef>.GetNamedSilentFail(entrant.Xenotype) == null))
                         throw new ScenarioConfigurationException("Invalid arena xenotype for " + entrant.Id + ": " + entrant.Xenotype);
-                    var power = CombatRoster.Power(kind.combatPower);
-                    if (input.CostMode == "native" && entrant.Xenotype != null) power *= CombatRoster.Power(DefDatabase<XenotypeDef>.GetNamed(entrant.Xenotype).combatPowerFactor);
-                    roster = CombatRoster.Resolve(entrant.Id, entrant.PawnKind, power, entrant.Budget ?? input.Budget, entrant.Count ?? input.Count);
-                    roster.DisplayName = entrant.Name ?? kind.LabelCap.ToString(); roster.CostMode = input.CostMode;
+                    var config = new System.Xml.Linq.XElement("PawnTemplate", new System.Xml.Linq.XElement("basePawnKind", entrant.PawnKind));
+                    if (entrant.Xenotype != null) config.Add(new System.Xml.Linq.XElement("Xenotype", new System.Xml.Linq.XAttribute("def", entrant.Xenotype)));
+                    roster = SquadGeneration.ResolveActor(entrant.Id, config, null, budget, entrant.Count ?? input.Count, costMode, input.Seed);
+                    roster.DisplayName = entrant.Name ?? kind.LabelCap.ToString(); roster.CostMode = costMode;
                 }
                 roster.Source = input.Source;
                 tournament.Rosters.Add(roster);

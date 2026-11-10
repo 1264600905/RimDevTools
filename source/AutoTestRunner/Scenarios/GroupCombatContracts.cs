@@ -25,6 +25,8 @@ namespace LogSyncMod.AutoTest.Scenarios
         public string Team { get; set; }
         public string Group { get; set; }
         public string GroupName { get; set; }
+        public string ConfigurationId { get; set; }
+        public string ConfigurationKey { get; set; }
         public string Kind { get; set; }
         public string KindLabel { get; set; }
         public string Name { get; set; }
@@ -39,6 +41,7 @@ namespace LogSyncMod.AutoTest.Scenarios
         public int X { get; set; }
         public int Z { get; set; }
         public string InitialSnapshot { get; set; }
+        public string GeneratedSnapshot { get; set; }
         public double EnemyDamage { get; set; }
         public double FriendlyDamage { get; set; }
         public double SelfDamage { get; set; }
@@ -141,6 +144,7 @@ namespace LogSyncMod.AutoTest.Scenarios
         public string InputHash { get; set; }
         public List<ResolvedCombatRoster> ResolvedRosters { get; set; } = new();
         public string ExecutionStatus { get; set; } = "preparing";
+        public List<CombatPreparationRecord> Preparation { get; set; } = new();
         public string EndReason { get; set; }
         public string Error { get; set; }
         public CombatStartupTiming StartupTiming { get; set; }

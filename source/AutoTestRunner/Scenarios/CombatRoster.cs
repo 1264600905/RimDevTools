@@ -29,6 +29,8 @@ namespace LogSyncMod.AutoTest.Scenarios
         public decimal? UnusedBudget => RequestedBudget - ActualCombatPower;
         public string Source { get; set; }
         public string TemplateXml { get; set; }
+        public string GenerationPolicy { get; set; }
+        public decimal? NextMemberCost { get; set; }
     }
 
     public static class CombatRoster
@@ -73,6 +75,26 @@ namespace LogSyncMod.AutoTest.Scenarios
         {
             try { return checked(count * power) <= budget; }
             catch (OverflowException) { return false; }
+        }
+        public static string ValidateGenerated(ResolvedCombatRoster roster, XElement actor, decimal? budget, int count, string costMode, bool rejectedLimit = false)
+        {
+            if (roster == null || roster.GenerationPolicy != "frozen" || roster.Members == null || roster.Members.Count < 1 || roster.Members.Count > MaxTeamMembers + (rejectedLimit ? 1 : 0) || roster.ResolvedCount != roster.Members.Count
+                || roster.CostMode != costMode || roster.Mode != (budget.HasValue ? "combatPower" : "count") || roster.RequestedBudget != budget
+                || roster.UnitCombatPower != roster.ActualCombatPower / roster.ResolvedCount) return "生成名册人数、模式或成本口径不符";
+            if (rejectedLimit && roster.ResolvedCount != MaxTeamMembers + 1) return "超员拒绝快照未证明第201个成员可负担";
+            if (budget.HasValue ? roster.ActualCombatPower > budget || !rejectedLimit && (!roster.NextMemberCost.HasValue || roster.NextMemberCost <= 0 || budget - roster.ActualCombatPower >= roster.NextMemberCost) : roster.ResolvedCount != count)
+                return "逐成员预算分配或固定人数不符";
+            var configuration = SquadTemplates.ConfigurationXml(actor);
+            foreach (var member in roster.Members)
+            {
+                if (member.PawnKind != actor.Element("basePawnKind")?.Value || member.ConfigurationXml != configuration || member.BaseCombatPower <= 0 || member.XenotypeFactor <= 0
+                    || member.Cost != member.BaseCombatPower * (costMode == "native" ? member.XenotypeFactor : 1) || member.PawnTemplateXml == null) return "成员配置或成本算术不符";
+                var captured = XElement.Parse(member.PawnTemplateXml);
+                if ((string)captured.Element("Xenotype")?.Attribute("def") != member.Xenotype) return "成员异种成本与冻结异种不符";
+                var error = PawnConfiguration.ValidateExplicit(XElement.Parse(configuration), captured);
+                if (error != null) return error;
+            }
+            return null;
         }
         public static List<ResolvedCombatRoster> ResolveGroups(XElement c, Func<string, float> loadedPower, string source)
         {

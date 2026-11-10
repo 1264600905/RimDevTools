@@ -104,10 +104,7 @@ namespace LogSyncMod.AutoTest.Scenarios
                     if (scene.Attribute("preset") != null)
                     {
                         if (!scenePresets.TryGetValue(A(scene, "preset"), out var preset)) Fail(scene, input.Path, "unknown scene preset " + A(scene, "preset"));
-                        var resolved = Merge(preset, scene);
-                        if (preset.Element("Environment") != null && scene.Element("Environment") != null)
-                            resolved.Element("Environment").ReplaceWith(Merge(preset.Element("Environment"), scene.Element("Environment")));
-                        resolved.Attribute("id")?.Remove(); resolved.Attribute("preset")?.Remove();
+                        var resolved = ResolveScenePreset(scene, preset);
                         scene.ReplaceWith(resolved);
                     }
                 foreach (var actor in copy.Element("Actors").Elements().ToList())
@@ -167,6 +164,14 @@ namespace LogSyncMod.AutoTest.Scenarios
             }
             return result;
         }
+        public static XElement ResolveScenePreset(XElement scene, XElement preset)
+        {
+            var resolved = Merge(preset, scene);
+            if (preset.Element("Environment") != null && scene.Element("Environment") != null)
+                resolved.Element("Environment").ReplaceWith(Merge(preset.Element("Environment"), scene.Element("Environment")));
+            resolved.Attribute("id")?.Remove(); resolved.Attribute("preset")?.Remove();
+            return resolved;
+        }
 
         private sealed class SourceLine { public int Line; }
         private static XElement Copy(XElement source)
@@ -212,7 +217,15 @@ namespace LogSyncMod.AutoTest.Scenarios
                     if (actor.Attribute("count") != null) Fail(actor, path, "count and combatPowerBudget are mutually exclusive");
                     CombatRoster.Positive(A(actor, "combatPowerBudget"));
                 }
-                if (actor.Attribute("costMode") != null && actor.Attribute("squad") == null) Fail(actor, path, "PawnGroup costMode requires a squad");
+                if (actor.Attribute("costMode") != null)
+                {
+                    if (!groupCombat || actor.Name != "PawnGroup") Fail(actor, path, "costMode requires a groupcombat PawnGroup");
+                    SquadTemplates.ValidateCostMode(A(actor, "costMode"));
+                }
+                var explicitAge = actor.Element("Age")?.Attribute("biologicalYears");
+                if (explicitAge != null && (D(actor.Element("Age"), "biologicalYears") < 0
+                    || actor.Element("minGenerationAge") != null && D(actor.Element("Age"), "biologicalYears") < double.Parse(actor.Element("minGenerationAge").Value, CultureInfo.InvariantCulture)
+                    || actor.Element("maxGenerationAge") != null && D(actor.Element("Age"), "biologicalYears") > double.Parse(actor.Element("maxGenerationAge").Value, CultureInfo.InvariantCulture))) Fail(actor, path, "Age conflicts with generation age range");
                 var count = I(actor, "count", 1);
                 var maxCount = groupCombat ? CombatRoster.MaxTeamMembers : 100;
                 if (count < 1 || count > maxCount) Fail(actor, path, "count must be 1.." + maxCount);
@@ -250,7 +263,7 @@ namespace LogSyncMod.AutoTest.Scenarios
                 if (A(element, "transition") != null && !new[] { "added", "removed" }.Contains(A(element, "transition"))) Fail(element, path, "invalid transition");
                 if (A(element, "observation") != null && !new[] { "current", "eventually", "always" }.Contains(A(element, "observation"))) Fail(element, path, "invalid observation");
                 if (element.Name == "Not" && element.Elements().Count() != 1) Fail(element, path, "Not requires one condition");
-                if (new[] { "All", "Any", "Success", "Wait", "Require" }.Contains(element.Name.LocalName) && !element.Elements().Any()) Fail(element, path, "condition cannot be empty");
+                if (new[] { "All", "Any", "Success", "Wait", "Require", "Expect" }.Contains(element.Name.LocalName) && !element.Elements().Any()) Fail(element, path, "condition cannot be empty");
                 if (A(element, "force", "false") != "false") Fail(element, path, "external scenes cannot force abilities");
                 if (A(element, "spawn") != null && !new[] { "true", "false" }.Contains(A(element, "spawn"))) Fail(element, path, "spawn must be true/false");
                 if (A(element, "melee") != null && !new[] { "true", "false" }.Contains(A(element, "melee"))) Fail(element, path, "melee must be true/false");
@@ -291,7 +304,7 @@ namespace LogSyncMod.AutoTest.Scenarios
             {"Coverage", "Target"}, {"Target", "Evidence"}, {"Matrix", "Row"}, {"Row", "Param"},
             {"Teams", "Team Relation"}, {"Actors", "Pawn PawnGroup Building Thing Corpse DefRef TerrainArea"},
             {"Steps", "Require Checkpoint Wait Screenshot View SetPlantGrowth CastAbility Attack Spawn CreateThing DropEquipment Equip AddHediff RemoveHediff Destroy Kill Pause DebugAction ExecuteRecipe TransferThing DropInventory SetRot Resurrect ApplyDamage BindMech ManTurret"},
-            {"DebugAction", "Select Arg"},
+            {"DebugAction", "Select Arg Expect"},
             {"ActionBindings", "ActionBinding"}, {"ActionBinding", "Parameters Arguments Result ExpectHediff"},
             {"Parameters", "Parameter"}, {"Arguments", "Argument"},
             {"ExecuteRecipe", "Ingredients"}, {"Ingredients", "Ingredient"},
@@ -365,11 +378,11 @@ namespace LogSyncMod.AutoTest.Scenarios
             if (name == "Remove") attrs = node.Parent?.Name == "Hediffs" ? "def part" : "def";
             if (name == "Add" && node.Parent?.Name == "Genes") attrs = "def xenogene";
             foreach (var a in node.Attributes()) if (!attrs.Split(' ').Contains(a.Name.ToString())) UnknownField(node, path, "attribute", a.Name.ToString(), attrs);
-            var children = actor ? Children["PawnTemplate"] + (name == "PawnGroup" ? " SquadTemplate" : "") : name == "li" ? node.Parent?.Name.LocalName switch { "forcedTraits" => "def degree", "skills" => "skill range passion", _ => "" } : Children.TryGetValue(name, out var allowed) ? allowed : new[] { "Require", "Wait", "Success", "All", "Any", "Not" }.Contains(name) ? Conditions : "";
+            var children = actor ? Children["PawnTemplate"] + (name == "PawnGroup" ? " SquadTemplate" : "") : name == "li" ? node.Parent?.Name.LocalName switch { "forcedTraits" => "def degree", "skills" => "skill range passion", _ => "" } : Children.TryGetValue(name, out var allowed) ? allowed : new[] { "Require", "Expect", "Wait", "Success", "All", "Any", "Not" }.Contains(name) ? Conditions : "";
             foreach (var e in node.Elements())
             {
                 if (!children.Split(' ').Contains(e.Name.ToString())) UnknownField(e, path, "element", e.Name.ToString(), children);
-                var multiple = name == "TestSuite" ? e.Name == "Case" : name == "DebugAction" ? e.Name == "Arg" : name == "ActionBinding" ? e.Name == "ExpectHediff" : name == "Resources" ? e.Name == "GeneResource" : new[] { "ActionBindings", "Parameters", "Arguments", "Templates", "ScenePresets", "Experiments", "Layout", "Validation", "Actors", "Steps", "Teams", "Requirements", "Targets", "Coverage", "Target", "Matrix", "Row", "Ingredients", "Apparel", "Equipment", "Traits", "Skills", "Hediffs", "Abilities", "Genes", "All", "Any", "Require", "Wait", "Success", "forcedTraits", "skills", "abilities", "apparelTags", "weaponTags" }.Contains(name);
+                var multiple = name == "TestSuite" ? e.Name == "Case" : name == "DebugAction" ? e.Name == "Arg" : name == "ActionBinding" ? e.Name == "ExpectHediff" : name == "Resources" ? e.Name == "GeneResource" : new[] { "ActionBindings", "Parameters", "Arguments", "Templates", "ScenePresets", "Experiments", "Layout", "Validation", "Actors", "Steps", "Teams", "Requirements", "Targets", "Coverage", "Target", "Matrix", "Row", "Ingredients", "Apparel", "Equipment", "Traits", "Skills", "Hediffs", "Abilities", "Genes", "All", "Any", "Require", "Expect", "Wait", "Success", "forcedTraits", "skills", "abilities", "apparelTags", "weaponTags" }.Contains(name);
                 if (node.Elements(e.Name).Count() > 1 && !multiple) Fail(e, path, "duplicate field " + e.Name);
                 ValidateTree(e, path, allowParameters);
             }

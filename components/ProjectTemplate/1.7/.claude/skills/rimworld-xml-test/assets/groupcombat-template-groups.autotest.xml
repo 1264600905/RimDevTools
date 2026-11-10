@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TestSuite schemaVersion="1" id="example.groupcombat.templateGroups" gameVersion="1.7">
+  <Templates>
+    <PawnTemplate id="gunner">
+      <basePawnKind>Colonist</basePawnKind>
+      <Traits mode="replace"/>
+      <Skills><Set def="Shooting" level="10"/><Set def="Melee" level="10"/></Skills>
+      <Equipment mode="replace"><SetPrimary def="Gun_AssaultRifle" quality="Normal"/></Equipment>
+    </PawnTemplate>
+    <PawnTemplate id="fighter" extends="gunner">
+      <Equipment mode="replace"><SetPrimary def="MeleeWeapon_LongSword" stuff="Steel" quality="Normal"/></Equipment>
+    </PawnTemplate>
+  </Templates>
+  <SquadTemplates>
+    <SquadTemplate id="mixed" source="groups" factionDef="Pirate">
+      <PawnGroup id="gunners" template="gunner" count="15"/>
+      <PawnGroup id="fighters" template="fighter" count="5"/>
+    </SquadTemplate>
+  </SquadTemplates>
+  <Case id="mixed" kind="groupCombat">
+    <testDefName>Example_TemplateGroupsCombat</testDefName>
+    <Scene type="mainMap" sizeX="120" sizeZ="120"/>
+    <Teams><Team id="A"/><Team id="B"/></Teams>
+    <Actors>
+      <PawnGroup id="mixed" team="A" squad="mixed" count="20" originX="15" originZ="35" formation="grid" columns="5" spacing="2"/>
+      <!-- 原有 template 入口与新增组合入口可以共存。 -->
+      <PawnGroup id="opponents" team="B" template="gunner" count="20" originX="90" originZ="35" formation="grid" columns="5" spacing="2"/>
+    </Actors>
+    <GroupCombat durationSeconds="180" timeSpeed="normal"/>
+    <Steps/>
+  </Case>
+</TestSuite>

@@ -75,9 +75,20 @@ internal static class ArenaChallengeResultTests
         Reject(r => r.Tournaments[0].Matches[1].ResolvedRosters[1].UnitCombatPower++, "challenge validator rejects altered unit costs while increasing CP budget", cp);
         var rr = Build("bossRoundRobin");
         Reject(r => r.Tournaments[0].Summary!.Bosses[0].AverageVictoryScore /= 2, "round robin average cannot silently include defeat as a zero score", rr);
+        foreach (var target in new[] { "count", "budget" })
+        {
+            var mixed = Build(target: target, mixedModes: true);
+            check(ArenaResultValidator.ValidateIntegrity(mixed, mixed.Plan, false) == null, "independent validator accepts a fixed boss with challenger " + target + " growth and separate cost modes");
+            Reject(r => r.Tournaments[0].Rosters[0].RequestedBudget = 999, "entrant overrides cannot hide a substituted roster budget", mixed);
+            Reject(r => r.Tournaments[0].Rosters[0].CostMode = "pawnKind", "entrant overrides cannot hide a substituted cost mode", mixed);
+        }
+        var measured = Build(explicitMetrics: true);
+        check(ArenaResultValidator.ValidateIntegrity(measured, measured.Plan, false) == null, "explicit arena measurement requirements use the shared battle ledger");
+        Reject(r => r.Tournaments[0].Matches[0].Attempts[0].RequireCompleteAttribution = false, "arena cannot silently discard explicit measurement requirements", measured);
+        Reject(r => r.Tournaments[0].Matches[0].Attempts[0].MeasurementQuality = "partial", "partial attribution cannot satisfy explicit complete measurement requirements", measured);
     }
 
-    private static ArenaRunReport Build(string format = "limitChallenge", string target = "count", bool draw = false, bool losses = false, int bossCount = 2, string? limit = null, bool add = false)
+    private static ArenaRunReport Build(string format = "limitChallenge", string target = "count", bool draw = false, bool losses = false, int bossCount = 2, string? limit = null, bool add = false, bool mixedModes = false, bool explicitMetrics = false)
     {
         var xml = new XElement("ArenaSuite", new XAttribute("schemaVersion", 1), new XAttribute("id", "challenges"),
             new XElement("Tournament", new XAttribute("id", "main"), new XAttribute("format", format),
@@ -87,11 +98,24 @@ internal static class ArenaChallengeResultTests
                 format == "limitChallenge" ? new XElement("Growth", new XAttribute("target", target), new XAttribute(add ? "increment" : "multiplier", limit == "formation" ? 100 : limit == "members" ? 500 : 2), new XAttribute("maxValue", limit == "formation" ? 100 : limit == "members" ? 50000 : target == "count" ? 4 : 400)) : null,
                 new XElement("Battle", new XAttribute("confirmationTicks", 0)), new XElement("TieBreak", new XAttribute("maxReplays", 0))));
         if (add) xml.Element("Tournament")!.Element("Growth")!.SetAttributeValue("mode", "add");
+        if (mixedModes)
+            foreach (var boss in xml.Element("Tournament")!.Element("Entrants")!.Elements())
+            {
+                boss.SetAttributeValue("mode", target == "count" ? "combatPower" : "count");
+                boss.SetAttributeValue(target == "count" ? "budget" : "count", target == "count" ? 300 : 3);
+                boss.SetAttributeValue("costMode", "native");
+            }
+        if (explicitMetrics) xml.Element("Tournament")!.Add(new XElement("Metrics", new XAttribute("requireCompleteAttribution", true)));
         xml.Element("Tournament")!.Element("Entrants")!.Add(Enumerable.Range(1, 2).Select(i => new XElement("Entrant", new XAttribute("id", "c" + i), new XAttribute("pawnKind", "SameKind"), new XAttribute("role", "challenger"))));
         var plan = ArenaLoader.Compile(new[] { new ScenarioInput { Path = "fixture.xml", Sha256 = "frozen", Xml = xml.ToString(SaveOptions.DisableFormatting) } }, new[] { "ChallengeFixture" });
         var input = plan.Tournaments.Single();
         var t = new ArenaTournamentResult { Input = input };
-        foreach (var e in input.Entrants) t.Rosters.Add(CombatRoster.Resolve(e.Id, e.PawnKind, 100, input.Budget, input.Count));
+        foreach (var e in input.Entrants)
+        {
+            var roster = CombatRoster.Resolve(e.Id, e.PawnKind, 100, ArenaChallengeRules.Budget(input, e), e.Count ?? input.Count);
+            roster.CostMode = ArenaChallengeRules.CostMode(input, e); CombatResultFixture.Freeze(roster, input.Seed, e.Xenotype); t.Rosters.Add(roster);
+        }
+        t.Rules = new ArenaRulesPageResult { Completed = true, VisibleSeconds = 5, Screenshot = "fixture_rules.png" };
         var schedule = new ArenaChallengeScheduler(t);
         ArenaMatch m;
         while ((m = schedule.Next()) != null)
@@ -103,29 +127,37 @@ internal static class ArenaChallengeResultTests
                 if (m.Level > 0)
                 {
                     if (target == "count") roster = ArenaChallengeRules.CountRoster(baseline, (int)m.ChallengeValue!.Value, SquadTemplates.MemberSeed(input.Seed, m.PairId, m.Level));
-                    else roster = CombatRoster.Resolve(baseline.Id, baseline.PawnKind, 100, m.ChallengeValue);
+                    else { roster = CombatRoster.Resolve(baseline.Id, baseline.PawnKind, 100, m.ChallengeValue); CombatResultFixture.Freeze(roster, SquadTemplates.MemberSeed(input.Seed, m.PairId, m.Level)); }
                 }
                 m.ResolvedRosters = new() { ArenaChallengeRules.Copy(t.Rosters.Single(r => r.Id == m.Left)), roster };
                 ArenaLoader.CompileBattle(input, m.ResolvedRosters, m, 0);
             }
             catch (ScenarioConfigurationException ex) when (limit != null && m.Level > 0)
             {
-                schedule.ReachRosterLimit(ex.Code, ex.Code == "COMBAT_FORMATION_LIMIT_EXCEEDED" ? roster : null);
+                var rejected = ex.Code == "COMBAT_FORMATION_LIMIT_EXCEEDED" ? roster : ArenaChallengeRules.Copy(baseline);
+                if (ex.Code == "COMBAT_ROSTER_LIMIT_EXCEEDED")
+                {
+                    rejected.RequestedBudget = m.ChallengeValue; rejected.ResolvedCount = CombatRoster.MaxTeamMembers + 1;
+                    CombatResultFixture.Freeze(rejected, SquadTemplates.MemberSeed(input.Seed, m.PairId, m.Level));
+                }
+                schedule.ReachRosterLimit(ex.Code, rejected);
                 continue;
             }
             var battle = ArenaLoader.CompileBattle(input, m.ResolvedRosters, m, 0);
             var units = new List<GroupCombatUnit>();
             foreach (var (r, team) in new[] { (m.ResolvedRosters[0], "A"), (m.ResolvedRosters[1], "B") })
-                units.AddRange(Enumerable.Range(0, r.ResolvedCount).Select(i => new GroupCombatUnit { Id = team + i, Team = team, Kind = r.PawnKind, Name = team + i }));
+                units.AddRange(Enumerable.Range(0, r.ResolvedCount).Select(i => CombatResultFixture.Unit(r, team, i)));
             var ledger = new GroupCombatLedger(units, new[] { KeyValuePair.Create("A", m.Left), KeyValuePair.Create("B", m.Right) });
             var isDraw = draw && m.Round == 1;
             var bossWins = losses || (format == "bossRoundRobin" ? m.Right == "c1" : m.Left == "b1" && m.Level == 0);
             if (!isDraw)
                 foreach (var unit in units.Where(u => u.Team == (bossWins ? "B" : "A"))) ledger.SetState(unit.Id, "downed", 600);
             var result = ledger.Snapshot(isDraw ? 10800 : 600, true);
+            result.RequireCompleteAttribution = explicitMetrics;
+            if (explicitMetrics) result.MeasurementQuality = "complete";
             result.CaseId = battle.CaseId; result.TestDefName = battle.TestDefName; result.InputHash = battle.InputHash; result.Seed = battle.Seed;
             result.ExecutionStatus = "completed"; result.CleanupComplete = true; result.ResolvedRosters = ArenaChallengeRules.Copy(m.ResolvedRosters);
-            result.StudioIsolation = new ArenaStudioIsolationResult { WorldTileUnchanged = true };
+            CombatResultFixture.Environment(result);
             result.Screenshots = new() { m.Id + "_bracket.png", m.Id + "_initial.png", m.Id + "_final.png" };
             new ArenaEndRule(0).Evaluate(result, 10800);
             m.Attempts.Add(result); m.BracketScreenshots.Add(result.Screenshots[0]); m.PostBattleScreenshots.Add(m.Id + "_postbattle.png");

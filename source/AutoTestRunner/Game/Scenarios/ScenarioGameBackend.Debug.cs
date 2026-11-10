@@ -87,6 +87,36 @@ namespace LogSyncMod.AutoTest
             if (!sourceUnchanged) throw new InvalidOperationException("DebugAction or a mod callback changed source-map pawns outside this scene");
         }
 
+        internal static void PrepareArenaPreview(ArenaTournamentInput input, Pawn pawn, Map map, string entrantId = null, string configurationId = null)
+        {
+            var steps = ArenaLoader.PreparationSteps(input, "entrant", entrantId, configurationId);
+            if (!steps.HasElements) return;
+            var backend = new ScenarioGameBackend(Find.CurrentMap, null, null,
+                (phase, message) => Log.Message("[Arena.Preparation] " + phase + "; " + message));
+            backend.groupMap = map;
+            backend.runtimeRoot = ArenaLoader.PreparationCase(input, entrantId, configurationId);
+            backend.currentDefinition = new ScenarioCase { CaseId = input.TestDefName + "/preview", TestDefName = input.TestDefName, CaseType = "GroupCombat", Source = input.Source };
+            backend.PrepareBoundActions();
+            backend.owned.Add(pawn);
+            backend.actors.Add("entrant", new List<Thing> { pawn });
+            var completed = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var step in steps.Elements())
+            {
+                bool Condition(XElement e)
+                {
+                    if (e.Name == "StepSucceeded") return completed.Contains(A(e, "ref"));
+                    if (e.Name == "Any") return e.Elements().Any(Condition);
+                    if (e.Name == "Not") return !Condition(e.Elements().Single());
+                    if (e.HasElements) return e.Elements().All(Condition);
+                    var sample = backend.Sample(e); return ScenarioExecution.Match(e, sample, sample);
+                }
+                if (step.Name == "Require") { if (!Condition(step)) throw new InvalidOperationException("Preview preparation predicate failed: " + step); }
+                else if (!backend.Execute(step, true)) throw new ScenarioConfigurationException("Preview preparation did not finish synchronously");
+                if (step.Element("Expect") != null && !Condition(step.Element("Expect"))) throw new InvalidOperationException("Preview preparation postcondition failed");
+                completed.Add(A(step, "id"));
+            }
+        }
+
         private readonly Dictionary<string, ScenarioBoundAction> boundActions = new Dictionary<string, ScenarioBoundAction>();
 
         private void PrepareBoundActions()

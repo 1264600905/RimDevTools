@@ -69,11 +69,11 @@ internal static class SquadTests
         check(SquadTemplates.ValidateRoster(roster, weighted, 99, 1, "pawnKind") != null, "squad integrity rejects a CP budget overspend");
         roster.Mode = "count"; roster.RequestedBudget = null;
         var snapshot = TemporaryPawnData.Serialize(TemporaryPawnData.Parse(member.PawnTemplateXml));
-        var unit = new GroupCombatUnit { Id = "left[0]", Kind = member.PawnKind, InitialSnapshot = snapshot };
+        var unit = new GroupCombatUnit { Id = "left[0]", Kind = member.PawnKind, ConfigurationId = member.ConfigurationId, ConfigurationKey = SquadTemplates.ConfigurationKey(member), GeneratedSnapshot = snapshot, InitialSnapshot = snapshot };
         check(SquadTemplates.ValidateUnits(roster, new[] { unit }, "left") == null, "actual squad member kind, xenotype and outfit are matched by stable member ID");
-        unit.InitialSnapshot = TemporaryPawnData.Serialize(TemporaryPawnData.Parse(member.PawnTemplateXml.Replace("Yttakin", "Baseliner")));
+        unit.GeneratedSnapshot = TemporaryPawnData.Serialize(TemporaryPawnData.Parse(member.PawnTemplateXml.Replace("Yttakin", "Baseliner")));
         check(SquadTemplates.ValidateUnits(roster, new[] { unit }, "left") != null, "squad integrity rejects a generated pawn with the wrong xenotype");
-        unit.InitialSnapshot = TemporaryPawnData.Serialize(TemporaryPawnData.Parse(member.PawnTemplateXml.Replace("<Equipment mode='replace'/>", "<Equipment mode='replace'><SetPrimary def='Gun_Autopistol'/></Equipment>")));
+        unit.GeneratedSnapshot = TemporaryPawnData.Serialize(TemporaryPawnData.Parse(member.PawnTemplateXml.Replace("<Equipment mode='replace'/>", "<Equipment mode='replace'><SetPrimary def='Gun_Autopistol'/></Equipment>")));
         check(SquadTemplates.ValidateUnits(roster, new[] { unit }, "left") != null, "squad integrity rejects a generated pawn with an unfrozen weapon");
         check(SquadTemplates.MemberSeed(123, "a", 0) == SquadTemplates.MemberSeed(123, "a", 0) && SquadTemplates.MemberSeed(123, "a", 0) != SquadTemplates.MemberSeed(123, "b", 0), "squad member seeds are deterministic and independent of entrant ordering");
         var fixturePath = Path.Combine("AutoTest.Core.Tests", "Fixtures", "GroupCombatSquads.autotest.xml");

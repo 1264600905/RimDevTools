@@ -115,7 +115,7 @@ namespace LogSyncMod.AutoTest
             for (var n = 0; n < count; n++)
             {
                 Thing thing;
-                if (actor.Name == "PawnGroup" && squadRosters.TryGetValue(id, out var squad))
+                if ((actor.Name == "PawnGroup" || actor.Name == "Pawn") && squadRosters.TryGetValue(id, out var squad))
                 {
                     thing = GenerateSquadPawn(squad.Members[n], teams[A(actor, "team")], Map.Tile);
                     owned.Add(thing);
@@ -153,36 +153,45 @@ namespace LogSyncMod.AutoTest
             }
         }
 
-        private Pawn GeneratePawn(XElement actor)
+        private Pawn GeneratePawn(XElement actor, bool restoreColorState = false, bool forceConfiguredXenotype = true, ResolvedSquadMember restoreMember = null)
         {
             var original = Def<PawnKindDef>(actor.Element("basePawnKind")?.Value.Trim());
             var before = KindFingerprint(original);
             // Fixed internal shallow clone, never an XML-selected type/member. Only replaced fields below are written.
-            var kind = (PawnKindDef)typeof(object).GetMethod("MemberwiseClone", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(original, null);
+            var overridesKind = new[] { "minGenerationAge", "maxGenerationAge", "apparelTags", "weaponTags", "apparelMoney", "weaponMoney" }.Any(n => actor.Element(n) != null)
+                || actor.Element("race") != null && actor.Element("race").Value.Trim() != original.race.defName;
+            var kind = overridesKind ? (PawnKindDef)typeof(object).GetMethod("MemberwiseClone", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(original, null) : original;
             if (actor.Element("race") != null) kind.race = Def<ThingDef>(actor.Element("race").Value.Trim());
             if (actor.Element("minGenerationAge") != null) kind.minGenerationAge = int.Parse(actor.Element("minGenerationAge").Value, CultureInfo.InvariantCulture);
             if (actor.Element("maxGenerationAge") != null) kind.maxGenerationAge = int.Parse(actor.Element("maxGenerationAge").Value, CultureInfo.InvariantCulture);
             if (kind.minGenerationAge < 0 || kind.maxGenerationAge < kind.minGenerationAge) throw new ScenarioConfigurationException("Invalid generation age range");
-            if (actor.Element("gender") != null) kind.fixedGender = Enum.Parse<Gender>(actor.Element("gender").Value, true);
             if (actor.Element("apparelTags") != null) kind.apparelTags = actor.Element("apparelTags").Elements("li").Select(e => e.Value.Trim()).ToList();
             if (actor.Element("weaponTags") != null) kind.weaponTags = actor.Element("weaponTags").Elements("li").Select(e => e.Value.Trim()).ToList();
             if (actor.Element("apparelMoney") != null) kind.apparelMoney = FloatRange.FromString(actor.Element("apparelMoney").Value);
             if (actor.Element("weaponMoney") != null) kind.weaponMoney = FloatRange.FromString(actor.Element("weaponMoney").Value);
             var faction = A(actor, "team") == null ? null : teams[A(actor, "team")];
             var explicitSkills = (actor.Element("Skills")?.Elements("Set").Select(e => A(e, "def")) ?? Enumerable.Empty<string>()).Concat(actor.Element("skills")?.Elements("li").Select(e => e.Element("skill")?.Value) ?? Enumerable.Empty<string>()).Select(Def<SkillDef>).ToList();
-            float? age = actor.Element("minGenerationAge") != null && actor.Element("maxGenerationAge") != null ? Rand.Range((float)kind.minGenerationAge, kind.maxGenerationAge) : (float?)null;
+            float? age = actor.Element("Age")?.Attribute("biologicalYears") != null ? (float)ScenarioLoader.D(actor.Element("Age"), "biologicalYears")
+                : actor.Element("minGenerationAge") != null && actor.Element("maxGenerationAge") != null ? Rand.Range((float)kind.minGenerationAge, kind.maxGenerationAge) : (float?)null;
             var pawn = PawnGenerator.GeneratePawn(new PawnGenerationRequest(kind, faction, forceGenerateNewPawn: true, canGeneratePawnRelations: false,
-                fixedBiologicalAge: age, validatorPreGear: p =>
+                forcedXenotype: forceConfiguredXenotype && actor.Element("Xenotype") != null ? Def<XenotypeDef>(A(actor.Element("Xenotype"), "def")) : null,
+                fixedBiologicalAge: age, fixedGender: actor.Element("gender") == null ? (Gender?)null : Enum.Parse<Gender>(actor.Element("gender").Value, true), validatorPreGear: p =>
                 {
                     TestPawnWorkRestrictions.Remove(p);
                     return explicitSkills.All(s => p.skills != null && !p.skills.GetSkill(s).TotallyDisabled);
                 }));
             if (pawn == null) throw new InvalidOperationException("PawnGenerator returned null");
             owned.Add(pawn);
+            if (restoreMember != null && pawn.story != null)
+            {
+                if (restoreMember.Childhood != null) pawn.story.Childhood = DefDatabase<BackstoryDef>.GetNamed(restoreMember.Childhood);
+                pawn.story.Adulthood = restoreMember.Adulthood == null ? null : DefDatabase<BackstoryDef>.GetNamed(restoreMember.Adulthood);
+                pawn.Notify_DisabledWorkTypesChanged();
+            }
             // The generated pawn retains its native registered kind when race was not overridden.
             if (kind.race == original.race) pawn.kindDef = original;
             trace("pawn.inherited", Describe(pawn));
-            ApplyPawnConfig(pawn, actor);
+            ApplyPawnConfig(pawn, actor, restoreColorState);
             if (pawn.Faction != faction) throw new InvalidOperationException("Pawn generator changed requested faction");
             if (KindFingerprint(original) != before) throw new InvalidOperationException("Shared PawnKind was modified");
             trace("pawn.configured", Describe(pawn) + "; baseDefUnchanged=true");
@@ -209,7 +218,14 @@ namespace LogSyncMod.AutoTest
                 {
                     var gene = Def<GeneDef>(A(e, "def"));
                     if (e.Name == "Remove") foreach (var g in pawn.genes.GenesListForReading.Where(g => g.def == gene).ToList()) pawn.genes.RemoveGene(g);
-                    else if (!pawn.genes.HasActiveGene(gene)) pawn.genes.AddGene(gene, bool.Parse(A(e, "xenogene", "false")));
+                    else
+                    {
+                        var xenogene = bool.Parse(A(e, "xenogene", "false"));
+                        // Endogenes and xenogenes may contain the same Def; an active
+                        // copy in the other collection does not satisfy this override.
+                        var genesOfType = xenogene ? pawn.genes.Xenogenes : pawn.genes.Endogenes;
+                        if (!genesOfType.Any(g => g.def == gene)) pawn.genes.AddGene(gene, xenogene);
+                    }
                 }
             }
             foreach (var item in a.Element("forcedTraits")?.Elements("li") ?? Enumerable.Empty<XElement>())
@@ -220,7 +236,8 @@ namespace LogSyncMod.AutoTest
                 SetSkill(pawn, item.Element("skill")?.Value, range.RandomInRange, item.Element("passion")?.Value);
             }
             foreach (var item in a.Element("abilities")?.Elements("li") ?? Enumerable.Empty<XElement>()) EnsureAbility(pawn, item.Value.Trim());
-            foreach (var patch in a.Elements().Where(e => new[] { "Apparel", "Equipment", "Traits", "Skills", "Hediffs", "Abilities" }.Contains(e.Name.LocalName)))
+            foreach (var patch in a.Elements().Where(e => new[] { "Apparel", "Equipment", "Traits", "Skills", "Hediffs", "Abilities" }.Contains(e.Name.LocalName))
+                .OrderBy(e => e.Name == "Apparel" || e.Name == "Equipment" ? 1 : 0))
             {
                 var type = patch.Name.LocalName;
                 var mode = A(patch, "mode", "patch");
@@ -229,7 +246,13 @@ namespace LogSyncMod.AutoTest
                 {
                     if (type == "Apparel") { Need(pawn.apparel, type); pawn.apparel.DestroyAll(); }
                     if (type == "Equipment") { Need(pawn.equipment, type); pawn.equipment.DestroyAllEquipment(); }
-                    if (type == "Traits") { Need(pawn.story, type); foreach (var t in pawn.story.traits.allTraits.ToList()) pawn.story.traits.RemoveTrait(t); }
+                    if (type == "Traits")
+                    {
+                        Need(pawn.story, type);
+                        // Removing a gene-sourced trait also removes its gene in the
+                        // native game. Preserve matching entries during exact restore.
+                        foreach (var t in pawn.story.traits.allTraits.Where(t => !patch.Elements("Set").Any(e => A(e, "def") == t.def.defName && I(e, "degree") == t.Degree)).ToList()) pawn.story.traits.RemoveTrait(t);
+                    }
                     if (type == "Skills") { Need(pawn.skills, type); foreach (var s in pawn.skills.skills) { s.Level = 0; s.passion = Passion.None; } }
                     if (type == "Hediffs") foreach (var h in pawn.health.hediffSet.hediffs.ToList()) pawn.health.RemoveHediff(h);
                     if (type == "Abilities") { Need(pawn.abilities, type); foreach (var ab in pawn.abilities.abilities.ToList()) pawn.abilities.RemoveAbility(ab.def); }
@@ -258,7 +281,7 @@ namespace LogSyncMod.AutoTest
                         if (!pawn.apparel.WornApparel.Contains(apparelNew)) throw new InvalidOperationException("Wear failed: " + def);
                     }
                     else if (type == "Equipment") Equip(pawn, item, restoreColorState);
-                    else if (type == "Traits") { Need(pawn.story, type); if (item.Name == "Remove") { foreach (var t in pawn.story.traits.allTraits.Where(t => t.def.defName == def).ToList()) pawn.story.traits.RemoveTrait(t); } else SetTrait(pawn, def, I(item, "degree")); }
+                    else if (type == "Traits") { Need(pawn.story, type); if (item.Name == "Remove") { foreach (var t in pawn.story.traits.allTraits.Where(t => t.def.defName == def).ToList()) pawn.story.traits.RemoveTrait(t); } else SetTrait(pawn, def, I(item, "degree"), preserveExisting: restoreColorState); }
                     else if (type == "Skills") SetSkill(pawn, def, I(item, "level"), A(item, "passion"));
                     else if (type == "Hediffs") { if (item.Name == "Remove") RemoveHediff(pawn, item); else AddHediff(pawn, item); }
                     else if (type == "Abilities") { Need(pawn.abilities, type); if (item.Name == "Remove") pawn.abilities.RemoveAbility(Def<AbilityDef>(def)); else EnsureAbility(pawn, def); }
@@ -280,10 +303,12 @@ namespace LogSyncMod.AutoTest
 
         private static void Need(object tracker, string name) { if (tracker == null) throw new ScenarioConfigurationException("Pawn has no " + name + " tracker"); }
         private static Color ParseColor(string value) => ColorUtility.TryParseHtmlString(value, out var color) ? color : throw new ScenarioConfigurationException("Color must be #RRGGBB: " + value);
-        private static void SetTrait(Pawn p, string name, int degree)
+        private static void SetTrait(Pawn p, string name, int degree, bool preserveExisting = false)
         {
             Need(p.story, "Traits"); var def = Def<TraitDef>(name);
             if (!def.degreeDatas.Any(d => d.degree == degree)) throw new ScenarioConfigurationException("Invalid trait degree: " + name);
+            var existing = p.story.traits.allTraits.Where(t => t.def == def).ToList();
+            if (existing.Count == 1 && existing[0].Degree == degree && (preserveExisting || p.story.traits.HasTrait(def, degree))) return;
             foreach (var t in p.story.traits.allTraits.Where(t => t.def == def).ToList()) p.story.traits.RemoveTrait(t);
             p.story.traits.GainTrait(new Trait(def, degree));
             if (!p.story.traits.HasTrait(def, degree)) throw new InvalidOperationException("Trait rejected: " + name);
@@ -313,19 +338,24 @@ namespace LogSyncMod.AutoTest
         }
         private static void EnsureAbility(Pawn p, string name)
         { Need(p.abilities, "Abilities"); var def = Def<AbilityDef>(name); p.abilities.GainAbility(def); if (p.abilities.GetAbility(def) == null) throw new InvalidOperationException("Ability rejected"); }
-        private static BodyPartRecord Part(Pawn p, XElement e)
+        private static BodyPartRecord Part(Pawn p, XElement e, bool allowMissing = false)
         {
             var name = A(e, "part"); if (name == null) return null;
             var parts = p.RaceProps.body.AllParts.Where(part => PartPath(part) == name || part.def.defName == name).ToList();
             if (parts.Count != 1) throw new ScenarioConfigurationException("Body part must resolve uniquely (use full path): " + name);
-            if (p.health.hediffSet.PartIsMissing(parts[0])) throw new ScenarioConfigurationException("Body part is missing: " + name);
+            if (!allowMissing && p.health.hediffSet.PartIsMissing(parts[0])) throw new ScenarioConfigurationException("Body part is missing: " + name);
             return parts[0];
         }
         private static string PartPath(BodyPartRecord p) => p.parent == null ? p.def.defName : PartPath(p.parent) + "/" + p.def.defName + "[" + p.parent.parts.IndexOf(p) + "]";
         private static void AddHediff(Pawn p, XElement e)
         {
-            var def = Def<HediffDef>(A(e, "def")); var part = Part(p, e);
+            var def = Def<HediffDef>(A(e, "def")); var part = Part(p, e, allowMissing: true);
             var h = p.health.hediffSet.hediffs.FirstOrDefault(h => h.def == def && h.Part == part);
+            // Adding an artificial parent part creates native MissingBodyPart children.
+            // A frozen snapshot may contain those same children: update the existing
+            // native entries instead of rejecting their already-missing body parts.
+            if (part != null && p.health.hediffSet.PartIsMissing(part) && h == null)
+                throw new ScenarioConfigurationException("Body part is missing: " + A(e, "part"));
             if (h == null) { h = HediffMaker.MakeHediff(def, p, part); p.health.AddHediff(h, part); }
             if (e.Attribute("severity") != null) h.Severity = (float)ScenarioLoader.D(e, "severity");
             if (e.Attribute("durationTicks") != null)
@@ -333,7 +363,7 @@ namespace LogSyncMod.AutoTest
             if (!p.health.hediffSet.hediffs.Contains(h) || e.Attribute("severity") != null && Math.Abs(h.Severity - ScenarioLoader.D(e, "severity")) > .001) throw new InvalidOperationException("Hediff exact override rejected: " + def.defName);
         }
         private static void RemoveHediff(Pawn p, XElement e)
-        { var part = Part(p, e); foreach (var h in p.health.hediffSet.hediffs.Where(h => h.def.defName == A(e, "def") && (e.Attribute("part") == null || h.Part == part)).ToList()) p.health.RemoveHediff(h); }
+        { var part = Part(p, e, allowMissing: true); foreach (var h in p.health.hediffSet.hediffs.Where(h => h.def.defName == A(e, "def") && (e.Attribute("part") == null || h.Part == part)).ToList()) p.health.RemoveHediff(h); }
 
         public bool Execute(XElement step, bool first)
         {

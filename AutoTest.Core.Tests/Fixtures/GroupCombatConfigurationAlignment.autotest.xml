@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TestSuite schemaVersion="1" id="alignment.group" gameVersion="1.7">
+  <Requirements><DLC packageId="ludeon.rimworld.royalty"/><DLC packageId="ludeon.rimworld.biotech"/></Requirements>
+  <Templates>
+    <PawnTemplate id="knight">
+      <basePawnKind>Colonist</basePawnKind><gender>Male</gender><Age biologicalYears="25" chronologicalYears="30"/>
+      <Xenotype def="Baseliner"/><Traits mode="replace"/>
+      <Skills><Set def="Shooting" level="10" passion="None"/><Set def="Melee" level="10" passion="None"/></Skills>
+      <Genes mode="patch"><Add def="Hemogenic" xenogene="false"/></Genes>
+      <Hediffs mode="replace"><Ensure def="FoodPoisoning" severity="0.1"/></Hediffs>
+      <Abilities mode="patch"><Ensure def="Stun"/></Abilities>
+      <Resources><GeneResource def="Hemogenic" value="0.7"/></Resources>
+      <Appearance><hair>Shaved</hair><bodyType>Male</bodyType><hairColor>#000000FF</hairColor><skinColor>#808080FF</skinColor></Appearance>
+      <Apparel mode="replace"><Add def="Apparel_ArmorCataphract" quality="Normal"/><Add def="Apparel_ArmorHelmetCataphract" quality="Normal"/></Apparel>
+      <Equipment mode="replace"><SetPrimary def="Gun_Minigun" quality="Normal"/></Equipment>
+    </PawnTemplate>
+    <PawnTemplate id="sword" extends="knight">
+      <Xenotype def="Hussar"/>
+      <Apparel mode="replace"><Add def="Apparel_ArmorCataphract" quality="Normal"/><Add def="Apparel_ArmorHelmetCataphract" quality="Normal"/><Add def="Apparel_ShieldBelt" quality="Normal"/></Apparel>
+      <Equipment mode="replace"><SetPrimary def="MeleeWeapon_MonoSword" quality="Normal"/></Equipment>
+    </PawnTemplate>
+  </Templates>
+  <SquadTemplates><SquadTemplate id="knights" source="groups" factionDef="Pirate">
+    <PawnGroup id="gunners" template="knight" count="15"/><PawnGroup id="swordsmen" template="sword" count="5"/>
+  </SquadTemplate></SquadTemplates>
+  <Case id="public" kind="groupCombat" seed="12345">
+    <testDefName>Alignment_GroupCombat</testDefName>
+    <Scene type="mainMap" sizeX="120" sizeZ="120"><Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/></Scene>
+    <Teams><Team id="A"/><Team id="B"/></Teams>
+    <Actors>
+      <PawnGroup id="knights" squad="knights" count="20" costMode="native" team="A" originX="20" originZ="30" formation="grid" columns="5"/>
+      <PawnGroup id="native" template="sword" combatPowerBudget="500" costMode="native" team="B" originX="75" originZ="25" formation="grid" columns="5"/>
+      <PawnGroup id="baseCost" template="sword" combatPowerBudget="500" costMode="pawnKind" team="B" originX="75" originZ="50" formation="grid" columns="5"/>
+      <Pawn id="single" template="knight" team="B" x="75" z="75"/>
+    </Actors>
+    <GroupCombat durationSeconds="12" timeSpeed="superfast"><End confirmationTicks="30"/><Experiments swapSides="true"><Seed value="12345"/><Seed value="23456"/></Experiments></GroupCombat>
+    <Steps>
+      <Require id="generated"><Equipped actor="knights[0]" def="Gun_Minigun"/><SkillLevel actor="knights[0]" def="Shooting" min="10" max="10"/><HasHediff actor="knights[0]" def="FoodPoisoning"/><HasAbility actor="knights[0]" def="Stun"/><HasGene actor="knights[0]" def="Hemogenic"/><HasXenotype actor="knights[0]" def="Baseliner"/></Require>
+      <Equip id="equip" actor="knights[0]" def="Gun_SniperRifle"/>
+      <RemoveHediff id="remove" actor="knights[0]" def="FoodPoisoning"/>
+      <DebugAction id="hemogen" actionId="native.fillHemogen" value="0.9"><Select mode="single" actor="knights[0]"/><Expect><ResourceLevel actor="knights[0]" def="Hemogenic" min="0.89" max="0.91"/></Expect></DebugAction>
+      <Require id="prepared"><StepSucceeded ref="equip"/><Equipped actor="knights[0]" def="Gun_SniperRifle"/><Not><HasHediff actor="knights[0]" def="FoodPoisoning"/></Not><SkillLevel actor="knights[0]" def="Shooting" min="10" max="10"/><ResourceLevel actor="knights[0]" def="Hemogenic" min="0.89" max="0.91"/></Require>
+    </Steps>
+    <Output width="1280" height="720"/>
+  </Case>
+  <Case id="rejectPreparation" kind="groupCombat" seed="12345">
+    <testDefName>Alignment_PreparationReject</testDefName><Scene sizeX="70" sizeZ="70"/>
+    <Teams><Team id="A"/><Team id="B"/></Teams><Actors>
+      <PawnGroup id="knight" template="knight" count="1" team="A" originX="15" originZ="20"/>
+      <PawnGroup id="rat" count="1" team="B" originX="50" originZ="20"><basePawnKind>Rat</basePawnKind></PawnGroup>
+    </Actors><GroupCombat durationSeconds="5" timeSpeed="superfast"/>
+    <Steps><Require id="wrongSkill"><SkillLevel actor="knight[0]" def="Shooting" min="19" max="20"/></Require></Steps>
+  </Case>
+  <Case id="rejectXenotype" kind="groupCombat" seed="12345">
+    <testDefName>Alignment_XenotypeReject</testDefName><Scene sizeX="70" sizeZ="70"/>
+    <Teams><Team id="A"/><Team id="B"/></Teams><Actors>
+      <PawnGroup id="wolf" count="1" team="A" originX="15" originZ="20"><basePawnKind>Wolf_Timber</basePawnKind><Xenotype def="Hussar"/></PawnGroup>
+      <PawnGroup id="rat" count="1" team="B" originX="50" originZ="20"><basePawnKind>Rat</basePawnKind></PawnGroup>
+    </Actors><GroupCombat durationSeconds="5" timeSpeed="superfast"/><Steps/>
+  </Case>
+</TestSuite>

@@ -8,10 +8,10 @@ internal static class GroupCombatResultTests
     {
         var round = new GroupCombatRoundResult { CaseId = "Rule/default/1/round-1", TestDefName = "Rule", Seed = 12345, InputHash = "h", ExecutionStatus = "completed", CleanupComplete = true, ElapsedTicks = 300, SimulatedSeconds = 5, TotalEvents = 2 };
         round.Units.AddRange(new[] {
-            new GroupCombatUnit { Id = "a0", Team = "A", EnemyDamage = 0, DamageTaken = 4, Dps = 0, AliveTicks = 60, State = "dead" },
-            new GroupCombatUnit { Id = "a1", Team = "A", EnemyDamage = 10, DamageTaken = 6, AliveTicks = 300, Dps = 2 },
-            new GroupCombatUnit { Id = "b0", Team = "B", EnemyDamage = 3, DamageTaken = 3, AliveTicks = 300, Dps = .6 },
-            new GroupCombatUnit { Id = "b1", Team = "B", EnemyDamage = 7, DamageTaken = 7, AliveTicks = 300, Dps = 1.4 }
+            new GroupCombatUnit { Id = "a[0]", Team = "A", EnemyDamage = 0, DamageTaken = 4, Dps = 0, AliveTicks = 60, State = "dead" },
+            new GroupCombatUnit { Id = "a[1]", Team = "A", EnemyDamage = 10, DamageTaken = 6, AliveTicks = 300, Dps = 2 },
+            new GroupCombatUnit { Id = "b[0]", Team = "B", EnemyDamage = 3, DamageTaken = 3, AliveTicks = 300, Dps = .6 },
+            new GroupCombatUnit { Id = "b[1]", Team = "B", EnemyDamage = 7, DamageTaken = 7, AliveTicks = 300, Dps = 1.4 }
         });
         foreach (var id in new[] { "A", "B" })
         {
@@ -61,8 +61,20 @@ internal static class GroupCombatResultTests
         Reject(r => r.Rounds[0].TotalEvents++, "group validator rejects evidence truncation that silently drops exact event counts");
         Reject(r => r.Rounds[0].Events[1].Id = 1, "group validator rejects duplicated damage invocation identities");
         Reject(r => r.Rounds[0].SimulatedSeconds = 10, "group validator rejects a wall-clock denominator inconsistent with simulated ticks");
-        var expected = ScenarioLoader.Compile(new[] { new ScenarioInput { Path = "fixture.xml", Sha256 = "h", Xml = "<TestSuite schemaVersion='1' id='fixture'><Case id='r' kind='groupCombat'><testDefName>Rule</testDefName><Scene type='mainMap'/><Teams><Team id='A'/><Team id='B'/></Teams><Actors><Pawn id='a' team='A' x='20' z='20'><basePawnKind>Colonist</basePawnKind></Pawn><Pawn id='b' team='B' x='25' z='20'><basePawnKind>Colonist</basePawnKind></Pawn></Actors><GroupCombat/></Case></TestSuite>" } }, groupCombat: true);
+        var expected = ScenarioLoader.Compile(new[] { new ScenarioInput { Path = "fixture.xml", Sha256 = "h", Xml = "<TestSuite schemaVersion='1' id='fixture'><Case id='r' kind='groupCombat'><testDefName>Rule</testDefName><Scene type='mainMap'/><Teams><Team id='A'/><Team id='B'/></Teams><Actors><PawnGroup id='a' count='2' team='A' originX='20' originZ='20'><basePawnKind>Colonist</basePawnKind></PawnGroup><PawnGroup id='b' count='2' team='B' originX='25' originZ='20'><basePawnKind>Colonist</basePawnKind></PawnGroup></Actors><GroupCombat/></Case></TestSuite>" } }, groupCombat: true);
         ScenarioLoader.SelectRules(expected, new[] { "Rule" });
+        foreach (var id in new[] { "a", "b" })
+        {
+            var roster = CombatRoster.Resolve(id, "Colonist", 100, null, 2); roster.Team = id == "a" ? "A" : "B";
+            CombatResultFixture.Freeze(roster, 12345); round.ResolvedRosters.Add(roster);
+        }
+        foreach (var unit in round.Units) { unit.Kind = "Colonist"; unit.GeneratedSnapshot = unit.InitialSnapshot = "<PawnTemplate><basePawnKind>Colonist</basePawnKind></PawnTemplate>"; }
+        foreach (var unit in round.Units)
+        {
+            var roster = round.ResolvedRosters.Single(r => unit.Id.StartsWith(r.Id + "[", StringComparison.Ordinal));
+            unit.ConfigurationId = roster.Members[0].ConfigurationId; unit.ConfigurationKey = SquadTemplates.ConfigurationKey(roster.Members[0]);
+        }
+        round.StudioIsolation = new ArenaStudioIsolationResult { WorldTileUnchanged = true };
         check(GroupCombatResultValidator.ValidateIntegrity(report, expected) == null, "group result matches CLI-frozen named definition and seed rather than trusting only its own manifest");
         round.InputHash = "changed";
         check(GroupCombatResultValidator.ValidateIntegrity(report, expected) != null, "group validator rejects output for a different frozen input hash");

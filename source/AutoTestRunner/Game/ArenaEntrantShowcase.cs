@@ -50,25 +50,30 @@ namespace LogSyncMod.AutoTest
                 foreach (var roster in value.Rosters)
                 {
                     var samples = new List<(string id, int count, decimal totalPower)>(); sampleTypes.Add(roster.Id, samples);
-                    var groups = roster.Members.GroupBy(m => SquadGeneration.KindLabel(m.PawnKind), StringComparer.Ordinal).ToList();
+                    var configured = roster.Members.Any(m => m.ConfigurationId != null);
+                    var groups = roster.Members.GroupBy(m => SquadTemplates.ConfigurationKey(m), StringComparer.Ordinal).ToList();
                     var scope = roster.FactionDef == null ? null : new SquadGeneration.FactionScope(roster.FactionDef, roster.DisplayName);
                     if (scope != null) previewFactions.Add(scope);
                     var faction = scope?.Faction;
                     var sampleCount = Math.Max(1, groups.Count);
                     for (var type = 0; type < sampleCount; type++)
                     {
-                        Pawn pawn;
                         var sampleId = type == 0 ? roster.Id : roster.Id + "/type-" + type;
-                        if (roster.Members.Count > 0)
-                            pawn = ScenarioGameBackend.GenerateSquadPawn(groups[type].First(), faction, previewMap.Map.Tile);
-                        else
+                        Pawn pawn;
+                        using (ArenaPreparationContext.Enter(groups.Count > 0 ? groups[type].First().PawnKind : roster.PawnKind,
+                            ArenaLoader.PreparationSteps(value.Input, "entrant")))
                         {
-                            var kind = DefDatabase<PawnKindDef>.GetNamed(roster.PawnKind);
-                            var age = Math.Max(kind.RaceProps.lifeStageAges.Last().minAge, kind.RaceProps.Humanlike ? 25 : 0);
-                            var xenotype = value.Input.Entrants.Single(e => e.Id == roster.Id).Xenotype;
-                            pawn = PawnGenerator.GeneratePawn(new PawnGenerationRequest(kind, forceGenerateNewPawn: true,
-                                canGeneratePawnRelations: false, fixedBiologicalAge: age,
-                                forcedXenotype: xenotype == null ? null : DefDatabase<XenotypeDef>.GetNamed(xenotype)));
+                            if (roster.Members.Count > 0)
+                                pawn = ScenarioGameBackend.GenerateSquadPawn(groups[type].First(), faction, previewMap.Map.Tile);
+                            else
+                            {
+                                var kind = DefDatabase<PawnKindDef>.GetNamed(roster.PawnKind);
+                                var age = Math.Max(kind.RaceProps.lifeStageAges.Last().minAge, kind.RaceProps.Humanlike ? 25 : 0);
+                                var xenotype = value.Input.Entrants.Single(e => e.Id == roster.Id).Xenotype;
+                                pawn = PawnGenerator.GeneratePawn(new PawnGenerationRequest(kind, forceGenerateNewPawn: true,
+                                    canGeneratePawnRelations: false, fixedBiologicalAge: age,
+                                    forcedXenotype: xenotype == null ? null : DefDatabase<XenotypeDef>.GetNamed(xenotype)));
+                            }
                         }
                         TestPawnWorkRestrictions.Remove(pawn);
                         previewPawns.Add(sampleId, pawn);
@@ -78,6 +83,7 @@ namespace LogSyncMod.AutoTest
                         var index = previewPawns.Count - 1;
                         if (index >= 3600) throw new ScenarioConfigurationException("Too many distinct squad preview types");
                         GenSpawn.Spawn(pawn, new IntVec3(5 + index % 60 * 3, 0, 5 + index / 60 * 3), previewMap.Map, Rot4.South);
+                        ScenarioGameBackend.PrepareArenaPreview(value.Input, pawn, previewMap.Map, roster.Id, groups.Count > 0 ? groups[type].First().ConfigurationId : null);
                         var wait = JobMaker.MakeJob(JobDefOf.Wait_MaintainPosture); wait.expiryInterval = 60000;
                         pawn.jobs.StartJob(wait, JobCondition.InterruptForced);
                     }
@@ -133,10 +139,18 @@ namespace LogSyncMod.AutoTest
                             HediffsAtSnapshot = pawn.health.hediffSet.hediffs.Select(h => h.def.defName).ToList(),
                             SpawnedAtSnapshot = pawn.Spawned, InitializationTicks = showcase.InitializationTicks
                         };
+                        var typeIndex = sampleTypes[roster.Id].FindIndex(s => s.id == sample.id);
+                        if (roster.Members.Count > 0)
+                        {
+                            var member = roster.Members.GroupBy(SquadTemplates.ConfigurationKey, StringComparer.Ordinal).ElementAt(typeIndex).First();
+                            profile.ConfigurationKey = SquadTemplates.ConfigurationKey(member);
+                            profile.DisplayName = SquadTemplates.ConfigurationName(member);
+                            profile.CombatPower = (double)member.Cost;
+                        }
                         profiles.Add(profile);
                     }
                     var entry = System.Text.Json.JsonSerializer.Deserialize<ArenaEntrantProfile>(System.Text.Json.JsonSerializer.Serialize(profiles[0]));
-                    if (roster.SquadId != null) entry.Composition = profiles;
+                    if (roster.Members.Count > 0) entry.Composition = profiles;
                     entry.Count = roster.ResolvedCount; entry.TotalCombatPower = roster.ActualCombatPower;
                     entry.DisplayName = roster.DisplayName;
                     showcase.Entrants.Add(entry);
@@ -144,7 +158,7 @@ namespace LogSyncMod.AutoTest
             }
             finally { Rand.PopState(); }
             maxima = Enumerable.Range(0, Labels.Length).Select(i => showcase.Entrants.SelectMany(e => e.Composition.Count > 0 ? e.Composition : new List<ArenaEntrantProfile> { e }).Max(e => e.Values()[i])).ToArray();
-            hues = ArenaPresentation.IdentityHues(tournament.Rosters.Select(r => tournament.Input.Format == "knockout" ? r.PawnKind : r.Id));
+            hues = ArenaPresentation.IdentityHues(tournament.Rosters.Select(r => r.Id));
             Ready = true;
             return true;
         }
@@ -296,7 +310,7 @@ namespace LogSyncMod.AutoTest
                         }
                     }
                     var detail = entry.Composition.Count > 0 ? entry.Composition[selected % entry.Composition.Count] : entry;
-                    var color = standings && i == 0 ? Gold : standings && i == 1 ? new Color(.78f, .85f, .93f) : standings && i == 2 ? new Color(.88f, .59f, .37f) : Color.HSVToRGB(hues[tournament.Input.Format == "knockout" ? entry.PawnKind : entry.Id], .48f, .95f);
+                    var color = standings && i == 0 ? Gold : standings && i == 1 ? new Color(.78f, .85f, .93f) : standings && i == 2 ? new Color(.88f, .59f, .37f) : Color.HSVToRGB(hues[entry.Id], .48f, .95f);
                     var reveal = ArenaPresentation.Progress(elapsed, i * .045f, .36f);
                     var x = startX + i * (cardWidth + cardGap); var y = 234 + (1 - reveal) * 16;
                     Widgets.DrawBoxSolid(R(x + 3, y + 7, cardWidth, 554), new Color(0, 0, 0, .2f));
@@ -322,7 +336,7 @@ namespace LogSyncMod.AutoTest
                         if (entry.Composition.Count > 1 && Widgets.ButtonText(R(x + cardWidth - 33, y + 218, 25, 22), "›"))
                         { selectedTypes[entry.Id] = (selected + 1) % entry.Composition.Count; selectedAt[entry.Id] = elapsed; }
                         var detailCount = matchup?.ResolvedRosters.Count > 0 && roster.Members.Count > 0
-                            ? roster.Members.Count(m => SquadGeneration.KindLabel(m.PawnKind) == detail.DisplayName) : detail.Count;
+                            ? roster.Members.Count(m => detail.ConfigurationKey != null ? SquadTemplates.ConfigurationKey(m) == detail.ConfigurationKey : SquadGeneration.KindLabel(m.PawnKind) == detail.DisplayName) : detail.Count;
                         TextAt(R(x + 35, y + 216, cardWidth - 70, 23), detail.DisplayName + " ×" + detailCount, 12 * scale, Muted, TextAnchor.MiddleCenter);
                     }
                     Widgets.DrawBoxSolid(R(x + 22, y + 239, cardWidth - 44, 1), new Color(.16f, .2f, .26f));
@@ -353,7 +367,7 @@ namespace LogSyncMod.AutoTest
                     }
                     if (roster.SquadId != null)
                     {
-                        var description = "属性沿用初始巡礼代表成员；本场实际构成：\n" + string.Join("\n", roster.Members.GroupBy(m => SquadGeneration.KindLabel(m.PawnKind)).Select(g => g.Key + " ×" + g.Count() + " · CP " + g.Sum(m => m.Cost).ToString("0.##")));
+                        var description = "属性沿用初始巡礼代表成员；本场实际构成：\n" + string.Join("\n", roster.Members.GroupBy(SquadTemplates.ConfigurationKey).Select(g => SquadTemplates.ConfigurationName(g.First()) + " ×" + g.Count() + " · CP " + g.Sum(m => m.Cost).ToString("0.##")));
                         TooltipHandler.TipRegion(R(x, y, cardWidth, 554), description);
                     }
                 }

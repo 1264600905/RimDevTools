@@ -8,7 +8,7 @@
 
 仅支持 1.7；必须同时给出 `--scenario-path` 和显式 `--test-name`，可重复后者选择多场 Tournament。擂台只接受稳定 `testDefName`（大小写不敏感），不接受群战的 caseId 或显示名选择方式。目录非递归读取 `*.autotest.xml`，跳过非 ArenaSuite 文件并记录 SkippedFiles；未知选择和重复 testDefName 定义仍报错；重复传入同一选择名会去重。
 
-根为 `<ArenaSuite schemaVersion="1" id="my.arena" gameVersion="1.7">`，其下是可选 `SquadTemplates` 与一个或多个 `Tournament`。不是 TestSuite/Case；不支持 `--scenario-only`、Coverage、Success、Steps、PawnTemplate、Matrix、Case 继承、ScenePresets 或任意 AI 配置。不要将普通场景节点移植进来。Tournament 必填 `id`、`testDefName`、`Scene`、`Roster`、`Entrants`；`name`、`seed`（默认 12345）和 `format` 可选。
+根为 `<ArenaSuite schemaVersion="1" id="my.arena" gameVersion="1.7">`，其下是一个或多个 `Tournament`，以及可选 `Templates`、`SquadTemplates`、`Requirements`、`ScenePresets`、`ActionBindings`。Templates 中的 PawnTemplate 支持 extends/file，供 source=groups 的 SquadTemplate 复用，见 [squads-and-rosters.md](squads-and-rosters.md#pawngroup-引用-pawntemplate17-新增)。不是 TestSuite/Case；不支持 `--scenario-only`、Coverage、Success、任意 Steps、Matrix 或 Case 继承/补丁。Tournament 必填 `id`、`testDefName`、`Scene`、`Roster`、`Entrants`；`name`、`seed`（默认 12345）和 `format` 可选。
 
 | `Tournament.format` | 赛程与最终结果 |
 | --- | --- |
@@ -29,13 +29,16 @@
 
 上述 squad 须在 Suite 的 SquadTemplates 中定义，见 [squads-and-rosters.md](squads-and-rosters.md)。完整可用起点见 [arena.autotest.xml](../assets/arena.autotest.xml)。
 
-- `Roster mode="count" count="20"`：默认人数 20，Entrant 可单独覆盖 count；禁止任何 budget。
-- `Roster mode="combatPower" budget="3000"`：总预算必填，Entrant 可单独覆盖 budget；禁止任何 count。不足一个单位或超过人数上限时失败，不夹紧预算。
+- `Roster mode="count" count="20"`：默认人数 20，继承此模式的 Entrant 可单独覆盖 count，禁止 budget。
+- `Roster mode="combatPower" budget="3000"`：默认预算必填，继承此模式的 Entrant 可单独覆盖 budget，禁止 count。不足一个单位或超过人数上限时失败，不夹紧预算。
+- 新增 Entrant.mode=count/combatPower 和 costMode 独立覆盖：固定 20 人魔王可用 `<Entrant id="boss" squad="knights" mode="count" role="boss"/>`，挑战者继续继承 5000 CP。从 count 默认切换到 combatPower 时须显式给 budget；source=groups 的 count 自动取组内人数之和。未设置这些新属性时保持原有继承行为。
 - costMode 默认 pawnKind；native 计入指定异种/混编成员的战力系数。按实际加载 Def 解析，不用攻略表固定人数。
-- 参赛队 2—64，id 区分大小写唯一；`pawnKind` 与 `squad` 必须二选一。仅淘汰赛禁止直接 pawnKind 重复；新赛制允许相同 PawnKind 以不同 id、人数或异种配置参赛。
+- 参赛队 2—64，id 区分大小写唯一；`pawnKind` 与 `squad` 必须二选一。三种赛制均允许相同 PawnKind 以不同 id、人数或异种配置参赛；参赛 id、配置来源与实际配装用于身份，显示名不参与去重。
 - 直接 pawnKind 可用 `xenotype="Yttakin"` 等，但须 Biotech、人形种族及已加载 XenotypeDef；squad 项不允许另加 xenotype，改其模板 Xenotypes。每队 1—200 人，每场只打两队。
 
-`Scene type="mainMap"` 与群战共享严格地图解析；尺寸省略时擂台冻结为 100×100，范围 30—250。支持 generatorDef、Environment、Layout、Validation；地图生成及日照限制见 [schema-and-actors.md](schema-and-actors.md#地图与预设)。出生阵型自动沿 Z 优先填充、spacing=2，双方约在地图宽度 1/5 与 4/5，按实际人数验证边界，不提供 Actors 手工站位入口。
+`Scene type="mainMap"` 与群战共享严格地图解析；可通过 preset 引用 Suite 的 ScenePresets，再用本场字段覆盖。尺寸省略且预设未给尺寸时擂台冻结为 100×100，范围 30—250。支持 generatorDef、Environment、Layout、Validation；地图生成及日照限制见 [schema-and-actors.md](schema-and-actors.md#地图与预设)。出生阵型自动沿 Z 优先填充、spacing=2，双方约在地图宽度 1/5 与 4/5，按实际人数验证边界，不提供 Actors 手工站位入口。
+
+Suite 与 Tournament 均可声明 Requirements（同群战的 Mod/DLC packageId），每场交由共享加载器核对。Tournament 可配置 Metrics 和 Overlay，写法是群战 GroupCombat 内的同名节点，擂台中直接放在 Tournament 下；例如 `<Metrics detailLimit="20000" requireCompleteAttribution="true"/>`。显式要求完整归属但未达标时最终 CLI 校验失败，仍保留已执行赛事和测量诊断；未配置该要求时保持评分回退行为。当前原生采集后端仍为 partial，开放该字段不表示已提供 complete 测量。完整起点见 [arena-template-groups.autotest.xml](../assets/arena-template-groups.autotest.xml)。
 
 ## 魔王轮战与极限挑战配置
 
@@ -62,7 +65,7 @@
 | CP 预算乘法 | `<Growth target="budget" mode="multiply" multiplier="2" maxValue="1600"/>` | 100 → 200 → 400 → 800 → 1600 |
 | CP 预算加法 | `<Growth target="budget" mode="add" increment="150" maxValue="400"/>` | 100 → 250 → 400 |
 
-- target 默认 count，mode 默认 multiply，兼容旧的仅 multiplier 写法。count 必须配 Roster.mode=count；budget 必须配 combatPower。
+- target 默认 count，mode 默认 multiply，兼容旧的仅 multiplier 写法。count 必须匹配每个挑战者的实际 mode=count；budget 必须匹配其 combatPower。魔王可独立选模式。
 - multiply 只填 multiplier，且大于 1；add 只填正 increment，人数增量必须为整数，CP 允许小数。maxValue 必填且不小于每个挑战者初始值；人数上限为 1—200 整数，CP 上限为 10000000。
 - 只有挑战者战败才增长；平局在当前档位重赛，不增长。获胜立即结束该组；换魔王恢复挑战者初始值，没有额外的战败次数上限。
 - 等于上限仍可打，下一档超过上限才结束为 `limitReached`，不把超限值夹紧到上限。数值不再增长、溢出或无法形成可执行总时限的配置会被拒绝或按上限结束，须读取诊断。
@@ -79,7 +82,7 @@
 <TieBreak onDraw="replay" maxReplays="2"/>
 ```
 
-Battle 可省略，默认值如上；timeSpeed 为 normal/fast/superfast，durationSeconds 在 (0,86400]，timeoutRealSeconds 为 1—86400 整数，confirmationTicks 为 0—36000。固定使用原生 assaultColony 即时进攻，无 Battle.aiPolicy 或 Team.ai；与群战共用的 AI 约束和诊断见 [groupcombat.md](groupcombat.md#ai-与准备)。
+Battle 可省略，默认值如上；timeSpeed 为 normal/fast/superfast，durationSeconds 在 (0,86400]，timeoutRealSeconds 为 1—86400 整数，confirmationTicks 为 0—36000。Battle.aiPolicy 可选择共享群战加载器支持的原生策略，默认 assaultColony；仍不提供 Team.ai 或自定义 AI 代码入口。具体可选策略、约束和诊断见 [groupcombat.md](groupcombat.md#ai-与准备)。
 
 仅淘汰赛的 `Tournament/Matchmaking.mode` 可选 `closestCount`（默认）或 `random`。人数接近模式依次选择初始总人数差最小的两队；随机模式每轮按 `Tournament.seed`、轮次和参赛 id 排序后两两配对，不依赖人数和 XML 名单排列。相同输入、种子及晋级结果可复现，改变 seed 可重新抽签。
 
@@ -165,3 +168,21 @@ Presentation 可省略。bracketSeconds 是开战倒计时长度（1—60），s
 - `NoonResetTicks`、`NoonResetHours`、`CalendarRestored` 位于 `ArenaMaintenance`：准备时 tick 0，之后每 5000 ticks 一次，小时为 12，场后恢复为 true。验证周期重设须让单场实际战斗达到 5000 ticks；开场已是中午不能证明周期逻辑执行。
 - 单位 `HealthPercent` 与截图中的姓名后生命条，以及 `Showcase.CompositionSwitches` 的 Index/Seconds：混编应约每 1 个现实秒循环，和战斗模拟秒数分开判断。
 - 拒死相关的 `InitialRevivalUses`、`RevivalsObserved`、`ProtectedRevivalCorpses` 位于 `ArenaMaintenance`。初始有拒死次数或赛事完成不等于实际复活已发生；未观察到复活时如实说明覆盖限制。
+
+## 同步准备与属性验收
+
+Tournament/Preparation 支持 Require、DebugAction、Equip、DropEquipment、AddHediff、RemoveHediff、ApplyDamage。每步保持唯一 id，并可设置 entrant="参赛者ID"、role="boss|challenger"、group="配置组ID" 过滤目标；多个选择条件取交集，未知或无匹配的参赛者/配置组静态拒绝。group 只引用 source=groups 的内部 PawnGroup，不是 PawnKind。淘汰赛使用 entrant/group，role 仅用于有角色的赛制。
+
+步骤内 actor/target/group 引用使用 entrant 占位符；DebugAction 的 Select 仍是 mode=single actor=entrant。编译后按选中成员展开，不作用于对方或未选中的配置组；预览与比赛使用相同选择。
+
+```xml
+<Preparation>
+  <Equip id="equip" role="boss" group="gunners" actor="entrant" def="Gun_SniperRifle"/>
+  <Require id="armed" role="boss" group="gunners">
+    <Equipped actor="entrant" def="Gun_SniperRifle"/>
+    <SkillLevel actor="entrant" def="Shooting" min="10" max="10"/>
+  </Require>
+</Preparation>
+```
+
+Require 使用现有同步条件求值；DebugAction 可带 Expect 条件作为后置断言。原生成员先通过 XML 与冻结名单核对，再执行准备动作，并保留准备前、逐步、开战三个阶段的快照。结果不能通过删除名册、角色快照、规则页、赛前/赛后展示、场地隔离或环境维护记录来跳过校验。私有组件、冷却与充能仍不属于公开属性复制契约。

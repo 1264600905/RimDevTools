@@ -10,6 +10,26 @@ using System.Xml.Linq;
 
 namespace LogSyncMod.AutoTest.Scenarios
 {
+    public static class ArenaPreparationContext
+    {
+        [ThreadStatic] private static string kind;
+        [ThreadStatic] private static HashSet<string> actions;
+        public static bool Matches(string pawnKind, string actionId) => kind != null && kind == pawnKind && actions?.Contains(actionId) == true;
+        public static IDisposable Enter(string pawnKind, XElement steps)
+        {
+            var scope = new Scope { PreviousKind = kind, PreviousActions = actions };
+            kind = pawnKind;
+            actions = new HashSet<string>(steps?.Elements("DebugAction").Select(e => (string)e.Attribute("actionId")) ?? Enumerable.Empty<string>(), StringComparer.Ordinal);
+            return scope;
+        }
+        private sealed class Scope : IDisposable
+        {
+            internal string PreviousKind;
+            internal HashSet<string> PreviousActions;
+            public void Dispose() { kind = PreviousKind; actions = PreviousActions; }
+        }
+    }
+
     public static class ArenaLoader
     {
         public static ArenaPlan Load(string path, IEnumerable<string> names)
@@ -30,6 +50,7 @@ namespace LogSyncMod.AutoTest.Scenarios
                 using var sha = SHA256.Create();
                 inputs.Add(new ScenarioInput { Path = file, Sha256 = BitConverter.ToString(sha.ComputeHash(bytes)).Replace("-", "").ToLowerInvariant(), Xml = doc.ToString(SaveOptions.DisableFormatting) });
             }
+            ScenarioLoader.ResolveGroupPawnFiles(inputs);
             var plan = Compile(inputs, names); plan.SkippedFiles = skipped; return plan;
         }
         public static ArenaPlan Compile(IEnumerable<ScenarioInput> inputs, IEnumerable<string> names)
@@ -41,14 +62,17 @@ namespace LogSyncMod.AutoTest.Scenarios
             {
                 using var reader = XmlReader.Create(new StringReader(input.Xml), ScenarioLoader.ReaderSettings());
                 var root = XElement.Load(reader, LoadOptions.SetLineInfo);
-                Check(root, "schemaVersion id gameVersion", "Tournament SquadTemplates", input.Path);
+                Check(root, "schemaVersion id gameVersion", "Tournament SquadTemplates Templates Requirements ScenePresets ActionBindings", input.Path);
                 if (root.Name != "ArenaSuite" || ScenarioLoader.A(root, "schemaVersion") != "1" || ScenarioLoader.A(root, "gameVersion", "1.7") != "1.7") ScenarioLoader.Fail(root, input.Path, "expected ArenaSuite schemaVersion=1 gameVersion=1.7; use the independent arena entry");
                 Required(root, "id", input.Path);
+                foreach (var section in new[] { "Templates", "Requirements", "ScenePresets", "ActionBindings" })
+                    if (root.Elements(section).Count() > 1) ScenarioLoader.Fail(root, input.Path, "duplicate " + section);
+                if (root.Element("Templates") != null) ScenarioLoader.CompilePawnGroups(root.Element("Templates"), Enumerable.Empty<XElement>(), input.Path);
                 var squadTemplates = SquadTemplates.ParseAll(root, input.Path);
                 var ids = new HashSet<string>(StringComparer.Ordinal);
                 foreach (var t in root.Elements("Tournament"))
                 {
-                    Check(t, "id name seed format", "testDefName Scene Roster Entrants Battle Scoring TieBreak Presentation Output Cleanup Matchmaking Growth", input.Path);
+                    Check(t, "id name seed format", "testDefName Scene Roster Entrants Battle Scoring TieBreak Presentation Output Cleanup Matchmaking Growth ActionBindings Preparation Requirements Metrics Overlay", input.Path);
                     var id = Required(t, "id", input.Path);
                     if (!ids.Add(id)) ScenarioLoader.Fail(t, input.Path, "duplicate Tournament id");
                     var testName = t.Element("testDefName")?.Value.Trim();
@@ -62,6 +86,7 @@ namespace LogSyncMod.AutoTest.Scenarios
                     var entrants = t.Element("Entrants"); Check(entrants, "", "Entrant", input.Path, true);
                     var result = new ArenaTournamentInput { Id = id, Name = ScenarioLoader.A(t, "name", testName), TestDefName = testName, Seed = ScenarioLoader.I(t, "seed", 12345), Xml = t.ToString(SaveOptions.DisableFormatting), Source = input.Path, InputHash = input.Sha256, RosterMode = mode, CostMode = costMode, SquadTemplates = squadTemplates, Budget = mode == "combatPower" ? CombatRoster.Positive(Required(roster, "budget", input.Path)) : null, Count = Integer(roster, "count", 20, 1, CombatRoster.MaxTeamMembers, input.Path) };
                     result.Format = ScenarioLoader.A(t, "format", "knockout");
+                    result.SharedXml = new XElement("Shared", root.Elements().Where(e => new[] { "Requirements", "ScenePresets", "ActionBindings" }.Contains(e.Name.LocalName)).Select(e => new XElement(e))).ToString(SaveOptions.DisableFormatting);
                     var growth = t.Element("Growth"); Check(growth, "target mode multiplier increment maxValue", "", input.Path);
                     if (growth != null) result.Growth = new ArenaGrowth { Target = ScenarioLoader.A(growth, "target", "count"),
                         Mode = ScenarioLoader.A(growth, "mode", "multiply"),
@@ -70,17 +95,30 @@ namespace LogSyncMod.AutoTest.Scenarios
                         MaxValue = CombatRoster.Positive(Required(growth, "maxValue", input.Path)) };
                     foreach (var e in entrants.Elements("Entrant"))
                     {
-                        Check(e, "id pawnKind squad name count budget xenotype role", "", input.Path);
-                        if (mode == "combatPower" && e.Attribute("count") != null) ScenarioLoader.Fail(e, input.Path, "budget mode forbids entrant count overrides");
-                        if (mode == "count" && e.Attribute("budget") != null) ScenarioLoader.Fail(e, input.Path, "count mode forbids entrant budget overrides");
+                        Check(e, "id pawnKind squad name count budget xenotype role mode costMode", "", input.Path);
+                        var entrantMode = ScenarioLoader.A(e, "mode", mode);
+                        if (entrantMode != "count" && entrantMode != "combatPower") ScenarioLoader.Fail(e, input.Path, "Entrant mode must be count/combatPower");
+                        if (entrantMode == "combatPower" && e.Attribute("count") != null) ScenarioLoader.Fail(e, input.Path, "budget mode forbids entrant count overrides");
+                        if (entrantMode == "count" && e.Attribute("budget") != null) ScenarioLoader.Fail(e, input.Path, "count mode forbids entrant budget overrides");
+                        if (entrantMode == "combatPower" && e.Attribute("budget") == null && result.Budget == null) ScenarioLoader.Fail(e, input.Path, "combatPower entrant requires a budget");
+                        if (e.Attribute("costMode") != null) SquadTemplates.ValidateCostMode(ScenarioLoader.A(e, "costMode"));
                         if ((e.Attribute("pawnKind") == null) == (e.Attribute("squad") == null)) ScenarioLoader.Fail(e, input.Path, "Entrant requires exactly one of pawnKind/squad");
                         var squadId = ScenarioLoader.A(e, "squad");
                         if (squadId != null && (!squadTemplates.ContainsKey(squadId) || e.Attribute("xenotype") != null)) ScenarioLoader.Fail(e, input.Path, "unknown squad or conflicting entrant xenotype");
-                        result.Entrants.Add(new ArenaEntrant { Id = Required(e, "id", input.Path), Role = ScenarioLoader.A(e, "role"), PawnKind = e.Attribute("pawnKind") == null ? null : Required(e, "pawnKind", input.Path), Squad = squadId, Xenotype = e.Attribute("xenotype") == null ? null : Required(e, "xenotype", input.Path), Name = ScenarioLoader.A(e, "name"), Count = e.Attribute("count") == null ? null : Integer(e, "count", 20, 1, CombatRoster.MaxTeamMembers, input.Path), Budget = e.Attribute("budget") == null ? null : CombatRoster.Positive(Required(e, "budget", input.Path)) });
+                        var entrant = new ArenaEntrant { Id = Required(e, "id", input.Path), Role = ScenarioLoader.A(e, "role"), RosterMode = ScenarioLoader.A(e, "mode"), CostMode = ScenarioLoader.A(e, "costMode"), PawnKind = e.Attribute("pawnKind") == null ? null : Required(e, "pawnKind", input.Path), Squad = squadId, Xenotype = e.Attribute("xenotype") == null ? null : Required(e, "xenotype", input.Path), Name = ScenarioLoader.A(e, "name"), Count = e.Attribute("count") == null ? null : Integer(e, "count", 20, 1, CombatRoster.MaxTeamMembers, input.Path), Budget = e.Attribute("budget") == null ? null : CombatRoster.Positive(Required(e, "budget", input.Path)) };
+                        if (squadId != null && squadTemplates[squadId].Source == "groups" && entrantMode == "count")
+                        {
+                            var total = SquadTemplates.GroupCount(squadTemplates[squadId]);
+                            if (entrant.Count.HasValue && entrant.Count != total) ScenarioLoader.Fail(e, input.Path, "entrant count does not match squad PawnGroups");
+                            entrant.Count = total;
+                        }
+                        result.Entrants.Add(entrant);
+                        if (squadId != null && squadTemplates[squadId].Source == "custom" && squadTemplates[squadId].Composition == "fixed" && entrantMode == "count"
+                            && (entrant.Count ?? result.Count) != squadTemplates[squadId].Options.Sum(o => o.Count)) ScenarioLoader.Fail(e, input.Path, "entrant count does not match fixed Composition");
                     }
-                    if (result.Entrants.Count < 2 || result.Entrants.Count > 64 || result.Entrants.Select(e => e.Id).Distinct(StringComparer.Ordinal).Count() != result.Entrants.Count || result.Format == "knockout" && result.Entrants.Where(e => e.PawnKind != null).Select(e => e.PawnKind).Distinct(StringComparer.Ordinal).Count() != result.Entrants.Count(e => e.PawnKind != null)) ScenarioLoader.Fail(entrants, input.Path, "requires 2..64 distinct entrant IDs; knockout also requires distinct PawnKinds");
+                    if (result.Entrants.Count < 2 || result.Entrants.Count > 64 || result.Entrants.Select(e => e.Id).Distinct(StringComparer.Ordinal).Count() != result.Entrants.Count) ScenarioLoader.Fail(entrants, input.Path, "requires 2..64 distinct entrant IDs");
                     ArenaChallengeRules.Validate(result);
-                    var battle = t.Element("Battle"); Check(battle, "durationSeconds timeoutRealSeconds timeSpeed confirmationTicks", "", input.Path);
+                    var battle = t.Element("Battle"); Check(battle, "durationSeconds timeoutRealSeconds timeSpeed confirmationTicks aiPolicy", "", input.Path);
                     var matchmaking = t.Element("Matchmaking"); Check(matchmaking, "mode", "", input.Path);
                     if (result.Format != "knockout" && matchmaking != null) ScenarioLoader.Fail(matchmaking, input.Path, "Matchmaking only applies to knockout tournaments");
                     result.MatchmakingMode = ScenarioLoader.A(matchmaking, "mode", "closestCount");
@@ -129,11 +167,18 @@ namespace LogSyncMod.AutoTest.Scenarios
         public static GroupCombatRoundInput CompileBattle(ArenaTournamentInput input, List<ResolvedCombatRoster> rosters, ArenaMatch match, int attempt)
         {
             var t = XElement.Parse(input.Xml); var scene = new XElement(t.Element("Scene"));
+            if (scene.Attribute("preset") != null)
+            {
+                var preset = input.SharedXml == null ? null : XElement.Parse(input.SharedXml).Element("ScenePresets")?.Elements("Scene").SingleOrDefault(p => ScenarioLoader.A(p, "id") == ScenarioLoader.A(scene, "preset"));
+                if (preset == null) ScenarioLoader.Fail(scene, input.Source, "unknown scene preset " + ScenarioLoader.A(scene, "preset"));
+                scene = ScenarioLoader.ResolveScenePreset(scene, preset);
+            }
             var width = ScenarioLoader.I(scene, "sizeX", 100); var height = ScenarioLoader.I(scene, "sizeZ", 100);
             // Explicit defaults are frozen; the group parser otherwise defaults to 50.
             scene.SetAttributeValue("sizeX", width); scene.SetAttributeValue("sizeZ", height);
             var ids = match == null ? rosters.Take(2).Select(r => r.Id).ToArray() : new[] { match.Left, match.Right };
             var actors = new XElement("Actors");
+            var steps = new XElement("Steps");
             for (int i = 0; i < 2; i++)
             {
                 var r = rosters.Single(r => r.Id == ids[i]); var columns = PawnGroupFormation.ArenaRows(r.ResolvedCount, width);
@@ -147,16 +192,63 @@ namespace LogSyncMod.AutoTest.Scenarios
                 var z = Math.Max(1, height / 2 - extent.z / 2);
                 actor.SetAttributeValue("originX", x); actor.SetAttributeValue("originZ", z);
                 actors.Add(actor);
+                for (var member = 0; member < r.ResolvedCount; member++)
+                    steps.Add(PreparationSteps(input, (i == 0 ? "left" : "right") + "[" + member + "]", r.Id, r.Members.Count > member ? r.Members[member].ConfigurationId : null, match == null && rosters.All(x => x.Members.Count == 0)).Elements());
             }
             var seed = match == null ? input.Seed : ArenaScheduler.AttemptSeed(input, match, attempt);
             var battle = new XElement("Case", new XAttribute("id", "arena"), new XAttribute("kind", "groupCombat"), new XAttribute("seed", seed), new XAttribute("name", input.Name), new XAttribute("timeoutRealSeconds", input.TimeoutRealSeconds), new XElement("testDefName", input.TestDefName), scene,
                 new XElement("Teams", ids.Select((id, i) => new XElement("Team", new XAttribute("id", i == 0 ? "A" : "B"), new XAttribute("name", rosters.Single(r => r.Id == id).DisplayName ?? id)))), actors,
-                new XElement("GroupCombat", new XAttribute("aiPolicy", "assaultColony"), new XAttribute("durationSeconds", input.DurationSeconds.ToString("R", CultureInfo.InvariantCulture)), new XAttribute("timeSpeed", ScenarioLoader.A(t.Element("Battle"), "timeSpeed", "fast")), new XElement("End", new XAttribute("confirmationTicks", input.ConfirmationTicks))), new XElement("Steps"), t.Element("Output") == null ? null : new XElement(t.Element("Output")));
-            var suite = new XElement("TestSuite", new XAttribute("schemaVersion", 1), new XAttribute("id", "arena.battle"), battle);
+                new XElement("GroupCombat", new XAttribute("aiPolicy", ScenarioLoader.A(t.Element("Battle"), "aiPolicy", "assaultColony")), new XAttribute("durationSeconds", input.DurationSeconds.ToString("R", CultureInfo.InvariantCulture)), new XAttribute("timeSpeed", ScenarioLoader.A(t.Element("Battle"), "timeSpeed", "fast")), new XElement("End", new XAttribute("confirmationTicks", input.ConfirmationTicks)), t.Element("Metrics") == null ? null : new XElement(t.Element("Metrics")), t.Element("Overlay") == null ? null : new XElement(t.Element("Overlay"))), steps, t.Element("ActionBindings") == null ? null : new XElement(t.Element("ActionBindings")), t.Element("Requirements") == null ? null : new XElement(t.Element("Requirements")), t.Element("Output") == null ? null : new XElement(t.Element("Output")));
+            var suite = new XElement("TestSuite", new XAttribute("schemaVersion", 1), new XAttribute("id", "arena.battle"), input.SharedXml == null ? null : XElement.Parse(input.SharedXml).Elements().Select(e => new XElement(e)), battle);
             var compiled = ScenarioLoader.Compile(new[] { new ScenarioInput { Path = input.Source, Sha256 = input.InputHash, Xml = suite.ToString(SaveOptions.DisableFormatting) } }, true);
             var c = compiled.Cases.Single();
             return new GroupCombatRoundInput { CaseId = (match?.Id ?? input.TestDefName) + "/attempt-" + (attempt + 1), TestDefName = input.TestDefName, Name = input.Name + " · " + (match?.Kind == "qualification" ? "资格赛" : match?.Kind == "extra" ? "低分加赛" : "第 " + (match?.Round ?? 1) + " 轮") + " · " + (attempt == 0 ? "首战" : "重赛 " + attempt), Seed = seed, Source = input.Source, InputHash = input.InputHash, Xml = c.Xml };
         }
+        // "entrant" is a placeholder for each generated roster member, in XML order.
+        // The same synchronous actions run before any preview or combat ticks.
+        public static XElement PreparationCase(ArenaTournamentInput input, string entrantId = null, string configurationId = null)
+        {
+            var local = XElement.Parse(input.Xml).Element("ActionBindings");
+            var result = new XElement("Case", PreparationSteps(input, "entrant", entrantId, configurationId), local == null ? null : new XElement(local));
+            var shared = input.SharedXml == null ? null : XElement.Parse(input.SharedXml).Element("ActionBindings");
+            if (shared != null) ScenarioActionBindings.Freeze(result, shared, input.Source);
+            return result;
+        }
+        public static XElement PreparationSteps(ArenaTournamentInput input, string actor, string entrantId = null, string configurationId = null, bool validateAll = false)
+        {
+            var preparation = XElement.Parse(input.Xml).Element("Preparation");
+            Check(preparation, "", "DebugAction Require Equip DropEquipment AddHediff RemoveHediff ApplyDamage", input.Source);
+            var steps = new XElement("Steps");
+            var ids = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var source in preparation?.Elements() ?? Enumerable.Empty<XElement>())
+            {
+                var id = Required(source, "id", input.Source);
+                if (!ids.Add(id)) ScenarioLoader.Fail(source, input.Source, "duplicate arena preparation id");
+                var selectedId = ScenarioLoader.A(source, "entrant"); var role = ScenarioLoader.A(source, "role"); var group = ScenarioLoader.A(source, "group");
+                var selected = input.Entrants.Where(e => (selectedId == null || e.Id == selectedId) && (role == null || e.Role == role)).ToList();
+                if (selected.Count == 0 || role != null && role != "boss" && role != "challenger") ScenarioLoader.Fail(source, input.Source, "preparation selector matches no entrant/role");
+                if (group != null && !selected.Any(e => e.Squad != null && input.SquadTemplates[e.Squad].PawnGroups.Any(g => ScenarioLoader.A(XElement.Parse(g), "id") == group))) ScenarioLoader.Fail(source, input.Source, "preparation group must name a configured PawnGroup of the selected entrants");
+                var step = new XElement(source);
+                foreach (var scope in new[] { "entrant", "role", "group" }) step.Attribute(scope)?.Remove();
+                if (step.Name == "DebugAction")
+                {
+                    var select = step.Element("Select");
+                    if (step.Elements("Select").Count() != 1 || ScenarioLoader.A(select, "mode") != "single" || ScenarioLoader.A(select, "actor") != "entrant")
+                        ScenarioLoader.Fail(source, input.Source, "arena preparation requires Select mode=single actor=entrant");
+                }
+                foreach (var reference in step.DescendantsAndSelf().Attributes().Where(a => a.Name == "actor" || a.Name == "target" || a.Name == "group"))
+                {
+                    if (reference.Value != "entrant") ScenarioLoader.Fail(source, input.Source, "arena preparation references must use the entrant placeholder");
+                    reference.Value = actor;
+                }
+                if (!validateAll && entrantId != null && (!selected.Any(e => e.Id == entrantId) || group != null && group != configurationId)) continue;
+                foreach (var reference in step.DescendantsAndSelf().Attributes("ref")) reference.Value = actor.Replace("[", "_").Replace("]", "") + "_" + reference.Value;
+                step.SetAttributeValue("id", actor.Replace("[", "_").Replace("]", "") + "_" + id);
+                steps.Add(step);
+            }
+            return steps;
+        }
+
         private static void LoadShowcase(XElement showcase, ArenaTournamentInput input, string path)
         {
             Check(showcase, "pageSeconds", "Page", path);
@@ -205,7 +297,7 @@ namespace LogSyncMod.AutoTest.Scenarios
             foreach (var a in e.Attributes()) if (!attrs.Split(' ').Contains(a.Name.ToString())) ScenarioLoader.UnknownField(e, path, "attribute", a.Name.ToString(), attrs);
             foreach (var c in e.Elements()) if (!children.Split(' ').Contains(c.Name.ToString())) ScenarioLoader.UnknownField(c, path, "element", c.Name.ToString(), children);
             if (e.Name.Namespace != XNamespace.None || e.Nodes().OfType<XText>().Any(n => !string.IsNullOrWhiteSpace(n.Value) && e.Name != "testDefName")) ScenarioLoader.Fail(e, path, "unknown arena namespace or text");
-            if (e.Name != "ArenaSuite" && e.Name != "Entrants" && e.Name != "Showcase" && e.Name != "Page" && e.Elements().GroupBy(c => c.Name).Any(g => g.Count() > 1)) ScenarioLoader.Fail(e, path, "duplicate arena element");
+            if (e.Name != "ArenaSuite" && e.Name != "Entrants" && e.Name != "Showcase" && e.Name != "Page" && e.Name != "Preparation" && e.Elements().GroupBy(c => c.Name).Any(g => g.Count() > 1)) ScenarioLoader.Fail(e, path, "duplicate arena element");
         }
         private static int Integer(XElement e, string attr, int fallback, int min, int max, string path)
         { var value = ScenarioLoader.I(e, attr, fallback); if (value < min || value > max) ScenarioLoader.Fail(e, path, attr + " outside " + min + ".." + max); return value; }

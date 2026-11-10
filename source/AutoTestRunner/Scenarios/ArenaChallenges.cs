@@ -63,8 +63,11 @@ namespace LogSyncMod.AutoTest.Scenarios
     public static class ArenaChallengeRules
     {
         public static T Copy<T>(T value) => JsonSerializer.Deserialize<T>(JsonSerializer.Serialize(value));
+        public static string RosterMode(ArenaTournamentInput input, ArenaEntrant entrant) => entrant.RosterMode ?? input.RosterMode;
+        public static string CostMode(ArenaTournamentInput input, ArenaEntrant entrant) => entrant.CostMode ?? input.CostMode;
+        public static decimal? Budget(ArenaTournamentInput input, ArenaEntrant entrant) => RosterMode(input, entrant) == "combatPower" ? entrant.Budget ?? input.Budget : null;
         public static decimal InitialValue(ArenaTournamentInput input, ArenaEntrant entrant)
-            => input.RosterMode == "combatPower" ? (entrant.Budget ?? input.Budget).Value : entrant.Count ?? input.Count;
+            => RosterMode(input, entrant) == "combatPower" ? Budget(input, entrant).Value : entrant.Count ?? input.Count;
 
         public static decimal? NextValue(ArenaGrowth growth, decimal current)
         {
@@ -99,7 +102,7 @@ namespace LogSyncMod.AutoTest.Scenarios
                 || g.Mode == "multiply" && (g.Multiplier <= 1 || g.Increment != 0)
                 || g.Mode == "add" && (g.Increment <= 0 || g.Multiplier != 0 || g.Target == "count" && g.Increment != decimal.Truncate(g.Increment)))
                 throw new ScenarioConfigurationException("Growth requires mode=multiply with multiplier > 1, or mode=add with positive increment (integer for count), and positive maxValue");
-            if ((g.Target == "count") != (input.RosterMode == "count")) throw new ScenarioConfigurationException("Growth target must match Roster count/combatPower mode");
+            if (input.Entrants.Where(e => e.Role == "challenger").Any(e => (g.Target == "count") != (RosterMode(input, e) == "count"))) throw new ScenarioConfigurationException("Growth target must match each challenger's count/combatPower mode");
             if (g.Target == "count" && (g.MaxValue != decimal.Truncate(g.MaxValue) || g.MaxValue > CombatRoster.MaxTeamMembers)
                 || g.Target == "budget" && g.MaxValue > 10000000)
                 throw new ScenarioConfigurationException("Growth maxValue must be an integer in 1..200 for count, or at most 10000000 CP for budget");

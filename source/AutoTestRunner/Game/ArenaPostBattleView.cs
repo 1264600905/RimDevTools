@@ -27,14 +27,14 @@ namespace LogSyncMod.AutoTest
             layout = ArenaBracketLayout.BuildPostBattle(value);
             nodes = layout.Nodes.ToDictionary(n => n.Id);
             rosters = value.Rosters.ToDictionary(r => r.Id);
-            hues = ArenaPresentation.IdentityHues(value.Rosters.Select(r => r.PawnKind));
+            hues = ArenaPresentation.IdentityHues(value.Rosters.Select(r => r.Id));
             result = nodes[completed.Id];
             var inputs = layout.Edges.Where(e => e.To == completed.Id).ToList();
             left = nodes[inputs[0].From]; right = nodes[inputs[1].From];
             scroll = Vector2.zero; overview = false; focus = true; manualNavigation = false;
         }
         private static Color Identity(string id) => id != null && rosters.TryGetValue(id, out var roster)
-            ? Color.HSVToRGB(hues[roster.PawnKind], .62f, .94f) : new Color(.48f, .53f, .6f);
+            ? Color.HSVToRGB(hues[roster.Id], .62f, .94f) : new Color(.48f, .53f, .6f);
         private static void TextAt(Rect rect, string text, float size, Color color, TextAnchor anchor = TextAnchor.MiddleCenter)
         {
             var old = GUI.color; GUI.color = color;
@@ -113,7 +113,7 @@ namespace LogSyncMod.AutoTest
             var x = rect.x + iconSize + 24; var width = rect.width - iconSize - 36;
             TextAt(new Rect(x, rect.y + 7, width, 22), side + (revealed ? match.Winner == null ? " · 平局" : won ? " · 晋级" : " · 淘汰" : ""), 15, won && revealed ? Gold : color, TextAnchor.MiddleLeft);
             TextAt(new Rect(x, rect.y + 29, width, 27), roster.DisplayName + " ×" + roster.ResolvedCount, Mathf.Min(21, width / Mathf.Max(10, roster.DisplayName.Length + 5)), Color.white, TextAnchor.MiddleLeft);
-            if (rect.height > 75) TextAt(new Rect(x, rect.y + 57, width, 22), (roster.SquadId != null ? "混编 " + roster.Members.Select(m => SquadGeneration.KindLabel(m.PawnKind)).Distinct(StringComparer.Ordinal).Count() + " 种" : "单体 CP " + roster.UnitCombatPower.ToString("0.##")) + " · 总 CP " + roster.ActualCombatPower.ToString("0.##"), 13, new Color(.7f, .76f, .83f), TextAnchor.MiddleLeft);
+            if (rect.height > 75) TextAt(new Rect(x, rect.y + 57, width, 22), (roster.SquadId != null ? "混编 " + roster.Members.Select(SquadTemplates.ConfigurationKey).Distinct(StringComparer.Ordinal).Count() + " 种" : "单体 CP " + roster.UnitCombatPower.ToString("0.##")) + " · 总 CP " + roster.ActualCombatPower.ToString("0.##"), 13, new Color(.7f, .76f, .83f), TextAnchor.MiddleLeft);
             GUI.color = old;
         }
         private static void DrawTree(Vector2 origin, float scale, float elapsed)

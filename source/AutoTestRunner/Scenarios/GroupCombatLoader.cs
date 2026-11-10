@@ -15,7 +15,7 @@ namespace LogSyncMod.AutoTest.Scenarios
     {
         // Imports are read exactly once, by the CLI. The game receives their frozen XML and
         // provenance, never paths to reread during a battle or a repeated experiment.
-        private static void ResolveGroupPawnFiles(List<ScenarioInput> inputs)
+        public static void ResolveGroupPawnFiles(List<ScenarioInput> inputs)
         {
             foreach (var input in inputs)
             {
@@ -42,6 +42,38 @@ namespace LogSyncMod.AutoTest.Scenarios
                     input.Sha256 = BitConverter.ToString(sha.ComputeHash(Encoding.UTF8.GetBytes(input.Sha256 + "\n" + string.Join("\n", input.Dependencies.Select(d => d.Sha256))))).Replace("-", "").ToLowerInvariant();
                 }
             }
+        }
+
+        // Compose existing single-Pawn templates through the ordinary group compiler. The
+        // resulting groups contain configuration only; the enclosing battle owns deployment.
+        public static List<XElement> CompilePawnGroups(XElement templates, IEnumerable<XElement> sourceGroups, string path)
+        {
+            var groups = sourceGroups.Select(g => new XElement(g)).ToList();
+            var usedIds = new HashSet<string>(groups.Select(g => A(g, "id")), StringComparer.Ordinal);
+            string InternalId(string candidate)
+            {
+                while (!usedIds.Add(candidate)) candidate += "_";
+                return candidate;
+            }
+            var actors = new XElement("Actors");
+            foreach (var group in groups)
+            {
+                group.SetAttributeValue("team", "A"); group.SetAttributeValue("originX", 1); group.SetAttributeValue("originZ", 1);
+                group.SetAttributeValue("formation", "grid"); group.SetAttributeValue("columns", 1); group.SetAttributeValue("spacing", 1);
+                actors.Add(group);
+            }
+            actors.Add(new XElement("PawnGroup", new XAttribute("id", InternalId("__templateOpponent")), new XAttribute("team", "B"), new XAttribute("count", 1), new XElement("basePawnKind", "Colonist")));
+            if (groups.Count == 0) actors.Add(new XElement("PawnGroup", new XAttribute("id", InternalId("__templateSubject")), new XAttribute("team", "A"), new XAttribute("count", 1), new XElement("basePawnKind", "Colonist")));
+            var suite = new XElement("TestSuite", new XAttribute("schemaVersion", 1), new XAttribute("id", "pawnGroupTemplates"), templates == null ? null : new XElement(templates),
+                new XElement("Case", new XAttribute("id", "groups"), new XAttribute("kind", "groupCombat"), new XElement("testDefName", "PawnGroupTemplates"),
+                    new XElement("Scene", new XAttribute("sizeX", 250), new XAttribute("sizeZ", 250)),
+                    new XElement("Teams", new XElement("Team", new XAttribute("id", "A")), new XElement("Team", new XAttribute("id", "B"))), actors,
+                    new XElement("GroupCombat"), new XElement("Steps")));
+            var compiled = Compile(new[] { new ScenarioInput { Path = path, Xml = suite.ToString(SaveOptions.DisableFormatting) } }, true);
+            var resolved = XElement.Parse(compiled.Cases.Single().Xml).Element("Actors").Elements("PawnGroup").Take(groups.Count).ToList();
+            foreach (var group in resolved)
+                foreach (var attr in group.Attributes().Where(a => a.Name != "id" && a.Name != "count").ToList()) attr.Remove();
+            return resolved;
         }
 
         private static void ValidateGroupCombat(XElement c, string path)

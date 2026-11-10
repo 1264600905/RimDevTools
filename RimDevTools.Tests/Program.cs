@@ -70,6 +70,18 @@ if (args.Length == 2 && args[0] == "--arena-result")
     return;
 }
 
+if (args.Length == 2 && args[0] == "--groupcombat-result")
+{
+    var report = JsonSerializer.Deserialize<LogSyncMod.AutoTest.Scenarios.GroupCombatRunReport>(File.ReadAllText(args[1]))!;
+    var plan = LogSyncMod.AutoTest.Scenarios.ScenarioLoader.Compile(report.Inputs, groupCombat: true);
+    LogSyncMod.AutoTest.Scenarios.ScenarioLoader.SelectRules(plan,
+        report.PlannedRounds.Select(r => r.CaseId[..r.CaseId.LastIndexOf("/round-", StringComparison.Ordinal)]).Distinct().ToArray());
+    var error = GroupCombatResultValidator.ValidateIntegrity(report, plan);
+    Console.WriteLine(error ?? "PASS: original group combat artifacts independently validated");
+    Environment.ExitCode = error == null ? 0 : 1;
+    return;
+}
+
 if (args.Length == 1 && args[0] == "--scenario-validation")
 {
     await ScenarioPreflightTests.RunAsync((passed, message) => {

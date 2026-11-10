@@ -304,14 +304,19 @@ namespace LogSyncMod.AutoTest
                     var team = ScenarioLoader.A(actor, "team");
                     var squad = input.ResolvedRosters.FirstOrDefault(r => r.Id == actorId)
                         ?? (IsArena ? input.ResolvedRosters[team == "A" ? 0 : 1] : null);
+                    var snapshot = TemporaryPawnCapture.Capture(pawn);
                     var group = GroupCombatPlan.DisplayGroupKey(actor);
-                    if (squad?.Members.Count > 0) group += ":" + pawn.kindDef.defName + ":" + pawn.genes?.Xenotype?.defName;
-                    roster.Add(new GroupCombatUnit { Id = id, NativeId = pawn.GetUniqueLoadID(), Team = team, Group = group, GroupName = actorId, Kind = pawn.kindDef.defName, KindLabel = pawn.kindDef.LabelCap, Name = pawn.LabelShort, X = pawn.Position.x, Z = pawn.Position.z });
+                    if (squad?.Members.Count > i) group += ":" + SquadTemplates.ConfigurationKey(squad.Members[i], XElement.Parse(snapshot.TemplateXml));
+                    var configurationId = squad?.Members.Count > i ? squad.Members[i].ConfigurationId : null;
+                    if (configurationId != null) group += ":configuration:" + configurationId;
+                    var configurationName = configurationId == null ? null : squad.Id == configurationId ? configurationId : squad.Id + "/" + configurationId;
+                    var typeLabel = (configurationName ?? pawn.kindDef.LabelCap.ToString()) + (pawn.equipment?.Primary == null ? "" : " · " + pawn.equipment.Primary.def.LabelCap);
+                    roster.Add(new GroupCombatUnit { Id = id, NativeId = pawn.GetUniqueLoadID(), Team = team, Group = group, GroupName = configurationName ?? actorId, ConfigurationId = configurationId, ConfigurationKey = squad?.Members.Count > i ? SquadTemplates.ConfigurationKey(squad.Members[i]) : null, Kind = pawn.kindDef.defName, KindLabel = typeLabel, GeneratedSnapshot = backend.GeneratedSnapshots[id], InitialSnapshot = TemporaryPawnData.Serialize(snapshot), Name = pawn.LabelShort, X = pawn.Position.x, Z = pawn.Position.z });
                 }
             }
             ledger = new GroupCombatLedger(roster, c.Element("Teams").Elements("Team").Select(t => new KeyValuePair<string, string>(ScenarioLoader.A(t, "id"), ScenarioLoader.A(t, "name", ScenarioLoader.A(t, "id")))), ScenarioLoader.I(settings.Element("Metrics"), "detailLimit", 10000));
             SyncUnitNames();
-            foreach (var unit in roster) unit.InitialSnapshot = TemporaryPawnData.Serialize(TemporaryPawnCapture.Capture(pawns[unit.Id]));
+            current.Preparation = backend.PreparationRecords;
             if (arenaMaintenance != null)
                 arenaMaintenance.Result.InitialRevivalUses = pawns.Values.Sum(p => p.health.hediffSet.hediffs.OfType<Hediff_DeathRefusal>().Sum(h => h.UsesLeft));
             endRule = new GroupCombatEndRule(ScenarioLoader.I(settings.Element("End"), "confirmationTicks", 300));
@@ -398,6 +403,7 @@ namespace LogSyncMod.AutoTest
             sample.ResolvedRosters = current.ResolvedRosters;
             sample.StartupTiming = current.StartupTiming;
             sample.ArenaMaintenance = current.ArenaMaintenance;
+            sample.Preparation = current.Preparation;
             sample.StudioIsolation = current.StudioIsolation;
             sample.ScreenshotWidth = current.ScreenshotWidth; sample.ScreenshotHeight = current.ScreenshotHeight;
             sample.Diagnostics.AddRange(current.Diagnostics); sample.Screenshots = current.Screenshots; sample.ExecutionStatus = current.ExecutionStatus;

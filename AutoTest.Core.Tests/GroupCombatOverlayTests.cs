@@ -26,6 +26,10 @@ internal static class GroupCombatOverlayTests
             && team.Taken.Select(r => r.Unit.Id).SequenceEqual(new[] { "a1", "a0", "a2" }), "cached rankings retain dead units and deterministic tie ordering");
         check(team.LivingGroups.Length == 1 && team.LivingGroups[0].Label == "人类 ×2" && team.IntroGroups.Length == 2,
             "overlay caches living composition separately from the complete intro roster");
+        var configurations = Round();
+        configurations.Units[0].Group = "gunners"; configurations.Units[1].Group = "swordsmen";
+        var configurationData = new GroupCombatOverlayData(); configurationData.Refresh(configurations, "running", 0);
+        check(configurationData.Teams[0].LivingGroups.Length == 2, "equal translated PawnKind labels do not merge distinct configuration identities");
         check(data.MaximumOutput == 90 && data.MaximumTaken == 100, "cached bar maxima compare both teams");
         check(team.Settlement[3].Contains("20") && team.Settlement[4].Contains("101"), "cached survivor totals exclude dead members");
         var updated = Round(true);

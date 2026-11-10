@@ -54,6 +54,29 @@ internal static class ArenaTests
         check(Group(groupXml.Replace("combatPowerBudget='3000'", "")).Cases.Count == 1, "group count default remains one when count and budget are both absent");
         const string xml = "<ArenaSuite schemaVersion='1' id='suite'><Tournament id='main'><testDefName>ArenaTest</testDefName><Scene type='mainMap' sizeX='100' sizeZ='100'/><Roster mode='combatPower' budget='3000'/><Entrants><Entrant id='a' pawnKind='Wolf_Timber'/><Entrant id='b' pawnKind='Mercenary_Gunner'/></Entrants></Tournament></ArenaSuite>";
         ArenaPlan Parse(string text) => ArenaLoader.Compile(new[] { new ScenarioInput { Path = "arena.xml", Sha256 = "h", Xml = text } }, new[] { "ArenaTest" });
+        const string prep = "<ActionBindings><ActionBinding id='mod.prepare' packageId='mod.test' type='Test.Api' method='Apply'><Arguments><Argument type='Verse.Pawn' source='selected'/></Arguments><Result equals='true'/></ActionBinding></ActionBindings><Preparation><DebugAction id='prepare' actionId='mod.prepare'><Select mode='single' actor='entrant'/></DebugAction><DebugAction id='prepareAgain' actionId='mod.prepare'><Select mode='single' actor='entrant'/></DebugAction></Preparation>";
+        var prepared = Parse(xml.Replace("</Tournament>", prep + "</Tournament>")).Tournaments.Single();
+        var preparedRosters = new List<ResolvedCombatRoster> { CombatRoster.Resolve("a", "Wolf_Timber", 75, null, 2), CombatRoster.Resolve("b", "Mercenary_Gunner", 85, null, 1) };
+        var preparedBattle = XElement.Parse(ArenaLoader.CompileBattle(prepared, preparedRosters, null, 0).Xml);
+        var preparedSteps = preparedBattle.Element("Steps").Elements().ToList();
+        check(preparedSteps.Select(e => (string)e.Element("Select").Attribute("actor")).SequenceEqual(new[] { "left[0]", "left[0]", "left[1]", "left[1]", "right[0]", "right[0]" })
+            && preparedSteps.Select(e => (string)e.Attribute("id")).Distinct().Count() == 6,
+            "arena preparation expands once per member with distinct ids and correct side selection");
+        check(preparedBattle.Element("ActionBindings").Elements().Count() == 1 && preparedBattle.Element("Requirements").Elements().Any(e => (string)e.Attribute("packageId") == "mod.test"),
+            "arena freezes used method bindings and package requirements into each battle");
+        check(ArenaLoader.PreparationSteps(prepared, "entrant").Elements().First().Element("Select").Attribute("actor").Value == "entrant",
+            "preview shares the same preparation recipe without modifying frozen input");
+        Reject(() => Parse(xml.Replace("</Tournament>", prep.Replace("actor='entrant'", "actor='other'") + "</Tournament>")), "arena rejects preparation selecting outside the current entrant");
+        Reject(() => Parse(xml.Replace("</Tournament>", prep.Replace("actionId='mod.prepare'", "actionId='missing'") + "</Tournament>")), "arena rejects unknown preparation bindings statically");
+        Reject(() => Parse(xml.Replace("</Tournament>", prep.Replace("</Preparation>", "<DebugAction id='prepare' actionId='mod.prepare'><Select mode='single' actor='entrant'/></DebugAction></Preparation>") + "</Tournament>")), "arena rejects duplicate preparation ids");
+        using (ArenaPreparationContext.Enter("Wolf_Timber", ArenaLoader.PreparationSteps(prepared, "entrant")))
+        {
+            check(ArenaPreparationContext.Matches("Wolf_Timber", "mod.prepare") && !ArenaPreparationContext.Matches("Mercenary_Gunner", "mod.prepare"), "generation scope is restricted to the requested kind and action");
+            try { using (ArenaPreparationContext.Enter("Mercenary_Gunner", new XElement("Steps"))) throw new InvalidOperationException(); }
+            catch (InvalidOperationException) { }
+            check(ArenaPreparationContext.Matches("Wolf_Timber", "mod.prepare"), "nested generation failure restores the outer preparation scope");
+        }
+        check(!ArenaPreparationContext.Matches("Wolf_Timber", "mod.prepare"), "arena generation scope never leaks into normal pawn generation");
         var plan = Parse(xml);
         check(plan.Tournaments[0].MatchmakingMode == "closestCount" && !plan.Tournaments[0].ClearCorpses && !plan.Tournaments[0].ClearDroppedItems,
             "legacy arena XML keeps count pairing and disables optional floor cleanup");
@@ -168,7 +191,7 @@ internal static class ArenaTests
         Reject(() => Parse(xml.Replace("mode='combatPower' budget='3000'", "mode='count' count='20'").Replace("id='a' pawnKind", "id='a' budget='3200' pawnKind")), "arena count mode rejects entrant budget overrides");
         check(Parse(xml.Replace("mode='combatPower' budget='3000'", "mode='count' count='20'").Replace("id='a' pawnKind", "id='a' count='3' pawnKind")).Tournaments[0].Entrants[0].Count == 3, "arena count mode supports per-entrant counts");
         Reject(() => Parse(xml.Replace("id='a' pawnKind", "id='a' count='3' pawnKind")), "arena budget mode rejects count overrides");
-        Reject(() => Parse(xml.Replace("Mercenary_Gunner", "Wolf_Timber")), "arena rejects duplicate PawnKinds");
+        check(Parse(xml.Replace("Mercenary_Gunner", "Wolf_Timber")).Tournaments.Single().Entrants.Count == 2, "knockout distinguishes entrants by ID when their PawnKind is identical");
         Reject(() => Parse(xml.Replace("id='b'", "id='a'")), "arena rejects duplicate entrant IDs");
         Reject(() => Parse(xml.Replace("<Entrants>", "<Entrants typo='true'>")), "arena strict schema rejects unknown fields");
         Reject(() => Parse(xml.Replace("</Tournament>", "<Battle durationSeconds='NaN'/></Tournament>")), "arena validates finite simulated durations");

@@ -21,12 +21,13 @@ namespace LogSyncMod.AutoTest
                 else if (baseline.SquadId != null)
                 {
                     challenger = SquadGeneration.Resolve(baseline.Id, input.SquadTemplates[baseline.SquadId], match.ChallengeValue,
-                        input.Count, input.CostMode, seed, Find.CurrentMap.Tile);
+                        input.Count, baseline.CostMode, seed, Find.CurrentMap.Tile);
                     challenger.DisplayName = baseline.DisplayName; challenger.Source = baseline.Source;
                 }
                 else
                 {
-                    challenger = CombatRoster.Resolve(baseline.Id, baseline.PawnKind, baseline.UnitCombatPower, match.ChallengeValue);
+                    challenger = SquadGeneration.ResolveActor(baseline.Id, System.Xml.Linq.XElement.Parse(baseline.TemplateXml), baseline.FactionDef,
+                        match.ChallengeValue, input.Count, baseline.CostMode, seed);
                     challenger.CostMode = baseline.CostMode; challenger.DisplayName = baseline.DisplayName; challenger.Source = baseline.Source;
                 }
             }

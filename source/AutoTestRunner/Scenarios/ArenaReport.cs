@@ -41,11 +41,11 @@ namespace LogSyncMod.AutoTest.Scenarios
                 }
                 s.AppendLine("|参赛者|PawnKind|单体/平均 combatPower|人数|预算|实际战力|剩余|").AppendLine("|---|---|---:|---:|---:|---:|---:|");
                 foreach (var r in t.Rosters) s.AppendLine($"|{r.Id}|{r.PawnKind}|{(r.SquadId != null ? "混编" : r.UnitCombatPower.ToString("0.##"))}|{r.ResolvedCount}|{r.RequestedBudget}|{r.ActualCombatPower}|{r.UnusedBudget}|");
-                foreach (var r in t.Rosters.Where(r => r.SquadId != null))
+                foreach (var r in t.Rosters.Where(r => r.Members.Count > 0))
                 {
-                    s.AppendLine($"\n混编队伍 {r.DisplayName}：派系 `{r.FactionDef}`，成本口径 `{r.CostMode}`，编队编号 {r.GroupMakerIndex}，指纹 `{r.GroupMakerFingerprint}`。");
-                    s.AppendLine("|兵种|异种|人数|合计CP|").AppendLine("|---|---|---:|---:|");
-                    foreach (var g in r.Members.GroupBy(m => (m.PawnKind, m.Xenotype))) s.AppendLine($"|{g.Key.PawnKind}|{g.Key.Xenotype}|{g.Count()}|{g.Sum(m => m.Cost)}|");
+                    s.AppendLine($"\n队伍成员配置 {r.DisplayName}：派系 `{r.FactionDef}`，成本口径 `{r.CostMode}`，编队编号 {r.GroupMakerIndex}，指纹 `{r.GroupMakerFingerprint}`。");
+                    s.AppendLine("|配置|兵种|异种|人数|合计CP|").AppendLine("|---|---|---|---:|---:|");
+                    foreach (var g in r.Members.GroupBy(SquadTemplates.ConfigurationKey)) s.AppendLine($"|{SquadTemplates.ConfigurationName(g.First())}|{g.First().PawnKind}|{g.First().Xenotype}|{g.Count()}|{g.Sum(m => m.Cost)}|");
                 }
                 s.AppendLine().AppendLine("评分：百分制胜利质量；保全/压制按初始成员，倒地保全权重 0.25；交换按已记录伤害，采集异常时取中性分并继续晋级；速度扣除最终胜负确认等待。")
                     .AppendLine("|对局|类型|双方|胜者|总分 / 100|保全|压制|交换|速度|有效秒数|伤害口径|可排序|尝试次数|")

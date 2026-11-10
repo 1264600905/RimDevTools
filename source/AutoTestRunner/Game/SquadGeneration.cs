@@ -70,11 +70,12 @@ namespace LogSyncMod.AutoTest
         {
             SquadTemplates.ValidateCostMode(costMode);
             if (budget.HasValue && (budget <= 0 || budget > 10000000) || !budget.HasValue && (count < 1 || count > CombatRoster.MaxTeamMembers)) throw new ScenarioConfigurationException("Squad budget must be in (0,10000000], or count in 1..200");
+            if (template.Source == "groups") return ResolvePawnGroups(id, template, budget, count, costMode, seed);
             using var factionScope = new FactionScope(template.FactionDef, template.Id);
             var faction = factionScope.Faction;
             var strategy = DefDatabase<RaidStrategyDef>.GetNamed(template.StrategyDef);
             var parms = new PawnGroupMakerParms { faction = faction, groupKind = PawnGroupKindDefOf.Combat, points = budget.HasValue ? (float)budget.Value : template.ReferencePoints, tile = tile, raidStrategy = strategy, generateFightersOnly = true };
-            var roster = new ResolvedCombatRoster { Id = id, SquadId = template.Id, FactionDef = template.FactionDef, Mode = budget.HasValue ? "combatPower" : "count", RequestedBudget = budget, CostMode = costMode };
+            var roster = new ResolvedCombatRoster { Id = id, SquadId = template.Id, FactionDef = template.FactionDef, Mode = budget.HasValue ? "combatPower" : "count", RequestedBudget = budget, CostMode = costMode, GenerationPolicy = "frozen" };
             Rand.PushState(seed);
             try
             {
@@ -185,6 +186,106 @@ namespace LogSyncMod.AutoTest
                 return roster;
             }
             finally { Rand.PopState(); }
+        }
+        private static ResolvedCombatRoster ResolvePawnGroups(string id, SquadTemplate template, decimal? budget, int count, string costMode, int seed)
+        {
+            var total = SquadTemplates.GroupCount(template);
+            if (!budget.HasValue && count != total) throw new ScenarioConfigurationException("Squad count does not match its PawnGroups");
+            using var faction = new FactionScope(template.FactionDef, template.Id);
+            var roster = new ResolvedCombatRoster { Id = id, SquadId = template.Id, FactionDef = template.FactionDef, Mode = budget.HasValue ? "combatPower" : "count", RequestedBudget = budget, CostMode = costMode, GenerationPolicy = "frozen" };
+            foreach (var groupXml in template.PawnGroups)
+            {
+                var group = XElement.Parse(groupXml);
+                var configuration = SquadTemplates.ConfigurationXml(group);
+                for (var i = 0; i < ScenarioLoader.I(group, "count"); i++)
+                {
+                    Pawn pawn = null;
+                    var memberSeed = SquadTemplates.MemberSeed(seed, id, roster.Members.Count);
+                    Rand.PushState(memberSeed);
+                    try
+                    {
+                        var generation = CombatConfiguration(group, faction.Faction);
+                        pawn = ScenarioGameBackend.GenerateTemporaryPawn(TemporaryPawnData.Parse(generation.ToString(SaveOptions.DisableFormatting)), faction.Faction, null, out _, forceConfiguredXenotype: true);
+                        var capture = XElement.Parse(TemporaryPawnCapture.Capture(pawn).TemplateXml);
+                        var explicitError = PawnConfiguration.ValidateExplicit(XElement.Parse(configuration), capture);
+                        if (explicitError != null) throw new ScenarioConfigurationException(explicitError);
+                        var retained = new HashSet<string>(new[] { "basePawnKind", "race", "gender", "Age", "Appearance", "Traits", "Skills", "Apparel", "Equipment", "Xenotype", "Genes" });
+                        foreach (var field in new[] { "Hediffs", "Abilities", "Resources" }) if (group.Element(field) != null || field == "Abilities" && group.Element("abilities") != null) retained.Add(field);
+                        foreach (var field in capture.Elements().Where(e => !retained.Contains(e.Name.LocalName)).ToList()) field.Remove();
+                        var power = CombatRoster.Power(Kind(group.Element("basePawnKind").Value).combatPower);
+                        var xenotype = pawn.genes?.Xenotype;
+                        var factor = xenotype == null ? 1 : CombatRoster.Power(xenotype.combatPowerFactor);
+                        roster.Members.Add(new ResolvedSquadMember { PawnKind = pawn.kindDef.defName, Xenotype = xenotype?.defName, BaseCombatPower = power, XenotypeFactor = factor,
+                            Cost = power * (costMode == "native" ? factor : 1), Seed = memberSeed, ConfigurationId = ScenarioLoader.A(group, "id"), ConfigurationXml = configuration,
+                            PawnTemplateXml = capture.ToString(SaveOptions.DisableFormatting), Childhood = pawn.story?.Childhood?.defName, Adulthood = pawn.story?.Adulthood?.defName });
+                    }
+                    finally { Destroy(pawn); Rand.PopState(); }
+                }
+            }
+            roster.PawnKind = roster.Members[0].PawnKind; roster.ResolvedCount = roster.Members.Count; roster.UnitCombatPower = roster.ActualCombatPower / roster.ResolvedCount;
+            var error = SquadTemplates.ValidateRoster(roster, template, budget, count, costMode);
+            if (error != null) throw new ScenarioConfigurationException(error);
+            return roster;
+        }
+        private static XElement CombatConfiguration(XElement actor, Faction faction)
+        {
+            var config = new XElement("PawnTemplate", actor.Elements().Select(e => new XElement(e)));
+            var kind = Kind(config.Element("basePawnKind").Value);
+            if (config.Element("Xenotype") != null)
+            {
+                var xeno = Xeno((string)config.Element("Xenotype").Attribute("def"));
+                if (!ModsConfig.BiotechActive || !kind.RaceProps.Humanlike || !xeno.canGenerateAsCombatant) throw new ScenarioConfigurationException("Incompatible combat xenotype: " + kind.defName + "/" + xeno.defName);
+            }
+            else if (ModsConfig.BiotechActive && kind.RaceProps.Humanlike)
+            {
+                var options = PawnGenerator.XenotypesAvailableFor(kind, faction: faction).Where(x => x.Key.canGenerateAsCombatant).ToList();
+                if (!options.TryRandomElementByWeight(x => x.Value, out var selected)) throw new ScenarioConfigurationException("No combat xenotype for " + kind.defName);
+                config.Add(new XElement("Xenotype", new XAttribute("def", selected.Key.defName)));
+            }
+            return config;
+        }
+        internal static ResolvedCombatRoster ResolveActor(string id, XElement actor, string factionDef, decimal? budget, int count, string costMode, int seed)
+        {
+            SquadTemplates.ValidateCostMode(costMode);
+            using var faction = new FactionScope(factionDef ?? "LogSync_GroupCombatFaction", id);
+            var configuration = new XElement("PawnTemplate", actor.Elements().Select(e => new XElement(e)));
+            var roster = new ResolvedCombatRoster { Id = id, PawnKind = configuration.Element("basePawnKind").Value, FactionDef = factionDef, CostMode = costMode,
+                Mode = budget.HasValue ? "combatPower" : "count", RequestedBudget = budget, GenerationPolicy = "frozen", TemplateXml = actor.ToString(SaveOptions.DisableFormatting) };
+            var maximum = budget.HasValue ? CombatRoster.MaxTeamMembers + 1 : count;
+            for (var i = 0; i < maximum; i++)
+            {
+                Pawn pawn = null;
+                var memberSeed = SquadTemplates.MemberSeed(seed, id, i); Rand.PushState(memberSeed);
+                try
+                {
+                    var config = CombatConfiguration(configuration, faction.Faction);
+                    pawn = ScenarioGameBackend.GenerateTemporaryPawn(TemporaryPawnData.Parse(config.ToString(SaveOptions.DisableFormatting)), faction.Faction, null, out _, forceConfiguredXenotype: true);
+                    var captured = XElement.Parse(TemporaryPawnCapture.Capture(pawn).TemplateXml);
+                    var error = PawnConfiguration.ValidateExplicit(configuration, captured);
+                    if (error != null) throw new ScenarioConfigurationException(id + ": " + error);
+                    var power = CombatRoster.Power(Kind(roster.PawnKind).combatPower);
+                    var xenotype = pawn.genes?.Xenotype;
+                    var factor = xenotype == null ? 1 : CombatRoster.Power(xenotype.combatPowerFactor);
+                    var cost = power * (costMode == "native" ? factor : 1);
+                    if (budget.HasValue && roster.ActualCombatPower + cost > budget.Value) { roster.NextMemberCost = cost; break; }
+                    foreach (var field in new[] { "Hediffs", "Abilities", "Resources" })
+                        if (configuration.Element(field) == null && (field != "Abilities" || configuration.Element("abilities") == null)) captured.Element(field)?.Remove();
+                    roster.Members.Add(new ResolvedSquadMember { PawnKind = pawn.kindDef.defName, Xenotype = xenotype?.defName, BaseCombatPower = power, XenotypeFactor = factor, Cost = cost,
+                        Seed = memberSeed, ConfigurationId = id, ConfigurationXml = configuration.ToString(SaveOptions.DisableFormatting), PawnTemplateXml = captured.ToString(SaveOptions.DisableFormatting),
+                        Childhood = pawn.story?.Childhood?.defName, Adulthood = pawn.story?.Adulthood?.defName });
+                    if (roster.Members.Count > CombatRoster.MaxTeamMembers)
+                    {
+                        roster.ResolvedCount = roster.Members.Count; roster.UnitCombatPower = roster.ActualCombatPower / roster.ResolvedCount;
+                        var limit = new ScenarioConfigurationException("Roster exceeds 200 members", "COMBAT_ROSTER_LIMIT_EXCEEDED");
+                        limit.Data["RejectedRoster"] = roster;
+                        throw limit;
+                    }
+                }
+                finally { Destroy(pawn); Rand.PopState(); }
+            }
+            if (roster.Members.Count == 0) throw new ScenarioConfigurationException("Budget cannot fund the first generated member", "COMBAT_BUDGET_TOO_SMALL");
+            roster.ResolvedCount = roster.Members.Count; roster.UnitCombatPower = roster.ActualCombatPower / roster.ResolvedCount;
+            return roster;
         }
         internal static Pawn GenerateMember(ResolvedSquadMember member, Faction faction, PlanetTile tile, RaidStrategyDef strategy = null, float points = 5000)
         {

@@ -33,6 +33,7 @@ namespace LogSyncMod.AutoTest.Scenarios
         public string StrategyDef { get; set; } = "ImmediateAttack";
         public string Composition { get; set; } = "weighted";
         public List<SquadOption> Options { get; set; } = new();
+        public List<string> PawnGroups { get; set; } = new();
         public string XenotypeMode { get; set; } = "inherit";
         public List<SquadXenotype> Xenotypes { get; set; } = new();
         public string GeneratorId { get; set; }
@@ -49,6 +50,8 @@ namespace LogSyncMod.AutoTest.Scenarios
         public int Seed { get; set; }
         // Captured native outfit/traits/skills; generated runtime effects remain native.
         public string PawnTemplateXml { get; set; }
+        public string ConfigurationId { get; set; }
+        public string ConfigurationXml { get; set; }
         public string Childhood { get; set; }
         public string Adulthood { get; set; }
     }
@@ -73,15 +76,33 @@ namespace LogSyncMod.AutoTest.Scenarios
             Check(section, "", "SquadTemplate", path, repeat: true);
             foreach (var node in section?.Elements() ?? Enumerable.Empty<XElement>())
             {
-                var value = Parse(node, path);
+                var value = Parse(node, path, root.Element("Templates"));
                 if (!result.TryAdd(value.Id, value)) ScenarioLoader.Fail(node, path, "duplicate squad template: " + value.Id);
             }
             return result;
         }
-        public static SquadTemplate Parse(XElement node, string path)
+        public static SquadTemplate Parse(XElement node, string path, XElement pawnTemplates = null)
         {
-            Check(node, "id source factionDef", "GroupMaker RaidRules Composition Xenotypes Generator", path);
+            Check(node, "id source factionDef", "GroupMaker RaidRules Composition Xenotypes Generator PawnGroup", path, repeat: true);
             var result = new SquadTemplate { Id = Need(node, "id", path), Source = Need(node, "source", path), FactionDef = Need(node, "factionDef", path), Xml = node.ToString(SaveOptions.DisableFormatting) };
+            if (result.Source == "groups")
+            {
+                if (node.Elements().Any(e => e.Name != "PawnGroup")) ScenarioLoader.Fail(node, path, "groups squads accept only PawnGroup children");
+                var groups = node.Elements("PawnGroup").ToList();
+                if (groups.Count == 0 || groups.Count > CombatRoster.MaxTeamMembers) ScenarioLoader.Fail(node, path, "groups squads require 1..200 PawnGroups");
+                foreach (var group in groups)
+                {
+                    if (group.Attributes().Any(a => !new[] { "id", "template", "count" }.Contains(a.Name.LocalName))) ScenarioLoader.Fail(group, path, "squad PawnGroup accepts id/template/count; deployment belongs to the containing team");
+                    Need(group, "id", path); Need(group, "count", path);
+                }
+                var resolved = ScenarioLoader.CompilePawnGroups(pawnTemplates, groups, path);
+                if (resolved.Sum(g => ScenarioLoader.I(g, "count")) > CombatRoster.MaxTeamMembers) ScenarioLoader.Fail(node, path, "groups squad exceeds 200 members");
+                result.Composition = "fixed";
+                result.PawnGroups = resolved.Select(g => g.ToString(SaveOptions.DisableFormatting)).ToList();
+                result.Xml = new XElement("SquadTemplate", node.Attributes(), resolved.Select(g => new XElement(g))).ToString(SaveOptions.DisableFormatting);
+                return result;
+            }
+            if (node.Elements("PawnGroup").Any() || node.Elements().GroupBy(e => e.Name).Any(g => g.Count() > 1)) ScenarioLoader.Fail(node, path, "PawnGroups require source=groups; duplicate squad field");
             if (!new[] { "faction", "custom", "generator" }.Contains(result.Source)) ScenarioLoader.Fail(node, path, "squad source must be faction/custom/generator");
             var maker = node.Element("GroupMaker");
             Check(maker, "mode kindDef index fingerprint referencePoints", "", path);
@@ -161,11 +182,31 @@ namespace LogSyncMod.AutoTest.Scenarios
                 if (group.Elements().Any(e => e.Name != "SquadTemplate") || group.Attribute("template") != null) ScenarioLoader.Fail(group, path, "squad PawnGroup cannot contain single-Pawn overrides");
                 if ((group.Attribute("count") != null) == (group.Attribute("combatPowerBudget") != null)) ScenarioLoader.Fail(group, path, "squad PawnGroup requires exactly one of count/combatPowerBudget");
                 ValidateCostMode(ScenarioLoader.A(group, "costMode", "pawnKind"));
+                var frozen = Parse(group.Element("SquadTemplate"), path);
+                if (frozen.Source == "groups" && group.Attribute("count") != null && ScenarioLoader.I(group, "count") != GroupCount(frozen)) ScenarioLoader.Fail(group, path, "count does not match the sum of squad PawnGroups");
+                if (frozen.Source == "custom" && frozen.Composition == "fixed" && group.Attribute("count") != null && ScenarioLoader.I(group, "count") != frozen.Options.Sum(o => o.Count)) ScenarioLoader.Fail(group, path, "count does not match fixed Composition");
             }
             root.Element("SquadTemplates")?.Remove();
         }
         public static void ValidateCostMode(string value)
         { if (value != "native" && value != "pawnKind") throw new ScenarioConfigurationException("costMode must be native/pawnKind"); }
+        public static int GroupCount(SquadTemplate template) => template.PawnGroups.Sum(g => ScenarioLoader.I(XElement.Parse(g), "count"));
+        public static string ConfigurationKey(ResolvedSquadMember member) => ConfigurationKey(member, null);
+        public static string ConfigurationKey(ResolvedSquadMember member, XElement actual)
+        {
+            var identity = (member.ConfigurationId ?? member.PawnKind) + ":" + member.PawnKind + ":" + member.Xenotype;
+            if (member.PawnTemplateXml == null) return identity;
+            var xml = actual ?? XElement.Parse(member.PawnTemplateXml);
+            XElement Normalize(XElement node, bool ignoreColors = false) => node == null ? null : new XElement(node.Name,
+                node.Attributes().Where(a => !ignoreColors || a.Name != "color").OrderBy(a => a.Name.ToString()).Select(a => new XAttribute(a)),
+                node.HasElements ? node.Elements().Select(e => Normalize(e, ignoreColors)).OrderBy(e => e.ToString(SaveOptions.DisableFormatting), StringComparer.Ordinal) : (object)node.Value);
+            var loadout = new XElement("Configuration", member.ConfigurationXml == null ? null : Normalize(XElement.Parse(member.ConfigurationXml)),
+                new[] { "Apparel", "Equipment" }.Select(f => Normalize(xml.Element(f), ignoreColors: true)));
+            using var sha = SHA256.Create();
+            return identity + ":" + Convert.ToHexString(sha.ComputeHash(Encoding.UTF8.GetBytes(loadout.ToString(SaveOptions.DisableFormatting))));
+        }
+        public static string ConfigurationName(ResolvedSquadMember member) => member.ConfigurationId ?? member.PawnKind + (member.Xenotype == null ? "" : "/" + member.Xenotype)
+            + (member.PawnTemplateXml == null ? "" : "/" + (XElement.Parse(member.PawnTemplateXml).Element("Equipment")?.Elements().FirstOrDefault()?.Attribute("def")?.Value ?? "unarmed"));
         public static string ValidateRoster(ResolvedCombatRoster roster, SquadTemplate template, decimal? budget, int count, string costMode)
         {
             if (roster == null || roster.SquadId != template.Id || roster.FactionDef != template.FactionDef || roster.CostMode != costMode
@@ -185,6 +226,13 @@ namespace LogSyncMod.AutoTest.Scenarios
                 if (template.XenotypeMode != "inherit" && member.Xenotype != null && !template.Xenotypes.Any(x => x.Def == member.Xenotype)) return "混编成员超出指定异种池";
             }
             if (template.Source == "custom" && template.Composition == "fixed" && template.Options.Any(o => roster.Members.Count(m => m.PawnKind == o.PawnKind) != o.Count)) return "固定编队人数与XML不符";
+            if (template.Source == "groups")
+            {
+                var groups = template.PawnGroups.Select(XElement.Parse).ToList();
+                if (roster.Members.Any(m => !groups.Any(g => ScenarioLoader.A(g, "id") == m.ConfigurationId && ConfigurationXml(g) == m.ConfigurationXml && g.Element("basePawnKind")?.Value == m.PawnKind))) return "角色群体的配置来源与冻结模板不符";
+                foreach (var group in groups)
+                    if (roster.Members.Count(m => m.ConfigurationId == ScenarioLoader.A(group, "id")) != ScenarioLoader.I(group, "count")) return "角色群体人数与模板不符";
+            }
             if (template.Source == "faction")
             {
                 var maker = roster.GroupMakers.SingleOrDefault(m => m.Index == roster.GroupMakerIndex);
@@ -202,15 +250,23 @@ namespace LogSyncMod.AutoTest.Scenarios
             for (var i = 0; i < roster.Members.Count; i++)
             {
                 var member = roster.Members[i]; var unit = initial.SingleOrDefault(u => u.Id == prefix + "[" + i + "]");
-                if (unit == null || unit.Kind != member.PawnKind || unit.InitialSnapshot == null) return "实际参战兵种与混编名单不符";
-                var actual = XElement.Parse(TemporaryPawnData.Parse(unit.InitialSnapshot).TemplateXml);
+                if (unit == null || unit.Kind != member.PawnKind || unit.GeneratedSnapshot == null || unit.InitialSnapshot == null) return "实际参战兵种或生成/初始快照与名单不符";
+                if (unit.ConfigurationId != member.ConfigurationId || unit.ConfigurationKey != ConfigurationKey(member)) return "实际单位配置身份与冻结名单不符";
+                var actual = PawnConfiguration.Read(unit.GeneratedSnapshot);
                 var expected = XElement.Parse(member.PawnTemplateXml);
                 if ((string)actual.Element("Xenotype")?.Attribute("def") != member.Xenotype) return "实际异种与冻结名单不符";
-                foreach (var field in new[] { "Apparel", "Equipment" })
-                    if (!XNode.DeepEquals(actual.Element(field), expected.Element(field))) return "实际配装与冻结名单不符";
+                var frozenError = PawnConfiguration.ValidateFrozen(expected, actual);
+                if (frozenError != null) return unit.Id + ": " + frozenError
+                    + (frozenError.EndsWith("Genes", StringComparison.Ordinal) ? "; expected=" + expected.Element("Genes") + "; actual=" + actual.Element("Genes") : "");
+                if (member.ConfigurationXml != null)
+                {
+                    var explicitError = PawnConfiguration.ValidateExplicit(XElement.Parse(member.ConfigurationXml), actual);
+                    if (explicitError != null) return explicitError;
+                }
             }
             return null;
         }
+        public static string ConfigurationXml(XElement group) => new XElement("PawnTemplate", group.Elements().Select(e => new XElement(e))).ToString(SaveOptions.DisableFormatting);
         public static int MemberSeed(int seed, string id, int index)
         {
             using var sha = SHA256.Create();

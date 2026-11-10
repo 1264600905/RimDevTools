@@ -22,6 +22,7 @@ namespace LogSyncMod.AutoTest.Scenarios
         public int Count { get; set; }
         public decimal TotalCombatPower { get; set; }
         public string Xenotype { get; set; }
+        public string ConfigurationKey { get; set; }
         public List<ArenaEntrantProfile> Composition { get; set; } = new();
         public double CombatPower { get; set; }
         public double Health { get; set; }

@@ -56,7 +56,7 @@ namespace LogSyncMod.AutoTest.Scenarios
         {
             var members = snapshot.Units.Where(u => u.Team == team.Id).ToList();
             var other = snapshot.Teams.FirstOrDefault(t => t.Id != team.Id);
-            var groups = members.Where(u => u.Alive).GroupBy(u => GroupCombatPresentation.UnitTypeName(u.KindLabel, u.Kind), StringComparer.Ordinal)
+            var groups = members.Where(u => u.Alive).GroupBy(u => u.Group ?? u.Kind ?? u.Id, StringComparer.Ordinal)
                 .OrderByDescending(g => g.Count()).ThenBy(g => g.Key, StringComparer.Ordinal).ToArray();
             var living = GroupCombatPresentation.SurvivorTotals(members);
             var otherLiving = GroupCombatPresentation.SurvivorTotals(snapshot.Units.Where(u => u.Team == other?.Id));
@@ -67,7 +67,7 @@ namespace LogSyncMod.AutoTest.Scenarios
                     || team.Downed > 0 || team.Dead > 0 || team.Escaped > 0 || team.Removed > 0
                     || members.Any(u => u.WasDowned || u.WasDead),
                 LivingGroups = groups.Take(5).Select(MakeGroup).ToArray(),
-                IntroGroups = members.GroupBy(u => GroupCombatPresentation.UnitTypeName(u.KindLabel, u.Kind), StringComparer.Ordinal).Select(MakeGroup).ToArray(),
+                IntroGroups = members.GroupBy(u => u.Group ?? u.Kind ?? u.Id, StringComparer.Ordinal).Select(MakeGroup).ToArray(),
                 Output = Rankings(members, u => u.EnemyDamage), Taken = Rankings(members, u => u.DamageTaken),
                 Population = "存活 " + team.Alive + "/" + team.Total + "   倒地 " + team.Downed + "   死亡 " + team.Dead,
                 Reinforcements = team.Joined > 0 ? "初始 " + team.Initial + "   新增 " + team.Joined + "   待复活 " + team.PendingRevival : null,
