@@ -4,7 +4,7 @@
 
 RimDevTools is a Windows toolchain for RimWorld mod development. It provides repeatable CLI operations for environment checks, builds, deployment, dependency discovery, log collection, game testing and Workshop publishing. The bundled templates and tool Mod contain files for RimWorld **1.6 and 1.7**. The CLI also recognizes the 1.7+ modern layout; the release manifest defines which game versions its components and updates actually support.
 
-The current version is **1.5.8.0**, with [RimWorld 1.6 and 1.7 templates and a Tools Package](https://github.com/1264600905/RimDevTools/releases/tag/v1.5.8.0). The 1.7 test backend adds an XML-backed arena workbench for editing teams, appearance, equipment, identities and presets, with stronger native combat validation. This release improves the manual test interface, scoped pawn exports and optional Camera+ compatibility, and fixes XML scenario observation contracts and error reporting. The custom scenario backend still supports RimWorld 1.7 only.
+The current version is **1.5.9.0**, with [RimWorld 1.6 and 1.7 templates and a Tools Package](https://github.com/1264600905/RimDevTools/releases/tag/v1.5.9.0). The arena workbench and XML scenarios now let each team override its AI or inherit the format default, with consistent AI controls across all three formats. This release documents and validates fixed battlefields, hand-authored group-combat formations and automatic arena formations, and adds tactical AI and battlefield styles. The custom scenario backend still supports RimWorld 1.7 only.
 
 ## Repository components
 
@@ -209,9 +209,9 @@ powershell -ExecutionPolicy Bypass -File .tools\publish-rimdevtools.ps1 -CreateZ
 Output:
 
 ```text
-artifacts/RimDevTools-1.5.8.0-Template-RimWorld-1.6/
-artifacts/RimDevTools-1.5.8.0-Template-RimWorld-1.7/
-artifacts/RimDevTools-1.5.8.0-Tools/
+artifacts/RimDevTools-1.5.9.0-Template-RimWorld-1.6/
+artifacts/RimDevTools-1.5.9.0-Template-RimWorld-1.7/
+artifacts/RimDevTools-1.5.9.0-Tools/
 ```
 
 Each directory has one `.zip`; upload only these three ZIPs. Verify all three release layouts, then run the isolated Windows update integration tests:
@@ -219,11 +219,11 @@ Each directory has one `.zip`; upload only these three ZIPs. Verify all three re
 ```powershell
 dotnet build RimDevTools.ReleaseTests\RimDevTools.ReleaseTests.csproj
 dotnet RimDevTools.ReleaseTests\bin\Debug\net10.0\RimDevTools.ReleaseTests.dll `
-  artifacts\RimDevTools-1.5.8.0-Template-RimWorld-1.6
+  artifacts\RimDevTools-1.5.9.0-Template-RimWorld-1.6
 dotnet RimDevTools.ReleaseTests\bin\Debug\net10.0\RimDevTools.ReleaseTests.dll `
-  artifacts\RimDevTools-1.5.8.0-Template-RimWorld-1.7
+  artifacts\RimDevTools-1.5.9.0-Template-RimWorld-1.7
 dotnet RimDevTools.ReleaseTests\bin\Debug\net10.0\RimDevTools.ReleaseTests.dll `
-  artifacts\RimDevTools-1.5.8.0-Tools
+  artifacts\RimDevTools-1.5.9.0-Tools
 dotnet RimDevTools.Tests\bin\Debug\net10.0\RimDevTools.Tests.dll --tool-update
 dotnet RimDevTools.Tests\bin\Debug\net10.0\RimDevTools.Tests.dll --tool-update-live
 ```

@@ -23,6 +23,10 @@ internal static class CombatTacticsTests
         check(budget.TakeReach() && budget.TakeMove() && budget.ReachChecks == 1 && budget.Moves == 1, "budget resumes in the next simulation batch");
         check(!CombatTacticsPolicy.WorthMoving(10, 16, false) && CombatTacticsPolicy.WorthMoving(10, 16, true), "small cover improvements preserve aim while immediate threats allow evasive moves");
         check(CombatTacticsPolicy.FireDistance(30, 0, true) < CombatTacticsPolicy.FireDistance(30, 0, false), "melee threats leave range margin for moving targets");
+        check(CombatTacticsPolicy.ShouldBreakRangedExposure(2, 5, 6, true), "mixed hold formation breaks exposure when melee and enemy ranged pressure dominate");
+        check(!CombatTacticsPolicy.ShouldBreakRangedExposure(8, 2, 2, true), "a superior ranged line can keep firing instead of abandoning its arc");
+        check(CombatTacticsPolicy.ShouldSpread(8, 4, true, 180), "ranged teams spread after securing a firing opportunity");
+        check(!CombatTacticsPolicy.ShouldSpread(1, 4, true, 300), "a lone shooter does not waste time on formation spreading");
         var fixtures = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "Fixtures");
         foreach (var name in new[] { "GroupCombatTactics.autotest.xml", "ArenaTactics.autotest.xml" })
         {

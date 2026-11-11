@@ -67,10 +67,10 @@
     <Actors><PawnGroup formation="grid" id="left" template="rifle" team="A" count="8" originX="36" originZ="40" columns="2" spacing="2" /><PawnGroup formation="grid" id="right" template="rifle" team="B" count="8" originX="58" originZ="40" columns="2" spacing="2" /></Actors>
     <GroupCombat durationSeconds="50" timeSpeed="superfast"><End confirmationTicks="30" /></GroupCombat><Output width="1280" height="720" />
   </Case>
-  <Case id="dense" kind="groupCombat" name="400人性能与占格" seed="12345" timeoutRealSeconds="360">
+  <Case id="dense" kind="groupCombat" name="勾引人类200对200大地懒" seed="12345" timeoutRealSeconds="360">
     <testDefName>Tactics_Dense</testDefName><Scene preset="open" />
-    <Teams><Team id="A" ai="defendPoint" /><Team id="B" ai="lure" /></Teams>
-    <Actors><PawnGroup formation="grid" id="left" template="stress-rifle" team="A" count="150" originX="20" originZ="20" columns="15" spacing="1" /><PawnGroup formation="grid" id="left-front" template="stress-brawler" team="A" count="50" originX="31" originZ="20" columns="17" spacing="1" /><PawnGroup formation="grid" id="right" template="stress-rifle" team="B" count="150" originX="65" originZ="20" columns="15" spacing="1" /><PawnGroup formation="grid" id="right-front" template="stress-brawler" team="B" count="50" originX="60" originZ="20" columns="17" spacing="1" /></Actors>
+    <Teams><Team id="A" ai="lure" /><Team id="B" ai="assaultColony" /></Teams>
+    <Actors><PawnGroup formation="grid" id="left" template="stress-rifle" team="A" count="150" originX="20" originZ="20" columns="15" spacing="1" /><PawnGroup formation="grid" id="left-front" template="stress-brawler" team="A" count="50" originX="31" originZ="20" columns="17" spacing="1" /><PawnGroup formation="grid" id="sloths" team="B" count="200" originX="65" originZ="20" columns="20" spacing="1"><basePawnKind>Megasloth</basePawnKind></PawnGroup></Actors>
     <GroupCombat durationSeconds="35" timeSpeed="normal"><End confirmationTicks="30" /></GroupCombat><Output width="1280" height="720" />
   </Case>
 </TestSuite>

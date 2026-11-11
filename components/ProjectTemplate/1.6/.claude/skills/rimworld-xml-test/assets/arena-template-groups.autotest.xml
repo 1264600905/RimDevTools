@@ -38,7 +38,7 @@
     </SquadTemplate>
   </SquadTemplates>
   <ScenePresets>
-    <Scene id="studio" type="mainMap" sizeX="120" sizeZ="120" revealFog="all">
+    <Scene id="studio" type="mainMap" sizeX="120" sizeZ="120" battlefield="cover" featureDensity="1" spawnClearance="6" revealFog="all">
       <Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/>
     </Scene>
   </ScenePresets>
@@ -48,7 +48,7 @@
     <Scene preset="studio"/>
     <Roster mode="combatPower" budget="5000" costMode="native"/>
     <Entrants>
-      <Entrant id="knights" squad="knights" mode="count" name="骑士甲 15 枪手＋5 剑盾"/>
+      <Entrant id="knights" squad="knights" mode="count" name="骑士甲 15 枪手＋5 剑盾" ai="defendPoint"/>
       <Entrant id="raiders" squad="raiders" name="5000 CP 海盗"/>
     </Entrants>
     <Battle durationSeconds="180" timeSpeed="normal" aiPolicy="assaultColony"/>
@@ -60,7 +60,7 @@
     <Scene preset="studio"/>
     <Roster mode="combatPower" budget="5000" costMode="native"/>
     <Entrants>
-      <Entrant id="knights" squad="knights" mode="count" role="boss" name="骑士甲 15 枪手＋5 剑盾"/>
+      <Entrant id="knights" squad="knights" mode="count" role="boss" name="骑士甲 15 枪手＋5 剑盾" ai="defendPoint"/>
       <Entrant id="raiders" squad="raiders" role="challenger" name="5000 CP 海盗"/>
     </Entrants>
     <Battle durationSeconds="180" timeSpeed="normal" aiPolicy="assaultColony"/>
@@ -70,7 +70,7 @@
     <Scene preset="studio"/>
     <Roster mode="combatPower" budget="5000" costMode="native"/>
     <Entrants>
-      <Entrant id="knights" squad="knights" mode="count" role="boss" name="固定 20 人魔王"/>
+      <Entrant id="knights" squad="knights" mode="count" role="boss" name="固定 20 人魔王" ai="defendPoint"/>
       <Entrant id="raiders" squad="raiders" role="challenger"/>
     </Entrants>
     <Growth target="budget" mode="add" increment="1000" maxValue="7000"/>

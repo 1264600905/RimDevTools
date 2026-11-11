@@ -15,6 +15,7 @@ internal static class ArenaWorkbenchTests
         check(xml.Element("Templates").Elements().Count() == 3, "every mixed member group is exported as its own pawn template");
         check(plan.Tournaments[0].SquadTemplates["squad_0"].PawnGroups.Count == 2, "GUI mixed teams use existing source=groups");
         check(plan.Tournaments[0].Entrants[0].Count == 12, "mixed team count comes from its constituent groups");
+        check(xml.Element("Tournament").Element("Entrants").Elements("Entrant").All(e => (string)e.Attribute("ai") == null), "inherited workbench team AI omits the override and follows Battle aiPolicy");
         check(XElement.Parse(plan.Tournaments[0].SquadTemplates["squad_0"].PawnGroups[1]).Element("Equipment").Element("SetPrimary").Attribute("stuff").Value == "Steel", "gear and valid stuff survive template resolution");
         var untouched = doc.Teams[0].Members[0].PawnXml;
         var duplicate = ArenaWorkbench.Duplicate(doc.Teams[0]);
@@ -42,15 +43,30 @@ internal static class ArenaWorkbenchTests
             if (preset.Format == "groupcombat")
             {
                 var compiledGroup = ArenaWorkbench.CompileGroup(input);
-                check(compiledGroup.Purpose == "groupcombat" && GroupCombatPlan.Expand(compiledGroup).Count == 1, "groupcombat preset uses the independent group-combat executor");
+                var groupCase = XElement.Parse(compiledGroup.Cases.Single().Xml);
+                check(compiledGroup.Purpose == "groupcombat" && GroupCombatPlan.Expand(compiledGroup).Count == 1
+                    && (string)groupCase.Element("Teams").Elements("Team").First().Attribute("ai") == null,
+                    "groupcombat preset uses the independent executor and inherited team AI");
             }
             else
             {
+                input.Teams[0].Ai = "defendPoint";
+                var suite = ArenaWorkbench.Export(input);
                 var compiled = ArenaWorkbench.Compile(input).Tournaments.Single();
-                check(compiled.Format == preset.Format && compiled.Seed == preset.Seed, "workbench preset compiles through existing loader: " + preset.Name);
+                check(compiled.Format == preset.Format && compiled.Seed == preset.Seed && compiled.Entrants[0].Ai == "defendPoint"
+                    && (string)suite.Element("Tournament").Element("Entrants").Elements("Entrant").First().Attribute("ai") == "defendPoint",
+                    "workbench preset exports per-team AI through existing loader: " + preset.Name);
             }
         }
         var rich = ArenaWorkbench.Create();
+        rich.Teams[0].Ai = "defendPoint";
+        rich.Schedule.Ai = "lure";
+        var aiRoundTrip = ArenaWorkbench.Compile(rich).Tournaments.Single();
+        check(aiRoundTrip.Entrants[0].Ai == "defendPoint" && aiRoundTrip.Entrants[1].Ai == null
+            && (string)XElement.Parse(ArenaLoader.CompileBattle(aiRoundTrip,
+                new() { CombatRoster.Resolve(rich.Teams[0].Id, "Colonist", 75, null, 12), CombatRoster.Resolve(rich.Teams[1].Id, "Colonist", 75, null, 10) }, null, 0).Xml)
+                .Element("Teams").Elements("Team").First().Attribute("ai") == "defendPoint",
+            "team AI override survives XML compilation while unset teams inherit the default");
         ArenaWorkbench.ReadAndChange(rich.Teams[0].Members[0], p => {
             p.Add(new XElement("Traits", new XAttribute("mode", "replace"), new XElement("Set", new XAttribute("def", "Tough"), new XAttribute("degree", 0))));
             p.Add(new XElement("Genes", new XAttribute("mode", "patch"), new XElement("Add", new XAttribute("def", "Robust"), new XAttribute("xenogene", true))));

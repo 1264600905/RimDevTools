@@ -91,6 +91,28 @@ internal static class ScenarioPreflightTests
                 var report = ScenarioPreflight.Validate(file, arena ? "arena" : group ? "groupcombat" : "auto", names, out _);
                 check(report.Valid && (!group || report.RoundCount > 0) && (!arena || report.TournamentCount > 0), "current template preflight: " + Path.GetFileName(file));
             }
+            foreach (var gameVersion in new[] { "1.6", "1.7" })
+            {
+                var currentAssets = Path.Combine(repository.FullName, "components", "ProjectTemplate", gameVersion, ".claude", "skills", "rimworld-xml-test", "assets");
+                var arenaTemplate = Path.Combine(currentAssets, "arena-template-groups.autotest.xml");
+                var groupTemplate = Path.Combine(currentAssets, "groupcombat-template-groups.autotest.xml");
+                var arenaReportCurrent = ScenarioPreflight.Validate(arenaTemplate, "arena", ["Example_TemplateGroupsKnockout"], out var arenaPlan);
+                var arenaTournament = arenaPlan?.Arena?.Tournaments.SingleOrDefault(t => t.Id == "knockout");
+                var arenaSharedXml = arenaTournament == null ? null : XElement.Parse(arenaTournament.SharedXml);
+                check(arenaReportCurrent.Valid && arenaTournament?.Entrants[0].Ai == "defendPoint"
+                    && arenaSharedXml?.Descendants("Scene").SingleOrDefault(s => (string?)s.Attribute("id") == "studio")?.Attribute("battlefield")?.Value == "cover",
+                    $"{gameVersion} Arena template validates requirements, fixed battlefield and per-entrant AI");
+
+                var groupReportCurrent = ScenarioPreflight.Validate(groupTemplate, "groupcombat", ["Example_TemplateGroupsCombat"], out var groupPlan);
+                var groupCase = groupPlan?.Cases.Single();
+                var groupXml = groupCase == null ? null : XElement.Parse(groupCase.Xml);
+                check(groupReportCurrent.Valid && groupReportCurrent.RoundCount > 0
+                    && groupXml?.Descendants("SquadTemplate").Any(s => (string?)s.Attribute("source") == "groups") == true
+                    && groupXml?.Element("Scene")?.Attribute("battlefield")?.Value == "mountainRidges"
+                    && groupXml?.Element("Teams")?.Elements("Team").Single(t => (string?)t.Attribute("id") == "A").Attribute("ai")?.Value == "lure"
+                    && groupXml?.Descendants("PawnGroup").Any(p => (string?)p.Attribute("formation") == "grid") == true,
+                    $"{gameVersion} groupcombat template validates group squads, fixed battlefield, team AI and formation");
+            }
             var arenaXml = File.ReadAllText(Path.Combine(assets, "arena.autotest.xml"));
             File.WriteAllText(input, arenaXml.Replace("<Output width=", "<Output widht="));
             var arenaReport = ScenarioPreflight.Validate(input, "arena", ["Example_AnimalArena"], out _);

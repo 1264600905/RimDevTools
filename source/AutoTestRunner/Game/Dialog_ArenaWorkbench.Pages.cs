@@ -49,8 +49,8 @@ namespace LogSyncMod.AutoTest
             if (s.Format == "knockout") s.Matchmaking = a.Choice("配对方式", s.Matchmaking, "closestCount|人数接近优先", "random|随机抽签");
             s.Duration = a.Number("duration", "单场模拟秒数", s.Duration, .01, 86400);
             s.Speed = a.Choice("比赛速度", s.Speed, "normal|标准", "fast|快速", "superfast|极快");
-            s.Ai = a.Choice("默认战斗 AI", s.Ai, "assaultColony|原生立刻进攻", "defendPoint|固守", "lure|勾引");
-            if (s.Format == "groupcombat") a.Note("右侧可为两支编队分别选择 AI；固守和勾引均保留远程射击职责。", 42);
+            s.Ai = a.Choice("默认战斗 AI", s.Ai, "battle|原生战斗", "seekAndAttack|搜寻并攻击", "assaultThings|攻击目标", "assaultColony|原生立刻进攻", "defendPoint|固守", "lure|勾引", "native|原生 AI");
+            a.Note("右侧可为每支编队分别选择 AI；跟随默认时使用本处的赛制默认 AI。固守和勾引均保留远程射击职责。", 42);
             a.Title("随机种子");
             s.Seed = (int)a.Number("seed", "种子（-1 为随机）", s.Seed, int.MinValue, int.MaxValue, true);
             var yy = a.Y;
@@ -79,7 +79,7 @@ namespace LogSyncMod.AutoTest
                 Widgets.CheckboxLabeled(new Rect(b.X + 34, b.Y, b.Width - 34, 29), t.Name + (t.Mode == "combatPower" ? " · " + t.Budget + " CP" : " · " + t.MemberCount + " 人"), ref enabled);
                 t.Enabled = enabled; b.Y += 37;
                 if (s.Format is "bossRoundRobin" or "limitChallenge") t.Role = b.Choice("角色：" + t.Name, t.Role, "boss|魔王", "challenger|挑战者");
-                if (s.Format == "groupcombat") t.Ai = b.Choice("第 " + (document.Teams.IndexOf(t) + 1) + " 队 AI：" + t.Name, t.Ai, "inherit|跟随默认", "assaultColony|原生立刻进攻", "defendPoint|固守", "lure|勾引");
+                t.Ai = b.Choice("第 " + (document.Teams.IndexOf(t) + 1) + " 队 AI：" + t.Name, t.Ai, "inherit|跟随默认", "battle|原生战斗", "seekAndAttack|搜寻并攻击", "assaultThings|攻击目标", "assaultColony|原生立刻进攻", "defendPoint|固守", "lure|勾引", "native|原生 AI");
             }
             if (document.Teams.All(t => t.IsEmpty)) b.Note("还没有可参赛的编队，请先添加人员或战斗组。", 42);
             if (b.Action("添加 / 启用编队…")) OpenRosterManagement();

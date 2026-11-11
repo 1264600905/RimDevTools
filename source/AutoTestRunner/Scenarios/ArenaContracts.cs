@@ -62,6 +62,8 @@ namespace LogSyncMod.AutoTest.Scenarios
     {
         public string Id { get; set; }
         public string Role { get; set; }
+        // Optional per-entrant override; null means use Battle aiPolicy.
+        public string Ai { get; set; }
         public string RosterMode { get; set; }
         public string CostMode { get; set; }
         public string PawnKind { get; set; }

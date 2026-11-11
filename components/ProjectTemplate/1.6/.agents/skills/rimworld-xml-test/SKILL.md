@@ -34,6 +34,7 @@ description: 编写、调整和运行 RimDevTools 外部 XML 自动测试，包�
 | 三视图、整套配装、暂存角色输入 | [views-and-staging.md](references/views-and-staging.md)、[配装视图](assets/loadout-view.autotest.xml) |
 | 双方群战、整场继承、换边与伤害统计 | [groupcombat.md](references/groupcombat.md)、[群战实验](assets/groupcombat.autotest.xml) |
 | 擂台三赛制、角色分组、人数/CP 加法与乘法增长、规则页及成绩核对 | [arena.md](references/arena.md)、[淘汰赛](assets/arena.autotest.xml)、[魔王轮战与极限挑战](assets/arena-challenges.autotest.xml) |
+| 固定战场样式、双方队伍 AI 覆盖、群战出生阵型或擂台自动布阵 | [groupcombat.md](references/groupcombat.md#ai-与准备)、[arena.md](references/arena.md#地图ai-与出生阵型)、[地图字段索引](references/field-index.md#默认值枚举和模式限制) |
 | 同一角色模板组合多人，群战与三种擂台复用 | [squads-and-rosters.md](references/squads-and-rosters.md)、[模板混编擂台](assets/arena-template-groups.autotest.xml)、[模板混编群战](assets/groupcombat-template-groups.autotest.xml) |
 | 战力配兵、派系/自定义混编、异种与扩展生成器 | [squads-and-rosters.md](references/squads-and-rosters.md)、[混编群战](assets/groupcombat-squads.autotest.xml) |
 

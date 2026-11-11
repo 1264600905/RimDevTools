@@ -162,7 +162,8 @@ namespace LogSyncMod.AutoTest
             {
                 var team = teams[i];
                 if (team.Mode != "count" && team.Mode != "combatPower") throw new ScenarioConfigurationException("编队模式必须为 count/combatPower。");
-                var entrant = new XElement("Entrant", new XAttribute("id", team.Id), new XAttribute("name", team.Name ?? team.Id), new XAttribute("mode", team.Mode), new XAttribute("costMode", team.CostMode));
+                var entrant = new XElement("Entrant", new XAttribute("id", team.Id), new XAttribute("name", team.Name ?? team.Id), new XAttribute("mode", team.Mode), new XAttribute("costMode", team.CostMode),
+                    team.Ai == "inherit" ? null : new XAttribute("ai", team.Ai));
                 if (s.Format != "knockout") entrant.Add(new XAttribute("role", team.Role));
                 if (team.Source == "groups")
                 {

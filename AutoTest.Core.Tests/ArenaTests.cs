@@ -216,6 +216,12 @@ internal static class ArenaTests
         var verticalBattle = XElement.Parse(ArenaLoader.CompileBattle(input, verticalRosters, null, 0).Xml);
         check((string)verticalBattle.Element("GroupCombat").Attribute("aiPolicy") == "assaultColony",
             "arena explicitly selects the native immediate-assault AI without a custom combat scheduler");
+        var aiOverrides = Parse(xml.Replace("id='a' pawnKind", "id='a' ai='defendPoint' pawnKind")).Tournaments.Single();
+        var swappedAiBattle = XElement.Parse(ArenaLoader.CompileBattle(aiOverrides, verticalRosters, new ArenaMatch { Left = "b", Right = "a" }, 0).Xml);
+        check((string)swappedAiBattle.Element("Teams").Elements("Team").First().Attribute("ai") == null
+            && (string)swappedAiBattle.Element("Teams").Elements("Team").Last().Attribute("ai") == "defendPoint",
+            "arena match applies per-entrant AI after matchup side ordering and lets the other side inherit the default");
+        Reject(() => Parse(xml.Replace("id='a' pawnKind", "id='a' ai='not-an-ai' pawnKind")), "arena rejects unsupported per-entrant AI policies");
         var verticalActors = verticalBattle.Element("Actors").Elements("PawnGroup").ToList();
         check(PawnGroupFormation.Extents(verticalActors[0], true) == (16, 4)
             && PawnGroupFormation.Extents(verticalActors[1], true) == (4, 0)

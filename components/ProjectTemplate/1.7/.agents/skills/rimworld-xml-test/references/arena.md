@@ -21,10 +21,11 @@
 ```xml
 <Roster mode="combatPower" budget="1200" costMode="pawnKind"/>
 <Entrants>
-  <Entrant id="wolves" pawnKind="Wolf_Timber" name="森林狼"/>
+  <Entrant id="wolves" pawnKind="Wolf_Timber" name="森林狼" ai="lure"/>
   <Entrant id="bears" pawnKind="Bear_Polar" name="北极熊" budget="1500"/>
-  <Entrant id="raiders" squad="myRaidSquad" name="混编突袭队"/>
+  <Entrant id="raiders" squad="myRaidSquad" name="混编突袭队" ai="defendPoint"/>
 </Entrants>
+<Battle aiPolicy="assaultColony"/>
 ```
 
 上述 squad 须在 Suite 的 SquadTemplates 中定义，见 [squads-and-rosters.md](squads-and-rosters.md)。完整可用起点见 [arena.autotest.xml](../assets/arena.autotest.xml)。
@@ -36,7 +37,43 @@
 - 参赛队 2—64，id 区分大小写唯一；`pawnKind` 与 `squad` 必须二选一。三种赛制均允许相同 PawnKind 以不同 id、人数或异种配置参赛；参赛 id、配置来源与实际配装用于身份，显示名不参与去重。
 - 直接 pawnKind 可用 `xenotype="Yttakin"` 等，但须 Biotech、人形种族及已加载 XenotypeDef；squad 项不允许另加 xenotype，改其模板 Xenotypes。每队 1—200 人，每场只打两队。
 
-`Scene type="mainMap"` 与群战共享严格地图解析；可通过 preset 引用 Suite 的 ScenePresets，再用本场字段覆盖。尺寸省略且预设未给尺寸时擂台冻结为 100×100，范围 30—250。支持 generatorDef、Environment、Layout、Validation；地图生成及日照限制见 [schema-and-actors.md](schema-and-actors.md#地图与预设)。出生阵型自动沿 Z 优先填充、spacing=2，双方约在地图宽度 1/5 与 4/5，按实际人数验证边界，不提供 Actors 手工站位入口。
+`Scene type="mainMap"` 与群战共享严格地图解析；可通过 preset 引用 Suite 的 ScenePresets，再用本场字段覆盖。尺寸省略且预设未给尺寸时擂台冻结为 100×100，范围 30—250。支持 generatorDef、Environment、Layout、Validation；地图生成及日照限制见 [schema-and-actors.md](schema-and-actors.md#地图与预设)。
+
+### 地图、AI 与出生阵型
+
+群战和擂台可在 `Scene` 上选宿主内置的固定战场样式。样式通过 seed 复现地形和掩体；它不替换 MapGeneratorDef，不接受自定义样式名。
+
+| `battlefield` | 固定场景 |
+| --- | --- |
+| `open` | 开阔平地，无额外障碍，适合基础战力对比 |
+| `cover` | 交错沙袋和射击通道 |
+| `mountainRidges` | 花岗岩 / 板岩山脊与山口 |
+| `mountainValley` | 砂岩峡谷、支脉隘口和中央宽谷 |
+| `glacier` | 冰面、积雪与岩岛 |
+| `urban` | 废墟街区、建筑、道路和巷道 |
+
+```xml
+<Scene type="mainMap" sizeX="140" sizeZ="140" battlefield="urban"
+       featureDensity="1" spawnClearance="6" revealFog="all">
+  <Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/>
+</Scene>
+```
+
+`featureDensity` 默认 1、范围 0.5—1.5；`spawnClearance` 默认 6、范围 2—12。两者只有与 `battlefield` 同时使用才有效；样式会补入默认 Environment，显式天气、温度、屋顶和日照仍可覆盖。省略 `battlefield` 使用所选地图生成器生成的场景；默认测试生成器是隔离用平地，不能因此推断会有自然山脉或废墟。普通回归模式不接受 `battlefield`。
+
+`Battle.aiPolicy` 是赛制默认 AI，默认 `assaultColony`。每个 `Entrant` 可用可选 `ai` 独立覆盖；省略 `ai` 就跟随默认，队伍身份在淘汰赛换边及挑战赛每场重建时保持绑定。示例中森林狼使用 `lure`，北极熊继承 `assaultColony`，混编突袭队使用 `defendPoint`：
+
+```xml
+<Battle aiPolicy="assaultColony"/>
+<Entrants>
+  <Entrant id="wolves" pawnKind="Wolf_Timber" ai="lure"/>
+  <Entrant id="bears" pawnKind="Bear_Polar"/>
+</Entrants>
+```
+
+`ai` 可选 `battle`、`seekAndAttack`、`assaultThings`、`assaultColony`、`defendPoint`、`lure`、`native`。battle/seekAndAttack/native 是 assaultColony 原生即时进攻控制器的兼容别名；assaultThings 使用原生攻击目标行为；defendPoint 和 lure 使用共享群战战术控制器。Arena 当前不提供逐队 defendX/defendZ/defendRadius 属性，defendPoint 以该队本场自动出生位置为锚点。AI 的具体行为、限制及群战 Team 防御坐标见 [groupcombat.md](groupcombat.md#ai-与准备)。
+
+Arena 不接受 Actors 手工站位或 PawnGroup formation。每场按双方实际人数自动布置宽浅阵型：spacing 固定为 2，先沿 Z 填充再沿 X 展开，尽量让两侧宽度接近并留中央接敌通道；默认双方约在地图宽度的 1/5 与 4/5。队伍扩张或预算配兵后按实际占地重新校验边界。群战手写 `line/grid`、`columns`、`spacing` 的规则见 [groupcombat.md](groupcombat.md#入口与结构)。
 
 Suite 与 Tournament 均可声明 Requirements（同群战的 Mod/DLC packageId），每场交由共享加载器核对。Tournament 可配置 Metrics 和 Overlay，写法是群战 GroupCombat 内的同名节点，擂台中直接放在 Tournament 下；例如 `<Metrics detailLimit="20000" requireCompleteAttribution="true"/>`。显式要求完整归属但未达标时最终 CLI 校验失败，仍保留已执行赛事和测量诊断；未配置该要求时保持评分回退行为。当前原生采集后端仍为 partial，开放该字段不表示已提供 complete 测量。完整起点见 [arena-template-groups.autotest.xml](../assets/arena-template-groups.autotest.xml)。
 
@@ -82,7 +119,7 @@ Suite 与 Tournament 均可声明 Requirements（同群战的 Mod/DLC packageId�
 <TieBreak onDraw="replay" maxReplays="2"/>
 ```
 
-Battle 可省略，默认值如上；timeSpeed 为 normal/fast/superfast，durationSeconds 在 (0,86400]，timeoutRealSeconds 为 1—86400 整数，confirmationTicks 为 0—36000。Battle.aiPolicy 可选择共享群战加载器支持的原生策略，默认 assaultColony；仍不提供 Team.ai 或自定义 AI 代码入口。具体可选策略、约束和诊断见 [groupcombat.md](groupcombat.md#ai-与准备)。
+Battle 可省略，默认值如上；timeSpeed 为 normal/fast/superfast，durationSeconds 在 (0,86400]，timeoutRealSeconds 为 1—86400 整数，confirmationTicks 为 0—36000。Battle.aiPolicy 提供赛制默认 AI，Entrant.ai 可独立覆盖，具体取值、控制器映射和限制见“地图、AI 与出生阵型”及 [groupcombat.md](groupcombat.md#ai-与准备)。
 
 仅淘汰赛的 `Tournament/Matchmaking.mode` 可选 `closestCount`（默认）或 `random`。人数接近模式依次选择初始总人数差最小的两队；随机模式每轮按 `Tournament.seed`、轮次和参赛 id 排序后两两配对，不依赖人数和 XML 名单排列。相同输入、种子及晋级结果可复现，改变 seed 可重新抽签。
 

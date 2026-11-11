@@ -174,14 +174,14 @@ using (var manifestDocument = JsonDocument.Parse(File.ReadAllText(Path.Combine(d
 
 var logSyncAbout = XDocument.Load(Path.Combine(data, "LogSyncMod", "About", "About.xml"));
 Assert(logSyncAbout.Root?.Element("packageId")?.Value.Equals("trigger.logsyncmod", StringComparison.OrdinalIgnoreCase) == true, "packaged LogSyncMod has the expected packageId");
-Assert(logSyncAbout.Root?.Element("modVersion")?.Value == "1.2.9", "packaged LogSyncMod declares version 1.2.9");
+Assert(logSyncAbout.Root?.Element("modVersion")?.Value == "1.2.10", "packaged LogSyncMod declares version 1.2.10");
 var supportedVersions = logSyncAbout.Root?.Element("supportedVersions")?.Elements("li").Select(element => element.Value).ToHashSet(StringComparer.OrdinalIgnoreCase);
 Assert(supportedVersions?.SetEquals(["1.6", "1.7"]) == true, "packaged LogSyncMod declares both RimWorld versions");
 var logSyncAssembly = AssemblyName.GetAssemblyName(Path.Combine(data, "LogSyncMod", "1.6", "Assemblies", "LogSyncMod.dll")).Version;
 var autoTestAssembly = AssemblyName.GetAssemblyName(Path.Combine(data, "LogSyncMod", "1.6", "Assemblies", "AutoTestRunner.dll")).Version;
 Assert(logSyncAssembly is not null && autoTestAssembly is not null && logSyncAssembly.Major == autoTestAssembly.Major && logSyncAssembly.Minor == autoTestAssembly.Minor && logSyncAssembly.Build == autoTestAssembly.Build, "packaged LogSync assemblies share a product version");
 var logSyncAssembly17 = AssemblyName.GetAssemblyName(Path.Combine(data, "LogSyncMod", "1.7", "Assemblies", "LogSyncMod.dll")).Version;
-Assert(logSyncAssembly17 is not null && logSyncAssembly17.Major == 1 && logSyncAssembly17.Minor == 2 && logSyncAssembly17.Build == 9, "packaged LogSyncMod includes the current RimWorld 1.7 build");
+Assert(logSyncAssembly17 is not null && logSyncAssembly17.Major == 1 && logSyncAssembly17.Minor == 2 && logSyncAssembly17.Build == 10, "packaged LogSyncMod includes the current RimWorld 1.7 build");
 var logSyncAssembly17Path = Path.Combine(data, "LogSyncMod", "1.7", "Assemblies", "LogSyncMod.dll");
 Assert(File.ReadAllBytes(logSyncAssembly17Path).SequenceEqual(File.ReadAllBytes(Path.Combine(Environment.CurrentDirectory, "1.7", "Assemblies", "LogSyncMod.dll"))), "packaged RimWorld 1.7 assembly matches the current source build");
 foreach (var version in new[] { "1.6", "1.7" })
@@ -298,12 +298,12 @@ try
     var previousAbout = Path.Combine(temporaryMods, "LogSyncMod", "About");
     Directory.CreateDirectory(previousAbout);
     new XDocument(new XElement("ModMetaData", new XElement("name", "LogSyncMod"), new XElement("packageId", "trigger.logsyncmod"),
-        new XElement("modVersion", "1.2.8"), new XElement("supportedVersions", new XElement("li", "1.6"), new XElement("li", "1.7"))))
+        new XElement("modVersion", "1.2.9"), new XElement("supportedVersions", new XElement("li", "1.6"), new XElement("li", "1.7"))))
         .Save(Path.Combine(previousAbout, "About.xml"));
     using var upgrade = JsonDocument.Parse(Run(Path.Combine(testTools, "RimDevTools.exe"), gameRoot, "mods", "install-tools", "--mods-path", temporaryMods, "--dry-run"));
     Assert(upgrade.RootElement.GetProperty("ok").GetBoolean()
         && upgrade.RootElement.GetProperty("result").GetProperty("components")[0].GetProperty("action").GetString() == "updated",
-        "packaged host upgrades 1.2.8 instead of reporting a same-version conflict");
+        "packaged host upgrades 1.2.9 instead of reporting a same-version conflict");
 }
 finally
 {

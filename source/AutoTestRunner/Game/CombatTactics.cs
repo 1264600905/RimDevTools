@@ -245,6 +245,11 @@ namespace LogSyncMod.AutoTest
             var supportingFire = danger != null && threats.Count <= 2 ? FireSupport(danger.Pawn.Position, true) : 0;
             var urgent = danger != null && CombatTacticsPolicy.ShouldEvade(Distance(pawn.Position, danger.Pawn.Position),
                 danger.Pawn.GetStatValue(StatDefOf.MoveSpeed), IsPursuing(danger, pawn), u.Bait, supportingFire, u.Team.Enemies.Count);
+            var exposedToRanged = false;
+            foreach (var enemy in threats)
+                if (enemy.Ranged != null && enemy.Ranged.CanHitTargetFrom(enemy.Pawn.Position, pawn)) { exposedToRanged = true; break; }
+            var rangedPressure = CombatTacticsPolicy.ShouldBreakRangedExposure(u.Team.Shooters,
+                u.Team.Members.Count(m => m.Ranged == null && m.Melee), u.Team.RangedEnemies, exposedToRanged);
             // Do not restart aim/burst for cosmetic formation improvements.
             if (pawn.stances.stunner.Stunned || u.Ranged?.state == VerbState.Bursting) return;
             if (u.Destination.IsValid && u.Destination != pawn.Position && Owns(u)
@@ -298,6 +303,14 @@ namespace LogSyncMod.AutoTest
             { if (Move(u, back, u.Bait ? "bait" : "retreat")) return; }
             if (CanShoot(u, pawn.Position, u.Target))
             {
+                // Under a numerically superior ranged line, break exposure between
+                // shots instead of trading damage from a static position.
+                if (!urgent && rangedPressure && tick >= u.LastMoveTick + 90
+                    && FindFlank(u, out var evasive) && Move(u, evasive, "retreat")) return;
+                // Spread the firing line gradually while preserving every clear shot.
+                if (!urgent && CombatTacticsPolicy.ShouldSpread(u.Team.Shooters, u.Team.RangedEnemies,
+                    true, tick - u.LastMoveTick) && FindFlank(u, out var flankPosition)
+                    && Move(u, flankPosition, "spread")) return;
                 // Recheck cover infrequently and retain firing positions unless materially better.
                 if (!retreat && pawn.stances.curStance is not Stance_Warmup && tick >= u.LastMoveTick + 180 && u.Team.RangedEnemies > 0
                     && FindPosition(u, u.Target, danger, false, false, out var covered) && covered != pawn.Position
@@ -588,6 +601,13 @@ namespace LogSyncMod.AutoTest
                         if (projection > -3 && Distance(cell, ally.Pawn.Position) < 10) score -= (projection + 3) * 2;
                     }
             }
+            if (u.Ranged != null && u.Team.RangedEnemies > 0)
+                foreach (var ally in u.Team.Members)
+                    if (ally != u && ally.Ranged != null && Active(ally.Pawn))
+                    {
+                        var spacing = Distance(cell, ally.Pawn.Position);
+                        if (spacing < 6) score -= (6 - spacing) * 1.8f;
+                    }
             return score;
         }
         private float CoverScore(Unit u, IntVec3 cell)

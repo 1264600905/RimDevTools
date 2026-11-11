@@ -36,6 +36,12 @@ namespace LogSyncMod.AutoTest
 
         internal static bool WorthMoving(float current, float candidate, bool urgent)
             => candidate > current + (urgent ? 1 : 7);
+
+        internal static bool ShouldSpread(int shooters, int rangedEnemies, bool hasShot, int ticksSinceMove)
+            => shooters > 1 && rangedEnemies > 0 && hasShot && ticksSinceMove >= 180;
+
+        internal static bool ShouldBreakRangedExposure(int shooters, int melee, int rangedEnemies, bool exposed)
+            => exposed && rangedEnemies > 0 && (shooters == 0 || melee > shooters || rangedEnemies > shooters * 2);
     }
 
     internal sealed class CombatTacticsBudget

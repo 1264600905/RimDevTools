@@ -201,7 +201,7 @@ Scene 及其 Environment/Layout/Validation 复用上表地图语法，SquadTempl
 | `testDefName` | — | — |
 | `Roster` | `mode`、`budget`、`count`、`costMode` | — |
 | `Entrants` | — | `Entrant` |
-| `Entrants/Entrant` | `id`、`pawnKind`、`squad`、`name`、`count`、`budget`、`xenotype`、`role`、`mode`、`costMode` | — |
+| `Entrants/Entrant` | `id`、`pawnKind`、`squad`、`name`、`count`、`budget`、`xenotype`、`role`、`mode`、`costMode`、`ai` | — |
 | `Battle` | `durationSeconds`、`timeoutRealSeconds`、`timeSpeed`、`confirmationTicks`、`aiPolicy` | — |
 | `Preparation` | — | `Require`、`DebugAction`、`Equip`、`DropEquipment`、`AddHediff`、`RemoveHediff`、`ApplyDamage`；每步另可用 entrant/role/group 选择范围；引用占位符 entrant |
 | `Matchmaking` | `mode` | — |
@@ -244,6 +244,7 @@ source=faction 必须 GroupMaker；source=custom 必须 Composition；source=gen
 | Case.timeoutRealSeconds | 普通回归=60，群战=600；擂台单战由 Battle 配置，默认 300；CLI 超时另算 |
 | 角色位置与生成 | x/z 或 originX/originZ 各默认 20；spawn=true，Corpse 禁止 false；PawnGroup.count=1；普通场景 count 上限 100，群战每队 200 |
 | PawnGroup 阵型 | formation=line，或 grid；spacing=2 且至少 1；grid columns=5，line 按 count；战斗沿 Z 优先，普通回归沿 X 优先 |
+| 固定战场样式（群战 / 擂台） | Scene.battlefield 仅支持 open、cover、mountainRidges、mountainValley、glacier、urban；默认风格不声明 battlefield 时用生成器的平地。featureDensity=1（0.5—1.5）、spawnClearance=6（2—12）仅能与 battlefield 同用；地图尺寸 30—250。样式名和几何由宿主固定，不是可自由填写的 biome 或 generatorDef |
 | Thing/Building | Thing.count=1，Building 生成一个建筑，不能靠 count 生成建筑组；未写材质时可材质化物品用原生默认材质，品质/颜色省略不覆盖；growth 只适用植物且 0—1 |
 | TerrainArea / Layout | TerrainArea 作者宜显式给 x/z/width/height，运行时缺尺寸按 1；TerrainRect/ThingRect/RoofRect 必须给矩形位置和正尺寸；占地必须在界内 |
 | Scene / Environment | type 由场景类别限定；sizeX/sizeZ 普通=50、擂台=100，范围 30—250；revealFog 仅 all。weather/temperature/roof 省略不覆盖，naturalSun=false；RoofRect 缺 def 等同 none；详见地图参考 |
@@ -264,8 +265,9 @@ source=faction 必须 GroupMaker；source=custom 必须 Composition；source=gen
 | CreateThing / ApplyDamage | CreateThing.count=1，省略 x/z 在场景中心；ApplyDamage.amount>0，armorPenetration=0 且非负，不绕过原生受击 |
 | ExecuteRecipe / DebugAction | ExecuteRecipe 只接受 accelerate=true，Ingredient.count 必填；固定 DebugAction 用对应属性，绑定动作使用 Arg，不能互换 |
 | Coverage / Matrix | Coverage.mode=supplement 或 replace；Target.packageId 默认 Suite，variant 默认空；Evidence.step 必填；Matrix 最多 256 个显式 Row |
-| 群战 AI / 时间 | aiPolicy=assaultColony；Team.ai 优先；battle/seekAndAttack/native 为同控制器别名，另可 assaultThings/defendPoint；timeSpeed 默认 normal，可 fast/superfast；durationSeconds=180，范围 (0,86400] |
-| Team 防御配置 | 仅 ai=defendPoint 可填 defendX/defendZ/defendRadius；未写位置用该队成员均值，radius=28 且须有限正数；普通 auto 的 Team 只引用已有阵营，不运行群战 AI 配置 |
+| 群战 / 擂台 AI / 时间 | aiPolicy=assaultColony；群战 Team.ai 或擂台 Entrant.ai 覆盖该默认值；battle/seekAndAttack/native 为同一原生即时进攻控制器的兼容别名，另可 assaultThings/defendPoint/lure。擂台覆盖跟随参赛队进入每场 Team，包括左右换边；省略 ai 即继承 Battle.aiPolicy。timeSpeed 默认 normal，可 fast/superfast；durationSeconds=180，范围 (0,86400] |
+| Team 防御配置 | 仅群战 `ai=defendPoint` 可填 defendX/defendZ/defendRadius；未写位置用该队成员出生坐标均值，radius 默认 28 且须有限正数。Arena 的 Entrant 只提供 ai 覆盖，不接受 defendX/Z/radius，defendPoint 使用每场自动出生位置作为队伍锚点 |
+| 群战 / 擂台出生阵型 | 群战 PawnGroup 默认 line，沿 Z 成单列；grid 的 columns 表示纵列中沿 Z 的人数，随后沿 X 展开，默认 5；spacing 默认 2 且至少 1。擂台不接受手工 Actors/坐标/formation，按实际人数自动生成沿 Z 优先的宽浅阵型、spacing=2，双方约在地图宽度 1/5 与 4/5，并重新校验地图边界 |
 | 群战 End | start 仅 simultaneous；condition 仅 oneSideAllDowned，onTimeLimit 仅 fewestAliveLoses，onTie 仅 draw；confirmationTicks=300，范围 0—36000；固定字段不是可自由扩展的策略枚举 |
 | 群战 Metrics 固定项 | damageBasis=engineSettled，dpsBasis=unitLifetime，teamDpsBasis=battleWindow，population=registeredRoster（旧 initialRoster 归一化），meanPopulation=aliveOnMap，includeZeroValues=true，distributions=min,max,mean,median |
 | 群战 Metrics 可调项 | detailLimit=10000，范围 0—1000000；requireCompleteAttribution=false；裁明细不裁累计；要求完整归因不等于后端天然具备完整归因 |

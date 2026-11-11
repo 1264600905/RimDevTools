@@ -19,14 +19,14 @@
   </SquadTemplates>
   <Case id="mixed" kind="groupCombat">
     <testDefName>Example_TemplateGroupsCombat</testDefName>
-    <Scene type="mainMap" sizeX="120" sizeZ="120"/>
-    <Teams><Team id="A"/><Team id="B"/></Teams>
+    <Scene type="mainMap" sizeX="120" sizeZ="120" battlefield="mountainRidges" featureDensity="1" spawnClearance="6"/>
+    <Teams><Team id="A" ai="lure"/><Team id="B"/></Teams>
     <Actors>
       <PawnGroup id="mixed" team="A" squad="mixed" count="20" originX="15" originZ="35" formation="grid" columns="5" spacing="2"/>
       <!-- 原有 template 入口与新增组合入口可以共存。 -->
       <PawnGroup id="opponents" team="B" template="gunner" count="20" originX="90" originZ="35" formation="grid" columns="5" spacing="2"/>
     </Actors>
-    <GroupCombat durationSeconds="180" timeSpeed="normal"/>
+    <GroupCombat durationSeconds="180" timeSpeed="normal" aiPolicy="assaultColony"/>
     <Steps/>
   </Case>
 </TestSuite>
