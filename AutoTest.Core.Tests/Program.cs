@@ -43,6 +43,10 @@ internal sealed class CoreTestSuite
         ArenaCameraTests.Run(Assert);
         SquadTests.Run(Assert);
         PawnGroupSquadTests.Run(Assert);
+        ArenaWorkbenchTests.Run(Assert);
+        ArenaPresetWorkflowTests.Run(Assert);
+        ArenaIdentityModeTests.Run(Assert);
+        ApparelLoadoutPlannerTests.Run(Assert);
         CombatConfigurationTests.Run(Assert);
         TestSessionExitTests.Run(Assert);
         TestRuntimeQueue();

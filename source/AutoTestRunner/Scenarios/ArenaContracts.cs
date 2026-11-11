@@ -18,6 +18,8 @@ namespace LogSyncMod.AutoTest.Scenarios
         public List<ScenarioInput> Inputs { get; set; } = new();
         public List<string> SelectedTestDefNames { get; set; } = new();
         public List<ArenaTournamentInput> Tournaments { get; set; } = new();
+        // Frozen once per invocation; source XML and its input hash remain untouched.
+        public Dictionary<string, int> ResolvedSeeds { get; set; } = new();
         public int DefaultDeadlineSeconds => checked(Tournaments.Sum(ArenaChallengeRules.DeadlineSeconds));
     }
     public sealed class ArenaTournamentInput

@@ -19,6 +19,32 @@ namespace LogSyncMod.AutoTest
         private static Queue<GroupCombatRoundInput> pending;
         private static IDisposable logGuard;
         private static bool waiting;
+        private static bool manualSession;
+        private static TimeSpeed originalSpeed;
+        private static readonly ManualArtifactSession manualArtifacts = new();
+        internal static bool Busy => report != null && report.CompletedAtUtc == null;
+        internal static void Cancel()
+        {
+            if (!Busy) return;
+            report.Status = "cancelled"; report.Error = "Cancelled by user"; pending?.Clear(); CombatFightService.Cancel();
+        }
+        internal static void BeginManual(ScenarioPlan plan, ManualProjectContext project)
+        {
+            if (Busy || ArenaService.Busy || CombatFightService.Busy || ManualTestService.Busy || GroupCombatDamageCapture.ProbeActive
+                || AutoTestBootstrap.GetRuntimeStatus().State is "running" or "queued" || global::LogSyncMod.LogSyncMod.settings is { testSessionActive: true })
+                throw new InvalidOperationException("已有测试会话正在运行。");
+            if (Find.CurrentMap == null || LongEventHandler.AnyEventNowOrWaiting) throw new InvalidOperationException("请等待地图加载完成。");
+            var compiled = ScenarioLoader.Compile(plan.Inputs, true); ScenarioLoader.SelectRules(compiled, plan.SelectedTestDefNames);
+            outputPath = manualArtifacts.Ensure(project.Root).AutoTestOutputPath; Directory.CreateDirectory(outputPath);
+            originalSpeed = Find.TickManager.CurTimeSpeed;
+            report = new GroupCombatRunReport { RunId = Guid.NewGuid().ToString("N"), StartedAtUtc = DateTime.UtcNow.ToString("O"), Inputs = plan.Inputs,
+                GameVersion = VersionControl.CurrentVersionStringWithRev, LoadedMods = LoadedModManager.RunningMods.Select(m => m.PackageIdPlayerFacing + "@" + m.ModMetaData?.ModVersion).ToList() };
+            manualSession = true; waiting = false;
+            pending = new Queue<GroupCombatRoundInput>();
+            logGuard = global::LogSyncMod.TestLogWindowGuard.RegisterExternalSession();
+            try { ResolveGroupBudgets(compiled); pending = new Queue<GroupCombatRoundInput>(report.PlannedRounds); Write(); }
+            catch (Exception ex) { report.Error = ex.ToString(); Finish(); throw; }
+        }
         internal static IEnumerable<GroupCombatRoundResult> Rounds => report?.Rounds ?? Enumerable.Empty<GroupCombatRoundResult>();
         private static readonly JsonSerializerOptions Json = new() { WriteIndented = true };
         internal static void Frame()
@@ -30,6 +56,7 @@ namespace LogSyncMod.AutoTest
                 {
                     if (settings is not { testSessionActive: true, testSessionKind: "groupcombat" } || settings.autoTestRunId == consumedRunId || Current.ProgramState != ProgramState.Playing || LongEventHandler.AnyEventNowOrWaiting || Find.CurrentMap == null || CombatFightService.Busy || GroupCombatDamageCapture.ProbeActive) return;
                     consumedRunId = settings.autoTestRunId; outputPath = settings.autoTestOutputPath;
+                    manualSession = false;
                     report = new GroupCombatRunReport { RunId = consumedRunId, StartedAtUtc = DateTime.UtcNow.ToString("O"), GameVersion = VersionControl.CurrentVersionStringWithRev, LoadedMods = LoadedModManager.RunningMods.Select(m => m.PackageIdPlayerFacing + "@" + m.ModMetaData?.ModVersion).ToList() };
                     logGuard = global::LogSyncMod.TestLogWindowGuard.RegisterExternalSession(); waiting = false;
                     var frozen = JsonSerializer.Deserialize<ScenarioPlan>(Encoding.UTF8.GetString(Convert.FromBase64String(settings.groupCombatPlan)));
@@ -111,7 +138,8 @@ namespace LogSyncMod.AutoTest
                 logGuard?.Dispose(); logGuard = null; pending = null;
                 global::LogSyncMod.TestAudioController.Restore("groupcombat_completed");
                 Log.Message("[LogSyncGroupCombat] COMPLETED runId=" + report.RunId + " status=" + report.Status);
-                global::LogSyncMod.TestSessionCompletion.Complete("groupcombat", report.RunId);
+                if (manualSession) { manualSession = false; Find.TickManager.CurTimeSpeed = originalSpeed; Messages.Message("群战测试已结束：" + report.Status + "。结果：" + outputPath, MessageTypeDefOf.TaskCompletion, false); }
+                else global::LogSyncMod.TestSessionCompletion.Complete("groupcombat", report.RunId);
             }
         }
         private static void Write()

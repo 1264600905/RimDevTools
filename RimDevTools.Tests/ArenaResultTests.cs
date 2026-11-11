@@ -14,6 +14,13 @@ internal static class ArenaResultTests
             var error = ArenaResultValidator.ValidateIntegrity(report, report.Plan, verifyArtifactFiles: false);
             check(error == null, "arena independent validator reconstructs " + n + " entrant tournament: " + error);
         }
+        var randomSeedReport = Build(5, seed: -1);
+        check(randomSeedReport.Plan.Tournaments[0].Seed == 7331 && ArenaResultValidator.ValidateIntegrity(randomSeedReport, randomSeedReport.Plan, false) == null,
+            "independent validator accepts a seed=-1 tournament with its once-frozen seed");
+        var expectedRandom = JsonSerializer.Deserialize<ArenaPlan>(JsonSerializer.Serialize(randomSeedReport.Plan))!;
+        randomSeedReport.Tournaments[0].Input.Seed++;
+        check(ArenaResultValidator.ValidateIntegrity(randomSeedReport, expectedRandom, false) != null,
+            "independent validator rejects a substituted actual random seed");
         var valid = Build(6);
         foreach (var n in new[] { 5, 6, 8 })
         {
@@ -118,14 +125,15 @@ internal static class ArenaResultTests
         budget.Tournaments[0].Rosters[0].UnitCombatPower = 1000;
         check(ArenaResultValidator.ValidateIntegrity(budget, budget.Plan, false) != null, "arena rejects claimed combatPower inconsistent with maximal budget count");
     }
-    private static ArenaRunReport Build(int count, bool budget = false, decimal? extremePower = null, decimal? entrantBudget = null, string matchmaking = "closestCount")
+    private static ArenaRunReport Build(int count, bool budget = false, decimal? extremePower = null, decimal? entrantBudget = null, string matchmaking = "closestCount", int seed = 12345)
     {
         var xml = new XElement("ArenaSuite", new XAttribute("schemaVersion", 1), new XAttribute("id", "fixture"),
-            new XElement("Tournament", new XAttribute("id", "main"), new XElement("testDefName", "ArenaFixture"), new XElement("Scene", new XAttribute("type", "mainMap"), new XAttribute("sizeX", 100), new XAttribute("sizeZ", 100)),
+            new XElement("Tournament", new XAttribute("id", "main"), new XAttribute("seed", seed), new XElement("testDefName", "ArenaFixture"), new XElement("Scene", new XAttribute("type", "mainMap"), new XAttribute("sizeX", 100), new XAttribute("sizeZ", 100)),
             budget ? new XElement("Roster", new XAttribute("mode", "combatPower"), new XAttribute("budget", extremePower ?? 3000)) : new XElement("Roster", new XAttribute("mode", "count"), new XAttribute("count", 2)),
             new XElement("Entrants", Enumerable.Range(0, count).Select(i => new XElement("Entrant", new XAttribute("id", "e" + i), new XAttribute("pawnKind", "Kind" + i), i == 0 && entrantBudget.HasValue ? new XAttribute("budget", entrantBudget.Value) : null))),
             new XElement("Battle", new XAttribute("confirmationTicks", 0)), new XElement("Matchmaking", new XAttribute("mode", matchmaking))));
         var plan = ArenaLoader.Compile(new[] { new ScenarioInput { Path = "fixture.xml", Sha256 = "frozen", Xml = xml.ToString(SaveOptions.DisableFormatting) } }, new[] { "ArenaFixture" });
+        plan = ArenaLoader.FreezeSeeds(plan, () => 7331);
         var input = plan.Tournaments.Single();
         var t = new ArenaTournamentResult { Input = input };
         foreach (var e in input.Entrants) t.Rosters.Add(CombatRoster.Resolve(e.Id, e.PawnKind, extremePower ?? (budget ? 100 + int.Parse(e.Id[1..]) : 100), e.Budget ?? input.Budget, input.Count));

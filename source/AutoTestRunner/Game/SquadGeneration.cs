@@ -231,12 +231,14 @@ namespace LogSyncMod.AutoTest
         {
             var config = new XElement("PawnTemplate", actor.Elements().Select(e => new XElement(e)));
             var kind = Kind(config.Element("basePawnKind").Value);
+            var race = config.Element("race") == null ? kind.race : DefDatabase<ThingDef>.GetNamed(config.Element("race").Value);
+            var humanlike = race.race?.Humanlike == true;
             if (config.Element("Xenotype") != null)
             {
                 var xeno = Xeno((string)config.Element("Xenotype").Attribute("def"));
-                if (!ModsConfig.BiotechActive || !kind.RaceProps.Humanlike || !xeno.canGenerateAsCombatant) throw new ScenarioConfigurationException("Incompatible combat xenotype: " + kind.defName + "/" + xeno.defName);
+                if (!ModsConfig.BiotechActive || !humanlike || !xeno.canGenerateAsCombatant) throw new ScenarioConfigurationException("Incompatible combat xenotype: " + race.defName + "/" + xeno.defName);
             }
-            else if (ModsConfig.BiotechActive && kind.RaceProps.Humanlike)
+            else if (ModsConfig.BiotechActive && humanlike)
             {
                 var options = PawnGenerator.XenotypesAvailableFor(kind, faction: faction).Where(x => x.Key.canGenerateAsCombatant).ToList();
                 if (!options.TryRandomElementByWeight(x => x.Value, out var selected)) throw new ScenarioConfigurationException("No combat xenotype for " + kind.defName);

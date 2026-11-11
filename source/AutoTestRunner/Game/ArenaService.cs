@@ -24,6 +24,33 @@ namespace LogSyncMod.AutoTest
         private static ArenaMatch match;
         private static IDisposable logGuard;
         private static ArenaBackgroundCleanup backgroundCleanup;
+        private static bool manualSession;
+        internal static bool ManualActive => manualSession && Busy;
+        private static TimeSpeed manualOriginalSpeed;
+        private static readonly ManualArtifactSession manualArtifacts = new();
+        internal static void BeginManual(ArenaPlan plan, ManualProjectContext project)
+        {
+            if (Busy || GroupCombatService.Busy || CombatFightService.Busy || ManualTestService.Busy || GroupCombatDamageCapture.ProbeActive
+                || AutoTestBootstrap.GetRuntimeStatus().State is "running" or "queued"
+                || global::LogSyncMod.LogSyncMod.settings is { testSessionActive: true })
+                throw new InvalidOperationException("已有测试会话正在运行，请先结束。");
+            if (Find.CurrentMap == null || LongEventHandler.AnyEventNowOrWaiting) throw new InvalidOperationException("请在地图加载完成后开始赛事。");
+            // Recompile the submitted input before allocating a session or touching game state.
+            var frozen = ArenaLoader.FreezeSeeds(ArenaLoader.Compile(plan.Inputs, plan.SelectedTestDefNames, plan.ResolvedSeeds));
+            outputPath = manualArtifacts.Ensure(project.Root).AutoTestOutputPath;
+            Directory.CreateDirectory(outputPath);
+            manualOriginalSpeed = Find.TickManager.CurTimeSpeed;
+            manualSession = true;
+            report = new ArenaRunReport { RunId = Guid.NewGuid().ToString("N"), StartedAtUtc = DateTime.UtcNow.ToString("O"),
+                GameVersion = VersionControl.CurrentVersionStringWithRev, Plan = frozen,
+                LoadedMods = LoadedModManager.RunningMods.Select(m => m.PackageIdPlayerFacing + "@" + m.ModMetaData?.ModVersion).ToList() };
+            foreach (var input in frozen.Tournaments) report.Tournaments.Add(new ArenaTournamentResult { Input = input });
+            cancel = false; waiting = false; match = null; tournament = null; postBattleMatch = null;
+            showcaseActive = false; rulesActive = false; preBattle = null; backgroundCleanup = null;
+            logGuard = global::LogSyncMod.TestLogWindowGuard.RegisterExternalSession();
+            try { Write(); }
+            catch { report = null; manualSession = false; logGuard.Dispose(); logGuard = null; throw; }
+        }
         private static bool waiting, cancel;
         private static float championStarted;
         private static bool championCaptured;
@@ -77,11 +104,12 @@ namespace LogSyncMod.AutoTest
                 {
                     if (settings is not { testSessionActive: true, testSessionKind: "arena" } || consumedRunId == settings.autoTestRunId || Current.ProgramState != ProgramState.Playing || LongEventHandler.AnyEventNowOrWaiting || Find.CurrentMap == null || CombatFightService.Busy || GroupCombatDamageCapture.ProbeActive) return;
                     consumedRunId = settings.autoTestRunId; outputPath = settings.autoTestOutputPath;
+                    manualSession = false;
                     report = new ArenaRunReport { RunId = consumedRunId, StartedAtUtc = DateTime.UtcNow.ToString("O"), GameVersion = VersionControl.CurrentVersionStringWithRev, LoadedMods = LoadedModManager.RunningMods.Select(m => m.PackageIdPlayerFacing + "@" + m.ModMetaData?.ModVersion).ToList() };
                     logGuard = global::LogSyncMod.TestLogWindowGuard.RegisterExternalSession(); cancel = false; waiting = false; match = null; tournament = null; postBattleMatch = null; showcaseActive = false; rulesActive = false; preBattle = null;
                     var frozen = JsonSerializer.Deserialize<ArenaPlan>(Encoding.UTF8.GetString(Convert.FromBase64String(settings.arenaPlan)));
                     if (frozen?.Purpose != "arena" || frozen.SchemaVersion != 1) throw new ScenarioConfigurationException("Invalid frozen arena plan");
-                    report.Plan = ArenaLoader.Compile(frozen.Inputs, frozen.SelectedTestDefNames);
+                    report.Plan = ArenaLoader.FreezeSeeds(ArenaLoader.Compile(frozen.Inputs, frozen.SelectedTestDefNames, frozen.ResolvedSeeds));
                     report.Plan.SkippedFiles = frozen.SkippedFiles;
                     backgroundCleanup = new ArenaBackgroundCleanup(Find.CurrentMap);
                     report.BackgroundCleanup = backgroundCleanup.Result;
@@ -360,7 +388,13 @@ namespace LogSyncMod.AutoTest
                 global::LogSyncMod.TestAudioController.Restore("arena_completed");
                 Log.Message("[LogSyncArena] COMPLETED runId=" + report.RunId + " status=" + report.Status);
                 // Only a fully completed schedule exits. Errors, cancellation and draws stay open.
-                if (persisted && report.Status == "completed") global::LogSyncMod.TestSessionCompletion.Complete("arena", report.RunId, report.Status);
+                if (manualSession)
+                {
+                    Find.TickManager.CurTimeSpeed = manualOriginalSpeed;
+                    manualSession = false;
+                    Messages.Message("群战赛事已结束：" + report.Status + "。结果：" + outputPath, MessageTypeDefOf.TaskCompletion, false);
+                }
+                else if (persisted && report.Status == "completed") global::LogSyncMod.TestSessionCompletion.Complete("arena", report.RunId, report.Status);
             }
         }
         private static void Write()

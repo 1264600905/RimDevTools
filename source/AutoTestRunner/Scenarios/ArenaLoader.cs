@@ -51,9 +51,9 @@ namespace LogSyncMod.AutoTest.Scenarios
                 inputs.Add(new ScenarioInput { Path = file, Sha256 = BitConverter.ToString(sha.ComputeHash(bytes)).Replace("-", "").ToLowerInvariant(), Xml = doc.ToString(SaveOptions.DisableFormatting) });
             }
             ScenarioLoader.ResolveGroupPawnFiles(inputs);
-            var plan = Compile(inputs, names); plan.SkippedFiles = skipped; return plan;
+            var plan = FreezeSeeds(Compile(inputs, names)); plan.SkippedFiles = skipped; return plan;
         }
-        public static ArenaPlan Compile(IEnumerable<ScenarioInput> inputs, IEnumerable<string> names)
+        public static ArenaPlan Compile(IEnumerable<ScenarioInput> inputs, IEnumerable<string> names, IReadOnlyDictionary<string, int> resolvedSeeds = null)
         {
             var plan = new ArenaPlan { Inputs = inputs.ToList(), SelectedTestDefNames = names.Distinct(StringComparer.OrdinalIgnoreCase).ToList() };
             if (plan.SelectedTestDefNames.Count == 0) throw new ScenarioConfigurationException("arena requires explicit --test-name");
@@ -85,6 +85,11 @@ namespace LogSyncMod.AutoTest.Scenarios
                     if (mode == "count" && roster.Attribute("budget") != null || mode == "combatPower" && roster.Attribute("count") != null) ScenarioLoader.Fail(roster, input.Path, "count and budget modes are mutually exclusive");
                     var entrants = t.Element("Entrants"); Check(entrants, "", "Entrant", input.Path, true);
                     var result = new ArenaTournamentInput { Id = id, Name = ScenarioLoader.A(t, "name", testName), TestDefName = testName, Seed = ScenarioLoader.I(t, "seed", 12345), Xml = t.ToString(SaveOptions.DisableFormatting), Source = input.Path, InputHash = input.Sha256, RosterMode = mode, CostMode = costMode, SquadTemplates = squadTemplates, Budget = mode == "combatPower" ? CombatRoster.Positive(Required(roster, "budget", input.Path)) : null, Count = Integer(roster, "count", 20, 1, CombatRoster.MaxTeamMembers, input.Path) };
+                    if (resolvedSeeds != null && resolvedSeeds.TryGetValue(testName, out var seed))
+                    {
+                        if (result.Seed != -1 || seed < 0) throw new ScenarioConfigurationException("Frozen random seed does not match a seed=-1 tournament: " + testName);
+                        result.Seed = seed; plan.ResolvedSeeds.Add(testName, seed);
+                    }
                     result.Format = ScenarioLoader.A(t, "format", "knockout");
                     result.SharedXml = new XElement("Shared", root.Elements().Where(e => new[] { "Requirements", "ScenePresets", "ActionBindings" }.Contains(e.Name.LocalName)).Select(e => new XElement(e))).ToString(SaveOptions.DisableFormatting);
                     var growth = t.Element("Growth"); Check(growth, "target mode multiplier increment maxValue", "", input.Path);
@@ -162,7 +167,20 @@ namespace LogSyncMod.AutoTest.Scenarios
             if (all.Select(t => t.TestDefName).Distinct(StringComparer.OrdinalIgnoreCase).Count() != all.Count) throw new ScenarioConfigurationException("duplicate arena testDefName");
             foreach (var name in plan.SelectedTestDefNames) if (!all.Any(t => t.TestDefName.Equals(name, StringComparison.OrdinalIgnoreCase))) throw new ScenarioConfigurationException("Unknown arena test name: " + name);
             plan.Tournaments = all.Where(t => plan.SelectedTestDefNames.Contains(t.TestDefName, StringComparer.OrdinalIgnoreCase)).ToList();
+            if (resolvedSeeds != null && resolvedSeeds.Keys.Any(k => !plan.ResolvedSeeds.ContainsKey(k))) throw new ScenarioConfigurationException("Frozen seed references an unknown tournament");
             return plan;
+        }
+        public static ArenaPlan FreezeSeeds(ArenaPlan source, Func<int> random = null)
+        {
+            var seeds = new Dictionary<string, int>(source.ResolvedSeeds ?? new Dictionary<string, int>());
+            foreach (var t in source.Tournaments.Where(t => t.Seed == -1))
+            {
+                var seed = random == null ? RandomNumberGenerator.GetInt32(int.MaxValue) : random();
+                if (seed < 0) throw new ScenarioConfigurationException("Resolved random seed must be nonnegative");
+                seeds[t.TestDefName] = seed;
+            }
+            var result = Compile(source.Inputs, source.SelectedTestDefNames, seeds);
+            result.SkippedFiles = source.SkippedFiles; return result;
         }
         public static GroupCombatRoundInput CompileBattle(ArenaTournamentInput input, List<ResolvedCombatRoster> rosters, ArenaMatch match, int attempt)
         {

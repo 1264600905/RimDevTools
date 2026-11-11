@@ -4,6 +4,8 @@
 
 擂台与普通群战默认使用原版“立刻进攻”AI（`assaultColony`），直接复用 `LordJob_AssaultColony` 的原生进攻流程与 `AssaultColony` 职责，选敌、技能、射击选位、攻击与任务调度均交给游戏原有行为树。工具仅禁止自治疗、群体溃逃、超时撤退、绑架、偷窃及其他群体离场转换，不再定时给角色下发战斗任务。旧配置的 `battle`、`seekAndAttack`、`native` 都兼容为同一原生进攻策略。生理恢复、再生及模组治疗能力不作屏蔽。
 
+Tournament.seed 为 -1 时，每届开赛随机抽取一次实际种子，保存到 ArenaPlan.ResolvedSeeds；原 XML 与输入哈希不变，重赛及后续对局沿用冻结值。工作台默认 -1，也可点击随机按钮生成具体种子，或手动输入复现赛事。
+
 ## 运行
 
 在项目根目录执行。本地工具已生成在 `.tools/RimDevTools.exe`，可直接执行 `./.tools/RimDevTools.exe test run ...`。源码仓库也可使用下列命令；发布工具时将 `dotnet RimDevTools/bin/Release/net10.0/RimDevTools.dll` 替换为 `RimDevTools.exe`。

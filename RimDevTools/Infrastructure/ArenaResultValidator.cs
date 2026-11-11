@@ -26,7 +26,7 @@ public static class ArenaResultValidator
     public static string? ValidateIntegrity(ArenaRunReport report, ArenaPlan? expected = null, bool verifyArtifactFiles = true)
     {
         // Rebuild from the CLI-frozen XML rather than trusting result-side configuration.
-        var plan = expected == null ? ArenaLoader.Compile(report.Plan.Inputs, report.Plan.SelectedTestDefNames) : ArenaLoader.Compile(expected.Inputs, expected.SelectedTestDefNames);
+        var plan = expected == null ? ArenaLoader.Compile(report.Plan.Inputs, report.Plan.SelectedTestDefNames, report.Plan.ResolvedSeeds) : ArenaLoader.Compile(expected.Inputs, expected.SelectedTestDefNames, expected.ResolvedSeeds);
         if (report.Status != "completed" || report.CompletedAtUtc == null || report.Tournaments.Count != plan.Tournaments.Count || report.LoadedMods.Count == 0) return "赛事计划、完成时间或已加载模组快照缺失";
         for (int ti = 0; ti < plan.Tournaments.Count; ti++)
         {

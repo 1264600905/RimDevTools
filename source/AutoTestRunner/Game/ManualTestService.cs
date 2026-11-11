@@ -71,6 +71,7 @@ namespace LogSyncMod.AutoTest
 
         internal static ManualTestInvocation Submit(ManualProjectContext project, ManualTestCatalog available, ManualTestSelection selection)
         {
+            if (ArenaService.Busy || GroupCombatService.Busy || CombatFightService.Busy) throw new InvalidOperationException("群战赛事正在运行，请先结束。");
             if (AutoTestBootstrap.GetRuntimeStatus().State is "running" or "queued" || global::LogSyncMod.LogSyncMod.settings is { testSessionActive: true } settings && settings.testSessionKind != "manual") throw new InvalidOperationException("已有自动测试/CLI 测试会话正在运行。");
             var frozenSelection = ManualTestPlan.Freeze(selection);
             var plan = available.Preview(frozenSelection);

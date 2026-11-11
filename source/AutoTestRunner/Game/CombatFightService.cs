@@ -124,7 +124,9 @@ namespace LogSyncMod.AutoTest
         internal static void NotifySpawn(Pawn pawn)
         {
             if (!Measuring || pawn == null || pawn.MapHeld != Map) return;
-            if (rosterIds.ContainsKey(pawn)) { exited.Remove(pawn); arenaMaintenance?.NotifySpawn(pawn); return; }
+            if (rosterIds.ContainsKey(pawn)) { if (!pawn.Dead) { exited.Remove(pawn); arenaMaintenance?.NotifySpawn(pawn); } return; }
+            if (!ArenaIdentityPolicy.AcceptNewParticipant(pawn.Dead, pawn.Destroyed, pawn.ParentHolder is Corpse, false)) return;
+            if (pawns.Values.Any(existing => existing.GetUniqueLoadID() == pawn.GetUniqueLoadID())) return;
             var team = Team(pawn.Faction) ?? Team(pawn.GetLord()?.faction) ?? Team(GroupCombatLifecycleAdapters.OwnerFaction(pawn));
             if (team == null) return;
             var ticks = Math.Max(0, Find.TickManager.TicksGame - startTick);
@@ -310,7 +312,7 @@ namespace LogSyncMod.AutoTest
                     var configurationId = squad?.Members.Count > i ? squad.Members[i].ConfigurationId : null;
                     if (configurationId != null) group += ":configuration:" + configurationId;
                     var configurationName = configurationId == null ? null : squad.Id == configurationId ? configurationId : squad.Id + "/" + configurationId;
-                    var typeLabel = (configurationName ?? pawn.kindDef.LabelCap.ToString()) + (pawn.equipment?.Primary == null ? "" : " · " + pawn.equipment.Primary.def.LabelCap);
+                    var typeLabel = pawn.kindDef.LabelCap.ToString();
                     roster.Add(new GroupCombatUnit { Id = id, NativeId = pawn.GetUniqueLoadID(), Team = team, Group = group, GroupName = configurationName ?? actorId, ConfigurationId = configurationId, ConfigurationKey = squad?.Members.Count > i ? SquadTemplates.ConfigurationKey(squad.Members[i]) : null, Kind = pawn.kindDef.defName, KindLabel = typeLabel, GeneratedSnapshot = backend.GeneratedSnapshots[id], InitialSnapshot = TemporaryPawnData.Serialize(snapshot), Name = pawn.LabelShort, X = pawn.Position.x, Z = pawn.Position.z });
                 }
             }

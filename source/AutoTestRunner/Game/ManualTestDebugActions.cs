@@ -13,6 +13,13 @@ namespace LogSyncMod.AutoTest
         private static ManualTestCatalog catalog;
         internal static ManualTestCatalog Catalog => catalog ??= new ManualTestCatalog(Find.CurrentMap);
 
+        [DebugAction("LogSyncMod", "群战工作台", allowedGameStates = AllowedGameStates.PlayingOnMap)]
+        internal static void OpenArenaWorkbench()
+        {
+            try { Find.WindowStack.Add(new Dialog_ArenaWorkbench(ArenaWorkbenchStorage.Load())); }
+            catch (Exception ex) { Messages.Message("群战工作台打开失败：" + ex.Message, MessageTypeDefOf.RejectInput, false); }
+        }
+
         [DebugAction("LogSyncMod", "自动测试", allowedGameStates = AllowedGameStates.PlayingOnMap)]
         internal static void OpenTests()
         {
@@ -55,7 +62,7 @@ namespace LogSyncMod.AutoTest
 
         private static void EnsureExportAllowed()
         {
-            if (ManualTestService.Busy || global::LogSyncMod.LogSyncMod.settings is { testSessionActive: true } settings && settings.testSessionKind != "manual")
+            if (ManualTestService.Busy || ArenaService.Busy || GroupCombatService.Busy || CombatFightService.Busy || global::LogSyncMod.LogSyncMod.settings is { testSessionActive: true } settings && settings.testSessionKind != "manual")
                 throw new InvalidOperationException("已有测试会话正在运行，请在结束后导出角色。");
         }
 

@@ -29,7 +29,10 @@ internal static class GroupCombatOverlayTests
         var configurations = Round();
         configurations.Units[0].Group = "gunners"; configurations.Units[1].Group = "swordsmen";
         var configurationData = new GroupCombatOverlayData(); configurationData.Refresh(configurations, "running", 0);
-        check(configurationData.Teams[0].LivingGroups.Length == 2, "equal translated PawnKind labels do not merge distinct configuration identities");
+        check(configurationData.Teams[0].LivingGroups.Length == 1 && configurationData.Teams[0].LivingGroups[0].Label == "人类 ×2",
+            "same displayed pawn type merges despite distinct frozen equipment configurations");
+        check(configurations.Units[0].Group == "gunners" && configurations.Units[1].Group == "swordsmen",
+            "display composition grouping preserves independent source roster identities");
         check(data.MaximumOutput == 90 && data.MaximumTaken == 100, "cached bar maxima compare both teams");
         check(team.Settlement[3].Contains("20") && team.Settlement[4].Contains("101"), "cached survivor totals exclude dead members");
         var updated = Round(true);

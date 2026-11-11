@@ -156,7 +156,7 @@ namespace LogSyncMod.AutoTest
     [HarmonyPatch(typeof(GameEnder), nameof(GameEnder.CheckOrUpdateGameOver))]
     internal static class ArenaGameOverCheckPatch
     {
-        internal static bool TestSession => global::LogSyncMod.LogSyncMod.settings is { testSessionActive: true, testSessionKind: "arena" };
+        internal static bool TestSession => ArenaService.ManualActive || global::LogSyncMod.LogSyncMod.settings is { testSessionActive: true, testSessionKind: "arena" };
         private static bool Prefix() => !TestSession;
     }
 

@@ -33,11 +33,11 @@ namespace LogSyncMod.AutoTest
             }
         }
 
-        internal static void Render(Pawn pawn, RenderTexture texture)
+        internal static void Render(Pawn pawn, RenderTexture texture, bool renderHeadgear = true)
         {
             using var scope = new TargetScope(RenderTexture.active);
             PawnCacheCameraManager.PawnCacheRenderer.RenderPawn(pawn, texture, Vector3.zero, 1f, 0, Rot4.South,
-                renderHead: true, renderHeadgear: true, renderClothes: true, portrait: true);
+                renderHead: true, renderHeadgear: renderHeadgear, renderClothes: true, portrait: true, stylingStation: renderHeadgear);
         }
     }
 }
