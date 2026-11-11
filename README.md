@@ -4,7 +4,7 @@
 
 RimDevTools 是面向 RimWorld 模组开发的 Windows 工具链，将环境检查、构建部署、依赖定位、日志采集、游戏测试与工坊发布组织为可重复的 CLI 操作。随包模板和工具 Mod 提供 RimWorld **1.6、1.7** 对应内容；CLI 也识别 1.7+ 现代布局，实际工具组件及更新支持范围以发行清单为准。
 
-当前版本为 **1.5.7.0**，提供 [RimWorld 1.6、1.7 模板包及 Tools 简化包](https://github.com/1264600905/RimDevTools/releases/tag/v1.5.7.0)。群战与三种擂台可复用 PawnTemplate 组合多人队伍，支持参赛者独立人数/CP 与成本口径、按范围选择同步准备及断言，并统一配置身份和公开属性验收。修复冻结成员重建时的性别、基因关联特性、假肢子部位及预览准备问题。Codex、Claude 模板 skill 同步更新字段、示例和结果核对方法；自定义场景后端仍仅支持 RimWorld 1.7。
+当前版本为 **1.5.8.0**，提供 [RimWorld 1.6、1.7 模板包及 Tools 简化包](https://github.com/1264600905/RimDevTools/releases/tag/v1.5.8.0)。1.7 测试后端新增基于 XML 的擂台工作台，支持队伍、外观、装备、身份和预设编辑，并加强原生战斗校验。改进手动测试界面、小人按范围导出和可选 Camera+ 兼容，修复 XML 场景观察契约及错误报告。自定义场景后端仍仅支持 RimWorld 1.7。
 
 ## 仓库包含什么
 
@@ -209,9 +209,9 @@ powershell -ExecutionPolicy Bypass -File .tools\publish-rimdevtools.ps1 -CreateZ
 输出为：
 
 ```text
-artifacts/RimDevTools-1.5.7.0-Template-RimWorld-1.6/
-artifacts/RimDevTools-1.5.7.0-Template-RimWorld-1.7/
-artifacts/RimDevTools-1.5.7.0-Tools/
+artifacts/RimDevTools-1.5.8.0-Template-RimWorld-1.6/
+artifacts/RimDevTools-1.5.8.0-Template-RimWorld-1.7/
+artifacts/RimDevTools-1.5.8.0-Tools/
 ```
 
 每个目录对应一个 `.zip`；发布时只上传这三个 ZIP。验证三种发布布局，再执行隔离的 Windows 更新集成测试：
@@ -219,11 +219,11 @@ artifacts/RimDevTools-1.5.7.0-Tools/
 ```powershell
 dotnet build RimDevTools.ReleaseTests\RimDevTools.ReleaseTests.csproj
 dotnet RimDevTools.ReleaseTests\bin\Debug\net10.0\RimDevTools.ReleaseTests.dll `
-  artifacts\RimDevTools-1.5.7.0-Template-RimWorld-1.6
+  artifacts\RimDevTools-1.5.8.0-Template-RimWorld-1.6
 dotnet RimDevTools.ReleaseTests\bin\Debug\net10.0\RimDevTools.ReleaseTests.dll `
-  artifacts\RimDevTools-1.5.7.0-Template-RimWorld-1.7
+  artifacts\RimDevTools-1.5.8.0-Template-RimWorld-1.7
 dotnet RimDevTools.ReleaseTests\bin\Debug\net10.0\RimDevTools.ReleaseTests.dll `
-  artifacts\RimDevTools-1.5.7.0-Tools
+  artifacts\RimDevTools-1.5.8.0-Tools
 dotnet RimDevTools.Tests\bin\Debug\net10.0\RimDevTools.Tests.dll --tool-update
 dotnet RimDevTools.Tests\bin\Debug\net10.0\RimDevTools.Tests.dll --tool-update-live
 ```
