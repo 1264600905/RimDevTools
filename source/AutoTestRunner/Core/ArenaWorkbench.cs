@@ -26,6 +26,7 @@ namespace LogSyncMod.AutoTest
         public string Name { get; set; } = "新编队";
         public bool Enabled { get; set; } = true;
         public string Role { get; set; } = "challenger";
+        public string Ai { get; set; } = "inherit";
         public string Source { get; set; } = "groups";
         public string Faction { get; set; } = "Pirate";
         public string PawnKind { get; set; } = "Colonist";
@@ -59,6 +60,9 @@ namespace LogSyncMod.AutoTest
         public string Ai { get; set; } = "assaultColony";
         public int Width { get; set; } = 140;
         public int Height { get; set; } = 140;
+        public string Battlefield { get; set; } = "open";
+        public double FeatureDensity { get; set; } = 1;
+        public int SpawnClearance { get; set; } = 6;
         public string Weather { get; set; } = "Clear";
         public double Temperature { get; set; } = 21;
         public string Roof { get; set; } = "none";
@@ -192,6 +196,7 @@ namespace LogSyncMod.AutoTest
             var t = new XElement("Tournament", new XAttribute("id", "main"), new XAttribute("name", s.Name), new XAttribute("format", s.Format), new XAttribute("seed", s.Seed),
                 new XElement("testDefName", TestName),
                 new XElement("Scene", new XAttribute("type", "mainMap"), new XAttribute("sizeX", s.Width), new XAttribute("sizeZ", s.Height),
+                    new XAttribute("battlefield", s.Battlefield), new XAttribute("featureDensity", s.FeatureDensity), new XAttribute("spawnClearance", s.SpawnClearance),
                     new XElement("Environment", new XAttribute("weather", s.Weather), new XAttribute("temperature", s.Temperature), new XAttribute("roof", s.Roof), new XAttribute("naturalSun", s.NaturalSun))),
                 new XElement("Roster", new XAttribute("mode", "count"), new XAttribute("count", 20), new XAttribute("costMode", "native")), entrants,
                 new XElement("Battle", new XAttribute("durationSeconds", s.Duration), new XAttribute("timeoutRealSeconds", s.Timeout), new XAttribute("timeSpeed", s.Speed), new XAttribute("confirmationTicks", s.ConfirmationTicks), new XAttribute("aiPolicy", s.Ai)),
@@ -240,7 +245,10 @@ namespace LogSyncMod.AutoTest
             s.Survival = d.Survival; s.Suppression = d.Suppression; s.Exchange = d.Exchange; s.SpeedWeight = d.SpeedWeight; s.TimeReference = d.TimeReference;
             s.ShowcaseSeconds = d.ShowcaseSeconds; s.CountdownSeconds = d.CountdownSeconds; s.SettlementSeconds = d.SettlementSeconds; s.AdvanceSeconds = d.AdvanceSeconds;
             s.OutputWidth = d.OutputWidth; s.OutputHeight = d.OutputHeight;
-            s.Width = d.Width; s.Height = d.Height; s.Weather = d.Weather; s.Temperature = d.Temperature; s.Roof = d.Roof; s.NaturalSun = d.NaturalSun;
+            if (s.Width < 80 || s.Width > 250) s.Width = d.Width;
+            if (s.Height < 80 || s.Height > 250) s.Height = d.Height;
+            if (string.IsNullOrWhiteSpace(s.Battlefield)) s.Battlefield = d.Battlefield;
+            s.Roof = d.Roof;
         }
         public static ArenaPlan Compile(ArenaWorkbenchDocument document) => CompileXml(Export(document).ToString());
         public static ArenaPlan CompileXml(string xml)

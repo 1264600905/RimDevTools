@@ -1,0 +1,35 @@
+<TestSuite schemaVersion="1" id="combat.maps" gameVersion="1.7">
+  <Templates>
+    <PawnTemplate id="rifle"><basePawnKind>Mercenary_Gunner</basePawnKind><Equipment mode="replace"><SetPrimary def="Gun_BoltActionRifle" quality="Normal"/></Equipment><Apparel mode="replace"><Add def="Apparel_Parka" stuff="Cloth"/><Add def="Apparel_Pants" stuff="Cloth"/></Apparel><Skills mode="patch"><Set def="Shooting" level="12"/></Skills></PawnTemplate>
+  </Templates>
+  <Case id="cover" kind="groupCombat" name="远程掩体阵地地图" seed="371" timeoutRealSeconds="240">
+    <testDefName>Maps_Cover</testDefName><Scene type="mainMap" sizeX="120" sizeZ="100" battlefield="cover" featureDensity="1" spawnClearance="6"/>
+    <Teams><Team id="A" ai="defendPoint"/><Team id="B" ai="lure"/></Teams>
+    <Actors><PawnGroup id="left" template="rifle" team="A" count="6" originX="40" originZ="45" formation="grid" columns="3" spacing="2"/><PawnGroup id="right" template="rifle" team="B" count="6" originX="80" originZ="45" formation="grid" columns="3" spacing="2"/></Actors>
+    <GroupCombat durationSeconds="45" timeSpeed="fast"><End confirmationTicks="30"/></GroupCombat><Output width="1280" height="720"/>
+  </Case>
+  <Case id="ridges" kind="groupCombat" name="花岗岩山脊地图" seed="372" timeoutRealSeconds="240">
+    <testDefName>Maps_Ridges</testDefName><Scene type="mainMap" sizeX="120" sizeZ="100" battlefield="mountainRidges" featureDensity="1" spawnClearance="6"/>
+    <Teams><Team id="A" ai="defendPoint"/><Team id="B" ai="lure"/></Teams>
+    <Actors><PawnGroup id="left" template="rifle" team="A" count="6" originX="40" originZ="45" formation="grid" columns="3" spacing="2"/><PawnGroup id="right" template="rifle" team="B" count="6" originX="80" originZ="45" formation="grid" columns="3" spacing="2"/></Actors>
+    <GroupCombat durationSeconds="45" timeSpeed="fast"><End confirmationTicks="30"/></GroupCombat><Output width="1280" height="720"/>
+  </Case>
+  <Case id="valley" kind="groupCombat" name="砂岩峡谷地图" seed="373" timeoutRealSeconds="240">
+    <testDefName>Maps_Valley</testDefName><Scene type="mainMap" sizeX="120" sizeZ="100" battlefield="mountainValley" featureDensity="1" spawnClearance="6"/>
+    <Teams><Team id="A" ai="defendPoint"/><Team id="B" ai="lure"/></Teams>
+    <Actors><PawnGroup id="left" template="rifle" team="A" count="6" originX="40" originZ="45" formation="grid" columns="3" spacing="2"/><PawnGroup id="right" template="rifle" team="B" count="6" originX="80" originZ="45" formation="grid" columns="3" spacing="2"/></Actors>
+    <GroupCombat durationSeconds="45" timeSpeed="fast"><End confirmationTicks="30"/></GroupCombat><Output width="1280" height="720"/>
+  </Case>
+  <Case id="glacier" kind="groupCombat" name="冰川雪原地图" seed="374" timeoutRealSeconds="240">
+    <testDefName>Maps_Glacier</testDefName><Scene type="mainMap" sizeX="120" sizeZ="100" battlefield="glacier" featureDensity="1" spawnClearance="6"/>
+    <Teams><Team id="A" ai="defendPoint"/><Team id="B" ai="lure"/></Teams>
+    <Actors><PawnGroup id="left" template="rifle" team="A" count="6" originX="40" originZ="45" formation="grid" columns="3" spacing="2"/><PawnGroup id="right" template="rifle" team="B" count="6" originX="80" originZ="45" formation="grid" columns="3" spacing="2"/></Actors>
+    <GroupCombat durationSeconds="45" timeSpeed="fast"><End confirmationTicks="30"/></GroupCombat><Output width="1280" height="720"/>
+  </Case>
+  <Case id="urban" kind="groupCombat" name="废墟街区巷战地图" seed="375" timeoutRealSeconds="240">
+    <testDefName>Maps_Urban</testDefName><Scene type="mainMap" sizeX="120" sizeZ="100" battlefield="urban" featureDensity="1" spawnClearance="6"/>
+    <Teams><Team id="A" ai="defendPoint"/><Team id="B" ai="lure"/></Teams>
+    <Actors><PawnGroup id="left" template="rifle" team="A" count="6" originX="40" originZ="45" formation="grid" columns="3" spacing="2"/><PawnGroup id="right" template="rifle" team="B" count="6" originX="80" originZ="45" formation="grid" columns="3" spacing="2"/></Actors>
+    <GroupCombat durationSeconds="45" timeSpeed="fast"><End confirmationTicks="30"/></GroupCombat><Output width="1280" height="720"/>
+  </Case>
+</TestSuite>

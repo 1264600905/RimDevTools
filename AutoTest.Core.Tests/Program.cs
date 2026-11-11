@@ -46,8 +46,11 @@ internal sealed class CoreTestSuite
         ArenaWorkbenchTests.Run(Assert);
         ArenaPresetWorkflowTests.Run(Assert);
         ArenaIdentityModeTests.Run(Assert);
+        ArenaContinuityTests.Run(Assert);
         ApparelLoadoutPlannerTests.Run(Assert);
         CombatConfigurationTests.Run(Assert);
+        CombatTacticsTests.Run(Assert);
+        CombatMapTests.Run(Assert);
         TestSessionExitTests.Run(Assert);
         TestRuntimeQueue();
         TestRuntimeHistory();

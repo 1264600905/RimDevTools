@@ -8,6 +8,22 @@ internal static class ArenaResultTests
     internal static void Run(Action<bool, string> check)
     {
         ArenaChallengeResultTests.Run(check);
+        var completedWithDifferences = Build(2);
+        var changedAttempt = completedWithDifferences.Tournaments[0].Matches[0].Attempts[0];
+        changedAttempt.Units[0].GeneratedSnapshot = null!;
+        changedAttempt.Screenshots.Clear();
+        changedAttempt.MeasurementRequirementsMet = false;
+        completedWithDifferences.Tournaments[0].Warnings.Add("mod changed traits");
+        check(ArenaResultValidator.ValidateCompletion(completedWithDifferences, completedWithDifferences.Plan) == null,
+            "completed arena fights stay successful with missing snapshots, screenshots and incomplete measurements");
+        check(ArenaResultValidator.ValidateIntegrity(completedWithDifferences, completedWithDifferences.Plan, false) != null,
+            "strict regression auditing still detects optional evidence differences");
+        changedAttempt.ExecutionStatus = "error";
+        check(ArenaResultValidator.ValidateCompletion(completedWithDifferences, completedWithDifferences.Plan) != null,
+            "arena completion never hides an actual failed fight");
+        changedAttempt.ExecutionStatus = "completed"; changedAttempt.CleanupComplete = false;
+        check(ArenaResultValidator.ValidateCompletion(completedWithDifferences, completedWithDifferences.Plan) != null,
+            "arena completion retains failures that leave battle resources uncleared");
         foreach (int n in new[] { 2, 5, 6, 7, 8, 64 })
         {
             var report = Build(n);

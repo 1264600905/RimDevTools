@@ -1,0 +1,33 @@
+<ArenaSuite schemaVersion="1" id="arena.continuity" gameVersion="1.7">
+  <Requirements><DLC packageId="ludeon.rimworld.biotech"/></Requirements>
+  <Templates>
+    <PawnTemplate id="genie">
+      <basePawnKind>Colonist</basePawnKind><Age biologicalYears="30" chronologicalYears="30"/>
+      <Xenotype def="Genie"/>
+      <!-- Genetic aptitude makes effective Intellectual 0 unavailable. The
+           tournament must retain the pawn, apply its gear and finish both matches. -->
+      <Skills><Set def="Intellectual" level="0"/><Set def="Shooting" level="12"/></Skills>
+      <Apparel mode="replace"><Add def="Apparel_Pants" stuff="Cloth" quality="Normal" color="#FFFFFFFF"/></Apparel>
+      <Equipment mode="replace"><SetPrimary def="Gun_Minigun" quality="Normal"/></Equipment>
+    </PawnTemplate>
+  </Templates>
+  <SquadTemplates>
+    <SquadTemplate id="genies" source="groups" factionDef="Pirate">
+      <PawnGroup id="gunners" template="genie" count="2"/>
+    </SquadTemplate>
+  </SquadTemplates>
+  <Tournament id="continued" format="knockout" seed="12345">
+    <testDefName>Arena_ContinueWithAttributeDifferences</testDefName>
+    <Scene sizeX="65" sizeZ="65"/>
+    <Roster mode="count" count="1"/>
+    <Entrants>
+      <Entrant id="genies" squad="genies" mode="count" costMode="native"/>
+      <Entrant id="rats" pawnKind="Rat"/>
+      <Entrant id="hares" pawnKind="Hare"/>
+    </Entrants>
+    <Battle durationSeconds="90" timeoutRealSeconds="300" timeSpeed="superfast" confirmationTicks="30"/>
+    <TieBreak maxReplays="0"/>
+    <Presentation bracketSeconds="1" settlementSeconds="1"><Showcase pageSeconds="1"/></Presentation>
+    <Output width="1280" height="720"/>
+  </Tournament>
+</ArenaSuite>

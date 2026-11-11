@@ -62,6 +62,30 @@ namespace LogSyncMod.AutoTest
         private static string postBattleScreenshot;
         private static TimeSpeed postBattleOriginalSpeed;
         private static bool showcaseActive, showcaseCaptured;
+        private static bool showcaseAvailable;
+        internal static void Warn(string message)
+        {
+            if (tournament != null)
+            {
+                if (tournament.Warnings.Contains(message)) return;
+                tournament.Warnings.Add(message);
+            }
+            Log.Warning("[LogSyncArena] " + message);
+        }
+        private static bool PresentationReady(bool captured, double elapsed, string stage)
+            => ArenaContinuity.PresentationReady(captured, elapsed, message => Warn(stage + ": " + message));
+        private static bool InitializeShowcase()
+        {
+            if (!showcaseAvailable) return true;
+            var ready = false;
+            if (!ArenaContinuity.TryOptional("entrant showcase", () => ready = ArenaEntrantShowcase.InitializeFrame(), Warn))
+            {
+                showcaseAvailable = false;
+                ArenaContinuity.TryOptional("release entrant previews", ArenaEntrantShowcase.Clear, Warn);
+                return true;
+            }
+            return ready;
+        }
         private static bool rulesActive, rulesCaptured, entrantsPreparing;
         private static long rulesStarted;
         private static float RulesElapsed => rulesStarted < 0 ? 0 : (float)((System.Diagnostics.Stopwatch.GetTimestamp() - rulesStarted) / (double)System.Diagnostics.Stopwatch.Frequency);
@@ -122,13 +146,10 @@ namespace LogSyncMod.AutoTest
                 if (cancel) { Finish("cancelled", "Cancelled by user"); return; }
                 if (rulesActive)
                 {
-                    if (!entrantsPreparing && rulesStarted >= 0 && RulesElapsed > 20
-                        && (!rulesCaptured || !AutoTestViewComposite.IsReady(tournament.Rules.Screenshot)))
-                        throw new IOException("Rules screenshot did not become ready: " + tournament.Rules.Screenshot);
-                    if (rulesStarted < 0 || Time.frameCount <= rulesPaintedFrame + 1 || !rulesCaptured
-                        || !AutoTestViewComposite.IsReady(tournament.Rules.Screenshot)) return;
+                    if (rulesStarted < 0 || Time.frameCount <= rulesPaintedFrame + 1
+                        || !PresentationReady(rulesCaptured && AutoTestViewComposite.IsReady(tournament.Rules.Screenshot), RulesElapsed, "rules")) return;
                     if (!entrantsPreparing) { entrantsPreparing = true; PrepareEntrants(); }
-                    var prepared = ArenaEntrantShowcase.InitializeFrame();
+                    var prepared = InitializeShowcase();
                     var elapsed = RulesElapsed;
                     if (prepared && tournament.Rules.LoadingSeconds == 0) tournament.Rules.LoadingSeconds = elapsed;
                     if (!ArenaPresentation.RulesReady(elapsed, prepared)) return;
@@ -136,19 +157,20 @@ namespace LogSyncMod.AutoTest
                     scheduler = tournament.Input.Format == "knockout" ? new ArenaScheduler(tournament) : new ArenaChallengeScheduler(tournament);
                     rulesActive = false;
                     showcaseOriginalSpeed = rulesOriginalSpeed;
+                    if (!showcaseAvailable) { Find.TickManager.CurTimeSpeed = rulesOriginalSpeed; Write(); return; }
                     Find.TickManager.CurTimeSpeed = TimeSpeed.Paused;
                     showcaseActive = true; showcasePage = 0; StartShowcasePage();
                     return;
                 }
                 if (showcaseActive)
                 {
-                    if (!ArenaEntrantShowcase.InitializeFrame()) return;
+                    if (!InitializeShowcase()) return;
+                    if (!showcaseAvailable) { showcaseActive = false; Find.TickManager.CurTimeSpeed = showcaseOriginalSpeed; Write(); return; }
                     Find.TickManager.CurTimeSpeed = TimeSpeed.Paused;
                     if (showcasePageStarted < 0) return;
                     var elapsed = Time.realtimeSinceStartup - showcasePageStarted;
                     var page = tournament.Showcase.Pages[showcasePage];
-                    var ready = showcaseCaptured && AutoTestViewComposite.IsReady(page.Screenshot);
-                    if (elapsed > 20 && !ready) throw new IOException("Entrant showcase screenshot did not become ready: " + page.Screenshot);
+                    var ready = PresentationReady(showcaseCaptured && AutoTestViewComposite.IsReady(page.Screenshot), elapsed, "showcase");
                     if (ready && elapsed >= page.DurationSeconds)
                     {
                         page.VisibleSeconds = elapsed;
@@ -169,8 +191,7 @@ namespace LogSyncMod.AutoTest
                     Find.TickManager.CurTimeSpeed = TimeSpeed.Paused;
                     if (preBattleStarted < 0) return;
                     var elapsed = Time.realtimeSinceStartup - preBattleStarted;
-                    var ready = preBattleCaptured && AutoTestViewComposite.IsReady(preBattle.Screenshot);
-                    if (elapsed > 20 && !ready) throw new IOException("Pre-battle screenshot did not become ready: " + preBattle.Screenshot);
+                    var ready = PresentationReady(preBattleCaptured && AutoTestViewComposite.IsReady(preBattle.Screenshot), elapsed, "pre-battle");
                     if (ready && elapsed >= ArenaPresentation.PreBattleSeconds)
                     {
                         preBattle.VisibleSeconds = elapsed;
@@ -186,8 +207,7 @@ namespace LogSyncMod.AutoTest
                 {
                     Find.TickManager.CurTimeSpeed = TimeSpeed.Paused;
                     var elapsed = Time.realtimeSinceStartup - postBattleStarted;
-                    var ready = postBattleCaptured && AutoTestViewComposite.IsReady(postBattleScreenshot);
-                    if (elapsed > 20 && !ready) throw new IOException("Post-battle screenshot did not become ready: " + postBattleScreenshot);
+                    var ready = PresentationReady(postBattleCaptured && AutoTestViewComposite.IsReady(postBattleScreenshot), elapsed, "post-battle");
                     if (ready && elapsed >= ArenaPresentation.PostBattleSeconds)
                     {
                         Find.TickManager.CurTimeSpeed = postBattleOriginalSpeed;
@@ -200,8 +220,7 @@ namespace LogSyncMod.AutoTest
                 {
                     Find.TickManager.CurTimeSpeed = TimeSpeed.Paused;
                     if (championStarted < 0) return;
-                    if (Time.realtimeSinceStartup - championStarted > 20 && (!championCaptured || !AutoTestViewComposite.IsReady(FinalScreenshot))) throw new IOException("Champion screenshot did not become ready");
-                    if (championCaptured && AutoTestViewComposite.IsReady(FinalScreenshot) && Time.realtimeSinceStartup - championStarted >= ArenaStandings.DisplaySeconds)
+                    if (PresentationReady(championCaptured && AutoTestViewComposite.IsReady(FinalScreenshot), Time.realtimeSinceStartup - championStarted, "standings") && Time.realtimeSinceStartup - championStarted >= ArenaStandings.DisplaySeconds)
                     {
                         if (ShowingSummary)
                         {
@@ -230,7 +249,7 @@ namespace LogSyncMod.AutoTest
                     match = null;
                     rulesOriginalSpeed = Find.TickManager.CurTimeSpeed;
                     Find.TickManager.CurTimeSpeed = TimeSpeed.Paused;
-                    rulesActive = true; rulesCaptured = false; entrantsPreparing = false; rulesStarted = -1;
+                    rulesActive = true; rulesCaptured = false; entrantsPreparing = false; rulesStarted = System.Diagnostics.Stopwatch.GetTimestamp(); rulesPaintedFrame = Time.frameCount;
                     var directory = Path.Combine(outputPath, "arena_" + report.RunId + "_Screenshots"); Directory.CreateDirectory(directory);
                     tournament.Rules = new ArenaRulesPageResult { Screenshot = Path.Combine(directory,
                         "tournament_" + (report.Tournaments.IndexOf(tournament) + 1).ToString("D3") + "_rules.png") };
@@ -274,7 +293,7 @@ namespace LogSyncMod.AutoTest
                 {
                     preBattleOriginalSpeed = Find.TickManager.CurTimeSpeed;
                     Find.TickManager.CurTimeSpeed = TimeSpeed.Paused;
-                    preBattleStarted = -1; preBattleCaptured = false;
+                    preBattleStarted = Time.realtimeSinceStartup; preBattleStartTick = Find.TickManager.TicksGame; preBattleCaptured = false;
                     ArenaEntrantShowcase.ResetMatchupSelection();
                     var directory = Path.Combine(outputPath, "arena_" + report.RunId + "_Screenshots"); Directory.CreateDirectory(directory);
                     preBattle = new ArenaPreBattleResult {
@@ -308,7 +327,7 @@ namespace LogSyncMod.AutoTest
                 if (entrant.Squad != null)
                 {
                     roster = SquadGeneration.Resolve(entrant.Id, input.SquadTemplates[entrant.Squad], budget,
-                        entrant.Count ?? input.Count, costMode, SquadTemplates.MemberSeed(input.Seed, entrant.Id, 0), Find.CurrentMap.Tile);
+                        entrant.Count ?? input.Count, costMode, SquadTemplates.MemberSeed(input.Seed, entrant.Id, 0), Find.CurrentMap.Tile, Warn);
                     roster.DisplayName = entrant.Name ?? entrant.Squad;
                 }
                 else
@@ -320,7 +339,7 @@ namespace LogSyncMod.AutoTest
                         throw new ScenarioConfigurationException("Invalid arena xenotype for " + entrant.Id + ": " + entrant.Xenotype);
                     var config = new System.Xml.Linq.XElement("PawnTemplate", new System.Xml.Linq.XElement("basePawnKind", entrant.PawnKind));
                     if (entrant.Xenotype != null) config.Add(new System.Xml.Linq.XElement("Xenotype", new System.Xml.Linq.XAttribute("def", entrant.Xenotype)));
-                    roster = SquadGeneration.ResolveActor(entrant.Id, config, null, budget, entrant.Count ?? input.Count, costMode, input.Seed);
+                    roster = SquadGeneration.ResolveActor(entrant.Id, config, null, budget, entrant.Count ?? input.Count, costMode, input.Seed, Warn);
                     roster.DisplayName = entrant.Name ?? kind.LabelCap.ToString(); roster.CostMode = costMode;
                 }
                 roster.Source = input.Source;
@@ -332,7 +351,8 @@ namespace LogSyncMod.AutoTest
                 var other = tournament.Rosters.First(r => r.Id != roster.Id);
                 ArenaLoader.CompileBattle(input, tournament.Rosters, new ArenaMatch { Id = "validation", Left = roster.Id, Right = other.Id }, 0);
             }
-            ArenaEntrantShowcase.Begin(tournament);
+            showcaseAvailable = ArenaContinuity.TryOptional("prepare entrant showcase", () => ArenaEntrantShowcase.Begin(tournament), Warn);
+            if (!showcaseAvailable) ArenaContinuity.TryOptional("release entrant previews", ArenaEntrantShowcase.Clear, Warn);
         }
         private static void OnFightCompleted(GroupCombatRoundResult result)
         {
@@ -491,7 +511,7 @@ namespace LogSyncMod.AutoTest
         }
         private static void StartShowcasePage()
         {
-            showcasePageStarted = -1; showcaseCaptured = false;
+            showcasePageStarted = Time.realtimeSinceStartup; showcaseStartTick = Find.TickManager.TicksGame; showcaseCaptured = false;
             var page = tournament.Input.ShowcasePages[showcasePage];
             var directory = Path.Combine(outputPath, "arena_" + report.RunId + "_Screenshots"); Directory.CreateDirectory(directory);
             tournament.Showcase.Pages.Add(new ArenaShowcasePage {

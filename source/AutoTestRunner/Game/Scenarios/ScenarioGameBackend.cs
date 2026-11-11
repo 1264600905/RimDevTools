@@ -36,6 +36,7 @@ namespace LogSyncMod.AutoTest
         private ScenarioCase currentDefinition;
         private readonly HashSet<string> usedCoverage = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private bool acceptActivations;
+        private bool continueArena;
         internal static Action<Ability> AbilityActivation;
         public Map Map => groupMap ?? viewStudio?.Map ?? handle?.Map;
         internal static Action NativeObservation;
@@ -117,7 +118,7 @@ namespace LogSyncMod.AutoTest
                 Thing thing;
                 if ((actor.Name == "PawnGroup" || actor.Name == "Pawn") && squadRosters.TryGetValue(id, out var squad))
                 {
-                    thing = GenerateSquadPawn(squad.Members[n], teams[A(actor, "team")], Map.Tile);
+                    thing = GenerateSquadPawn(squad.Members[n], teams[A(actor, "team")], Map.Tile, continueArena, trace);
                     owned.Add(thing);
                 }
                 else if (actor.Name == "Pawn" || actor.Name == "PawnGroup" || actor.Name == "Corpse") thing = GeneratePawn(actor);
@@ -171,7 +172,7 @@ namespace LogSyncMod.AutoTest
             if (actor.Element("weaponMoney") != null) kind.weaponMoney = FloatRange.FromString(actor.Element("weaponMoney").Value);
             var faction = A(actor, "team") == null ? null : teams[A(actor, "team")];
             var explicitSkills = (actor.Element("Skills")?.Elements("Set").Select(e => A(e, "def")) ?? Enumerable.Empty<string>()).Concat(actor.Element("skills")?.Elements("li").Select(e => e.Element("skill")?.Value) ?? Enumerable.Empty<string>()).Select(Def<SkillDef>).ToList();
-            if (explicitSkills.Count > 0 && !kind.RaceProps.Humanlike)
+            if (!continueArena && explicitSkills.Count > 0 && !kind.RaceProps.Humanlike)
                 throw new ScenarioConfigurationException("该兵种不使用人类技能，请先在角色 XML 中移除 Skills 覆盖：" + kind.defName);
             float? age = actor.Element("Age")?.Attribute("biologicalYears") != null ? (float)ScenarioLoader.D(actor.Element("Age"), "biologicalYears")
                 : actor.Element("minGenerationAge") != null && actor.Element("maxGenerationAge") != null ? Rand.Range((float)kind.minGenerationAge, kind.maxGenerationAge) : (float?)null;
@@ -180,7 +181,7 @@ namespace LogSyncMod.AutoTest
                 fixedBiologicalAge: age, fixedGender: actor.Element("gender") == null ? (Gender?)null : Enum.Parse<Gender>(actor.Element("gender").Value, true), validatorPreGear: p =>
                 {
                     TestPawnWorkRestrictions.Remove(p);
-                    return explicitSkills.All(s => p.skills != null && !p.skills.GetSkill(s).TotallyDisabled);
+                    return continueArena || explicitSkills.All(s => p.skills != null && !p.skills.GetSkill(s).TotallyDisabled);
                 });
             request.IsCreepJoiner = kind is CreepJoinerFormKindDef;
             var pawn = PawnGenerator.GeneratePawn(request);
@@ -195,11 +196,40 @@ namespace LogSyncMod.AutoTest
             // The generated pawn retains its native registered kind when race was not overridden.
             if (kind.race == original.race) pawn.kindDef = original;
             trace("pawn.inherited", Describe(pawn));
-            ApplyPawnConfig(pawn, actor, restoreColorState);
+            if (continueArena) ApplyArenaPawnConfig(pawn, actor, restoreColorState);
+            else ApplyPawnConfig(pawn, actor, restoreColorState);
             if (pawn.Faction != faction) throw new InvalidOperationException("Pawn generator changed requested faction");
             if (KindFingerprint(original) != before) throw new InvalidOperationException("Shared PawnKind was modified");
             trace("pawn.configured", Describe(pawn) + "; baseDefUnchanged=true");
             return pawn;
+        }
+
+        private void ApplyArenaPawnConfig(Pawn pawn, XElement actor, bool restoreColorState)
+        {
+            // Keep the native pawn when one optional override cannot be applied. Continue
+            // restoring independent entries so a rejected skill does not discard its gear.
+            void Apply(XElement config, string field) => ArenaContinuity.TryOptional("pawn=" + pawn.GetUniqueLoadID() + "; field=" + field,
+                () => ApplyPawnConfig(pawn, config, restoreColorState), message => trace("arena.warning.restore", message));
+            XElement Config(params XElement[] fields) => new("PawnTemplate", fields.Where(e => e != null).Select(e => new XElement(e)));
+            if (actor.Element("Age") != null) Apply(Config(actor.Element("Age")), "Age");
+            if (actor.Element("Xenotype") != null || actor.Element("Genes") != null)
+                Apply(Config(actor.Element("Xenotype"), actor.Element("Genes")), "Xenotype/Genes");
+            foreach (var name in new[] { "forcedTraits", "skills", "abilities" })
+                foreach (var item in actor.Element(name)?.Elements() ?? Enumerable.Empty<XElement>())
+                    Apply(Config(new XElement(name, new XElement(item))), name + "/" + item);
+            foreach (var patch in actor.Elements().Where(e => new[] { "Traits", "Skills", "Hediffs", "Abilities", "Apparel", "Equipment" }.Contains(e.Name.LocalName))
+                .OrderBy(e => e.Name == "Apparel" || e.Name == "Equipment" ? 1 : 0))
+            {
+                var mode = A(patch, "mode", "patch");
+                if (mode == "inherit") continue;
+                if (mode == "replace") Apply(Config(new XElement(patch.Name, new XAttribute("mode", "replace"),
+                    patch.Name == "Traits" ? patch.Elements().Select(e => new XElement(e)) : null)), patch.Name + "/replace");
+                foreach (var item in patch.Elements())
+                    Apply(Config(new XElement(patch.Name, new XAttribute("mode", "patch"), new XElement(item))), patch.Name + "/" + item);
+            }
+            foreach (var name in new[] { "Appearance", "Resources" })
+                foreach (var item in actor.Element(name)?.Elements() ?? Enumerable.Empty<XElement>())
+                    Apply(Config(new XElement(name, new XElement(item))), name + "/" + item.Name);
         }
 
         private void ApplyPawnConfig(Pawn pawn, XElement a, bool restoreColorState = false)

@@ -32,6 +32,22 @@ internal static class CombatConfigurationTests
         check(PawnConfiguration.Condition(XElement.Parse("<CorpseState actor='extraCorpse' state='spawned'/>"), new Dictionary<string, XElement>()) == null,
             "native-only assertions on extra scene actors are not falsely rejected by participant snapshot validation");
         var member1 = new ResolvedSquadMember { PawnKind = "Colonist", ConfigurationId = "gunners", ConfigurationXml = config.ToString(), PawnTemplateXml = config.ToString() };
+        var arenaMember = new ResolvedSquadMember { PawnKind = "Colonist", Xenotype = "Baseliner", ConfigurationId = "gunners", ConfigurationXml = config.ToString(), PawnTemplateXml = config.ToString() };
+        var arenaRoster = new ResolvedCombatRoster { Members = new() { arenaMember } };
+        foreach (var field in new[] { "Traits", "Skills", "Apparel", "Equipment", "Genes", "Abilities", "Hediffs", "Resources" })
+        {
+            var changed = new XElement(config); changed.Element(field).Remove();
+            var snapshotXml = TemporaryPawnData.Serialize(TemporaryPawnData.Parse(changed.ToString()));
+            var unit = new GroupCombatUnit { Id = "left[0]", Kind = "Colonist", ConfigurationId = arenaMember.ConfigurationId,
+                ConfigurationKey = SquadTemplates.ConfigurationKey(arenaMember), GeneratedSnapshot = snapshotXml, InitialSnapshot = snapshotXml };
+            var warnings = new List<string>();
+            check(SquadTemplates.ValidateUnits(arenaRoster, new[] { unit }, "left", warnings.Add) == null && warnings.Any(w => w.Contains(field)),
+                "arena records optional attribute differences and accepts the combatant: " + field);
+        }
+        var continuityPath = Path.Combine("AutoTest.Core.Tests", "Fixtures", "ArenaContinuity.autotest.xml");
+        check(ArenaLoader.Compile(new[] { new ScenarioInput { Path = continuityPath, Xml = File.ReadAllText(continuityPath) } },
+            new[] { "Arena_ContinueWithAttributeDifferences" }).Tournaments.Single().Entrants.Count == 3,
+            "arena continuity fixture plans subsequent matches after an unavailable genetic skill override");
         var variant = new XElement(config); variant.Element("Skills").Element("Set").SetAttributeValue("level", "20");
         var member2 = new ResolvedSquadMember { PawnKind = "Colonist", ConfigurationId = "gunners", ConfigurationXml = variant.ToString(), PawnTemplateXml = variant.ToString() };
         check(SquadTemplates.ConfigurationKey(member1) != SquadTemplates.ConfigurationKey(member2), "equal local group IDs with distinct skill configurations retain distinct identities");

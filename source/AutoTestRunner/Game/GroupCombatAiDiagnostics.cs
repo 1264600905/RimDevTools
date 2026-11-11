@@ -6,7 +6,7 @@ using Verse;
 
 namespace LogSyncMod.AutoTest
 {
-    // Observation only. Native think trees create and schedule every combat job.
+    // Observation only. Tactical strategies also use the native combat job drivers.
     internal static class GroupCombatAiDiagnostics
     {
         private static readonly HashSet<string> observedJobs = new();
@@ -29,13 +29,14 @@ namespace LogSyncMod.AutoTest
         internal static void NotifyShot(Verb verb)
         {
             var pawn = verb.CasterPawn;
+            CombatFightService.NotifyTacticalShot(verb);
             if (!CombatFightService.IsCombatParticipant(pawn) || !shooters.Add(pawn)) return;
             var target = verb.CurrentTarget.Thing as Pawn;
             CombatFightService.TraceAi("group.ai_shot", "pawn=" + CombatFightService.RosterId(pawn)
                 + "; target=" + CombatFightService.RosterId(target) + "; tick=" + CombatFightService.Display.ElapsedTicks
                 + "; distance=" + (target == null ? "none" : pawn.Position.DistanceTo(target.Position).ToString("F2", CultureInfo.InvariantCulture))
                 + "; weapon=" + pawn.equipment?.Primary?.def.defName + "; verb=" + verb.GetType().Name
-                + "; range=" + verb.EffectiveRange.ToString("F2", CultureInfo.InvariantCulture) + "; launched=true; controller=native");
+                + "; range=" + verb.EffectiveRange.ToString("F2", CultureInfo.InvariantCulture) + "; launched=true; controller=" + CombatFightService.AiController(pawn));
         }
     }
 

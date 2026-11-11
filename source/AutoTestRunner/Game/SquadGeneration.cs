@@ -66,11 +66,11 @@ namespace LogSyncMod.AutoTest
             }
             public void Dispose() { Faction.RemoveAllRelations(); Active.Remove(this); }
         }
-        internal static ResolvedCombatRoster Resolve(string id, SquadTemplate template, decimal? budget, int count, string costMode, int seed, PlanetTile tile)
+        internal static ResolvedCombatRoster Resolve(string id, SquadTemplate template, decimal? budget, int count, string costMode, int seed, PlanetTile tile, Action<string> warning = null)
         {
             SquadTemplates.ValidateCostMode(costMode);
             if (budget.HasValue && (budget <= 0 || budget > 10000000) || !budget.HasValue && (count < 1 || count > CombatRoster.MaxTeamMembers)) throw new ScenarioConfigurationException("Squad budget must be in (0,10000000], or count in 1..200");
-            if (template.Source == "groups") return ResolvePawnGroups(id, template, budget, count, costMode, seed);
+            if (template.Source == "groups") return ResolvePawnGroups(id, template, budget, count, costMode, seed, warning);
             using var factionScope = new FactionScope(template.FactionDef, template.Id);
             var faction = factionScope.Faction;
             var strategy = DefDatabase<RaidStrategyDef>.GetNamed(template.StrategyDef);
@@ -174,7 +174,7 @@ namespace LogSyncMod.AutoTest
                     {
                         pawn = GenerateMember(member, faction, tile, strategy, parms.points);
                         member.Childhood = pawn.story?.Childhood?.defName; member.Adulthood = pawn.story?.Adulthood?.defName;
-                        var capture = TemporaryPawnCapture.Capture(pawn);
+                        var capture = CaptureFrozenPawn(pawn, warning);
                         var xml = XElement.Parse(capture.TemplateXml);
                         foreach (var field in xml.Elements().Where(e => !new[] { "basePawnKind", "race", "gender", "Age", "Appearance", "Traits", "Skills", "Apparel", "Equipment", "Xenotype", "Genes" }.Contains(e.Name.LocalName)).ToList()) field.Remove();
                         member.PawnTemplateXml = xml.ToString(SaveOptions.DisableFormatting);
@@ -187,7 +187,7 @@ namespace LogSyncMod.AutoTest
             }
             finally { Rand.PopState(); }
         }
-        private static ResolvedCombatRoster ResolvePawnGroups(string id, SquadTemplate template, decimal? budget, int count, string costMode, int seed)
+        private static ResolvedCombatRoster ResolvePawnGroups(string id, SquadTemplate template, decimal? budget, int count, string costMode, int seed, Action<string> warning)
         {
             var total = SquadTemplates.GroupCount(template);
             if (!budget.HasValue && count != total) throw new ScenarioConfigurationException("Squad count does not match its PawnGroups");
@@ -205,10 +205,11 @@ namespace LogSyncMod.AutoTest
                     try
                     {
                         var generation = CombatConfiguration(group, faction.Faction);
-                        pawn = ScenarioGameBackend.GenerateTemporaryPawn(TemporaryPawnData.Parse(generation.ToString(SaveOptions.DisableFormatting)), faction.Faction, null, out _, forceConfiguredXenotype: true);
-                        var capture = XElement.Parse(TemporaryPawnCapture.Capture(pawn).TemplateXml);
+                        pawn = ScenarioGameBackend.GenerateTemporaryPawn(TemporaryPawnData.Parse(generation.ToString(SaveOptions.DisableFormatting)), faction.Faction,
+                            warning == null ? null : (stage, message) => { if (stage.StartsWith("arena.warning.", StringComparison.Ordinal)) warning(stage + ": " + message); }, out _, forceConfiguredXenotype: true, continueArena: warning != null);
+                        var capture = XElement.Parse(CaptureFrozenPawn(pawn, warning).TemplateXml);
                         var explicitError = PawnConfiguration.ValidateExplicit(XElement.Parse(configuration), capture);
-                        if (explicitError != null) throw new ScenarioConfigurationException(explicitError);
+                        if (explicitError != null) { if (warning == null) throw new ScenarioConfigurationException(explicitError); warning(id + ": " + explicitError); }
                         var retained = new HashSet<string>(new[] { "basePawnKind", "race", "gender", "Age", "Appearance", "Traits", "Skills", "Apparel", "Equipment", "Xenotype", "Genes" });
                         foreach (var field in new[] { "Hediffs", "Abilities", "Resources" }) if (group.Element(field) != null || field == "Abilities" && group.Element("abilities") != null) retained.Add(field);
                         foreach (var field in capture.Elements().Where(e => !retained.Contains(e.Name.LocalName)).ToList()) field.Remove();
@@ -246,7 +247,7 @@ namespace LogSyncMod.AutoTest
             }
             return config;
         }
-        internal static ResolvedCombatRoster ResolveActor(string id, XElement actor, string factionDef, decimal? budget, int count, string costMode, int seed)
+        internal static ResolvedCombatRoster ResolveActor(string id, XElement actor, string factionDef, decimal? budget, int count, string costMode, int seed, Action<string> warning = null)
         {
             SquadTemplates.ValidateCostMode(costMode);
             using var faction = new FactionScope(factionDef ?? "LogSync_GroupCombatFaction", id);
@@ -261,10 +262,11 @@ namespace LogSyncMod.AutoTest
                 try
                 {
                     var config = CombatConfiguration(configuration, faction.Faction);
-                    pawn = ScenarioGameBackend.GenerateTemporaryPawn(TemporaryPawnData.Parse(config.ToString(SaveOptions.DisableFormatting)), faction.Faction, null, out _, forceConfiguredXenotype: true);
-                    var captured = XElement.Parse(TemporaryPawnCapture.Capture(pawn).TemplateXml);
+                    pawn = ScenarioGameBackend.GenerateTemporaryPawn(TemporaryPawnData.Parse(config.ToString(SaveOptions.DisableFormatting)), faction.Faction,
+                        warning == null ? null : (stage, message) => { if (stage.StartsWith("arena.warning.", StringComparison.Ordinal)) warning(stage + ": " + message); }, out _, forceConfiguredXenotype: true, continueArena: warning != null);
+                    var captured = XElement.Parse(CaptureFrozenPawn(pawn, warning).TemplateXml);
                     var error = PawnConfiguration.ValidateExplicit(configuration, captured);
-                    if (error != null) throw new ScenarioConfigurationException(id + ": " + error);
+                    if (error != null) { if (warning == null) throw new ScenarioConfigurationException(id + ": " + error); warning(id + ": " + error); }
                     var power = CombatRoster.Power(Kind(roster.PawnKind).combatPower);
                     var xenotype = pawn.genes?.Xenotype;
                     var factor = xenotype == null ? 1 : CombatRoster.Power(xenotype.combatPowerFactor);
@@ -288,6 +290,16 @@ namespace LogSyncMod.AutoTest
             if (roster.Members.Count == 0) throw new ScenarioConfigurationException("Budget cannot fund the first generated member", "COMBAT_BUDGET_TOO_SMALL");
             roster.ResolvedCount = roster.Members.Count; roster.UnitCombatPower = roster.ActualCombatPower / roster.ResolvedCount;
             return roster;
+        }
+        private static TemporaryPawnSnapshot CaptureFrozenPawn(Pawn pawn, Action<string> warning)
+        {
+            if (warning == null) return TemporaryPawnCapture.Capture(pawn);
+            TemporaryPawnSnapshot snapshot = null;
+            if (ArenaContinuity.TryOptional("freeze pawn " + pawn.GetUniqueLoadID(), () => snapshot = TemporaryPawnCapture.Capture(pawn), warning)) return snapshot;
+            var minimal = new XElement("PawnTemplate", new XElement("basePawnKind", pawn.kindDef.defName),
+                new XElement("race", pawn.def.defName), new XElement("gender", pawn.gender));
+            if (pawn.genes?.Xenotype != null) minimal.Add(new XElement("Xenotype", new XAttribute("def", pawn.genes.Xenotype.defName)));
+            return TemporaryPawnData.Create(minimal, pawn.GetUniqueLoadID(), minimal.Elements().Select(e => e.Name.LocalName), new[] { "Full snapshot unavailable; native pawn generation will supply remaining attributes" });
         }
         internal static Pawn GenerateMember(ResolvedSquadMember member, Faction faction, PlanetTile tile, RaidStrategyDef strategy = null, float points = 5000)
         {

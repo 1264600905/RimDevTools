@@ -75,6 +75,13 @@ internal static class SquadTests
         check(SquadTemplates.ValidateUnits(roster, new[] { unit }, "left") != null, "squad integrity rejects a generated pawn with the wrong xenotype");
         unit.GeneratedSnapshot = TemporaryPawnData.Serialize(TemporaryPawnData.Parse(member.PawnTemplateXml.Replace("<Equipment mode='replace'/>", "<Equipment mode='replace'><SetPrimary def='Gun_Autopistol'/></Equipment>")));
         check(SquadTemplates.ValidateUnits(roster, new[] { unit }, "left") != null, "squad integrity rejects a generated pawn with an unfrozen weapon");
+        var warnings = new List<string>();
+        check(SquadTemplates.ValidateUnits(roster, new[] { unit }, "left", warnings.Add) == null && warnings.Count > 0,
+            "arena records changed equipment without rejecting a usable roster");
+        warnings.Clear();
+        unit.GeneratedSnapshot = TemporaryPawnData.Serialize(TemporaryPawnData.Parse(member.PawnTemplateXml.Replace("Yttakin", "Baseliner")));
+        check(SquadTemplates.ValidateUnits(roster, new[] { unit }, "left", warnings.Add) == null && warnings.Count > 0,
+            "arena tolerates actual xenotype differences while strict squad tests remain available");
         check(SquadTemplates.MemberSeed(123, "a", 0) == SquadTemplates.MemberSeed(123, "a", 0) && SquadTemplates.MemberSeed(123, "a", 0) != SquadTemplates.MemberSeed(123, "b", 0), "squad member seeds are deterministic and independent of entrant ordering");
         var fixturePath = Path.Combine("AutoTest.Core.Tests", "Fixtures", "GroupCombatSquads.autotest.xml");
         var fixture = ScenarioLoader.Compile(new[] { new ScenarioInput { Path = fixturePath, Sha256 = "fixture", Xml = File.ReadAllText(fixturePath) } }, true);

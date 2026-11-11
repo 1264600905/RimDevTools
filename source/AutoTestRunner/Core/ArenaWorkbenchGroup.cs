@@ -30,13 +30,19 @@ namespace LogSyncMod.AutoTest
             for (var i = 0; i < entrants.Count; i++)
             {
                 var entrant = entrants[i]; var team = i == 0 ? "A" : "B";
-                names.Add(new XElement("Team", new XAttribute("id", team), new XAttribute("name", (string)entrant.Attribute("name") ?? team)));
+                var selectedAi = teams[i].Ai;
+                names.Add(new XElement("Team", new XAttribute("id", team), new XAttribute("name", (string)entrant.Attribute("name") ?? team),
+                    selectedAi == "inherit" ? null : new XAttribute("ai", selectedAi)));
                 var actor = new XElement("PawnGroup", new XAttribute("id", (string)entrant.Attribute("id")), new XAttribute("team", team),
                     new XAttribute("originX", i == 0 ? 10 : 96), new XAttribute("originZ", 45), new XAttribute("formation", "grid"), new XAttribute("columns", 15), new XAttribute("spacing", 2));
                 if (entrant.Attribute("squad") != null) actor.Add(new XAttribute("squad", (string)entrant.Attribute("squad")));
                 else { actor.Add(new XElement("basePawnKind", (string)entrant.Attribute("pawnKind"))); if (entrant.Attribute("xenotype") != null) actor.Add(new XElement("Xenotype", new XAttribute("def", (string)entrant.Attribute("xenotype")))); }
                 actor.Add(entrant.Attribute("budget") != null ? new XAttribute("combatPowerBudget", (string)entrant.Attribute("budget")) : new XAttribute("count", (string)entrant.Attribute("count")));
                 actor.Add(new XAttribute("costMode", (string)entrant.Attribute("costMode") ?? "native")); actors.Add(actor);
+                var estimatedCount = teams[i].Mode == "combatPower" ? 200 : teams[i].MemberCount;
+                var extent = PawnGroupFormation.Extents(new XElement("PawnGroup", new XAttribute("count", Math.Max(1, estimatedCount)), new XAttribute("formation", "grid"), new XAttribute("columns", 15), new XAttribute("spacing", 2)), true);
+                actor.SetAttributeValue("originX", i == 0 ? Math.Max(1, s.Width / 5 - extent.x / 2) : Math.Min(s.Width - extent.x - 2, s.Width * 4 / 5 - extent.x / 2));
+                actor.SetAttributeValue("originZ", Math.Max(1, s.Height / 2 - extent.z / 2));
             }
             var c = new XElement("Case", new XAttribute("id", "main"), new XAttribute("kind", "groupCombat"), new XAttribute("name", s.Name), new XAttribute("seed", s.Seed), new XAttribute("timeoutRealSeconds", s.Timeout),
                 new XElement("testDefName", TestName), new XElement(tournament.Element("Scene")), names, actors, new XElement("Steps"),

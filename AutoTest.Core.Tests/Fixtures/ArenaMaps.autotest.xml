@@ -1,0 +1,18 @@
+<ArenaSuite schemaVersion="1" id="arena.maps" gameVersion="1.7">
+  <Tournament id="urban" name="巷战地图擂台" seed="411">
+    <testDefName>Arena_MapsUrban</testDefName>
+    <Scene type="mainMap" sizeX="120" sizeZ="100" battlefield="urban" featureDensity="1" spawnClearance="6"/>
+    <Roster mode="count" count="4"/>
+    <Entrants><Entrant id="lancers" pawnKind="Mech_Lancer"/><Entrant id="scythers" pawnKind="Mech_Scyther"/></Entrants>
+    <Battle aiPolicy="lure" timeSpeed="fast" durationSeconds="80" timeoutRealSeconds="240" confirmationTicks="30"/>
+    <TieBreak maxReplays="0"/><Presentation><Showcase pageSeconds="3"/></Presentation><Output width="1280" height="720"/>
+  </Tournament>
+  <Tournament id="glacier" name="冰川地图擂台" seed="412">
+    <testDefName>Arena_MapsGlacier</testDefName>
+    <Scene type="mainMap" sizeX="120" sizeZ="100" battlefield="glacier" featureDensity=".8" spawnClearance="6"/>
+    <Roster mode="count" count="4"/>
+    <Entrants><Entrant id="lancers" pawnKind="Mech_Lancer"/><Entrant id="pikemen" pawnKind="Mech_Pikeman"/></Entrants>
+    <Battle aiPolicy="defendPoint" timeSpeed="fast" durationSeconds="80" timeoutRealSeconds="240" confirmationTicks="30"/>
+    <TieBreak maxReplays="0"/><Presentation><Showcase pageSeconds="3"/></Presentation><Output width="1280" height="720"/>
+  </Tournament>
+</ArenaSuite>

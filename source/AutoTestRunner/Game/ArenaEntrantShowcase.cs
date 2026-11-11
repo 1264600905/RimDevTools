@@ -64,7 +64,8 @@ namespace LogSyncMod.AutoTest
                             ArenaLoader.PreparationSteps(value.Input, "entrant")))
                         {
                             if (roster.Members.Count > 0)
-                                pawn = ScenarioGameBackend.GenerateSquadPawn(groups[type].First(), faction, previewMap.Map.Tile);
+                                pawn = ScenarioGameBackend.GenerateSquadPawn(groups[type].First(), faction, previewMap.Map.Tile,
+                                    continueArena: true, diagnostic: (stage, message) => { if (stage.StartsWith("arena.warning.", StringComparison.Ordinal)) ArenaService.Warn(stage + ": " + message); });
                             else
                             {
                                 var kind = DefDatabase<PawnKindDef>.GetNamed(roster.PawnKind);

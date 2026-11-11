@@ -177,6 +177,7 @@ namespace LogSyncMod.AutoTest.Scenarios
     }
     public sealed class ArenaTournamentResult
     {
+        public List<string> Warnings { get; set; } = new();
         public ArenaTournamentInput Input { get; set; }
         public List<ResolvedCombatRoster> Rosters { get; set; } = new();
         public ArenaShowcaseResult Showcase { get; set; }

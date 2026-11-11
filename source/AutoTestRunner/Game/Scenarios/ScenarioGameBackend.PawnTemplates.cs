@@ -13,10 +13,11 @@ namespace LogSyncMod.AutoTest
         // Manual presenters/workers and group-combat members use the same generation and exact
         // override code as external scenes. The caller owns the returned fresh objects.
         internal static Pawn GenerateTemporaryPawn(TemporaryPawnSnapshot snapshot, Faction faction, Action<string, string> trace, out List<Thing> generated,
-            bool restoreColorState = false, bool forceConfiguredXenotype = false, ResolvedSquadMember restoreMember = null)
+            bool restoreColorState = false, bool forceConfiguredXenotype = false, ResolvedSquadMember restoreMember = null, bool continueArena = false)
         {
             var frozen = TemporaryPawnData.Parse(TemporaryPawnData.Serialize(snapshot));
             var backend = new ScenarioGameBackend(null, null, null, trace ?? ((_, __) => { }));
+            backend.continueArena = continueArena;
             backend.teams.Add("temporary", faction);
             var actor = XElement.Parse(frozen.TemplateXml); actor.Name = "Pawn";
             actor.SetAttributeValue("id", "temporaryPawn"); actor.SetAttributeValue("team", "temporary");

@@ -16,6 +16,9 @@ namespace LogSyncMod.AutoTest.Scenarios
             foreach (var t in report.Tournaments)
             {
                 s.AppendLine("## " + t.Input.Name).AppendLine();
+                foreach (var warning in t.Warnings.Concat(t.Matches.SelectMany(m => m.Attempts).SelectMany(a => a.Diagnostics)
+                    .Where(d => d.StartsWith("arena.warning.", StringComparison.Ordinal))).Distinct())
+                    s.AppendLine("提示（赛事继续）：" + warning).AppendLine();
                 if (t.Input.Format == "knockout") s.AppendLine("冠军：" + (t.Champion ?? "尚未决出")).AppendLine();
                 s.AppendLine($"赛制：{t.Input.Format}；清理尸体：{t.Input.ClearCorpses}；清理掉落物：{t.Input.ClearDroppedItems}。\n");
                 if (t.Input.Format != "knockout")

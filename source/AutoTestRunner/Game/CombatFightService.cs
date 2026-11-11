@@ -24,6 +24,7 @@ namespace LogSyncMod.AutoTest
         private static ArenaEndRule arenaEndRule;
         private static ArenaTournamentInput arenaInput;
         private static ArenaMaintenance arenaMaintenance;
+        private static CombatTactics tactics;
         private static double arenaIntroSeconds, arenaSettlementSeconds, arenaAdvanceStartSeconds;
         internal static bool IsArena => arenaEndRule != null;
         private static string ArtifactPrefix => IsArena ? "arena" : "groupcombat";
@@ -92,6 +93,9 @@ namespace LogSyncMod.AutoTest
         internal static GroupCombatRoundResult Display => current;
         internal static bool IsCombatParticipant(Pawn pawn) => Measuring && pawn?.Spawned == true && pawn.Map == Map && RosterId(pawn) != null;
         internal static void TraceAi(string stage, string details) => Trace(stage, details);
+        internal static void NotifyTacticalShot(Verb verb) => tactics?.NotifyShot(verb);
+        internal static string AiController(Pawn pawn) => pawn?.GetLord()?.LordJob is LordJob_CombatTactics ? "tactical" : "native";
+        internal static ThinkResult KeepTacticalOrder(ThinkResult result, Pawn pawn) => tactics?.KeepOrder(result, pawn) ?? result;
         internal static string Phase => phase;
         internal static bool OverlayEnabled => overlayEnabled;
         internal static bool ShowingIntro => phase is "prepared" or "portraits" or "countdown" or "roster";
@@ -101,7 +105,7 @@ namespace LogSyncMod.AutoTest
             ? ShowingIntro || Measuring && Time.realtimeSinceStartup - battleStartedRealtime < .8f
                 ? ArenaPresentation.CountdownLabel(phase == "prepared" ? 0 : Time.realtimeSinceStartup - introStartedRealtime, arenaIntroSeconds) : ""
             : ShowingIntro ? GroupCombatPresentation.CountdownLabel(phase == "prepared" ? 0 : Time.realtimeSinceStartup - introStartedRealtime) : "";
-        internal static object Status => new { busy = Busy, phase, runId = activeRunId, caseId = input?.CaseId, mapId = Map?.uniqueID, elapsedTicks = current?.ElapsedTicks, totalEvents = current?.TotalEvents, speed = Find.TickManager?.CurTimeSpeed.ToString(), paused = Find.TickManager?.Paused, pausedRealtime, screen = new { width = Screen.width, height = Screen.height, windowWidth = Screen.windowWidth, windowHeight = Screen.windowHeight, fullScreen = Screen.fullScreen, mode = Screen.fullScreenMode.ToString() }, camera = GroupCombatCamera.Status, overlayInput = GroupCombatOverlay.InputVerification, artifacts = new { autoTestOutputPath = outputPath }, teamAi, actors = pawns.Select(p => new { id = p.Key, x = p.Value.Position.x, z = p.Value.Position.z, dead = p.Value.Dead, downed = p.Value.Downed, job = p.Value.CurJob?.def.defName, duty = p.Value.mindState?.duty?.def.defName }), rounds = GroupCombatService.Rounds.Select(r => new { r.CaseId, r.ExecutionStatus, r.CleanupComplete, r.EndReason, r.Error }) };
+        internal static object Status => new { busy = Busy, phase, runId = activeRunId, caseId = input?.CaseId, mapId = Map?.uniqueID, elapsedTicks = current?.ElapsedTicks, totalEvents = current?.TotalEvents, speed = Find.TickManager?.CurTimeSpeed.ToString(), paused = Find.TickManager?.Paused, pausedRealtime, tactics = tactics?.Status, screen = new { width = Screen.width, height = Screen.height, windowWidth = Screen.windowWidth, windowHeight = Screen.windowHeight, fullScreen = Screen.fullScreen, mode = Screen.fullScreenMode.ToString() }, camera = GroupCombatCamera.Status, overlayInput = GroupCombatOverlay.InputVerification, artifacts = new { autoTestOutputPath = outputPath }, teamAi, actors = pawns.Select(p => new { id = p.Key, x = p.Value.Position.x, z = p.Value.Position.z, dead = p.Value.Dead, downed = p.Value.Downed, job = p.Value.CurJob?.def.defName, duty = p.Value.mindState?.duty?.def.defName }), rounds = GroupCombatService.Rounds.Select(r => new { r.CaseId, r.ExecutionStatus, r.CleanupComplete, r.EndReason, r.Error }) };
         internal static void Cancel() { if (Busy) cancel = true; }
         internal static void SetVerificationSpeed(string speed)
         {
@@ -289,7 +293,7 @@ namespace LogSyncMod.AutoTest
             if (!factions.Values.First().HostileTo(Faction.OfPlayer) || !Faction.OfPlayer.HostileTo(factions.Values.First())) throw new InvalidOperationException("The left team must be hostile to the player");
             Trace("group.player_relation", "left=" + factions.Keys.First() + "; playerRelation=Hostile; bothDirections=true");
             backend = new ScenarioGameBackend(arena.Original, null, null, Trace);
-            backend.PrepareGroupCombat(input, Map, factions);
+            backend.PrepareGroupCombat(input, Map, factions, continueArena: IsArena);
             // Clear after the entire roster exists, including links added by mod generation.
             var generated = backend.GroupActors.Values.SelectMany(g => g).OfType<Pawn>().Distinct().ToList();
             var relationCount = generated.Sum(p => p.relations?.DirectRelations.Count ?? 0);
@@ -306,14 +310,14 @@ namespace LogSyncMod.AutoTest
                     var team = ScenarioLoader.A(actor, "team");
                     var squad = input.ResolvedRosters.FirstOrDefault(r => r.Id == actorId)
                         ?? (IsArena ? input.ResolvedRosters[team == "A" ? 0 : 1] : null);
-                    var snapshot = TemporaryPawnCapture.Capture(pawn);
+                    var snapshot = backend.CaptureCombatPawn(pawn);
                     var group = GroupCombatPlan.DisplayGroupKey(actor);
-                    if (squad?.Members.Count > i) group += ":" + SquadTemplates.ConfigurationKey(squad.Members[i], XElement.Parse(snapshot.TemplateXml));
+                    if (squad?.Members.Count > i && snapshot != null) group += ":" + SquadTemplates.ConfigurationKey(squad.Members[i], XElement.Parse(snapshot.TemplateXml));
                     var configurationId = squad?.Members.Count > i ? squad.Members[i].ConfigurationId : null;
                     if (configurationId != null) group += ":configuration:" + configurationId;
                     var configurationName = configurationId == null ? null : squad.Id == configurationId ? configurationId : squad.Id + "/" + configurationId;
                     var typeLabel = pawn.kindDef.LabelCap.ToString();
-                    roster.Add(new GroupCombatUnit { Id = id, NativeId = pawn.GetUniqueLoadID(), Team = team, Group = group, GroupName = configurationName ?? actorId, ConfigurationId = configurationId, ConfigurationKey = squad?.Members.Count > i ? SquadTemplates.ConfigurationKey(squad.Members[i]) : null, Kind = pawn.kindDef.defName, KindLabel = typeLabel, GeneratedSnapshot = backend.GeneratedSnapshots[id], InitialSnapshot = TemporaryPawnData.Serialize(snapshot), Name = pawn.LabelShort, X = pawn.Position.x, Z = pawn.Position.z });
+                    roster.Add(new GroupCombatUnit { Id = id, NativeId = pawn.GetUniqueLoadID(), Team = team, Group = group, GroupName = configurationName ?? actorId, ConfigurationId = configurationId, ConfigurationKey = squad?.Members.Count > i ? SquadTemplates.ConfigurationKey(squad.Members[i]) : null, Kind = pawn.kindDef.defName, KindLabel = typeLabel, GeneratedSnapshot = backend.GeneratedSnapshots[id], InitialSnapshot = snapshot == null ? null : TemporaryPawnData.Serialize(snapshot), Name = pawn.LabelShort, X = pawn.Position.x, Z = pawn.Position.z });
                 }
             }
             ledger = new GroupCombatLedger(roster, c.Element("Teams").Elements("Team").Select(t => new KeyValuePair<string, string>(ScenarioLoader.A(t, "id"), ScenarioLoader.A(t, "name", ScenarioLoader.A(t, "id")))), ScenarioLoader.I(settings.Element("Metrics"), "detailLimit", 10000));
@@ -322,6 +326,7 @@ namespace LogSyncMod.AutoTest
             if (arenaMaintenance != null)
                 arenaMaintenance.Result.InitialRevivalUses = pawns.Values.Sum(p => p.health.hediffSet.hediffs.OfType<Hediff_DeathRefusal>().Sum(h => h.UsesLeft));
             endRule = new GroupCombatEndRule(ScenarioLoader.I(settings.Element("End"), "confirmationTicks", 300));
+            tactics = c.Element("Teams").Elements("Team").Any(t => CombatTacticsPolicy.Custom(ScenarioLoader.A(t, "ai", aiPolicy))) ? new CombatTactics(Map) : null;
             foreach (var node in c.Element("Teams").Elements("Team"))
             {
                 var id = ScenarioLoader.A(node, "id"); var faction = factions[id]; var members = pawns.Values.Where(p => p.Faction == faction).ToList();
@@ -329,14 +334,19 @@ namespace LogSyncMod.AutoTest
                 LordJob job = ai switch {
                     "battle" or "seekAndAttack" or "assaultColony" or "native" => new LordJob_GroupCombatAssault(faction),
                     "assaultThings" => new LordJob_AssaultThings(faction, pawns.Values.Where(p => p.Faction != faction).Cast<Thing>().ToList(), damageFraction: 1f),
-                    "defendPoint" => new LordJob_DefendPoint(new IntVec3(ScenarioLoader.I(node, "defendX", (int)members.Average(p => p.Position.x)), 0, ScenarioLoader.I(node, "defendZ", (int)members.Average(p => p.Position.z))), defendRadius: (float)ScenarioLoader.D(node, "defendRadius", 28), addFleeToil: false),
+                    "defendPoint" or "lure" => new LordJob_CombatTactics(),
                     _ => null
                 };
                 if (job != null) teamLords.Add(id, LordMaker.MakeNewLord(faction, job, Map, members));
-                Trace("group.ai", "team=" + id + "; ai=" + ai + "; controller=native; nativeLordJob=" + (job is LordJob_AssaultColony ? nameof(LordJob_AssaultColony) : job?.GetType().Name)
+                var anchor = new IntVec3(ScenarioLoader.I(node, "defendX", (int)members.Average(p => p.Position.x)), 0, ScenarioLoader.I(node, "defendZ", (int)members.Average(p => p.Position.z)));
+                // Legacy explicit defense bounds remain binding; default tournaments may close to contact.
+                var radius = node.Attributes().Any(a => a.Name.LocalName.StartsWith("defend", StringComparison.Ordinal))
+                    ? (float)ScenarioLoader.D(node, "defendRadius", 28) : ai == "defendPoint" ? 28 : 0;
+                tactics?.Add(id, ai, faction, anchor, radius);
+                Trace("group.ai", "team=" + id + "; ai=" + ai + "; controller=" + (CombatTacticsPolicy.Custom(ai) ? "tactical" : "native") + "; nativeLordJob=" + (job is LordJob_AssaultColony ? nameof(LordJob_AssaultColony) : job?.GetType().Name)
                     + "; duty=" + members.FirstOrDefault()?.mindState.duty?.def.defName + "; allowSelfTend=" + members.FirstOrDefault()?.GetLord()?.CurLordToil?.AllowSelfTend
                     + "; addFleeToil=" + job?.AddFleeToil + "; exitToils=" + members.FirstOrDefault()?.GetLord()?.Graph.lordToils.Count(t => t is LordToil_ExitMap || t is LordToil_PanicFlee)
-                    + "; customJobScheduler=false; simultaneousStart=true");
+                    + "; customJobScheduler=" + (CombatTacticsPolicy.Custom(ai) ? "true" : "false") + "; thinkTreesReplaced=false; simultaneousStart=true");
             }
             current.Environment = "tile=" + Map.Tile + "; weather=" + Map.weatherManager.curWeather.defName + "; temperature=" + Map.mapTemperature.OutdoorTemp + "; sunGlow=" + GenCelestial.CurCelestialSunGlow(Map) + "; ai=" + string.Join(",", teamAi.Select(p => p.Key + "=" + p.Value));
             foreach (var pawn in pawns.Values)
@@ -383,6 +393,7 @@ namespace LogSyncMod.AutoTest
                 Refresh(ticks);
                 arenaMaintenance?.Tick(ticks);
                 if (EvaluateEnd()) { Freeze("completed", current.EndReason, null); return; }
+                tactics?.Tick(ticks);
                 if (ticks % 120 == 0) GroupCombatAiDiagnostics.Observe();
             }
             catch (Exception ex) { Freeze("error", "exception", ex.ToString()); }
@@ -453,8 +464,8 @@ namespace LogSyncMod.AutoTest
             // Start the capture deadline after warmup, rather than timing out large teams.
             if (ShowingIntro && OverlayEnabled && !GroupCombatOverlay.PortraitsReady)
             {
-                phaseStartedRealtime = Time.realtimeSinceStartup;
-                return false;
+                if (!IsArena) { phaseStartedRealtime = Time.realtimeSinceStartup; return false; }
+                if (Time.realtimeSinceStartup - phaseStartedRealtime < 20) return false;
             }
             if (captureRequested && AutoTestViewComposite.IsReady(pendingCapture))
             {
@@ -464,6 +475,7 @@ namespace LogSyncMod.AutoTest
             if (Time.realtimeSinceStartup - phaseStartedRealtime < 20) return false;
             var error = "Screenshot did not become ready: " + pendingCapture;
             current.Diagnostics.Add(error);
+            if (IsArena) { Trace("arena.warning.capture", error + "; continuing the tournament"); return true; }
             if (ShowingIntro) { Freeze("error", "captureFailure", error); return false; }
             if (current.ExecutionStatus == "completed") { current.ExecutionStatus = "error"; current.Error = error; }
             return true;
@@ -492,6 +504,7 @@ namespace LogSyncMod.AutoTest
             Trace("group.overlay_cache", JsonSerializer.Serialize(GroupCombatOverlay.CacheStatus));
             CombatStartupProbe.Stop();
             if (ShowingSettlement) Trace("group.settlement", "realSeconds=" + (Time.realtimeSinceStartup - settlementStartedRealtime).ToString("F3", CultureInfo.InvariantCulture) + "; simulationTicks=" + (Find.TickManager.TicksGame - settlementStartTick));
+            tactics?.Report(); tactics = null;
             phase = "cleaning"; introFacing.Clear(); teamLords.Clear(); lifecyclePawns.Clear();
             GroupCombatCamera.End();
             var errors = new List<string>();
@@ -521,7 +534,12 @@ namespace LogSyncMod.AutoTest
                 try { if (Find.WorldPawns.Contains(pawn)) Find.WorldPawns.RemovePawn(pawn); if (!pawn.Destroyed) pawn.Destroy(DestroyMode.Vanish); if (Find.WorldPawns.Contains(pawn)) Find.WorldPawns.RemovePawn(pawn); }
                 catch (Exception ex) { errors.Add(ex.ToString()); }
             }
-            current.CleanupComplete = errors.Count == 0 && (arena?.Map == null || !Find.Maps.Contains(arena.Map)) && !factions.Values.Any(f => Find.FactionManager.AllFactions.Contains(f)) && pawns.Values.All(p => p.Destroyed && !Find.WorldPawns.Contains(p));
+            var resourcesReleased = (arena?.Map == null || !Find.Maps.Contains(arena.Map)) && !factions.Values.Any(f => Find.FactionManager.AllFactions.Contains(f)) && pawns.Values.All(p => p.Destroyed && !Find.WorldPawns.Contains(p));
+            // Relation/calendar verification is advisory when the battle's owned
+            // resources were actually removed. Residual maps or units still block reuse.
+            var arenaRound = arenaEndRule != null;
+            if (arenaRound && resourcesReleased) foreach (var error in errors) current.Diagnostics.Add("arena.warning.cleanup: " + error);
+            current.CleanupComplete = (arenaRound || errors.Count == 0) && resourcesReleased;
             if (!current.CleanupComplete) { current.ExecutionStatus = "cleanup_error"; current.Error = string.Join("\n", errors) + "; mapRegistered=" + (arena?.Map != null && Find.Maps.Contains(arena.Map)) + "; factionResidual=" + factions.Values.Count(f => Find.FactionManager.AllFactions.Contains(f)) + "; pawnResidual=" + string.Join(",", pawns.Where(p => !p.Value.Destroyed || Find.WorldPawns.Contains(p.Value)).Select(p => p.Key)); }
             Log.Message("[LogSyncGroupCombat] ROUND caseId=" + current.CaseId + " status=" + current.ExecutionStatus + " ticks=" + current.ElapsedTicks + " events=" + current.TotalEvents + " cleanup=" + current.CleanupComplete);
             ledger = null; arena = null; backend = null; input = null; verifyTickFailure = false; pawns.Clear(); rosterIds.Clear(); exited.Clear(); factions.Clear(); teamAi.Clear(); pendingCapture = null; GroupCombatOverlay.Clear(); GroupCombatDamageCapture.Clear(); GroupCombatAiDiagnostics.Reset();

@@ -16,6 +16,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="..\source\AutoTestRunner\Core\AutoTestResultStatus.cs" Link="Shared\AutoTestResultStatus.cs" />
+    <Compile Include="..\source\AutoTestRunner\Core\CombatMapCatalog.cs" Link="Shared\CombatMapCatalog.cs" />
     <Compile Include="..\source\AutoTestRunner\Core\TestArtifactDirectory.cs" Link="Shared\TestArtifactDirectory.cs" />
     <Compile Include="..\source\AutoTestRunner\Scenarios\ScenarioContracts.cs" Link="Shared\ScenarioContracts.cs" />
     <Compile Include="..\source\AutoTestRunner\Scenarios\ScenarioLoader.cs" Link="Shared\ScenarioLoader.cs" />

@@ -14,15 +14,25 @@ namespace LogSyncMod.AutoTest
         internal IReadOnlyDictionary<string, List<Thing>> GroupActors => actors;
         internal readonly Dictionary<string, string> GeneratedSnapshots = new(StringComparer.Ordinal);
         internal readonly List<CombatPreparationRecord> PreparationRecords = new();
-        internal static Pawn GenerateSquadPawn(ResolvedSquadMember member, Faction faction, RimWorld.Planet.PlanetTile tile)
+        internal TemporaryPawnSnapshot CaptureCombatPawn(Pawn pawn)
+        {
+            if (!continueArena) return TemporaryPawnCapture.Capture(pawn);
+            TemporaryPawnSnapshot snapshot = null;
+            ArenaContinuity.TryOptional("pawn=" + pawn.GetUniqueLoadID() + "; snapshot",
+                () => snapshot = TemporaryPawnCapture.Capture(pawn), message => trace("arena.warning.snapshot", message));
+            return snapshot;
+        }
+        internal static Pawn GenerateSquadPawn(ResolvedSquadMember member, Faction faction, RimWorld.Planet.PlanetTile tile,
+            bool continueArena = false, Action<string, string> diagnostic = null)
         {
             Rand.PushState(member.Seed);
-            try { return GenerateTemporaryPawn(TemporaryPawnData.Parse(member.PawnTemplateXml), faction, null, out _, restoreColorState: true, forceConfiguredXenotype: true, restoreMember: member); }
+            try { return GenerateTemporaryPawn(TemporaryPawnData.Parse(member.PawnTemplateXml), faction, diagnostic, out _, restoreColorState: true, forceConfiguredXenotype: true, restoreMember: member, continueArena: continueArena); }
             finally { Rand.PopState(); }
         }
 
-        internal void PrepareGroupCombat(GroupCombatRoundInput definition, Map map, IReadOnlyDictionary<string, Faction> factions)
+        internal void PrepareGroupCombat(GroupCombatRoundInput definition, Map map, IReadOnlyDictionary<string, Faction> factions, bool continueArena = false)
         {
+            this.continueArena = continueArena;
             currentDefinition = new ScenarioCase { Xml = definition.Xml, TestDefName = definition.TestDefName, CaseId = definition.CaseId, CaseType = "GroupCombat", Source = definition.Source };
             runtimeRoot = XElement.Parse(definition.Xml);
             ValidateDefs(runtimeRoot, currentDefinition);
@@ -42,11 +52,14 @@ namespace LogSyncMod.AutoTest
             Rand.PushState(definition.Seed);
             try
             {
+                var battlefield = CombatMapBuilder.Generate(Map, runtimeRoot.Element("Scene"), definition.Seed);
                 PrepareEnvironment(runtimeRoot.Element("Scene"));
+                battlefield?.PrepareSpawns(runtimeRoot.Element("Actors"), trace);
                 foreach (var actor in runtimeRoot.Element("Actors").Elements())
                     using (ArenaPreparationContext.Enter(actor.Element("basePawnKind")?.Value.Trim(), runtimeRoot.Element("Steps")))
                         CreateActor(actor);
-                ValidateEnvironment(runtimeRoot.Element("Scene"));
+                if (continueArena) ArenaContinuity.TryOptional("environment verification", () => ValidateEnvironment(runtimeRoot.Element("Scene")), message => trace("arena.warning.environment", message));
+                else ValidateEnvironment(runtimeRoot.Element("Scene"));
                 bool Condition(XElement e)
                 {
                     if (e.Name == "StepSucceeded") return PreparationRecords.Any(r => r.Completed && r.StepId == A(e, "ref"));
@@ -58,6 +71,17 @@ namespace LogSyncMod.AutoTest
                 foreach (var step in runtimeRoot.Element("Steps").Elements())
                 {
                     if (GeneratedSnapshots.Count == 0) CaptureGeneratedActors();
+                    if (continueArena)
+                    {
+                        ArenaContinuity.TryOptional("step=" + A(step, "id", step.Name.LocalName), () =>
+                        {
+                            if (step.Name == "Require") { if (!Condition(step)) throw new InvalidOperationException("Preparation predicate not met: " + step); }
+                            else if (!Execute(step, true)) throw new InvalidOperationException("Preparation action unfinished: " + step);
+                            if (step.Element("Expect") != null && !Condition(step.Element("Expect"))) throw new InvalidOperationException("Preparation postcondition not met: " + step);
+                            PreparationRecords.Add(new CombatPreparationRecord { StepId = A(step, "id"), Completed = true });
+                        }, message => trace("arena.warning.preparation", message));
+                        continue;
+                    }
                     if (step.Name == "Require") { if (!Condition(step)) throw new InvalidOperationException("Group preparation predicate failed: " + step); }
                     else if (!Execute(step, true)) throw new ScenarioConfigurationException("Group preparation action did not finish synchronously: " + step);
                     if (step.Element("Expect") != null && !Condition(step.Element("Expect"))) throw new InvalidOperationException("Preparation postcondition failed: " + step);
@@ -83,13 +107,23 @@ namespace LogSyncMod.AutoTest
             foreach (var actor in runtimeRoot.Element("Actors").Elements().Where(a => a.Name == "Pawn" || a.Name == "PawnGroup"))
             {
                 var members = actors[A(actor, "id")].Cast<Pawn>().ToList();
-                for (var i = 0; i < members.Count; i++) GeneratedSnapshots.Add(A(actor, "id") + "[" + i + "]", TemporaryPawnData.Serialize(TemporaryPawnCapture.Capture(members[i])));
+                for (var i = 0; i < members.Count; i++)
+                {
+                    var snapshot = CaptureCombatPawn(members[i]);
+                    GeneratedSnapshots.Add(A(actor, "id") + "[" + i + "]", snapshot == null ? null : TemporaryPawnData.Serialize(snapshot));
+                }
                 if (squadRosters.TryGetValue(A(actor, "id"), out var roster))
                 {
                     var units = members.Select((p, i) => new GroupCombatUnit { Id = A(actor, "id") + "[" + i + "]", Kind = p.kindDef.defName, ConfigurationId = roster.Members[i].ConfigurationId, ConfigurationKey = SquadTemplates.ConfigurationKey(roster.Members[i]),
                         GeneratedSnapshot = GeneratedSnapshots[A(actor, "id") + "[" + i + "]"], InitialSnapshot = GeneratedSnapshots[A(actor, "id") + "[" + i + "]"] }).ToList();
-                    var error = SquadTemplates.ValidateUnits(roster, units, A(actor, "id"));
-                    if (error != null) throw new ScenarioConfigurationException("Generated combat roster " + A(actor, "id") + ": " + error);
+                    string error = null;
+                    if (continueArena) ArenaContinuity.TryOptional("roster verification", () => error = SquadTemplates.ValidateUnits(roster, units, A(actor, "id"), message => trace("arena.warning.roster", message)), message => trace("arena.warning.roster", message));
+                    else error = SquadTemplates.ValidateUnits(roster, units, A(actor, "id"));
+                    if (error != null)
+                    {
+                        if (!continueArena) throw new ScenarioConfigurationException("Generated combat roster " + A(actor, "id") + ": " + error);
+                        trace("arena.warning.roster", "Generated combat roster " + A(actor, "id") + ": " + error);
+                    }
                 }
             }
         }

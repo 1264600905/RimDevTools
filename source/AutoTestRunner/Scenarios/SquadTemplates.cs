@@ -243,7 +243,7 @@ namespace LogSyncMod.AutoTest.Scenarios
             }
             return null;
         }
-        public static string ValidateUnits(ResolvedCombatRoster roster, IEnumerable<GroupCombatUnit> units, string prefix)
+        public static string ValidateUnits(ResolvedCombatRoster roster, IEnumerable<GroupCombatUnit> units, string prefix, Action<string> reportDifference = null)
         {
             var initial = units.Where(u => !u.JoinedDuringBattle && u.Id.StartsWith(prefix + "[", StringComparison.Ordinal)).ToList();
             if (initial.Count != roster.Members.Count) return "实际参战人数与混编名单不符";
@@ -252,16 +252,32 @@ namespace LogSyncMod.AutoTest.Scenarios
                 var member = roster.Members[i]; var unit = initial.SingleOrDefault(u => u.Id == prefix + "[" + i + "]");
                 if (unit == null || unit.Kind != member.PawnKind || unit.GeneratedSnapshot == null || unit.InitialSnapshot == null) return "实际参战兵种或生成/初始快照与名单不符";
                 if (unit.ConfigurationId != member.ConfigurationId || unit.ConfigurationKey != ConfigurationKey(member)) return "实际单位配置身份与冻结名单不符";
+                void Difference(string message)
+                {
+                    if (reportDifference != null) reportDifference(unit.Id + ": " + message);
+                }
                 var actual = PawnConfiguration.Read(unit.GeneratedSnapshot);
                 var expected = XElement.Parse(member.PawnTemplateXml);
-                if ((string)actual.Element("Xenotype")?.Attribute("def") != member.Xenotype) return "实际异种与冻结名单不符";
+                if ((string)actual.Element("Xenotype")?.Attribute("def") != member.Xenotype)
+                {
+                    if (reportDifference == null) return "实际异种与冻结名单不符";
+                    Difference("实际异种与冻结名单不符");
+                }
                 var frozenError = PawnConfiguration.ValidateFrozen(expected, actual);
-                if (frozenError != null) return unit.Id + ": " + frozenError
-                    + (frozenError.EndsWith("Genes", StringComparison.Ordinal) ? "; expected=" + expected.Element("Genes") + "; actual=" + actual.Element("Genes") : "");
+                if (frozenError != null)
+                {
+                    var details = frozenError + (frozenError.EndsWith("Genes", StringComparison.Ordinal) ? "; expected=" + expected.Element("Genes") + "; actual=" + actual.Element("Genes") : "");
+                    if (reportDifference == null) return unit.Id + ": " + details;
+                    Difference(details);
+                }
                 if (member.ConfigurationXml != null)
                 {
                     var explicitError = PawnConfiguration.ValidateExplicit(XElement.Parse(member.ConfigurationXml), actual);
-                    if (explicitError != null) return explicitError;
+                    if (explicitError != null)
+                    {
+                        if (reportDifference == null) return explicitError;
+                        Difference(explicitError);
+                    }
                 }
             }
             return null;

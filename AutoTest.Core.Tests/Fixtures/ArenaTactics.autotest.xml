@@ -1,0 +1,18 @@
+<ArenaSuite schemaVersion="1" id="arena.tactics" gameVersion="1.7">
+  <Tournament id="hold" name="固守赛事公共入口" seed="12345">
+    <testDefName>Arena_TacticsHold</testDefName>
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all"><Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/></Scene>
+    <Roster mode="count" count="4"/>
+    <Entrants><Entrant id="wolves" pawnKind="Wolf_Timber"/><Entrant id="bears" pawnKind="Bear_Grizzly" count="3"/></Entrants>
+    <Battle aiPolicy="defendPoint" timeSpeed="superfast" durationSeconds="60" timeoutRealSeconds="240" confirmationTicks="30"/>
+    <TieBreak maxReplays="0"/><Presentation><Showcase pageSeconds="3"/></Presentation><Output width="1280" height="720"/>
+  </Tournament>
+  <Tournament id="lure" name="勾引赛事公共入口" seed="24680">
+    <testDefName>Arena_TacticsLure</testDefName>
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all"><Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/></Scene>
+    <Roster mode="count" count="4"/>
+    <Entrants><Entrant id="lancers" pawnKind="Mech_Lancer"/><Entrant id="scythers" pawnKind="Mech_Scyther"/></Entrants>
+    <Battle aiPolicy="lure" timeSpeed="superfast" durationSeconds="60" timeoutRealSeconds="240" confirmationTicks="30"/>
+    <TieBreak maxReplays="0"/><Presentation><Showcase pageSeconds="3"/></Presentation><Output width="1280" height="720"/>
+  </Tournament>
+</ArenaSuite>

@@ -1,0 +1,76 @@
+<TestSuite schemaVersion="1" id="groupcombat.tactics" gameVersion="1.7">
+  <Templates>
+    <PawnTemplate id="rifle">
+      <basePawnKind>Mercenary_Gunner</basePawnKind>
+      <Skills mode="patch"><Set def="Shooting" level="12" /><Set def="Melee" level="10" /></Skills>
+      <Equipment mode="replace"><SetPrimary def="Gun_AssaultRifle" quality="Normal" /></Equipment>
+      <Apparel mode="replace"><Add def="Apparel_FlakVest" /><Add def="Apparel_Pants" stuff="Cloth" /></Apparel>
+    </PawnTemplate>
+    <PawnTemplate id="brawler" extends="rifle"><Equipment mode="replace"><SetPrimary def="MeleeWeapon_LongSword" stuff="Steel" quality="Normal" /></Equipment></PawnTemplate>
+  <PawnTemplate id="marksman" extends="rifle"><Equipment mode="replace"><SetPrimary def="Gun_BoltActionRifle" quality="Normal" /></Equipment></PawnTemplate><PawnTemplate id="stress-rifle" extends="rifle"><Apparel mode="replace" /></PawnTemplate><PawnTemplate id="stress-brawler" extends="brawler"><Apparel mode="replace" /></PawnTemplate></Templates>
+  <ScenePresets>
+    <Scene id="open" type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all">
+      <Environment weather="Clear" temperature="21" roof="none" naturalSun="true" />
+    </Scene>
+    <Scene id="cover" type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all">
+      <Environment weather="Clear" temperature="21" roof="none" naturalSun="true" />
+      <Layout><ThingRect def="Sandbags" stuff="Cloth" x="34" z="36" width="1" height="22" /><ThingRect def="Sandbags" stuff="Cloth" x="63" z="36" width="1" height="22" /></Layout>
+    </Scene>
+    <Scene id="corner" type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all">
+      <Environment weather="Clear" temperature="21" roof="none" naturalSun="true" />
+      <Layout><ThingRect def="Wall" stuff="BlocksGranite" x="48" z="35" width="1" height="16" /><ThingRect def="Sandbags" stuff="Cloth" x="34" z="43" width="1" height="10" /></Layout>
+    </Scene>
+  </ScenePresets>
+  <Case id="hold-mixed" kind="groupCombat" name="固守混编对近战" seed="12345" timeoutRealSeconds="240">
+    <testDefName>Tactics_HoldMixed</testDefName><Scene preset="open" />
+    <Teams><Team id="A" ai="defendPoint" /><Team id="B" ai="assaultColony" /></Teams>
+    <Actors><PawnGroup formation="grid" id="rear" template="rifle" team="A" count="8" originX="28" originZ="40" columns="4" spacing="3" /><PawnGroup formation="grid" id="front" template="brawler" team="A" count="3" originX="35" originZ="42" columns="3" spacing="3" /><PawnGroup formation="grid" id="wolves" team="B" count="14" originX="67" originZ="38" columns="3" spacing="2"><basePawnKind>Wolf_Timber</basePawnKind></PawnGroup></Actors>
+    <GroupCombat durationSeconds="70" timeSpeed="normal"><End confirmationTicks="30" /></GroupCombat><Output width="1280" height="720" />
+  </Case>
+  <Case id="lure-mixed" kind="groupCombat" name="勾引混编对追兵" seed="12345" timeoutRealSeconds="240">
+    <testDefName>Tactics_LureMixed</testDefName><Scene preset="open" />
+    <Teams><Team id="A" ai="lure" /><Team id="B" ai="assaultColony" /></Teams>
+    <Actors><PawnGroup formation="grid" id="rear" template="rifle" team="A" count="8" originX="28" originZ="40" columns="4" spacing="3" /><PawnGroup formation="grid" id="front" template="brawler" team="A" count="2" originX="35" originZ="42" columns="2" spacing="3" /><PawnGroup formation="grid" id="pursuers" team="B" count="8" originX="54" originZ="38" columns="3" spacing="2"><basePawnKind>Bear_Grizzly</basePawnKind></PawnGroup></Actors>
+    <GroupCombat durationSeconds="70" timeSpeed="normal"><End confirmationTicks="30" /></GroupCombat><Output width="1280" height="720" />
+  </Case>
+  <Case id="cover" kind="groupCombat" name="固守与勾引寻找掩体" seed="24680" timeoutRealSeconds="240">
+    <testDefName>Tactics_Cover</testDefName><Scene preset="cover" />
+    <Teams><Team id="A" ai="defendPoint" /><Team id="B" ai="lure" /></Teams>
+    <Actors><PawnGroup formation="grid" id="left" template="marksman" team="A" count="6" originX="32" originZ="40" columns="6" spacing="2" /><PawnGroup formation="grid" id="right" template="marksman" team="B" count="6" originX="65" originZ="40" columns="6" spacing="2" /></Actors>
+    <GroupCombat durationSeconds="50" timeSpeed="superfast"><End confirmationTicks="30" /></GroupCombat><Output width="1280" height="720" />
+  </Case>
+  <Case id="ranged-bait" kind="groupCombat" name="纯远程分担诱饵与拉扯" seed="12345" timeoutRealSeconds="240">
+    <testDefName>Tactics_RangedBait</testDefName><Scene preset="open" />
+    <Teams><Team id="A" ai="defendPoint" /><Team id="B" ai="assaultColony" /></Teams>
+    <Actors><PawnGroup formation="grid" id="rear" template="rifle" team="A" count="8" originX="22" originZ="40" columns="8" spacing="2" /><PawnGroup formation="grid" id="wolves" team="B" count="10" originX="68" originZ="38" columns="5" spacing="3"><basePawnKind>Wolf_Timber</basePawnKind></PawnGroup></Actors>
+    <GroupCombat durationSeconds="100" timeSpeed="normal"><End confirmationTicks="30" /></GroupCombat><Output width="1280" height="720" />
+  </Case><Case id="ranged-lure" kind="groupCombat" name="纯远程勾引与交替开火" seed="12345" timeoutRealSeconds="240">
+    <testDefName>Tactics_RangedLure</testDefName><Scene preset="open" />
+    <Teams><Team id="A" ai="lure" /><Team id="B" ai="assaultColony" /></Teams>
+    <Actors><PawnGroup formation="grid" id="rear" template="rifle" team="A" count="8" originX="22" originZ="40" columns="8" spacing="2" /><PawnGroup formation="grid" id="wolves" team="B" count="10" originX="68" originZ="38" columns="5" spacing="3"><basePawnKind>Wolf_Timber</basePawnKind></PawnGroup></Actors>
+    <GroupCombat durationSeconds="100" timeSpeed="normal"><End confirmationTicks="30" /></GroupCombat><Output width="1280" height="720" />
+  </Case><Case id="single-pursuer" kind="groupCombat" name="一名追兵与八名射手" seed="12345" timeoutRealSeconds="240">
+    <testDefName>Tactics_SinglePursuer</testDefName><Scene preset="open" />
+    <Teams><Team id="A" ai="lure" /><Team id="B" ai="assaultColony" /></Teams>
+    <Actors><PawnGroup formation="grid" id="rear" template="rifle" team="A" count="8" originX="22" originZ="40" columns="8" spacing="2" /><PawnGroup formation="grid" id="wolves" team="B" count="1" originX="68" originZ="38" columns="1" spacing="3"><basePawnKind>Bear_Grizzly</basePawnKind></PawnGroup></Actors>
+    <GroupCombat durationSeconds="100" timeSpeed="normal"><End confirmationTicks="30" /></GroupCombat><Output width="1280" height="720" />
+  </Case>
+  <Case id="melee" kind="groupCombat" name="两种AI纯近战接敌" seed="12345" timeoutRealSeconds="240">
+    <testDefName>Tactics_Melee</testDefName><Scene preset="open" />
+    <Teams><Team id="A" ai="defendPoint" /><Team id="B" ai="lure" /></Teams>
+    <Actors><PawnGroup formation="grid" id="left" team="A" count="8" originX="25" originZ="42" columns="2" spacing="2"><basePawnKind>Wolf_Timber</basePawnKind></PawnGroup><PawnGroup formation="grid" id="right" team="B" count="6" originX="65" originZ="42" columns="2" spacing="2"><basePawnKind>Bear_Grizzly</basePawnKind></PawnGroup></Actors>
+    <GroupCombat durationSeconds="60" timeSpeed="superfast"><End confirmationTicks="30" /></GroupCombat><Output width="1280" height="720" />
+  </Case>
+  <Case id="corner" kind="groupCombat" name="墙角与狭窄通道" seed="12345" timeoutRealSeconds="240">
+    <testDefName>Tactics_Corner</testDefName><Scene preset="corner" />
+    <Teams><Team id="A" ai="defendPoint" /><Team id="B" ai="lure" /></Teams>
+    <Actors><PawnGroup formation="grid" id="left" template="rifle" team="A" count="8" originX="36" originZ="40" columns="2" spacing="2" /><PawnGroup formation="grid" id="right" template="rifle" team="B" count="8" originX="58" originZ="40" columns="2" spacing="2" /></Actors>
+    <GroupCombat durationSeconds="50" timeSpeed="superfast"><End confirmationTicks="30" /></GroupCombat><Output width="1280" height="720" />
+  </Case>
+  <Case id="dense" kind="groupCombat" name="400人性能与占格" seed="12345" timeoutRealSeconds="360">
+    <testDefName>Tactics_Dense</testDefName><Scene preset="open" />
+    <Teams><Team id="A" ai="defendPoint" /><Team id="B" ai="lure" /></Teams>
+    <Actors><PawnGroup formation="grid" id="left" template="stress-rifle" team="A" count="150" originX="20" originZ="20" columns="15" spacing="1" /><PawnGroup formation="grid" id="left-front" template="stress-brawler" team="A" count="50" originX="31" originZ="20" columns="17" spacing="1" /><PawnGroup formation="grid" id="right" template="stress-rifle" team="B" count="150" originX="65" originZ="20" columns="15" spacing="1" /><PawnGroup formation="grid" id="right-front" template="stress-brawler" team="B" count="50" originX="60" originZ="20" columns="17" spacing="1" /></Actors>
+    <GroupCombat durationSeconds="35" timeSpeed="normal"><End confirmationTicks="30" /></GroupCombat><Output width="1280" height="720" />
+  </Case>
+</TestSuite>

@@ -58,6 +58,9 @@ namespace LogSyncMod.AutoTest
                 || !new[] { "closestCount", "random" }.Contains(s.Matchmaking) || !new[] { "normal", "fast", "superfast" }.Contains(s.Speed)
                 || !double.IsFinite(s.Duration) || s.Duration <= 0 || s.Duration > 86400)
                 throw new ScenarioConfigurationException("赛事名称、赛制、配对、速度或单场时限无效。");
+            CombatMapCatalog.Validate(s.Battlefield, s.FeatureDensity, s.SpawnClearance);
+            if (s.Width < 30 || s.Width > 250 || s.Height < 30 || s.Height > 250 || !double.IsFinite(s.Temperature) || s.Temperature < -100 || s.Temperature > 100)
+                throw new ScenarioConfigurationException("地图尺寸或温度无效。");
         }
         public static void ValidateMember(ArenaWorkbenchMember member)
         {
@@ -66,6 +69,8 @@ namespace LogSyncMod.AutoTest
         }
         public static void ValidateTeam(ArenaWorkbenchTeam t)
         {
+            if (t != null && !new[] { "inherit", "assaultColony", "defendPoint", "lure", "native", "battle", "seekAndAttack", "assaultThings" }.Contains(t.Ai))
+                throw new ScenarioConfigurationException("编队战斗 AI 无效。");
             if (t == null || t.Members == null || string.IsNullOrWhiteSpace(t.Id) || string.IsNullOrWhiteSpace(t.Name) || t.Name.Length > 120 || t.Members.Count > 200)
                 throw new ScenarioConfigurationException("编队名称、ID 或成员列表无效。");
             if (!new[] { "groups", "kind", "faction" }.Contains(t.Source) || !new[] { "count", "combatPower" }.Contains(t.Mode) || !new[] { "boss", "challenger" }.Contains(t.Role))

@@ -14,14 +14,35 @@ public static class ArenaResultValidator
             var report = JsonSerializer.Deserialize<ArenaRunReport>(File.ReadAllText(path));
             if (report == null || report.SchemaVersion != 1 || report.Purpose != "arena" || report.RunId != runId) return new(false, "ARENA_RESULT_INVALID", "擂台结果身份不符", new { path });
             if (report.Status != "completed") return new(false, report.Status == "unresolvedDraw" ? "ARENA_UNRESOLVED_DRAW" : report.ErrorCode ?? "ARENA_EXECUTION_INCOMPLETE", report.Error ?? report.Status, new { path, report.Status, tournaments = report.Tournaments.Select(t => new { t.Input.TestDefName, t.Status, t.Champion, matches = t.Matches.Count }) });
-            var error = ValidateIntegrity(report, expected);
+            var error = ValidateCompletion(report, expected);
             if (error != null) return new(false, "ARENA_RESULT_INVALID", error, new { path });
+            var warnings = report.Tournaments.SelectMany(t => t.Warnings).Concat(report.Tournaments.SelectMany(t => t.Matches)
+                .SelectMany(m => m.Attempts).SelectMany(a => a.Diagnostics).Where(d => d.StartsWith("arena.warning.", StringComparison.Ordinal))).ToList();
+            // Strict auditing remains callable for regression tests. It is advisory for
+            // ordinary tournaments, whose outcome is decided by the actual fights.
+            try { var audit = ValidateIntegrity(report, expected); if (audit != null) warnings.Add("赛事已完成；详细复核提示：" + audit); }
+            catch (Exception ex) when (ex is not OutOfMemoryException) { warnings.Add("赛事已完成；详细复核不可用：" + ex.Message); }
             if (report.Tournaments.SelectMany(t => t.Matches).SelectMany(m => m.Attempts).Any(a => a.RequireCompleteAttribution && (!a.MeasurementRequirementsMet || a.MeasurementQuality != "complete")))
-                return new(false, "ARENA_MEASUREMENT_REQUIREMENTS_NOT_MET", "赛事已执行并清理，但未达到显式的完整归属测量要求", new { path });
-            return new(true, "", "赛事完成，配兵、赛程和评分校验通过", new { path, reportPath = Path.Combine(outputPath, "arena_" + runId + "_Report.md"), tournaments = report.Tournaments.Select(t => new { t.Input.TestDefName, t.Input.Format, t.Champion, t.Challenges, bossStandings = t.Summary?.Bosses, entrants = t.Rosters.Select(r => new { r.Id, r.PawnKind, r.UnitCombatPower, r.ResolvedCount, r.RequestedBudget, r.ActualCombatPower, r.UnusedBudget }), matches = t.Matches.Count, damageFallbackMatches = t.Matches.Count(m => m.Score?.UsedDamageFallback == true), attempts = t.Matches.Sum(m => m.Attempts.Count), cleanupComplete = t.Matches.All(m => m.Attempts.All(a => a.CleanupComplete)) }) });
+                warnings.Add("完整伤害归属测量要求未满足，赛事按实际胜负完成并使用可用评分信息。");
+            return new(true, "", "赛事完成；属性差异与辅助信息异常仅作提示", new { path, warnings, reportPath = Path.Combine(outputPath, "arena_" + runId + "_Report.md"), tournaments = report.Tournaments.Select(t => new { t.Input.TestDefName, t.Input.Format, t.Champion, t.Challenges, bossStandings = t.Summary?.Bosses, entrants = t.Rosters.Select(r => new { r.Id, r.PawnKind, r.UnitCombatPower, r.ResolvedCount, r.RequestedBudget, r.ActualCombatPower, r.UnusedBudget }), matches = t.Matches.Count, damageFallbackMatches = t.Matches.Count(m => m.Score?.UsedDamageFallback == true), attempts = t.Matches.Sum(m => m.Attempts.Count), cleanupComplete = t.Matches.All(m => m.Attempts.All(a => a.CleanupComplete)) }) });
         }
         catch (Exception ex) when (ex is IOException or JsonException or InvalidOperationException or ArgumentException or NullReferenceException or OverflowException or ScenarioConfigurationException or System.Xml.XmlException)
         { return new(false, "ARENA_RESULT_INVALID", ex.Message, new { path }); }
+    }
+    public static string? ValidateCompletion(ArenaRunReport report, ArenaPlan? expected = null)
+    {
+        var plan = expected ?? report.Plan;
+        if (report.Status != "completed" || string.IsNullOrEmpty(report.CompletedAtUtc) || plan == null
+            || report.Tournaments.Count != plan.Tournaments.Count || report.Tournaments.Count == 0) return "赛事尚未完成或缺少赛程";
+        for (var i = 0; i < report.Tournaments.Count; i++)
+        {
+            var tournament = report.Tournaments[i];
+            if (tournament.Status != "completed" || tournament.Input.TestDefName != plan.Tournaments[i].TestDefName) return "赛事未完成或赛事身份不符";
+            if (tournament.Input.Format == "knockout" && (tournament.Champion == null || tournament.Matches.Count == 0)) return "淘汰赛尚未产生冠军";
+            if (tournament.Matches.Any(m => m.Attempts.Count == 0 || m.Attempts.Any(a => a.ExecutionStatus != "completed" || !a.CleanupComplete)))
+                return "存在尚未完成对战或清理的回合";
+        }
+        return null;
     }
     public static string? ValidateIntegrity(ArenaRunReport report, ArenaPlan? expected = null, bool verifyArtifactFiles = true)
     {

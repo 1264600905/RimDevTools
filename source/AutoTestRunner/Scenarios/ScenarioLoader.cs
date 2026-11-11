@@ -189,6 +189,9 @@ namespace LogSyncMod.AutoTest.Scenarios
             if (type == "GroupCombat" && !groupCombat) Fail(c, path, "GroupCombat requires its independent named benchmark entry");
             if (!groupCombat && (c.Attribute("kind") != null || c.Element("GroupCombat") != null || c.Element("Output") != null)) Fail(c, path, "benchmark configuration cannot enter a regression rule");
             var scene = c.Element("Scene");
+            try { CombatMapCatalog.NormalizeScene(scene); }
+            catch (ScenarioConfigurationException ex) { Fail(scene, path, ex.Message); }
+            if (!groupCombat && scene.Attribute("battlefield") != null) Fail(scene, path, "battlefield presets require groupCombat or arena");
             var view = ScenarioViews.Types.Contains(type);
             if (A(scene, "type", groupCombat ? "mainMap" : view ? "studio" : "pocketMap") != (groupCombat ? "mainMap" : view ? "studio" : "pocketMap")) Fail(scene, path, groupCombat ? "GroupCombat requires a new ordinary mainMap" : view ? "View uses the existing main-map studio (type=studio), not a pocket map" : "this behavior backend requires pocketMap");
             if (I(scene, "sizeX", 50) < 30 || I(scene, "sizeX", 50) > 250 || I(scene, "sizeZ", 50) < 30 || I(scene, "sizeZ", 50) > 250) Fail(scene, path, "map dimensions must be 30..250");
@@ -326,7 +329,7 @@ namespace LogSyncMod.AutoTest.Scenarios
             {"Experiments", "swapSides"}, {"Seed", "value"}, {"Output", "purpose showAllParticipants width height"},
             {"TestSuite", "schemaVersion id packageId gameVersion"}, {"Case", "id name seed timeoutRealSeconds caseType kind"}, {"PawnTemplate", "id extends"},
             {"Coverage", "mode"}, {"Target", "packageId defType defName caseType variant"}, {"Evidence", "step"}, {"Row", "id"}, {"Param", "name value"},
-            {"Scene", "id preset type sizeX sizeZ revealFog generatorDef"}, {"Team", "id name factionDef factionSource ai defendX defendZ defendRadius"}, {"Relation", "a b value"},
+            {"Scene", "id preset type sizeX sizeZ revealFog generatorDef battlefield featureDensity spawnClearance"}, {"Team", "id name factionDef factionSource ai defendX defendZ defendRadius"}, {"Relation", "a b value"},
             {"Environment", "weather temperature roof naturalSun"}, {"TerrainRect", "def x z width height"}, {"RoofRect", "def x z width height"}, {"ThingRect", "def stuff x z width height rotation"}, {"Reachable", "fromX fromZ toX toZ"},
             {"EnvironmentState", "property def min max"},
             {"Def", "defType defName"}, {"Mod", "packageId"}, {"DLC", "packageId"},
@@ -392,9 +395,9 @@ namespace LogSyncMod.AutoTest.Scenarios
                 ValidateTree(e, path, allowParameters);
             }
             if (node.HasElements && node.Nodes().OfType<XText>().Any(t => !string.IsNullOrWhiteSpace(t.Value))) Fail(node, path, "mixed text is not supported");
-            foreach (var a in node.Attributes().Where(a => new[] { "x", "z", "count", "sizeX", "sizeZ", "seed", "originX", "originZ", "spacing", "columns", "stableTicks", "durationTicks", "stableFrames", "confirmationTicks", "degree", "level", "equals", "width", "height", "minX", "minZ", "maxX", "maxZ", "fromX", "fromZ", "toX", "toZ", "targetX", "targetZ" }.Contains(a.Name.LocalName) && !(a.Name == "equals" && (name == "Result" || name == "ExpectHediff"))))
+            foreach (var a in node.Attributes().Where(a => new[] { "x", "z", "count", "sizeX", "sizeZ", "seed", "originX", "originZ", "spacing", "columns", "stableTicks", "durationTicks", "stableFrames", "confirmationTicks", "degree", "level", "equals", "width", "height", "minX", "minZ", "maxX", "maxZ", "fromX", "fromZ", "toX", "toZ", "targetX", "targetZ", "spawnClearance" }.Contains(a.Name.LocalName) && !(a.Name == "equals" && (name == "Result" || name == "ExpectHediff"))))
                 if (!(allowParameters && a.Value.Contains("${")) && !int.TryParse(a.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out _)) Fail(node, path, "invalid integer " + a.Name);
-            foreach (var a in node.Attributes().Where(a => new[] { "timeoutRealSeconds", "durationSeconds", "defendRadius", "severity", "severityMin", "severityMax", "min", "max", "value", "temperature", "radius", "amount", "armorPenetration", "growth", "cameraSize", "biologicalYears", "chronologicalYears" }.Contains(a.Name.LocalName) && !(name == "Param" || name == "Relation" || name == "PawnAppearance" || name == "Argument" || name == "Arg")))
+            foreach (var a in node.Attributes().Where(a => new[] { "timeoutRealSeconds", "durationSeconds", "defendRadius", "severity", "severityMin", "severityMax", "min", "max", "value", "temperature", "radius", "amount", "armorPenetration", "growth", "cameraSize", "biologicalYears", "chronologicalYears", "featureDensity" }.Contains(a.Name.LocalName) && !(name == "Param" || name == "Relation" || name == "PawnAppearance" || name == "Argument" || name == "Arg")))
                 if (!(allowParameters && a.Value.Contains("${")) && (!double.TryParse(a.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var d) || double.IsNaN(d) || double.IsInfinity(d))) Fail(node, path, "invalid finite number " + a.Name);
         }
     }

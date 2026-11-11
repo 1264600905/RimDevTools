@@ -49,16 +49,25 @@ namespace LogSyncMod.AutoTest
             if (s.Format == "knockout") s.Matchmaking = a.Choice("配对方式", s.Matchmaking, "closestCount|人数接近优先", "random|随机抽签");
             s.Duration = a.Number("duration", "单场模拟秒数", s.Duration, .01, 86400);
             s.Speed = a.Choice("比赛速度", s.Speed, "normal|标准", "fast|快速", "superfast|极快");
-            s.Ai = a.Choice("战斗 AI", s.Ai, "assaultColony|原生立刻进攻", "defendPoint|守点");
+            s.Ai = a.Choice("默认战斗 AI", s.Ai, "assaultColony|原生立刻进攻", "defendPoint|固守", "lure|勾引");
+            if (s.Format == "groupcombat") a.Note("右侧可为两支编队分别选择 AI；固守和勾引均保留远程射击职责。", 42);
             a.Title("随机种子");
             s.Seed = (int)a.Number("seed", "种子（-1 为随机）", s.Seed, int.MinValue, int.MaxValue, true);
             var yy = a.Y;
             if (Button(new Rect(a.X, yy, (a.Width - 8) / 2, 30), "随机生成一个种子")) { s.Seed = RandomNumberGenerator.GetInt32(int.MaxValue); numberBuffers.Remove("seed"); }
             if (Button(new Rect(a.X + (a.Width + 8) / 2, yy, (a.Width - 8) / 2, 30), "每届随机（-1）", s.Seed == -1)) { s.Seed = -1; numberBuffers.Remove("seed"); }
             a.Y += 42; a.Note("可直接输入种子复现赛事；-1 在每次开赛时随机抽取，整届沿用同一个实际种子。", 48);
-            a.Title("固定地图");
-            a.Action("默认竞技场 · 140 × 140", true);
-            a.Note("晴天 · 正午 · 露天\n当前仅提供这一张固定地图。", 51);
+            a.Title("战场地图");
+            var previousMap = s.Battlefield;
+            s.Battlefield = a.Choice("地图风格", s.Battlefield, CombatMapCatalog.Choices);
+            if (s.Battlefield != previousMap) { s.Temperature = CombatMapCatalog.Get(s.Battlefield).Temperature; numberBuffers.Remove("mapTemperature"); }
+            a.Note(CombatMapCatalog.Get(s.Battlefield).Description, 48);
+            s.Width = (int)a.Number("mapWidth", "地图宽度", s.Width, 80, 250, true);
+            s.Height = (int)a.Number("mapHeight", "地图高度", s.Height, 80, 250, true);
+            if (s.Battlefield != "open") s.FeatureDensity = a.Number("featureDensity", "地形疏密", s.FeatureDensity, .5, 1.5);
+            s.SpawnClearance = (int)a.Number("spawnClearance", "出生区清理（格）", s.SpawnClearance, 2, 12, true);
+            s.Temperature = a.Number("mapTemperature", "战场温度（℃）", s.Temperature, -100, 100);
+            a.Note("出生区会清除障碍和积雪，并检查双方通路。相同种子可复现地图。", 48);
             a.Title("战场清理");
             s.ClearCorpses = a.Check("清理尸体", s.ClearCorpses); s.ClearItems = a.Check("清理掉落物", s.ClearItems);
             b.Title("本届参赛编队");
@@ -70,6 +79,7 @@ namespace LogSyncMod.AutoTest
                 Widgets.CheckboxLabeled(new Rect(b.X + 34, b.Y, b.Width - 34, 29), t.Name + (t.Mode == "combatPower" ? " · " + t.Budget + " CP" : " · " + t.MemberCount + " 人"), ref enabled);
                 t.Enabled = enabled; b.Y += 37;
                 if (s.Format is "bossRoundRobin" or "limitChallenge") t.Role = b.Choice("角色：" + t.Name, t.Role, "boss|魔王", "challenger|挑战者");
+                if (s.Format == "groupcombat") t.Ai = b.Choice("第 " + (document.Teams.IndexOf(t) + 1) + " 队 AI：" + t.Name, t.Ai, "inherit|跟随默认", "assaultColony|原生立刻进攻", "defendPoint|固守", "lure|勾引");
             }
             if (document.Teams.All(t => t.IsEmpty)) b.Note("还没有可参赛的编队，请先添加人员或战斗组。", 42);
             if (b.Action("添加 / 启用编队…")) OpenRosterManagement();
