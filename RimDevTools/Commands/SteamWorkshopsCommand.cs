@@ -53,6 +53,7 @@ public static class SteamWorkshopsCommand
             {
                 "search" => await SearchAsync(args, context, token),
                 "status" => await StatusAsync(args, context, token),
+                "changelog" => await WorkshopChangeLogCommand.RunAsync(args, context, token),
                 "upload" => context is null ? CliResult.WriteFailure(command, ExitCodes.MissingDependency, "PROJECT_NOT_FOUND", "上传需要项目上下文")
                     : WorkshopPublishingService.Write(command, context, await WorkshopPublishingService.UploadAsync(context, args, token)),
                 "edit" => WorkshopPublishingService.Write(command, context, await WorkshopPublishingService.EditAsync(context, args, token)),

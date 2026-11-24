@@ -12,9 +12,11 @@ internal static class WorkshopPublishingService
 {
     internal static Func<ProjectContext?, WorkshopPublishRequest, CancellationToken, Task<WorkshopPublishExecution>>? PublishOverride { get; set; }
     internal static async Task<WorkshopPublishExecution> UploadAsync(ProjectContext context, string[] args, CancellationToken token,
-        EnvironmentLock? heldLock = null, string? expectedDeployRunId = null)
+        EnvironmentLock? heldLock = null, string? expectedDeployRunId = null, WorkshopChangeNoteInput? capturedChangeNote = null)
     {
-        var changeNote = WorkshopMetadata.ChangeNote(args);
+        if (capturedChangeNote is null && !CliArgs.Has(args, "--change-note") && !CliArgs.Has(args, "--change-note-file"))
+            return Fail("INVALID_ARGUMENT", "上传内容必须显式提供 --change-note 或 --change-note-file；明确不发布改动日志时使用 --change-note \"\"", new { submissionStarted = false }, ExitCodes.InvalidArguments);
+        var changeNote = (capturedChangeNote ?? WorkshopMetadata.RequiredChangeNote(args)).Text;
         var language = WorkshopMetadata.Language(args);
         var configDirectory = GameEnvironment.ConfigDirectory(context) ?? throw new InvalidDataException("无法解析游戏 Config 目录");
         if (heldLock is not null && !heldLock.Owns(configDirectory)) throw new InvalidDataException("组合操作没有持有目标环境锁");
@@ -30,11 +32,22 @@ internal static class WorkshopPublishingService
         if (health.WorkshopAvailability != "available" || health.RimWorldInLibrary != true)
             return Fail(health.ErrorCode ?? "STEAM_LIBRARY_UNAVAILABLE", health.Reason ?? "RimWorld 库中不可用", new { verification, environment = health, verification.Artifacts });
         var create = verification.PublishedFileId is null;
+        WorkshopChangeLogPage? previousChangeLog = null;
         if (!create)
         {
             var detail = await SteamworksSessionProbe.RunAsync(context, "detail", id: ulong.Parse(verification.PublishedFileId!), cancellationToken: token);
-            if (detail.ErrorCode is not null) return Fail(detail.ErrorCode, detail.Reason!, new { verification, environment = detail, verification.Artifacts });
-            if (detail.Page!.Items.Single().OwnerSteamId != detail.CurrentUserSteamId)
+            if (detail.ErrorCode is not null)
+            {
+                var mayReplace = CliArgs.Has(args, "--replace-unavailable-binding") && detail.ErrorCode == "STEAMWORKS_QUERY_FAILED"
+                    && detail.Reason?.Contains("EResult=9", StringComparison.Ordinal) == true;
+                if (!mayReplace) return Fail(detail.ErrorCode, detail.Reason!, new { verification, environment = detail, verification.Artifacts });
+                if (CliArgs.Has(args, "--dry-run")) return Fail("WORKSHOP_REPLACEMENT_NEEDS_WRITE", "预演确认旧绑定不可查询；实际执行该明确选项后才会清空本地绑定并创建 private 条目", new { verification, environment = detail });
+                DeploymentReceiptStore.ResetUnavailableBindingForPrivateRecreate(context);
+                verification = await DeploymentVerifier.VerifyAsync(context, token);
+                if (!verification.Valid || verification.PublishedFileId is not null)
+                    return Fail("WORKSHOP_REPLACEMENT_PREFLIGHT_FAILED", "清空旧身份后重新验证部署失败", verification);
+            }
+            else if (detail.Page!.Items.Single().OwnerSteamId != detail.CurrentUserSteamId)
                 return Fail("WORKSHOP_OWNER_REQUIRED", "当前账号不是上传 owner；本版不检测贡献者写权限", new { verification, verification.Artifacts });
         }
         var about = XDocument.Load(Path.Combine(context.Root, "About", "About.xml")).Root!;
@@ -45,15 +58,36 @@ internal static class WorkshopPublishingService
         var title = create ? WorkshopMetadata.Title(about.Element("name")?.Value.Trim() ?? "") : null;
         if (CliArgs.Has(args, "--dry-run")) return new(true, 0, null, null, SteamWorkshopsCommand.Json(new { dryRun = true, verification, action = create ? "create_private" : "update_content_only", changeNote, textLanguage = create ? language : null, verification.Artifacts }));
         if (ProcessUtil.IsRimWorldRunning()) return Fail("RIMWORLD_RUNNING", "请先关闭 RimWorld 再上传", verification, ExitCodes.Busy);
+        if (changeNote is not null && !create)
+        {
+            previousChangeLog = await WorkshopChangeLog.ReadAsync(verification.PublishedFileId!, "english", 1, token);
+        }
         var request = new WorkshopPublishRequest(Guid.NewGuid().ToString("N"), native, context.Root, verification.Target,
             create ? null : ulong.Parse(verification.PublishedFileId!), title, description, preview, create ? 2 : null,
             create ? new[] { "Mod" }.Concat(about.Element("supportedVersions")?.Elements("li").Select(x => x.Value.Trim()) ?? []).Distinct().ToArray() : null,
-            Timeout(args), files, language, changeNote);
+            Timeout(args), files, language, changeNote, ChangeNoteProvided: true);
         var execution = await RunHelperAsync(context, request, token);
         var publishedDetails = JsonSerializer.SerializeToNode(execution.Details)!.AsObject();
         publishedDetails["deployRunId"] = verification.DeployRunId;
         publishedDetails["contentPath"] = verification.Target;
         execution = execution with { Details = JsonSerializer.SerializeToElement(publishedDetails) };
+        if (!dryRun)
+        {
+            var details = JsonSerializer.SerializeToElement(execution.Details, JsonDefaults.Storage);
+            var operationId = details.TryGetProperty("operationId", out var operation) ? operation.GetString() : null;
+            var started = details.TryGetProperty("submissionStarted", out var startedValue) && startedValue.GetBoolean();
+            DateTimeOffset? submittedAt = details.TryGetProperty("submittedAtUnix", out var submitted) && submitted.ValueKind == JsonValueKind.Number
+                ? DateTimeOffset.FromUnixTimeSeconds(submitted.GetInt64()) : null;
+            if (operationId is not null)
+            {
+                var publishedId = details.TryGetProperty("publishedFileId", out var publishedIdValue)
+                    ? publishedIdValue.GetString() : verification.PublishedFileId;
+                WorkshopChangeLog.Save(context, new WorkshopChangeLogBaseline(1, context.Root, operationId,
+                    publishedId, changeNote, DateTimeOffset.UtcNow, submittedAt,
+                    details.TryGetProperty("remoteOutcome", out var outcome) ? outcome.GetString() ?? "unknown" : "unknown",
+                    create ? [] : previousChangeLog?.Entries.Select(x => x.RecordId).ToArray(), started));
+            }
+        }
         if (execution.Ok)
         {
             var after = await DeploymentVerifier.VerifyAsync(context, token);

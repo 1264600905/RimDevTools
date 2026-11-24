@@ -72,25 +72,29 @@ internal static class WorkshopPublishingTests
             Check(timeoutJson.GetProperty("lastUpdatedAtUnix").GetUInt32() == 123 && timeoutJson.GetProperty("currentTimeUnix").GetInt64() > 123
                 && timeoutJson.GetProperty("submittedAtUnix").ValueKind == JsonValueKind.Number, "remote time, local current time and actual local submission time are distinct");
             Check(!EnvironmentLock.IsBusy(configDirectory) && calls == 1, "timeout releases lock and never automatically retries");
-            var retry = await WorkshopPublishingService.UploadAsync(context, ["steamworkshops", "upload"], CancellationToken.None);
+            var missingNote = await WorkshopPublishingService.UploadAsync(context, ["steamworkshops", "upload"], CancellationToken.None);
+            Check(!missingNote.Ok && missingNote.ErrorCode == "INVALID_ARGUMENT" && calls == 1, "missing explicit note choice rejects upload before publisher");
+            var retry = await WorkshopPublishingService.UploadAsync(context, ["steamworkshops", "upload", "--change-note", ""], CancellationToken.None);
             Check(retry.Ok && calls == 2, "next explicit call is not blocked by timeout history");
             Check(lastRequest is { Name: null, Description: null, PreviewPath: null, Visibility: null, Tags: null, ContentPath: not null }, "existing upload sets content only");
             Check(lastRequest!.ChangeNote is null, "absent note does not send legacy fixed text");
             var metadata = await WorkshopPublishingService.EditAsync(context, ["steamworkshops", "edit"], CancellationToken.None);
             Check(metadata.Ok && calls == 3 && lastRequest is { ContentPath: null, Files: null, Description: "Unit description", Name: null, Tags: null }, "metadata path cannot set content");
             var added = Path.Combine(project, "About", "new.xml"); File.WriteAllText(added, "<new/>");
-            var blocked = await WorkshopPublishingService.UploadAsync(context, ["steamworkshops", "upload"], CancellationToken.None);
+            var blocked = await WorkshopPublishingService.UploadAsync(context, ["steamworkshops", "upload", "--change-note", ""], CancellationToken.None);
             Check(!blocked.Ok && blocked.ErrorCode == "PROJECT_NOT_DEPLOYED" && calls == 3
                 && SteamWorkshopsCommand.Json(blocked.Details).GetProperty("submitCallCount").GetInt32() == 0, "changed input rejected before publisher invocation");
             File.Delete(added);
             health = health with { CurrentUserSteamId = "2" };
-            var denied = await WorkshopPublishingService.UploadAsync(context, ["steamworkshops", "upload"], CancellationToken.None);
+            var denied = await WorkshopPublishingService.UploadAsync(context, ["steamworkshops", "upload", "--change-note", ""], CancellationToken.None);
             Check(!denied.Ok && denied.ErrorCode == "WORKSHOP_OWNER_REQUIRED" && calls == 3, "nonowner never reaches submit");
             health = health with { CurrentUserSteamId = "1" };
             using (var gate = EnvironmentLock.TryAcquire(configDirectory, "unit held lock", project, "unit", out _))
             {
                 Check(gate is not null, "unit environment lock acquired");
-                var readOnly = await WorkshopPublishingService.UploadAsync(context, ["steamworkshops", "upload", "--dry-run"], CancellationToken.None);
+                var missingDryRun = await WorkshopPublishingService.UploadAsync(context, ["steamworkshops", "upload", "--dry-run"], CancellationToken.None);
+                Check(!missingDryRun.Ok && gate!.Owns(configDirectory), "dry-run enforces explicit note choice too");
+                var readOnly = await WorkshopPublishingService.UploadAsync(context, ["steamworkshops", "upload", "--dry-run", "--change-note", ""], CancellationToken.None);
                 Check(readOnly.Ok && calls == 3 && gate!.Owns(configDirectory), "dry-run needs no new lock and makes no publication call");
             }
             var unknown = WorkshopPublisher.MarkTimedOut(new() { OperationId = "unit-unknown-create", CreationAttempted = true, Stage = "creating_private_item" }, "controlled");
@@ -105,15 +109,15 @@ internal static class WorkshopPublishingTests
             Check(queries == 1 && timeEvidence.LastUpdatedAtUnix == 123 && timeEvidence.PreviousUpdatedAtUnix == 42, "exactly one fresh query supplies target time without replacing previous time");
             var unavailableTime = WorkshopPublisher.CollectTimeoutEvidence(known, _ => { queries++; throw new IOException("controlled offline"); });
             Check(queries == 2 && unavailableTime.LastUpdatedAtUnix is null && SteamWorkshopsCommand.Json(unavailableTime.RemoteQuery!).GetProperty("reason").GetString() == "controlled offline", "failed time query stays null with reason and no retry");
-            var plan = await Capture(["deploy", "--upload", "--dry-run"]);
+            var plan = await Capture(["deploy", "--upload", "--dry-run", "--change-note", ""]);
             Check(plan.GetProperty("ok").GetBoolean() && calls == 3 && plan.GetProperty("result").GetProperty("upload").GetProperty("verification").GetString() == "pending_after_deploy", "combined dry-run does not build/bake/publish: " + plan.GetRawText());
             config.SyncItems = ["MissingInput"]; SaveConfig();
-            var deployFailure = await Capture(["deploy", "--upload"]);
+            var deployFailure = await Capture(["deploy", "--upload", "--change-note", ""]);
             Check(!deployFailure.GetProperty("ok").GetBoolean() && calls == 3 && !deployFailure.GetProperty("error").GetProperty("details").GetProperty("uploadStarted").GetBoolean(), "failed deployment never publishes");
             config.SyncItems = ["About"]; SaveConfig();
             using (var locked = File.Open(DeploymentReceiptStore.PathFor(context), FileMode.Open, FileAccess.Read, FileShare.Read))
             {
-                var receiptFailure = await Capture(["deploy", "--upload"]);
+                var receiptFailure = await Capture(["deploy", "--upload", "--change-note", ""]);
                 Check(!receiptFailure.GetProperty("ok").GetBoolean() && calls == 3, "failed receipt persistence never publishes");
             }
             Check(Directory.GetFiles(ProjectDataPaths.DirectoryPath(project)).All(path => !Path.GetFileName(path).Contains("pending", StringComparison.OrdinalIgnoreCase)
@@ -126,7 +130,7 @@ internal static class WorkshopPublishingTests
                 Inputs = unbound.Inputs.Where(f => f.Source != "identity").ToArray(), Files = unbound.Files.Where(f => f.Source != "identity").ToArray() });
             try { DeploymentReceiptStore.SaveCreatedIdentity(context, target, "456"); throw new Exception("Expected identity write failure"); }
             catch (IOException) { Check(DeploymentReceiptStore.KnownBinding(context) == "456", "genuine created id is retained before an id-file write failure"); }
-            var afterIdWriteFailure = await WorkshopPublishingService.UploadAsync(context, ["steamworkshops", "upload", "--dry-run"], CancellationToken.None);
+            var afterIdWriteFailure = await WorkshopPublishingService.UploadAsync(context, ["steamworkshops", "upload", "--dry-run", "--change-note", ""], CancellationToken.None);
             Check(!afterIdWriteFailure.Ok && calls == 3 && SteamWorkshopsCommand.Json(afterIdWriteFailure.Details).GetProperty("submitCallCount").GetInt32() == 0,
                 "missing id files with a known creation fact cannot fall back to duplicate creation");
             var image = Path.Combine(project, "additional.png");
@@ -143,6 +147,23 @@ internal static class WorkshopPublishingTests
                 "preview edits use original indexes, remove then append and reindex");
             Check(WorkshopPublisher.PreviewsMatch(expectedPreviews, expectedPreviews.Select(x => x with { Url = "new" }).ToArray())
                 && !WorkshopPublisher.PreviewsMatch(previews, previews.Reverse().ToArray()), "remote preview verification checks order/count/type/name and unchanged URLs");
+            var submittedAt = DateTimeOffset.FromUnixTimeSeconds(1700000100);
+            var logPage = WorkshopChangeLog.Parse("123", "english", 1,
+                "<title>Steam Community :: Unit :: Change Notes</title><div class=\"detailBox workshopAnnouncement noFooter changeLogCtn\"><div class=\"changelog headline\">Update: recent</div><p id=\"1700000100\">Fixes &amp; safety.<br><br>中文测试</p></div>", submittedAt);
+            var logBaseline = new WorkshopChangeLogBaseline(1, project, "op", "123", "Fixes & safety.\n中文测试", submittedAt, submittedAt, "accepted", [], true);
+            Check(logPage.Status == "available" && logPage.Entries.Single().Text == "Fixes & safety. 中文测试"
+                && WorkshopChangeLog.Verify(logPage, logBaseline.Text, logBaseline).Status == "passed",
+                "change log parser matches timestamped English-page records containing Unicode and rendered line breaks");
+            Check(WorkshopChangeLog.Verify(logPage, "Fixes & safety.\n中文测试").Status == "passed"
+                && WorkshopChangeLog.Verify(logPage, "old note").Status == "mismatch"
+                && WorkshopChangeLog.Verify(logPage, null).Status == "skipped_empty", "manual verification distinguishes match, mismatch and explicitly empty note");
+            Check(WorkshopChangeLog.Parse("123", "english", 1, "<html><div class=\"error_ctn\">Private item</div></html>", submittedAt).Status == "unavailable",
+                "private item page denial remains unknown instead of an empty history");
+            Reject(() => WorkshopMetadata.RequiredChangeNote(["steamworkshops", "upload"]), "upload requires explicit note or explicit empty selection");
+            Check(WorkshopMetadata.RequiredChangeNote(["steamworkshops", "upload", "--change-note", ""]).Text is null,
+                "explicit empty change note allows content upload without publishing a note");
+            Check(WorkshopMetadata.RequiredChangeNote(["steamworkshops", "upload", "--change-note-file", noteFile]).Text == note,
+                "nonempty change note file remains supported");
             foreach (var bad in new[] { "", " ", new string('中', 43), "bad\0title" })
                 Reject(() => WorkshopMetadata.Title(bad), "invalid title rejected before native submission");
             Check(WorkshopMetadata.Title(new string('中', 42)).Length == 42, "title limit is measured in UTF-8 bytes");

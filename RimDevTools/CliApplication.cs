@@ -64,7 +64,7 @@ public static class CliApplication
                 "test settings" => await TestCommand.SettingsAsync(args, cancellation.Token),
                 "test cleanup" => await TestCommand.CleanupAsync(args, cancellation.Token),
                 "mods install-tools" => await ModsCommand.InstallToolsAsync(args, cancellation.Token),
-                "steamworkshops upload" or "steamworkshops edit" or "steamworkshops search" or "steamworkshops subscribe" or "steamworkshops status" => await SteamWorkshopsCommand.RunAsync(args, cancellation.Token),
+                "steamworkshops upload" or "steamworkshops edit" or "steamworkshops search" or "steamworkshops subscribe" or "steamworkshops status" or "steamworkshops changelog" => await SteamWorkshopsCommand.RunAsync(args, cancellation.Token),
                 "workshop probe" => await WorkshopCommand.ProbeAsync(args, cancellation.Token),
                 "workshop upload" => CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "WORKSHOP_LEGACY_ENTRY_DISABLED", "请使用 steamworkshops upload；旧入口不能绕过部署收据"),
                 _ => CliResult.WriteFailure(command, ExitCodes.InvalidArguments, "UNKNOWN_COMMAND", $"未知命令: {command}")
@@ -131,7 +131,7 @@ public static class CliArgs
             ["doctor"] = (1, 0, [new("--verbose", false)]),
             ["update"] = (1, 0, [new("--check", false), new("--dry-run", false), new("--verbose", false)]),
             ["update status"] = (2, 0, [new("--verbose", false)]),
-            ["deploy"] = (1, 0, [new("--sync-source", false), new("--xml-hot", false), new("--upload", false), new("--change-note", true), new("--change-note-file", true), new("--text-language", true), new("--timeout-seconds", true), new("--dry-run", false), new("--verbose", false)]),
+            ["deploy"] = (1, 0, [new("--sync-source", false), new("--xml-hot", false), new("--upload", false), new("--replace-unavailable-binding", false), new("--change-note", true), new("--change-note-file", true), new("--text-language", true), new("--timeout-seconds", true), new("--dry-run", false), new("--verbose", false)]),
             ["mod search"] = (2, 1, [new("--fuzzy", false), new("--verbose", false)]),
             ["mod copy"] = (2, 1, [new("--version", true), new("--deps", false), new("--include-ignored", false), new("--fuzzy", false), new("--overwrite-existing", false), new("--dry-run", false), new("--verbose", false)]),
             ["mod dependencies"] = (2, 1, [new("--version", true), new("--fuzzy", false), new("--verbose", false)]),
@@ -141,11 +141,12 @@ public static class CliArgs
             ["test cleanup"] = (2, 0, [new("--dry-run", false), new("--status", false), new("--verbose", false)]),
             ["mods install-tools"] = (2, 0, [new("--mods-path", true), new("--dry-run", false), new("--verbose", false)]),
             ["workshop probe"] = (2, 0, [new("--published-file-id", true), new("--timeout-seconds", true), new("--verbose", false)]),
-            ["steamworkshops upload"] = (2, 0, [new("--project", true), new("--change-note", true), new("--change-note-file", true), new("--text-language", true), new("--timeout-seconds", true), new("--dry-run", false), new("--verbose", false)]),
+            ["steamworkshops upload"] = (2, 0, [new("--project", true), new("--change-note", true), new("--change-note-file", true), new("--text-language", true), new("--timeout-seconds", true), new("--replace-unavailable-binding", false), new("--dry-run", false), new("--verbose", false)]),
             ["steamworkshops edit"] = (2, 0, [new("--project", true), new("--id", true), new("--title", true), new("--text-language", true), new("--change-note", true), new("--change-note-file", true), new("--description-file", true), new("--visibility", true), new("--preview-file", true), new("--add-preview", true, true), new("--update-preview", true, true), new("--remove-preview", true, true), new("--timeout-seconds", true), new("--dry-run", false), new("--verbose", false)]),
             ["steamworkshops search"] = (2, 1, [new("--project", true), new("--page", true), new("--details", false), new("--verbose", false)]),
             ["steamworkshops subscribe"] = (2, 1, [new("--project", true), new("--wait", false), new("--timeout-seconds", true), new("--verbose", false)]),
             ["steamworkshops status"] = (2, -1, [new("--project", true), new("--wait", false), new("--timeout-seconds", true), new("--verbose", false)]),
+            ["steamworkshops changelog"] = (2, -1, [new("--project", true), new("--language", true), new("--page", true), new("--record", true), new("--verify", false), new("--change-note", true), new("--change-note-file", true), new("--wait", false), new("--timeout-seconds", true), new("--verbose", false)]),
             ["workshop upload"] = (2, 0, [new("--create-private", false), new("--expected-published-file-id", true), new("--update-description", false), new("--visibility", true), new("--timeout-seconds", true), new("--dry-run", false), new("--verbose", false)])
         };
 

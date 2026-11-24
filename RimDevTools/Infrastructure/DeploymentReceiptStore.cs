@@ -194,6 +194,27 @@ internal static class DeploymentReceiptStore
         return bindings.FirstOrDefault(x => x.Key.Equals(context.Config.CurrentPackageId(context.Root), StringComparison.OrdinalIgnoreCase)).Value;
     }
 
+    internal static void ResetUnavailableBindingForPrivateRecreate(ProjectContext context)
+    {
+        var receipt = Read(context) ?? throw new InvalidDataException("缺少部署收据，不能重置工坊绑定");
+        var package = context.Config.CurrentPackageId(context.Root) ?? throw new InvalidDataException("缺少 packageId");
+        var path = ProjectDataPaths.File(context.Root, "steamworkshops-bindings.json");
+        var bindings = File.Exists(path) ? JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(path), JsonDefaults.Storage)
+            ?? throw new InvalidDataException("绑定记录无效") : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        bindings.Remove(package);
+        if (bindings.Count == 0) { if (File.Exists(path)) File.Delete(path); }
+        else AtomicFile.WriteAllText(path, JsonSerializer.Serialize(bindings, JsonDefaults.StorageIndented));
+        var targetId = Path.Combine(receipt.TargetRoot, "About", "PublishedFileId.txt");
+        var sourceId = Path.Combine(context.Root, "About", "PublishedFileId.txt");
+        foreach (var file in new[] { sourceId, targetId }) if (File.Exists(file)) File.Delete(file);
+        Save(context, receipt with
+        {
+            PublishedFileId = null,
+            Inputs = receipt.Inputs.Where(file => file.Source != "identity").ToArray(),
+            Files = receipt.Files.Where(file => file.Source != "identity").ToArray()
+        });
+    }
+
     internal static DeploymentFingerprint SaveCreatedIdentity(ProjectContext context, string target, string id)
     {
         if (SteamWorkshopsCommand.ParseId(id)?.ToString() != id) throw new InvalidDataException("Steam 返回的新 ID 无效");

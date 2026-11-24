@@ -31,6 +31,7 @@ public static class CliHelp
             "steamworkshops search" => SteamWorkshopsSearch,
             "steamworkshops subscribe" => SteamWorkshopsSubscribe,
             "steamworkshops status" => SteamWorkshopsStatus,
+            "steamworkshops changelog" => SteamWorkshopsChangeLog,
             _ => null
         };
         if (text is null) return false;
@@ -142,7 +143,7 @@ public static class CliHelp
     private const string SteamWorkshops = """
         Steam Workshop commands through the installed game's native libraries.
         Usage:
-          RimDevTools.exe steamworkshops <upload|edit|search|subscribe|status> [options]
+          RimDevTools.exe steamworkshops <upload|edit|search|subscribe|status|changelog> [options]
         Use each subcommand's --help. No API key or game launch is required.
         Runtime metadata belongs to the project's ignored .tools/ProjectData directory.
         """;
@@ -153,9 +154,11 @@ public static class CliHelp
           RimDevTools.exe steamworkshops upload [--project <path>] [--dry-run]
         Options:
           --project <path>             Project root (otherwise current directory/direct parent).
+          --replace-unavailable-binding After Steam confirms EResult=9 for the old binding, clear local identity and create a new private item.
+          --replace-unavailable-binding After Steam confirms EResult=9 for the old binding, clear local identity and create a new private item.
           --dry-run                    Verify receipt, complete target hashes and project inputs.
-          --change-note <text>         Optional change note; absent/empty sends no note.
-          --change-note-file <path>    UTF-8, multiline note; mutually exclusive with --change-note.
+          --change-note <text>         Required for content upload; explicit empty text sends no note.
+          --change-note-file <path>    Required alternative; UTF-8 multiline note, mutually exclusive with --change-note.
           --text-language <code>       Initial page text language, default english; existing content uploads preserve all text.
           --timeout-seconds <seconds>  Upload wait budget; default 1800.
           --verbose                    Include diagnostics.
@@ -187,6 +190,23 @@ public static class CliHelp
           --verbose                    Include diagnostics.
           -h, --help                   Show help.
         Never builds, deploys or sends content. Only verified owners can write.
+        """;
+
+    private const string SteamWorkshopsChangeLog = """
+        Read and verify Workshop change notes. HTTP page access is read-only; it never uploads content.
+        Usage:
+          RimDevTools.exe steamworkshops changelog [id-or-link] [options]
+        Options:
+          --project <path>             Project root; uses its PublishedFileId.txt and last publish baseline.
+          --language <code>            Workshop page language, default english; this does not translate the note.
+          --page <n>                   Change-note page, 1-100; default 1.
+          --verify                     Compare an explicit note or the latest upload baseline.
+          --change-note <text>         Expected rendered note; can be empty to verify an intentional omission.
+          --change-note-file <path>    UTF-8 expected note, mutually exclusive with --change-note.
+          --record <id>                Restrict verification to a returned numeric recordId.
+          --wait                       Retry read-only verification with bounded backoff.
+          --timeout-seconds <seconds>  Verification budget, default 60, maximum 600.
+        Steamworks has no existing interface for editing an old history record; this command does not pretend to edit it.
         """;
 
     private const string SteamWorkshopsSearch = """
@@ -311,8 +331,9 @@ public static class CliHelp
           --sync-source       Include source/ in this deployment.
           --upload            After a full deploy, verify its receipt and upload under the same lock.
                               Mutually exclusive with --xml-hot; --dry-run only prints both stages.
-          --change-note <text>          With --upload, send an optional note; absent/empty sends none.
-          --change-note-file <path>     With --upload, UTF-8 note; exclusive with --change-note.
+          --replace-unavailable-binding With --upload, recreate a binding only after Steam returns EResult=9; new item is private.
+          --change-note <text>          With --upload, required explicit choice; empty means no note.
+          --change-note-file <path>     With --upload, required alternative; UTF-8 note, exclusive with --change-note.
           --text-language <code>        With --upload, initial page language (default english).
           --timeout-seconds <seconds>   With --upload, submit wait budget (default 1800).
           --xml-hot           If RimWorld is running, transactionally update configured non-DLL files in place,

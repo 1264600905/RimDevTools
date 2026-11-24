@@ -138,17 +138,21 @@ auto 测试参数遵循以下规则：
 .\.tools\RimDevTools.exe steamworkshops search next
 .\.tools\RimDevTools.exe steamworkshops search "Harmony" --details --page 5
 .\.tools\RimDevTools.exe deploy
-.\.tools\RimDevTools.exe steamworkshops upload --dry-run
-.\.tools\RimDevTools.exe steamworkshops upload
-.\.tools\RimDevTools.exe deploy --upload
+.\.tools\RimDevTools.exe steamworkshops upload --dry-run --change-note ""
+.\.tools\RimDevTools.exe steamworkshops upload --change-note "Fixed compatibility issues."
+.\.tools\RimDevTools.exe deploy --upload --change-note-file CHANGELOG.txt
+.\.tools\RimDevTools.exe steamworkshops changelog
+.\.tools\RimDevTools.exe steamworkshops changelog --verify --wait
 .\.tools\RimDevTools.exe steamworkshops edit
 .\.tools\RimDevTools.exe steamworkshops edit --visibility private
 .\.tools\RimDevTools.exe steamworkshops subscribe <精确ID或工坊链接> --wait
 .\.tools\RimDevTools.exe steamworkshops status <精确ID或工坊链接> --wait
 ```
 
-- 五个子命令为 upload、edit、search、subscribe、status。当前身份优先使用项目 About/PublishedFileId.txt；它保存数字工坊 ID，packageId 另读 About.xml。所有写入只对已获用户授权的具体条目执行；已有会话授权可以沿用。
+- 六个子命令为 upload、edit、search、subscribe、status、changelog。当前身份优先使用项目 About/PublishedFileId.txt；它保存数字工坊 ID，packageId 另读 About.xml。所有写入只对已获用户授权的具体条目执行；已有会话授权可以沿用。
+- upload 和 deploy --upload 必须显式提供 --change-note 或 --change-note-file；传入日志时按 UTF-8 原文提交，明确不提交时使用 --change-note "" 或空 UTF-8 文件。漏传参数会在部署/提交前拒绝。默认以英文编写改动日志；偶尔使用其他语言时保持原文，不做翻译。该语言与标题/描述的 --text-language 无关。
 - upload 只使用成功普通 deploy 的目录，逐项复核新增/缺失/修改文件及未部署项目输入；不自动构建，不提供 --create 或哈希绕过。首次自动新建 private，更新保留远端人工元数据。deploy --upload 在同一锁下串联两阶段；--dry-run 只显示计划，与 --xml-hot 互斥。
+- steamworkshops changelog 默认读取英文改动说明页，支持 --language 指定页面语言；--verify 比较明确文本或最近一次上传基线，--wait 只重试读取。基线保存在 .tools/ProjectData。Private/网页登录限制、Steam 限流或页面结构变化均表示 unknown/unavailable，不等于日志缺失。旧历史记录没有现有 Steamworks API 修改入口，不要用重新上传伪装成编辑旧记录。
 - 1.7 普通部署调用本机官方库生成加载目录内的 Assets.zip，默认保留源资源；1.6 跳过烘焙。正常部署、烘焙和发布不启动游戏。官方库不随工具分发。
 - edit 不上传内容：无字段参数时同步项目 About 简介；--description-file、--preview-file、--visibility 只改指定字段。可见性为 private/public/friends-only/unlisted；本版仅放行已核验 owner，贡献者检测延期。
 - 简易搜索只显示名称、ID、订阅人数，每页 25 条，最多 3 页；--details 额外返回官方 255 字节摘要，每页 10 条，最多 5 页。--page 从 1 开始；基于官方 50 条页依序切片，超限要求更准确的关键词。精确 ID/链接和 status 返回完整描述。

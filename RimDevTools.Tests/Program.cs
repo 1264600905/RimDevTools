@@ -273,6 +273,7 @@ internal sealed partial class TestSuite
             _passed += await SteamWorkshopsTests.RunAsync(_temp);
             _passed += await WorkshopPublishingTests.RunAsync(_temp);
             _passed += await WorkshopQueryPresentationTests.RunAsync(_temp);
+            _passed += WorkshopChangeLogTests.Run();
             TestJsoncAndDiscovery();
             _passed += await ToolUpdateTests.RunAsync(_temp);
             TestEnvironmentDiscovery();

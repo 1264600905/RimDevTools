@@ -4,6 +4,7 @@ namespace RimDevTools;
 
 internal sealed record WorkshopPreview(uint Index, string Url, string OriginalFileName, int Type);
 internal sealed record WorkshopPreviewReplacement(uint Index, string Path);
+internal sealed record WorkshopChangeNoteInput(string? Text);
 
 internal static class WorkshopMetadata
 {
@@ -27,6 +28,13 @@ internal static class WorkshopMetadata
         if (value?.Contains('\0') == true) throw new ArgumentException("改动说明不能包含 NUL");
         // Missing or empty input deliberately sends NULL: no change note.
         return string.IsNullOrWhiteSpace(value) ? null : value;
+    }
+
+    internal static WorkshopChangeNoteInput RequiredChangeNote(string[] args)
+    {
+        if (!CliArgs.Has(args, "--change-note") && !CliArgs.Has(args, "--change-note-file"))
+            throw new ArgumentException("上传内容必须显式提供 --change-note 或 --change-note-file；明确不发布改动日志时使用 --change-note \"\"");
+        return new(ChangeNote(args));
     }
 
     internal static string ReadText(string file) => File.ReadAllText(Path.GetFullPath(file), new UTF8Encoding(false, true));

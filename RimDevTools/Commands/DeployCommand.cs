@@ -24,7 +24,7 @@ public static class DeployCommand
     private static async Task<int> RunWithUploadAsync(string[] args, CancellationToken token, bool verbose)
     {
         if (CliArgs.Has(args, "--xml-hot")) return CliResult.WriteFailure("deploy", ExitCodes.InvalidArguments, "INVALID_ARGUMENT", "--upload 与 --xml-hot 互斥");
-        _ = WorkshopMetadata.ChangeNote(args);
+        var changeNote = WorkshopMetadata.RequiredChangeNote(args);
         _ = WorkshopMetadata.Language(args);
         _ = WorkshopPublishingService.Timeout(args);
         var context = CliApplication.RequireProject("deploy", out var error);
@@ -33,7 +33,7 @@ public static class DeployCommand
         {
             var plan = await ExecuteAsync(args, token, verbose: verbose);
             if (!plan.Ok) return CliResult.WriteFailure("deploy", plan.ExitCode, plan.Error!.Code, plan.Error.Message, context.Root, plan.Error.Details);
-            return CliResult.WriteSuccess("deploy", context.Root, new { dryRun = true, deployment = SummarizeResult(plan.Result), upload = new { planned = true, verification = "pending_after_deploy", action = "automatic_create_or_update" } });
+            return CliResult.WriteSuccess("deploy", context.Root, new { dryRun = true, deployment = SummarizeResult(plan.Result), upload = new { planned = true, verification = "pending_after_deploy", action = "automatic_create_or_update", changeNote = changeNote.Text, changeNoteProvided = true } });
         }
         var configDirectory = GameEnvironment.ConfigDirectory(context);
         if (configDirectory is null) return CliResult.WriteFailure("deploy", ExitCodes.InvalidArguments, "CONFIG_INVALID", "无法解析游戏 Config 目录", context.Root);
@@ -44,7 +44,7 @@ public static class DeployCommand
         if (!deployment.Ok) return CliResult.WriteFailure("deploy", deployment.ExitCode, deployment.Error!.Code, deployment.Error.Message, context.Root,
             new { deploymentSucceeded = false, uploadStarted = false, deployment.Error.Details });
         var result = (DeployResult)deployment.Result!;
-        var upload = await WorkshopPublishingService.UploadAsync(context, args, token, heldLock: gate, expectedDeployRunId: result.RunId);
+        var upload = await WorkshopPublishingService.UploadAsync(context, args, token, heldLock: gate, expectedDeployRunId: result.RunId, capturedChangeNote: changeNote);
         var details = SteamWorkshopsCommand.Json(new
         {
             deploymentSucceeded = true, uploadSucceeded = upload.Ok ? (bool?)true : upload.ExitCode is ExitCodes.Timeout or ExitCodes.Cancelled ? null : false,

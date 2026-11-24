@@ -8,7 +8,7 @@ internal sealed record WorkshopPublishRequest(string OperationId, string NativeL
     string? ContentPath, ulong? PublishedFileId, string? Name, string? Description, string? PreviewPath,
     int? Visibility, string[]? Tags, int TimeoutSeconds, WorkshopContentFile[]? Files,
     string TextLanguage = "english", string? ChangeNote = null, string[]? AddPreviews = null,
-    WorkshopPreviewReplacement[]? ReplacePreviews = null, uint[]? RemovePreviews = null);
+    WorkshopPreviewReplacement[]? ReplacePreviews = null, uint[]? RemovePreviews = null, bool ChangeNoteProvided = false);
 internal sealed record WorkshopPublishResult
 {
     public string OperationId { get; init; } = "";
@@ -66,6 +66,8 @@ internal static class WorkshopPublisher
         var held = new List<FileStream>();
         try
         {
+            if (request.ContentPath is not null && !request.ChangeNoteProvided)
+                throw new ArgumentException("内容上传缺少显式改动日志选择；允许显式空文本，不允许遗漏参数");
             var expectedFiles = request.Files ?? [];
             if (request.ContentPath is not null)
             {

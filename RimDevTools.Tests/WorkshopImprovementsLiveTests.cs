@@ -113,9 +113,13 @@ internal static class WorkshopImprovementsLiveTests
                 try
                 {
                     File.WriteAllBytes(contentFile, originalContent); await Run(["deploy"]);
+                    var missingNote = await Invoke(["steamworkshops", "upload"]);
+                    using (var doc = JsonDocument.Parse(missingNote.Output))
+                        Check(missingNote.Exit == ExitCodes.InvalidArguments && doc.RootElement.GetProperty("error").GetProperty("code").GetString() == "INVALID_ARGUMENT",
+                            "Restored content upload without an explicit note choice is rejected");
                     var noNote = await Run(["steamworkshops", "upload", "--change-note", ""]);
                     Check(noNote.GetProperty("changeNote").ValueKind == JsonValueKind.Null && noNote.GetProperty("submitCallCount").GetInt32() == 1,
-                        "Restored content uploaded with no note, without fixed fallback");
+                        "Restored content upload with explicit empty note submits no change note");
                 }
                 catch (Exception ex) { restoreError = ex; }
             }
