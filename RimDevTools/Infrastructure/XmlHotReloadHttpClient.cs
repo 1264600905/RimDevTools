@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Net;
 using System.Net.Http.Headers;
@@ -34,6 +35,17 @@ public static class XmlHotReloadHttpClient
                 TryDeleteStaleEndpoint(path);
             }
             catch (InvalidOperationException)
+            {
+                TryDeleteStaleEndpoint(path);
+            }
+            catch (Win32Exception)
+            {
+                // A stale PID can be reused by a protected service. In that case
+                // Process.HasExited may fail with ERROR_ACCESS_DENIED; it cannot be
+                // a usable RimWorld endpoint, so ignore it like any other stale entry.
+                TryDeleteStaleEndpoint(path);
+            }
+            catch (UnauthorizedAccessException)
             {
                 TryDeleteStaleEndpoint(path);
             }
