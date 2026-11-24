@@ -28,7 +28,11 @@ internal sealed partial class SteamworksClient : IDisposable
     internal const uint AppId = 294100;
     private IntPtr library;
     private bool initialized;
+    private SteamworksNativeApi api = null!;
+    internal SteamworksNativeDiagnostics NativeDiagnostics => api.Diagnostics;
     internal IntPtr Ugc { get; private set; }
+    private IntPtr apps;
+    private IntPtr friends;
     private IntPtr utils;
     internal string SteamId { get; private set; } = "";
     internal bool LoggedOn { get; private set; }
@@ -51,17 +55,19 @@ internal sealed partial class SteamworksClient : IDisposable
         {
             if (!OperatingSystem.IsWindows() || RuntimeInformation.ProcessArchitecture != Architecture.X64)
                 throw new PlatformNotSupportedException("Steamworks 仅支持 Windows x64");
-            if (Marshal.SizeOf<ItemDetails>() != 9776 || Marshal.SizeOf<QueryCompleted>() != 280)
-                throw new InvalidDataException("Steamworks Windows x64 ABI 布局不匹配");
+            nativePath = Path.GetFullPath(nativePath);
             library = NativeLibrary.Load(nativePath);
-            initialized = Bind<NativeBool>("SteamAPI_Init")();
-            if (!initialized) throw new IOException("SteamAPI_Init 失败");
-            var user = Bind<InterfaceCall>("SteamAPI_SteamUser_v021")();
-            utils = Bind<InterfaceCall>("SteamAPI_SteamUtils_v010")();
-            Ugc = Bind<InterfaceCall>("SteamAPI_SteamUGC_v016")();
-            var apps = Bind<InterfaceCall>("SteamAPI_SteamApps_v008")();
-            if (user == IntPtr.Zero || utils == IntPtr.Zero || Ugc == IntPtr.Zero || apps == IntPtr.Zero)
-                throw new IOException("Steamworks 接口不可用");
+            api = new(name => NativeLibrary.TryGetExport(library, name, out var address) ? address : IntPtr.Zero, nativePath);
+            api.SelectInterfaces();
+            // Verify shutdown before initialization so every successful init can be released.
+            _ = Bind<VoidCall>("SteamAPI_Shutdown");
+            api.Initialize();
+            initialized = true;
+            var user = api.Interface("User");
+            utils = api.Interface("Utils");
+            Ugc = api.Interface("UGC");
+            apps = api.Interface("Apps");
+            friends = api.Interface("Friends");
             if (Bind<AppIdCall>("SteamAPI_ISteamUtils_GetAppID")(utils) != AppId)
                 throw new InvalidDataException("Steam 实际 App ID 不是 RimWorld");
             SteamId = Bind<SteamIdCall>("SteamAPI_ISteamUser_GetSteamID")(user).ToString(CultureInfo.InvariantCulture);
@@ -73,7 +79,7 @@ internal sealed partial class SteamworksClient : IDisposable
     }
 
     internal T Bind<T>(string name) where T : Delegate
-        => Marshal.GetDelegateForFunctionPointer<T>(NativeLibrary.GetExport(library, name));
+        => api.Bind<T>(name);
 
     internal void Pump()
     {
@@ -90,8 +96,9 @@ internal sealed partial class SteamworksClient : IDisposable
                     var completed = Marshal.PtrToStructure<ApiCallCompleted>(message.Data);
                     if (pendingCalls.TryGetValue(completed.Call, out var pending))
                     {
-                        pending.Failed = completed.Callback != pending.Callback || completed.Size != pending.Size
-                            || !Bind<ManualResult>("SteamAPI_ManualDispatch_GetAPICallResult")(steamPipe, completed.Call,
+                        if (completed.Callback != pending.Callback || completed.Size != pending.Size)
+                            throw api.Failure("STEAMWORKS_ABI_UNSUPPORTED", $"异步回调布局不匹配: actual={completed.Callback}:{completed.Size}, expected={pending.Callback}:{pending.Size}");
+                        pending.Failed = !Bind<ManualResult>("SteamAPI_ManualDispatch_GetAPICallResult")(steamPipe, completed.Call,
                                 pending.Buffer, pending.Size, pending.Callback, out var failed) || failed;
                         pending.Completed = true;
                     }
@@ -175,11 +182,10 @@ internal sealed partial class SteamworksClient : IDisposable
             if (done.Handle != handle || done.Result != 1 || done.Cached != 0)
                 throw new IOException($"Steam 查询未取得本次在线结果: EResult={done.Result}, cached={done.Cached}");
             var items = new List<WorkshopItemInfo>();
-            var read = Bind<ReadQuery>("SteamAPI_ISteamUGC_GetQueryUGCResult");
             var statistic = Bind<Statistic>("SteamAPI_ISteamUGC_GetQueryUGCStatistic");
             for (uint i = 0; i < done.ReturnedResults; i++)
             {
-                Require(read(Ugc, handle, i, out var d), "GetQueryUGCResult");
+                var d = api.ReadDetails(Ugc, handle, i);
                 if (ids is not null && (d.Result != 1 || d.ConsumerAppId != AppId)) continue;
                 if (d.Result != 1 || d.ConsumerAppId != AppId || id.HasValue && d.Id != id.Value)
                     throw new IOException("条目查询失败或条目不属于 RimWorld: EResult=" + d.Result);
@@ -283,6 +289,17 @@ internal sealed partial class SteamworksClient : IDisposable
         [MarshalAs(UnmanagedType.ByValArray, SizeConst = 256)] public byte[] Url;
         public uint VotesUp; public uint VotesDown; public float Score; public uint Children;
     }
+    [StructLayout(LayoutKind.Sequential, Pack = 8)] internal struct ModernItemDetails
+    {
+        public ItemDetails Details;
+        public ulong TotalFilesSize;
+    }
+    internal bool SetItemTags(ulong update, ref TagArray tags)
+        => api.SetItemTags(Ugc, update, ref tags);
+
+    [StructLayout(LayoutKind.Sequential, Pack = 8)] internal struct TagArray { public IntPtr Strings; public int Count; }
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] [return: MarshalAs(UnmanagedType.I1)] internal delegate bool LegacyTagsCall(IntPtr self, ulong update, ref TagArray tags);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] [return: MarshalAs(UnmanagedType.I1)] internal delegate bool ModernTagsCall(IntPtr self, ulong update, ref TagArray tags, [MarshalAs(UnmanagedType.I1)] bool allowAdminTags);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] [return: MarshalAs(UnmanagedType.I1)] internal delegate bool NativeBool();
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetPipe();
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate void ManualFrame(int pipe);
@@ -301,7 +318,7 @@ internal sealed partial class SteamworksClient : IDisposable
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] [return: MarshalAs(UnmanagedType.I1)] internal delegate bool QueryUInt(IntPtr self, ulong query, uint value);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] [return: MarshalAs(UnmanagedType.I1)] internal delegate bool QueryBool(IntPtr self, ulong query, [MarshalAs(UnmanagedType.I1)] bool value);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] [return: MarshalAs(UnmanagedType.I1)] internal delegate bool QueryString(IntPtr self, ulong query, [MarshalAs(UnmanagedType.LPUTF8Str)] string value);
-    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] [return: MarshalAs(UnmanagedType.I1)] internal delegate bool ReadQuery(IntPtr self, ulong query, uint index, out ItemDetails details);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] [return: MarshalAs(UnmanagedType.I1)] internal delegate bool ReadQueryBuffer(IntPtr self, ulong query, uint index, IntPtr details);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] [return: MarshalAs(UnmanagedType.I1)] internal delegate bool ReleaseQuery(IntPtr self, ulong query);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] [return: MarshalAs(UnmanagedType.I1)] internal delegate bool Statistic(IntPtr self, ulong query, uint index, int statistic, out ulong value);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] [return: MarshalAs(UnmanagedType.I1)] internal delegate bool PreviewUrl(IntPtr self, ulong query, uint index, [Out] byte[] buffer, uint size);

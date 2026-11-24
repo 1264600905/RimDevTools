@@ -159,6 +159,8 @@ public static class SteamWorkshopsCommand
         var result = Json(new
         {
             health.SteamRunning, health.RimWorldInLibrary, health.WorkshopAvailability, checkedAt = detail?.CheckedAt ?? health.CheckedAt, health.Source,
+            currentUserSteamId = detail?.CurrentUserSteamId ?? health.CurrentUserSteamId,
+            nativeDiagnostics = detail?.NativeDiagnostics ?? health.NativeDiagnostics,
             environmentReason = health.Reason, modName, packageId = package, publishedFileId = selected, idSource,
             bindingConsistent = consistent, bindingSources = new { project = localId, deployed = deployedId, deployedPackageId, known, receipt = receiptId },
             publicationState = selected is null ? "unpublished" : item is null ? "unknown" : "published",

@@ -43,6 +43,7 @@ internal sealed record WorkshopPublishResult
     public string? Message { get; init; }
     public string? ChangeNote { get; init; }
     public string? TextLanguage { get; init; }
+    public SteamworksNativeDiagnostics? NativeDiagnostics { get; init; }
 }
 
 internal static class WorkshopPublisher
@@ -77,6 +78,7 @@ internal static class WorkshopPublisher
             foreach (var path in (request.AddPreviews ?? []).Concat((request.ReplacePreviews ?? []).Select(x => x.Path)).Distinct())
                 held.Add(File.Open(path, FileMode.Open, FileAccess.Read, FileShare.Read));
             using var client = new SteamworksClient(request.NativeLibraryPath, request.TimeoutSeconds);
+            result = result with { NativeDiagnostics = client.NativeDiagnostics };
             if (!client.InLibrary || !client.LoggedOn) throw new InvalidDataException("Steam 账号未在线，或库中不可用 RimWorld");
             var id = request.PublishedFileId ?? 0;
             if (id == 0)
@@ -134,8 +136,8 @@ internal static class WorkshopPublisher
                 try
                 {
                     Marshal.Copy(pointers, 0, array, pointers.Length);
-                    var tags = new TagArray { Strings = array, Count = pointers.Length };
-                    SteamworksClient.Require(client.Bind<TagsCall>("SteamAPI_ISteamUGC_SetItemTags")(client.Ugc, update, ref tags), "SetItemTags");
+                    var tags = new SteamworksClient.TagArray { Strings = array, Count = pointers.Length };
+                    SteamworksClient.Require(client.SetItemTags(update, ref tags), "SetItemTags");
                 }
                 finally { Marshal.FreeHGlobal(array); foreach (var p in pointers) Marshal.FreeCoTaskMem(p); }
             }
@@ -199,7 +201,8 @@ internal static class WorkshopPublisher
         }
         catch (Exception ex)
         {
-            return result with { ErrorCode = result.Created && !result.SubmissionStarted ? "WORKSHOP_CREATED_ID_SAVE_OR_PREFLIGHT_FAILED" : "WORKSHOP_PUBLISH_FAILED", Message = ex.Message, CurrentTime = DateTimeOffset.UtcNow };
+            return result with { ErrorCode = ex is SteamworksNativeException native ? native.Code : result.Created && !result.SubmissionStarted ? "WORKSHOP_CREATED_ID_SAVE_OR_PREFLIGHT_FAILED" : "WORKSHOP_PUBLISH_FAILED",
+                NativeDiagnostics = (ex as SteamworksNativeException)?.Diagnostics ?? result.NativeDiagnostics, Message = ex.Message, CurrentTime = DateTimeOffset.UtcNow };
         }
         finally { foreach (var stream in held) stream.Dispose(); }
     }
@@ -229,12 +232,10 @@ internal static class WorkshopPublisher
     }
     [StructLayout(LayoutKind.Sequential, Pack = 8)] private struct CreatedItem { public int Result; public ulong Id; public byte NeedsAgreement; }
     [StructLayout(LayoutKind.Sequential, Pack = 8)] private struct SubmittedItem { public int Result; public byte NeedsAgreement; public ulong Id; }
-    [StructLayout(LayoutKind.Sequential, Pack = 8)] private struct TagArray { public IntPtr Strings; public int Count; }
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate ulong CreateCall(IntPtr self, uint appId, int type);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate ulong StartUpdateCall(IntPtr self, uint appId, ulong id);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] [return: MarshalAs(UnmanagedType.I1)] private delegate bool SetStringCall(IntPtr self, ulong update, [MarshalAs(UnmanagedType.LPUTF8Str)] string value);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] [return: MarshalAs(UnmanagedType.I1)] private delegate bool VisibilityCall(IntPtr self, ulong update, int value);
-    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] [return: MarshalAs(UnmanagedType.I1)] private delegate bool TagsCall(IntPtr self, ulong update, ref TagArray tags);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate ulong SubmitCall(IntPtr self, ulong update, [MarshalAs(UnmanagedType.LPUTF8Str)] string? note);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] [return: MarshalAs(UnmanagedType.I1)] private delegate bool AddPreviewCall(IntPtr self, ulong update, [MarshalAs(UnmanagedType.LPUTF8Str)] string path, int type);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] [return: MarshalAs(UnmanagedType.I1)] private delegate bool UpdatePreviewCall(IntPtr self, ulong update, uint index, [MarshalAs(UnmanagedType.LPUTF8Str)] string path);

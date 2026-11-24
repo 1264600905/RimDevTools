@@ -25,6 +25,12 @@ if (args.Length == 1 && args[0] == "--xml-hotload-http-smoke")
     return;
 }
 
+if (args.Length == 1 && args[0] == "--steamworks-native")
+{
+    Console.WriteLine($"PASS: {SteamworksNativeApiTests.Run()} Steamworks native compatibility checks");
+    return;
+}
+
 if (Path.GetFileNameWithoutExtension(Environment.ProcessPath ?? "").Equals("RimWorldWin64", StringComparison.OrdinalIgnoreCase))
 {
     await FakeRimWorld.RunAsync(args);
@@ -263,6 +269,7 @@ internal sealed partial class TestSuite
         try
         {
             SteamworksSessionProbe.ProbeOverride = _ => Task.FromResult(new SteamworksResponse { Reason = "unit test: native session not invoked" });
+            _passed += SteamworksNativeApiTests.Run();
             _passed += await SteamWorkshopsTests.RunAsync(_temp);
             _passed += await WorkshopPublishingTests.RunAsync(_temp);
             _passed += await WorkshopQueryPresentationTests.RunAsync(_temp);

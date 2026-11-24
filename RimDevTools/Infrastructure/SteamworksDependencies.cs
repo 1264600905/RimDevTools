@@ -17,7 +17,6 @@ internal sealed partial class SteamworksClient
     {
         try
         {
-            var friends = Bind<InterfaceCall>("SteamAPI_SteamFriends_v017")();
             if (friends == IntPtr.Zero) throw new IOException("SteamFriends 不可用");
             var owner = ulong.Parse(id, System.Globalization.CultureInfo.InvariantCulture);
             _ = Bind<RequestUser>("SteamAPI_ISteamFriends_RequestUserInformation")(friends, owner, true);
@@ -82,7 +81,6 @@ internal sealed partial class SteamworksClient
 
     private IReadOnlyDictionary<uint, string> DlcNames()
     {
-        var apps = Bind<InterfaceCall>("SteamAPI_SteamApps_v008")();
         var result = new Dictionary<uint, string> { [AppId] = "RimWorld" };
         var count = Bind<DlcCount>("SteamAPI_ISteamApps_GetDLCCount")(apps);
         for (var i = 0; i < count; i++)

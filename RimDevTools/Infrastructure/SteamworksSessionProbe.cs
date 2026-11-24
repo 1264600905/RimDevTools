@@ -22,6 +22,7 @@ internal sealed record SteamworksResponse
     public string? ErrorCode { get; init; }
     public string? Reason { get; init; }
     public bool IsFinal { get; init; }
+    public SteamworksNativeDiagnostics? NativeDiagnostics { get; init; }
 }
 
 internal static class SteamworksSessionProbe
@@ -93,7 +94,7 @@ internal static class SteamworksSessionProbe
         try
         {
             using var client = new SteamworksClient(request.NativePath, request.TimeoutSeconds);
-            response = response with { RimWorldInLibrary = client.InLibrary, CurrentUserSteamId = client.SteamId, Source = "native_session" };
+            response = response with { RimWorldInLibrary = client.InLibrary, CurrentUserSteamId = client.SteamId, Source = "native_session", NativeDiagnostics = client.NativeDiagnostics };
             // Probe independently of the selected (possibly private or deleted) item.
             var page = client.Query(request.Operation == "search" ? request.Keyword : null, request.Page,
                 request.Operation is "status" or "detail" or "subscribe" or "observe" or "subscribe-verify-download" ? request.Id : null, request.Language,
@@ -117,7 +118,8 @@ internal static class SteamworksSessionProbe
         }
         catch (Exception ex)
         {
-            response = response with { ErrorCode = ex is TimeoutException ? "STEAMWORKS_TIMEOUT" : "STEAMWORKS_QUERY_FAILED", Reason = ex.Message };
+            response = response with { ErrorCode = ex is SteamworksNativeException native ? native.Code : ex is TimeoutException ? "STEAMWORKS_TIMEOUT" : "STEAMWORKS_QUERY_FAILED",
+                NativeDiagnostics = (ex as SteamworksNativeException)?.Diagnostics ?? response.NativeDiagnostics, Reason = ex.Message };
         }
         Console.WriteLine(Prefix + JsonSerializer.Serialize(response with { CheckedAt = DateTimeOffset.UtcNow, IsFinal = true }, JsonDefaults.Storage));
         return 0;

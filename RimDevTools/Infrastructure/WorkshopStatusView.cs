@@ -72,6 +72,8 @@ internal static class WorkshopStatusView
         if (value["bindingConsistent"]?.GetValue<bool>() == false) compact["bindingSources"] = value["bindingSources"]?.DeepClone();
         foreach (var key in new[] { "environmentReason", "queryReason", "subscriptionCountReason", "lastUpdatedAtReason" })
             if (value[key] is not null) compact[key] = value[key]!.DeepClone();
+        if (value["environmentReason"] is not null || value["queryReason"] is not null)
+            compact["nativeDiagnostics"] = value["nativeDiagnostics"]?.DeepClone();
         if (value["publicationState"]?.GetValue<string>() == "unpublished")
         {
             foreach (var key in new[] { "author", "title", "description", "visibility", "subscriptionCount", "fileBytes", "tags", "lastUpdatedAt", "download", "dependencies", "subscriptionCountReason", "lastUpdatedAtReason" }) compact.Remove(key);
