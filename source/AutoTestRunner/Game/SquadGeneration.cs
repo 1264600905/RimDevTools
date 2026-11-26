@@ -91,25 +91,17 @@ namespace LogSyncMod.AutoTest
                     if (template.Source == "faction")
                     {
                         var makers = faction.def.pawnGroupMakers ?? throw new ScenarioConfigurationException("Faction has no pawnGroupMakers: " + template.FactionDef);
-                        roster.GroupMakers = makers.Select((m, i) => new SquadMakerInfo { Index = i, KindDef = m.kindDef.defName, Commonality = m.commonality,
-                            MaxTotalPoints = m.maxTotalPoints, Eligible = m.kindDef == parms.groupKind && m.CanGenerateFrom(parms), Fingerprint = Fingerprint(m),
+                        roster.GroupMakers = makers.Select((m, i) => new SquadMakerInfo { Index = i, KindDef = m.kindDef?.defName, Commonality = m.commonality,
+                            MaxTotalPoints = m.maxTotalPoints, Eligible = m.kindDef == parms.groupKind && HasWeightedOptions(m), Fingerprint = Fingerprint(m),
                             Options = m.options.Select(o => new SquadOption { PawnKind = o.kind.defName, Weight = (decimal)o.selectionWeight }).ToList(),
                             DisallowedStrategies = m.disallowedStrategies?.Select(d => d.defName).ToList() ?? new() }).ToList();
-                        if (template.MakerMode == "specific")
-                        {
-                            if (template.MakerIndex >= makers.Count) throw new ScenarioConfigurationException("GroupMaker index out of range: " + template.MakerIndex);
-                            maker = makers[template.MakerIndex.Value];
-                            if (maker.kindDef != parms.groupKind || !maker.CanGenerateFrom(parms)) throw new ScenarioConfigurationException("Selected GroupMaker cannot generate this squad at the configured points/strategy");
-                        }
-                        else if (!PawnGroupMakerUtility.TryGetRandomPawnGroupMaker(parms, out maker)) throw new ScenarioConfigurationException("Faction has no eligible Combat GroupMaker: " + template.FactionDef);
+                        maker = SelectGroupMaker(makers, template, parms.groupKind);
                         roster.GroupMakerIndex = makers.IndexOf(maker); roster.GroupMakerFingerprint = Fingerprint(maker);
                         if (template.Fingerprint != null && template.Fingerprint != roster.GroupMakerFingerprint) throw new ScenarioConfigurationException("GroupMaker fingerprint changed: " + template.Id);
                     }
                     else maker = new PawnGroupMaker { kindDef = PawnGroupKindDefOf.Combat, options = template.Options.Select(o => new PawnGenOption { kind = Kind(o.PawnKind), selectionWeight = Weight(o.Weight) }).ToList() };
                     var options = maker.options;
-                    // Keep original PawnKind identities for native strategy/limit checks.
-                    // Only selection sees overridden xenotype weights and accounting costs.
-                    using var selection = new XenotypeSelectionScope(options, template, faction, costMode);
+                    using var selection = template.Source == "custom" ? new XenotypeSelectionScope(options, template, faction, costMode) : null;
                     if (template.Source == "custom" && template.Composition == "fixed")
                     {
                         specs = new List<TestSquadMemberSpec>();
@@ -123,6 +115,10 @@ namespace LogSyncMod.AutoTest
                                 if (!available.TryRandomElementByWeight(x => x.SelectionWeight, out var choice)) throw new ScenarioConfigurationException("Fixed member has no valid xenotype/strategy option: " + o.PawnKind);
                                 chosen.Add(choice); specs.Add(Spec(choice));
                             }
+                    }
+                    else if (template.Source == "faction")
+                    {
+                        specs = AllocateFactionMembers(BuildFactionCandidates(options, template, faction), budget, count, costMode, template.Id);
                     }
                     else if (budget.HasValue)
                     {
@@ -148,9 +144,10 @@ namespace LogSyncMod.AutoTest
                     var kind = Kind(spec.PawnKind);
                     if (kind.RaceProps.Humanlike && ModsConfig.BiotechActive && spec.Xenotype == null)
                     {
-                        var distribution = template.XenotypeMode == "inherit" ? PawnGenerator.XenotypesAvailableFor(kind, faction: faction).ToDictionary(p => p.Key, p => p.Value)
+                        var distribution = template.XenotypeMode == "inherit" ? PawnGenerator.XenotypesAvailableFor(kind, faction: faction).Where(p => p.Key.canGenerateAsCombatant).ToDictionary(p => p.Key, p => p.Value)
                             : template.Xenotypes.ToDictionary(x => Xeno(x.Def), x => Weight(x.Weight));
-                        if (!distribution.Where(x => x.Key.canGenerateAsCombatant).TryRandomElementByWeight(x => x.Value, out var selected)) throw new ScenarioConfigurationException("No combat xenotype for squad member");
+                        if (distribution.Count == 0 && template.XenotypeMode == "inherit") distribution[XenotypeDefOf.Baseliner] = 1;
+                        if (!distribution.TryRandomElementByWeight(x => x.Value, out var selected)) throw new ScenarioConfigurationException("No combat xenotype for squad member");
                         spec.Xenotype = selected.Key.defName;
                     }
                     var xenotype = Xeno(spec.Xenotype);
@@ -172,7 +169,7 @@ namespace LogSyncMod.AutoTest
                     Pawn pawn = null;
                     try
                     {
-                        pawn = GenerateMember(member, faction, tile, strategy, parms.points);
+                        pawn = GenerateMember(member, faction, tile, template.Source == "faction" ? null : strategy, parms.points);
                         member.Childhood = pawn.story?.Childhood?.defName; member.Adulthood = pawn.story?.Adulthood?.defName;
                         var capture = CaptureFrozenPawn(pawn, warning);
                         var xml = XElement.Parse(capture.TemplateXml);
@@ -186,6 +183,67 @@ namespace LogSyncMod.AutoTest
                 return roster;
             }
             finally { Rand.PopState(); }
+        }
+        private static bool HasWeightedOptions(PawnGroupMaker maker) => maker.options?.Any(o => o.kind != null && float.IsFinite(o.selectionWeight) && o.selectionWeight > 0f) == true;
+        private static PawnGroupMaker SelectGroupMaker(IReadOnlyList<PawnGroupMaker> makers, SquadTemplate template, PawnGroupKindDef groupKind)
+        {
+            if (template.MakerMode == "specific")
+            {
+                if (template.MakerIndex >= makers.Count) throw new ScenarioConfigurationException("GroupMaker index out of range: " + template.MakerIndex);
+                var selected = makers[template.MakerIndex.Value];
+                if (selected.kindDef != groupKind || !HasWeightedOptions(selected))
+                    throw new ScenarioConfigurationException("Selected GroupMaker must contain weighted options for " + groupKind.defName + ": " + template.FactionDef + "#" + template.MakerIndex.Value);
+                return selected;
+            }
+            var candidates = makers.Where(m => m.kindDef == groupKind && m.commonality > 0f && HasWeightedOptions(m)).ToList();
+            if (!candidates.TryRandomElementByWeight(m => m.commonality, out var maker))
+                throw new ScenarioConfigurationException("Faction has no Combat GroupMaker with weighted options: " + template.FactionDef);
+            return maker;
+        }
+        private static List<PawnGenOptionWithXenotype> BuildFactionCandidates(List<PawnGenOption> options, SquadTemplate template, Faction faction)
+        {
+            var candidates = new List<PawnGenOptionWithXenotype>();
+            foreach (var option in options)
+            {
+                if (option.kind == null || !float.IsFinite(option.selectionWeight) || option.selectionWeight <= 0f) continue;
+                if (!ModsConfig.BiotechActive || !option.kind.RaceProps.Humanlike)
+                {
+                    candidates.Add(new PawnGenOptionWithXenotype(option, null, option.selectionWeight));
+                    continue;
+                }
+                var xenotypes = template.XenotypeMode == "inherit"
+                    ? PawnGenerator.XenotypesAvailableFor(option.kind, faction.def, faction).Where(x => x.Key.canGenerateAsCombatant).ToDictionary(x => x.Key, x => x.Value)
+                    : template.Xenotypes.ToDictionary(x => Xeno(x.Def), x => Weight(x.Weight));
+                if (xenotypes.Count == 0 && template.XenotypeMode == "inherit") xenotypes[XenotypeDefOf.Baseliner] = 1f;
+                foreach (var xenotype in xenotypes.Where(x => float.IsFinite(x.Value) && x.Value > 0f))
+                    candidates.Add(new PawnGenOptionWithXenotype(option, xenotype.Key, option.selectionWeight * xenotype.Value));
+            }
+            if (candidates.Count == 0) throw new ScenarioConfigurationException("Selected GroupMaker has no selectable PawnKind/xenotype options: " + template.Id);
+            return candidates;
+        }
+        private static List<TestSquadMemberSpec> AllocateFactionMembers(List<PawnGenOptionWithXenotype> candidates, decimal? budget, int count, string costMode, string squadId)
+        {
+            var specs = new List<TestSquadMemberSpec>();
+            var remaining = budget ?? 0;
+            while (budget.HasValue ? remaining > 0 : specs.Count < count)
+            {
+                var available = budget.HasValue
+                    ? candidates.Where(c => MemberCost(c, costMode) <= remaining).ToList()
+                    : candidates;
+                if (!available.TryRandomElementByWeight(c => c.SelectionWeight, out var choice)) break;
+                if (specs.Count == CombatRoster.MaxTeamMembers)
+                    throw new ScenarioConfigurationException("Squad exceeds 200 members; allocation is never silently clamped: " + squadId, "COMBAT_ROSTER_LIMIT_EXCEEDED");
+                specs.Add(Spec(choice));
+                if (budget.HasValue) remaining -= MemberCost(choice, costMode);
+            }
+            if (specs.Count == 0) throw new ScenarioConfigurationException("No faction PawnKind fits the configured combat-power budget: " + squadId, "COMBAT_BUDGET_TOO_SMALL");
+            if (!budget.HasValue && specs.Count != count) throw new ScenarioConfigurationException("Cannot fill exact squad count from the selected GroupMaker: " + squadId);
+            return specs;
+        }
+        private static decimal MemberCost(PawnGenOptionWithXenotype choice, string costMode)
+        {
+            var power = CombatRoster.Power(choice.Option.kind.combatPower);
+            return power * (costMode == "native" && choice.Xenotype != null ? CombatRoster.Power(choice.Xenotype.combatPowerFactor) : 1);
         }
         private static ResolvedCombatRoster ResolvePawnGroups(string id, SquadTemplate template, decimal? budget, int count, string costMode, int seed, Action<string> warning)
         {
