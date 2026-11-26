@@ -76,7 +76,11 @@ namespace LogSyncMod.AutoTest
             {
                 var width = UI.screenWidth; var height = UI.screenHeight;
                 var panelWidth = GroupCombatCamera.PanelWidth(width);
-                var panelHeight = GroupCombatCamera.CompactPanels ? Mathf.Min(286, height - GroupCombatPresentation.PanelTop - 170) : GroupCombatPresentation.PanelHeight(height);
+                var panelHeight = CombatFightService.OverlayTeamInfo == "detailed"
+                    ? GroupCombatPresentation.PanelHeight(height)
+                    : CombatFightService.OverlayTeamInfo == "compact"
+                        ? Mathf.Min(286, height - GroupCombatPresentation.PanelTop - 170)
+                        : Mathf.Min(112, height - GroupCombatPresentation.PanelTop - 170);
                 Widgets.DrawWindowBackground(new Rect(8, 34, width - 16, 70));
                 DrawText(new Rect(150, 36, width - 300, 38), snapshot.Name, width >= 1280 ? 24 : 18, TextAnchor.MiddleCenter);
                 DrawText(new Rect(150, 73, width - 300, 24), data.TimeLabel + (CombatFightService.Measuring && Find.TickManager.Paused ? "已暂停" : Label(CombatFightService.Phase)), 16, TextAnchor.MiddleCenter);
@@ -140,7 +144,8 @@ namespace LogSyncMod.AutoTest
         private static void DrawTeam(Rect rect, GroupCombatOverlayData.Team panel, int index)
         {
             if (CombatFightService.IsArena && !panel.HasCombatActivity) return;
-            if (GroupCombatCamera.CompactPanels) { DrawCompactTeam(rect, panel, index); return; }
+            if (CombatFightService.OverlayTeamInfo == "minimal") { DrawMinimalTeam(rect, panel, index); return; }
+            if (CombatFightService.OverlayTeamInfo == "compact") { DrawCompactTeam(rect, panel, index); return; }
             var team = panel.Result;
             Widgets.DrawBoxSolid(rect, new Color(.055f, .075f, .09f, .62f));
             var previousColor = GUI.color; GUI.color = new Color(.65f, .72f, .8f, .5f); Widgets.DrawBox(rect); GUI.color = previousColor;
@@ -190,30 +195,57 @@ namespace LogSyncMod.AutoTest
         {
             Widgets.DrawBoxSolid(rect, new Color(.055f, .075f, .09f, .78f));
             Widgets.DrawBoxSolid(new Rect(rect.x, rect.y, rect.width, 3), TeamColor(index));
-            GUI.BeginGroup(new Rect(rect.x + 8, rect.y + 8, rect.width - 16, rect.height - 16));
+            var scale = Mathf.Clamp(Mathf.Min(rect.width / 228f, rect.height / 286f), .95f, 1.3f);
+            var inset = 8 * scale;
+            GUI.BeginGroup(new Rect(rect.x + inset, rect.y + inset, rect.width - inset * 2, rect.height - inset * 2));
             var previous = GUI.color;
             try
             {
-                var width = rect.width - 16;
-                GUI.color = TeamColor(index); DrawText(new Rect(0, 0, width, 22), TeamLabel(index) + " · " + panel.Result.Name, 14); GUI.color = previous;
-                DrawText(new Rect(0, 27, width, 20), "存活 " + panel.Result.Alive + "/" + panel.Result.Total + " · 倒地 " + panel.Result.Downed, 12);
-                DrawText(new Rect(0, 49, width, 20), "输出 " + panel.Result.EnemyDamage.ToString("F0") + " · 承伤 " + panel.Result.DamageTaken.ToString("F0"), 12);
-                DrawText(new Rect(0, 79, width, 20), "输出前三", 12);
+                var width = rect.width - inset * 2;
+                var titleSize = 16 * scale;
+                var bodySize = 13 * scale;
+                var smallSize = 12 * scale;
+                GUI.color = TeamColor(index); DrawText(new Rect(0, 0, width, 25 * scale), TeamLabel(index) + " · " + panel.Result.Name, titleSize); GUI.color = previous;
+                DrawText(new Rect(0, 29 * scale, width, 22 * scale), "存活 " + panel.Result.Alive + "/" + panel.Result.Total, bodySize);
+                DrawText(new Rect(0, 53 * scale, width, 22 * scale), "倒地 " + panel.Result.Downed + " · 死亡 " + panel.Result.Dead, bodySize);
+                DrawText(new Rect(0, 77 * scale, width, 22 * scale), "输出 " + panel.Result.EnemyDamage.ToString("F0"), bodySize);
+                DrawText(new Rect(0, 101 * scale, width, 22 * scale), "承伤 " + panel.Result.DamageTaken.ToString("F0"), bodySize);
+                DrawText(new Rect(0, 131 * scale, width, 22 * scale), "输出前三", bodySize);
                 var rows = panel.Output.Take(3).ToArray();
                 for (var i = 0; i < rows.Length; i++)
                 {
-                    var row = rows[i]; var y = 105 + i * 35;
-                    DrawPortrait(new Rect(0, y, 26, 26), row.Unit);
-                    DrawHealthName(new Rect(30, y, width - 30, 17), row.Unit.Name, 11, row.Unit, Mathf.Min(38, width * .25f));
-                    DrawText(new Rect(30, y + 16, width - 30, 17), row.CompactValue, 11);
+                    var row = rows[i]; var y = (158 + i * 36) * scale;
+                    var icon = 28 * scale;
+                    DrawPortrait(new Rect(0, y, icon, icon), row.Unit);
+                    DrawHealthName(new Rect(34 * scale, y, width - 34 * scale, 20 * scale), row.Unit.Name, smallSize, row.Unit, Mathf.Min(48 * scale, width * .28f));
+                    DrawText(new Rect(34 * scale, y + 19 * scale, width - 34 * scale, 18 * scale), row.CompactValue, smallSize);
                 }
                 var focus = snapshot.Units.FirstOrDefault(u => u.Team == panel.Result.Id && (u.Id == GroupCombatCamera.FocusId || u.Id == GroupCombatCamera.OpponentId));
                 if (focus != null)
                 {
-                    var y = rect.height - 57;
-                    DrawText(new Rect(0, y, width, 18), focus.Id == GroupCombatCamera.FocusId ? "镜头关注" : "交战对手", 11);
-                    DrawHealthName(new Rect(0, y + 19, width, 18), focus.Name, 12, focus);
+                    var y = rect.height - inset * 2 - 48 * scale;
+                    DrawText(new Rect(0, y, width, 20 * scale), focus.Id == GroupCombatCamera.FocusId ? "镜头关注" : "交战对手", smallSize);
+                    DrawHealthName(new Rect(0, y + 21 * scale, width, 20 * scale), focus.Name, bodySize, focus);
                 }
+            }
+            finally { GUI.color = previous; GUI.EndGroup(); }
+        }
+        private static void DrawMinimalTeam(Rect rect, GroupCombatOverlayData.Team panel, int index)
+        {
+            Widgets.DrawBoxSolid(rect, new Color(.055f, .075f, .09f, .78f));
+            Widgets.DrawBoxSolid(new Rect(rect.x, rect.y, rect.width, 3), TeamColor(index));
+            var scale = Mathf.Clamp(Mathf.Min(rect.width / 228f, rect.height / 112f), .95f, 1.3f);
+            var inset = 8 * scale;
+            GUI.BeginGroup(new Rect(rect.x + inset, rect.y + inset, rect.width - inset * 2, rect.height - inset * 2));
+            var previous = GUI.color;
+            try
+            {
+                var width = rect.width - inset * 2;
+                var titleSize = 16 * scale;
+                var bodySize = 13 * scale;
+                GUI.color = TeamColor(index); DrawText(new Rect(0, 0, width, 25 * scale), TeamLabel(index) + " · " + panel.Result.Name, titleSize); GUI.color = previous;
+                DrawText(new Rect(0, 31 * scale, width, 22 * scale), "存活 " + panel.Result.Alive + "/" + panel.Result.Total, bodySize);
+                DrawText(new Rect(0, 57 * scale, width, 22 * scale), "倒地 " + panel.Result.Downed + " · 死亡 " + panel.Result.Dead, bodySize);
             }
             finally { GUI.color = previous; GUI.EndGroup(); }
         }

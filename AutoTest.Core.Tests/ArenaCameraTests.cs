@@ -18,7 +18,7 @@ internal static class ArenaCameraTests
         check(director.Shot == ArenaCameraMode.Battle, "camera enters the active battle region");
         var switches = director.Switches;
         for (var second = 0; second < 90; second++) Advance(1);
-        check(director.Switches == switches && !director.Compact, "unchanged combat never rotates shots or resizes panels");
+        check(director.Switches == switches, "unchanged combat never rotates camera shots");
         Advance(300, paused: true);
         check(director.Switches == switches, "pausing does not change camera decisions");
 
@@ -45,7 +45,7 @@ internal static class ArenaCameraTests
         check(director.Shot == ArenaCameraMode.Battle && director.Switches == switches,
             "single survivors and opponents crossing twelve cells never alternate close and follow shots");
         director.SetMode(ArenaCameraMode.Overview); Advance(0); Advance(60);
-        check(director.Shot == ArenaCameraMode.Overview && !director.Compact, "manual overview keeps the fixed panel layout");
+        check(director.Shot == ArenaCameraMode.Overview, "manual overview keeps the selected camera framing");
         director.SetMode(ArenaCameraMode.Close); Advance(0);
         check(director.Mode == ArenaCameraMode.Follow && director.Shot == ArenaCameraMode.Follow, "historical close mode uses the stable follow shot");
 

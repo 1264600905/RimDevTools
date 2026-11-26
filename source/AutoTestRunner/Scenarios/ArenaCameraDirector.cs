@@ -68,7 +68,6 @@ namespace LogSyncMod.AutoTest.Scenarios
         internal string OpponentId { get; private set; }
         internal string Reason { get; private set; } = "开场阵形";
         internal int Switches { get; private set; }
-        internal bool Compact => false;
         internal float MaximumSize => introductionStage >= 0 || Shot == ArenaCameraMode.Overview ? 28
             : Shot == ArenaCameraMode.Follow ? float.MaxValue : 20;
 

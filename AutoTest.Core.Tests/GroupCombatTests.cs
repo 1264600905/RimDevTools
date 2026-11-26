@@ -32,8 +32,14 @@ internal static class GroupCombatTests
             catch (ScenarioConfigurationException) { assert(true, message); }
         }
         var plan = Compile(Xml);
-        assert((string)XElement.Parse(plan.Cases.Single().Xml).Element("GroupCombat").Attribute("aiPolicy") == "assaultColony",
+        var compiledGroupCombat = XElement.Parse(plan.Cases.Single().Xml).Element("GroupCombat");
+        assert((string)compiledGroupCombat.Attribute("aiPolicy") == "assaultColony",
             "group combat defaults explicitly to the native immediate-assault policy");
+        assert((string)compiledGroupCombat.Element("Overlay").Attribute("teamInfo") == "detailed", "group combat defaults the team information panel to detailed");
+        foreach (var mode in new[] { "detailed", "compact", "minimal" })
+            assert((string)XElement.Parse(Compile(Xml.Replace("<GroupCombat>", "<GroupCombat><Overlay teamInfo='" + mode + "'/>")).Cases.Single().Xml)
+                .Element("GroupCombat").Element("Overlay").Attribute("teamInfo") == mode, "group combat accepts teamInfo=" + mode);
+        Reject(Xml.Replace("<GroupCombat>", "<GroupCombat><Overlay teamInfo='tiny'/>") , "group combat rejects unknown team information panel modes");
         foreach (var alias in new[] { "battle", "seekAndAttack", "native" })
             assert(Compile(Xml.Replace("<GroupCombat>", "<GroupCombat aiPolicy='" + alias + "'>")).Cases.Count == 1,
                 "legacy assault policy remains accepted: " + alias);

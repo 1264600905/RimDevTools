@@ -80,6 +80,10 @@ internal static class ArenaTests
         var plan = Parse(xml);
         check(plan.Tournaments[0].MatchmakingMode == "closestCount" && !plan.Tournaments[0].ClearCorpses && !plan.Tournaments[0].ClearDroppedItems,
             "legacy arena XML keeps count pairing and disables optional floor cleanup");
+        var minimalOverlay = Parse(xml.Replace("</Tournament>", "<Overlay teamInfo='minimal'/></Tournament>")).Tournaments.Single();
+        var overlayBattle = XElement.Parse(ArenaLoader.CompileBattle(minimalOverlay, preparedRosters, null, 0).Xml);
+        check((string)overlayBattle.Element("GroupCombat").Element("Overlay").Attribute("teamInfo") == "minimal",
+            "arena forwards the configured team information display mode to every battle");
         var configured = Parse(xml.Replace("</Tournament>", "<Matchmaking mode='random'/><Cleanup corpses='true' droppedItems='false'/></Tournament>")).Tournaments.Single();
         check(configured.MatchmakingMode == "random" && configured.ClearCorpses && !configured.ClearDroppedItems,
             "arena XML independently freezes matchmaking and cleanup flags");

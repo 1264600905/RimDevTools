@@ -325,7 +325,7 @@ namespace LogSyncMod.AutoTest.Scenarios
         private static readonly Dictionary<string, string> Attributes = new Dictionary<string, string> {
             {"GroupCombat", "start aiPolicy durationSeconds timeSpeed"}, {"End", "condition onTimeLimit onTie confirmationTicks"},
             {"Metrics", "damageBasis dpsBasis teamDpsBasis population meanPopulation includeZeroValues distributions detailLimit requireCompleteAttribution"},
-            {"Overlay", "enabled layout topUnitsPerMetric topTypesPerTeam humanPortrait refreshRealMilliseconds"}, {"Rankings", "damageDealt damageTaken"}, {"Summary", "dps damageTaken"},
+            {"Overlay", "enabled layout teamInfo topUnitsPerMetric topTypesPerTeam humanPortrait refreshRealMilliseconds"}, {"Rankings", "damageDealt damageTaken"}, {"Summary", "dps damageTaken"},
             {"Experiments", "swapSides"}, {"Seed", "value"}, {"Output", "purpose showAllParticipants width height"},
             {"TestSuite", "schemaVersion id packageId gameVersion"}, {"Case", "id name seed timeoutRealSeconds caseType kind"}, {"PawnTemplate", "id extends"},
             {"Coverage", "mode"}, {"Target", "packageId defType defName caseType variant"}, {"Evidence", "step"}, {"Row", "id"}, {"Param", "name value"},

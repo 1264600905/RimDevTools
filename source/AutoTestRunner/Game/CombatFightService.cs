@@ -73,6 +73,7 @@ namespace LogSyncMod.AutoTest
         private static int startTick, durationTicks, preparedFrame, roundIndex;
         private static float roundStartedRealtime, phaseStartedRealtime, lastFrameRealtime, pausedRealtime;
         private static bool overlayEnabled = true;
+        private static string overlayTeamInfo = "detailed";
         private static string aiPolicy;
         private static string phase;
         private static string pendingCapture, outputPath;
@@ -98,6 +99,7 @@ namespace LogSyncMod.AutoTest
         internal static ThinkResult KeepTacticalOrder(ThinkResult result, Pawn pawn) => tactics?.KeepOrder(result, pawn) ?? result;
         internal static string Phase => phase;
         internal static bool OverlayEnabled => overlayEnabled;
+        internal static string OverlayTeamInfo => overlayTeamInfo;
         internal static bool ShowingIntro => phase is "prepared" or "portraits" or "countdown" or "roster";
         internal static float? CameraIntroElapsed => IsArena && phase == "portraits" ? Time.realtimeSinceStartup - introStartedRealtime : null;
         internal static bool ShowingSettlement => phase == "finishing" && current?.ExecutionStatus == "completed";
@@ -259,6 +261,7 @@ namespace LogSyncMod.AutoTest
             Find.TickManager.CurTimeSpeed = TimeSpeed.Paused;
             var c = roundConfig = XElement.Parse(input.Xml); var scene = c.Element("Scene"); var settings = c.Element("GroupCombat");
             overlayEnabled = ScenarioLoader.A(settings.Element("Overlay"), "enabled", "true") == "true";
+            overlayTeamInfo = ScenarioLoader.A(settings.Element("Overlay"), "teamInfo", "detailed");
             aiPolicy = ScenarioLoader.A(settings, "aiPolicy", "assaultColony");
             durationTicks = (int)Math.Ceiling(ScenarioLoader.D(settings, "durationSeconds", 180) * 60);
             var output = c.Element("Output"); requestedWidth = ScenarioLoader.I(output, "width", 0); requestedHeight = ScenarioLoader.I(output, "height", 0);
