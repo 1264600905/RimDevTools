@@ -86,6 +86,7 @@ namespace LogSyncMod.AutoTest
         private static string lastCountdownLabel;
         private static readonly Dictionary<Pawn, Rot4> introFacing = new Dictionary<Pawn, Rot4>();
         internal static bool Busy => completed != null;
+        internal static bool BattleMapReady => Busy && Map != null && phase != "preparing";
         internal static bool Measuring => phase == "running";
         internal static Map Map => arena?.Map;
         internal static GroupCombatLedger Ledger => Measuring ? ledger : null;

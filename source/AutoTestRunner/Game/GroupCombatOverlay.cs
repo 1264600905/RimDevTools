@@ -79,7 +79,7 @@ namespace LogSyncMod.AutoTest
                 var panelHeight = CombatFightService.OverlayTeamInfo == "detailed"
                     ? GroupCombatPresentation.PanelHeight(height)
                     : CombatFightService.OverlayTeamInfo == "compact"
-                        ? Mathf.Min(286, height - GroupCombatPresentation.PanelTop - 170)
+                        ? Mathf.Min(240, height - GroupCombatPresentation.PanelTop - 170)
                         : Mathf.Min(112, height - GroupCombatPresentation.PanelTop - 170);
                 Widgets.DrawWindowBackground(new Rect(8, 34, width - 16, 70));
                 DrawText(new Rect(150, 36, width - 300, 38), snapshot.Name, width >= 1280 ? 24 : 18, TextAnchor.MiddleCenter);
@@ -195,7 +195,7 @@ namespace LogSyncMod.AutoTest
         {
             Widgets.DrawBoxSolid(rect, new Color(.055f, .075f, .09f, .78f));
             Widgets.DrawBoxSolid(new Rect(rect.x, rect.y, rect.width, 3), TeamColor(index));
-            var scale = Mathf.Clamp(Mathf.Min(rect.width / 228f, rect.height / 286f), .95f, 1.3f);
+            var scale = Mathf.Clamp(Mathf.Min(rect.width / 228f, rect.height / 240f), .95f, 1.3f);
             var inset = 8 * scale;
             GUI.BeginGroup(new Rect(rect.x + inset, rect.y + inset, rect.width - inset * 2, rect.height - inset * 2));
             var previous = GUI.color;
@@ -203,29 +203,18 @@ namespace LogSyncMod.AutoTest
             {
                 var width = rect.width - inset * 2;
                 var titleSize = 16 * scale;
-                var bodySize = 13 * scale;
+                var bodySize = 14 * scale;
                 var smallSize = 12 * scale;
                 GUI.color = TeamColor(index); DrawText(new Rect(0, 0, width, 25 * scale), TeamLabel(index) + " · " + panel.Result.Name, titleSize); GUI.color = previous;
-                DrawText(new Rect(0, 29 * scale, width, 22 * scale), "存活 " + panel.Result.Alive + "/" + panel.Result.Total, bodySize);
-                DrawText(new Rect(0, 53 * scale, width, 22 * scale), "倒地 " + panel.Result.Downed + " · 死亡 " + panel.Result.Dead, bodySize);
-                DrawText(new Rect(0, 77 * scale, width, 22 * scale), "输出 " + panel.Result.EnemyDamage.ToString("F0"), bodySize);
-                DrawText(new Rect(0, 101 * scale, width, 22 * scale), "承伤 " + panel.Result.DamageTaken.ToString("F0"), bodySize);
-                DrawText(new Rect(0, 131 * scale, width, 22 * scale), "输出前三", bodySize);
+                DrawText(new Rect(0, 29 * scale, width, 22 * scale), "存活 " + panel.Result.Alive + "/" + panel.Result.Total + "   倒地 " + panel.Result.Downed + " · 死亡 " + panel.Result.Dead, bodySize);
+                DrawComparedMetric(new Rect(0, 54 * scale, width, 25 * scale), "输出", panel.Result.EnemyDamage, OtherTeam(index)?.EnemyDamage, 17 * scale);
+                DrawComparedMetric(new Rect(0, 82 * scale, width, 25 * scale), "承伤", panel.Result.DamageTaken, OtherTeam(index)?.DamageTaken, 17 * scale);
+                DrawText(new Rect(0, 112 * scale, width, 22 * scale), "输出前三", bodySize);
                 var rows = panel.Output.Take(3).ToArray();
                 for (var i = 0; i < rows.Length; i++)
                 {
-                    var row = rows[i]; var y = (158 + i * 36) * scale;
-                    var icon = 28 * scale;
-                    DrawPortrait(new Rect(0, y, icon, icon), row.Unit);
-                    DrawHealthName(new Rect(34 * scale, y, width - 34 * scale, 20 * scale), row.Unit.Name, smallSize, row.Unit, Mathf.Min(48 * scale, width * .28f));
-                    DrawText(new Rect(34 * scale, y + 19 * scale, width - 34 * scale, 18 * scale), row.CompactValue, smallSize);
-                }
-                var focus = snapshot.Units.FirstOrDefault(u => u.Team == panel.Result.Id && (u.Id == GroupCombatCamera.FocusId || u.Id == GroupCombatCamera.OpponentId));
-                if (focus != null)
-                {
-                    var y = rect.height - inset * 2 - 48 * scale;
-                    DrawText(new Rect(0, y, width, 20 * scale), focus.Id == GroupCombatCamera.FocusId ? "镜头关注" : "交战对手", smallSize);
-                    DrawHealthName(new Rect(0, y + 21 * scale, width, 20 * scale), focus.Name, bodySize, focus);
+                    var row = rows[i]; var y = (130 + i * 29) * scale;
+                    DrawCompactUnitRow(new Rect(0, y, width, 27 * scale), row.Unit, row.CompactValue, smallSize, i);
                 }
             }
             finally { GUI.color = previous; GUI.EndGroup(); }
@@ -248,6 +237,35 @@ namespace LogSyncMod.AutoTest
                 DrawText(new Rect(0, 57 * scale, width, 22 * scale), "倒地 " + panel.Result.Downed + " · 死亡 " + panel.Result.Dead, bodySize);
             }
             finally { GUI.color = previous; GUI.EndGroup(); }
+        }
+        private static GroupCombatTeamResult OtherTeam(int index)
+            => snapshot.Teams.FirstOrDefault(team => team.Id != snapshot.Teams[index].Id);
+
+        private static void DrawComparedMetric(Rect rect, string label, double value, double? other, float size)
+        {
+            var color = !other.HasValue || value == other.Value ? Color.white
+                : value > other.Value ? new Color(.4f, 1f, .45f) : new Color(1f, .32f, .32f);
+            DrawText(new Rect(rect.x, rect.y, rect.width * .46f, rect.height), label, size);
+            var previous = GUI.color;
+            GUI.color = color;
+            DrawText(new Rect(rect.x + rect.width * .46f, rect.y, rect.width * .54f, rect.height), value.ToString("F0"), size, TextAnchor.MiddleRight);
+            GUI.color = previous;
+        }
+
+        private static void DrawCompactUnitRow(Rect rect, GroupCombatUnit unit, string value, float fontSize, int rowIndex)
+        {
+            Widgets.DrawBoxSolid(rect, rowIndex % 2 == 0 ? new Color(.10f, .13f, .15f, .82f) : new Color(.07f, .09f, .11f, .82f));
+            var icon = rect.height - 4;
+            DrawPortrait(new Rect(rect.x + 2, rect.y + 2, icon, icon), unit);
+            var textRect = new Rect(rect.x + icon + 7, rect.y + 1, rect.width - icon - 12, rect.height - 2);
+            var valueWidth = Mathf.Min(38, textRect.width * .32f);
+            var nameRect = new Rect(textRect.x, textRect.y, textRect.width - valueWidth - 5, textRect.height);
+            DrawName(nameRect, unit.Name, fontSize, unit.State);
+            var health = unit.State == "dead" ? 0 : Mathf.Clamp01(unit.HealthPercent);
+            var bar = new Rect(nameRect.x, nameRect.yMax - 4, nameRect.width, 3);
+            Widgets.DrawBoxSolid(bar, new Color(.12f, .14f, .15f, .95f));
+            if (health > 0) Widgets.DrawBoxSolid(new Rect(bar.x, bar.y, bar.width * health, bar.height), Color.Lerp(new Color(.94f, .22f, .2f), new Color(.3f, .85f, .4f), health));
+            DrawText(new Rect(textRect.xMax - valueWidth, textRect.y, valueWidth, textRect.height), value, fontSize, TextAnchor.MiddleRight);
         }
         private static void Ranking(float x, float width, float y, float rowHeight, float uiScale, string label, GroupCombatOverlayData.Rank[] rows, Color color, double maximum)
         {
@@ -307,8 +325,8 @@ namespace LogSyncMod.AutoTest
         {
             DrawCountdown(width, height);
             var availableWidth = width - panelWidth * 2 - 48;
-            var rosterWidth = Mathf.Min(960, availableWidth);
-            var rosterHeight = Mathf.Min(176, height / 2 - 210);
+            var rosterWidth = Mathf.Min(1440, availableWidth);
+            var rosterHeight = Mathf.Min(264, height / 2 - 210);
             var rosterTop = height / 2 + 100;
             DrawText(new Rect((width - rosterWidth) / 2, rosterTop - 32, rosterWidth, 28), "双方阵容", 20, TextAnchor.MiddleCenter);
             for (var i = 0; i < snapshot.Teams.Count; i++)
@@ -323,19 +341,20 @@ namespace LogSyncMod.AutoTest
             Widgets.DrawBoxSolid(rect, new Color(.035f, .05f, .07f, .85f));
             Widgets.DrawBoxSolid(new Rect(rect.x, rect.y, rect.width, 3), TeamColor(index));
             var previousColor = GUI.color; GUI.color = TeamColor(index);
-            DrawText(new Rect(rect.x + 8, rect.y + 8, rect.width - 16, 28), TeamLabel(index) + "  ·  " + team.Initial + " 名参战", Mathf.Min(20, rect.width / 10), TextAnchor.MiddleCenter); GUI.color = previousColor;
-            DrawText(new Rect(rect.x + 8, rect.y + 36, rect.width - 16, 24), team.Name, Mathf.Min(16, rect.width / 16), TextAnchor.MiddleCenter);
+            DrawText(new Rect(rect.x + 8, rect.y + 8, rect.width - 16, 42), TeamLabel(index) + "  ·  " + team.Initial + " 名参战", Mathf.Min(30, rect.width / 10), TextAnchor.MiddleCenter); GUI.color = previousColor;
+            DrawText(new Rect(rect.x + 8, rect.y + 50, rect.width - 16, 36), team.Name, Mathf.Min(24, rect.width / 16), TextAnchor.MiddleCenter);
             var groups = panel.IntroGroups;
             if (groups.Length == 0) return;
             var columns = Mathf.Min(groups.Length, Mathf.Max(1, Mathf.CeilToInt(Mathf.Sqrt(groups.Length * rect.width / (rect.height * 2)))));
             var rows = Mathf.CeilToInt((float)groups.Length / columns);
-            var cellWidth = (rect.width - 16) / columns; var cellHeight = (rect.height - 66) / rows;
+            var cellWidth = (rect.width - 16) / columns; var cellHeight = (rect.height - 94) / rows;
             for (var i = 0; i < groups.Length; i++)
             {
                 var cell = new Rect(rect.x + 8 + i % columns * cellWidth, rect.y + 64 + i / columns * cellHeight, cellWidth, cellHeight);
-                var icon = Mathf.Min(56, Mathf.Min(cell.height - 4, cell.width * .3f));
+                var icon = Mathf.Min(84, Mathf.Min(cell.height - 4, cell.width * .3f));
                 DrawPortrait(new Rect(cell.x, cell.y + (cell.height - icon) / 2, icon, icon), groups[i].Representative);
-                DrawName(new Rect(cell.x + icon + 5, cell.y + (cell.height - 24) / 2, cell.width - icon - 5, 24), groups[i].Label, Mathf.Clamp(cellWidth / 17, 10, 20), groups[i].Representative.State);
+                var labelHeight = Mathf.Min(36, cell.height - 4);
+                DrawName(new Rect(cell.x + icon + 8, cell.y + (cell.height - labelHeight) / 2, cell.width - icon - 8, labelHeight), groups[i].Label, Mathf.Clamp(cellWidth / 17, 10, 30), groups[i].Representative.State);
             }
         }
         private static void DrawSettlement(float width, float height, float panelWidth)

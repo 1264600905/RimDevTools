@@ -142,7 +142,11 @@ namespace LogSyncMod.AutoTest
                     tournament = null; Write();
                 }
                 backgroundCleanup?.Poll();
-                if (waiting || CombatFightService.Busy) return;
+                if (waiting || CombatFightService.Busy)
+                {
+                    if (waiting && CombatFightService.BattleMapReady) preBattle = null;
+                    return;
+                }
                 if (cancel) { Finish("cancelled", "Cancelled by user"); return; }
                 if (rulesActive)
                 {
@@ -188,20 +192,22 @@ namespace LogSyncMod.AutoTest
                 }
                 if (preBattle != null)
                 {
-                    Find.TickManager.CurTimeSpeed = TimeSpeed.Paused;
-                    if (preBattleStarted < 0) return;
-                    var elapsed = Time.realtimeSinceStartup - preBattleStarted;
-                    var ready = PresentationReady(preBattleCaptured && AutoTestViewComposite.IsReady(preBattle.Screenshot), elapsed, "pre-battle");
-                    if (ready && elapsed >= ArenaPresentation.PreBattleSeconds)
+                    if (!preBattle.Completed)
                     {
-                        preBattle.VisibleSeconds = elapsed;
-                        preBattle.SimulationTicks = Find.TickManager.TicksGame - preBattleStartTick;
-                        preBattle.Completed = true;
-                        preBattle = null;
-                        Find.TickManager.CurTimeSpeed = preBattleOriginalSpeed;
-                        Write();
+                        Find.TickManager.CurTimeSpeed = TimeSpeed.Paused;
+                        if (preBattleStarted < 0) return;
+                        var elapsed = Time.realtimeSinceStartup - preBattleStarted;
+                        var ready = PresentationReady(preBattleCaptured && AutoTestViewComposite.IsReady(preBattle.Screenshot), elapsed, "pre-battle");
+                        if (ready && elapsed >= ArenaPresentation.PreBattleSeconds)
+                        {
+                            preBattle.VisibleSeconds = elapsed;
+                            preBattle.SimulationTicks = Find.TickManager.TicksGame - preBattleStartTick;
+                            preBattle.Completed = true;
+                            Find.TickManager.CurTimeSpeed = preBattleOriginalSpeed;
+                            Write();
+                        }
+                        return;
                     }
-                    return;
                 }
                 if (postBattleMatch != null)
                 {
