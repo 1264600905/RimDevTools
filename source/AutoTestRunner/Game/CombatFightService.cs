@@ -47,8 +47,21 @@ namespace LogSyncMod.AutoTest
             originalSpeed = Find.TickManager.CurTimeSpeed;
             originalScreenWidth = Screen.width; originalScreenHeight = Screen.height; originalScreenMode = Screen.fullScreenMode;
             Screen.fullScreenMode = FullScreenMode.FullScreenWindow;
+            if (tournament != null)
+            {
+                AutoTestBootstrap.BeginArenaSpeedControl();
+                AutoTestBootstrap.SetCombatTimeSpeed(TimeSpeed.Paused);
+            }
             try { StartRound(fight); }
-            catch (Exception ex) { if (current != null) Freeze("error", "exception", ex.ToString()); else { completed = null; stateChanged = null; arenaEndRule = null; throw; } }
+            catch (Exception ex)
+            {
+                if (current != null) Freeze("error", "exception", ex.ToString());
+                else
+                {
+                    AutoTestBootstrap.EndArenaSpeedControl();
+                    completed = null; stateChanged = null; arenaEndRule = null; throw;
+                }
+            }
         }
         private static bool EvaluateEnd() => IsArena ? arenaEndRule.Evaluate(current, durationTicks) : endRule.Evaluate(current, durationTicks);
         private static GroupCombatRoundInput input;
@@ -73,12 +86,14 @@ namespace LogSyncMod.AutoTest
         private static int startTick, durationTicks, preparedFrame, roundIndex;
         private static float roundStartedRealtime, phaseStartedRealtime, lastFrameRealtime, pausedRealtime;
         private static bool overlayEnabled = true;
-        private static string overlayTeamInfo = "detailed";
+        private static string overlayTeamInfo = "compact";
         private static string aiPolicy;
         private static string phase;
         private static string pendingCapture, outputPath;
         private static bool captureRequested, polling, cancel, initialCaptureReady;
         private static bool verifyTickFailure;
+        private static bool automaticSpeedPromoted;
+        private static string configuredArenaSpeed;
         private static float introStartedRealtime;
         private static float battleStartedRealtime;
         private static float settlementStartedRealtime;
@@ -108,7 +123,7 @@ namespace LogSyncMod.AutoTest
             ? ShowingIntro || Measuring && Time.realtimeSinceStartup - battleStartedRealtime < .8f
                 ? ArenaPresentation.CountdownLabel(phase == "prepared" ? 0 : Time.realtimeSinceStartup - introStartedRealtime, arenaIntroSeconds) : ""
             : ShowingIntro ? GroupCombatPresentation.CountdownLabel(phase == "prepared" ? 0 : Time.realtimeSinceStartup - introStartedRealtime) : "";
-        internal static object Status => new { busy = Busy, phase, runId = activeRunId, caseId = input?.CaseId, mapId = Map?.uniqueID, elapsedTicks = current?.ElapsedTicks, totalEvents = current?.TotalEvents, speed = Find.TickManager?.CurTimeSpeed.ToString(), paused = Find.TickManager?.Paused, pausedRealtime, tactics = tactics?.Status, screen = new { width = Screen.width, height = Screen.height, windowWidth = Screen.windowWidth, windowHeight = Screen.windowHeight, fullScreen = Screen.fullScreen, mode = Screen.fullScreenMode.ToString() }, camera = GroupCombatCamera.Status, overlayInput = GroupCombatOverlay.InputVerification, artifacts = new { autoTestOutputPath = outputPath }, teamAi, actors = pawns.Select(p => new { id = p.Key, x = p.Value.Position.x, z = p.Value.Position.z, dead = p.Value.Dead, downed = p.Value.Downed, job = p.Value.CurJob?.def.defName, duty = p.Value.mindState?.duty?.def.defName }), rounds = GroupCombatService.Rounds.Select(r => new { r.CaseId, r.ExecutionStatus, r.CleanupComplete, r.EndReason, r.Error }) };
+        internal static object Status => new { busy = Busy, phase, runId = activeRunId, caseId = input?.CaseId, mapId = Map?.uniqueID, elapsedTicks = current?.ElapsedTicks, totalEvents = current?.TotalEvents, speed = Find.TickManager?.CurTimeSpeed.ToString(), automaticSpeedPromoted, configuredArenaSpeed, paused = Find.TickManager?.Paused, pausedRealtime, tactics = tactics?.Status, screen = new { width = Screen.width, height = Screen.height, windowWidth = Screen.windowWidth, windowHeight = Screen.windowHeight, fullScreen = Screen.fullScreen, mode = Screen.fullScreenMode.ToString() }, camera = GroupCombatCamera.Status, overlayInput = GroupCombatOverlay.InputVerification, artifacts = new { autoTestOutputPath = outputPath }, teamAi, actors = pawns.Select(p => new { id = p.Key, x = p.Value.Position.x, z = p.Value.Position.z, dead = p.Value.Dead, downed = p.Value.Downed, job = p.Value.CurJob?.def.defName, duty = p.Value.mindState?.duty?.def.defName }), rounds = GroupCombatService.Rounds.Select(r => new { r.CaseId, r.ExecutionStatus, r.CleanupComplete, r.EndReason, r.Error }) };
         internal static void Cancel() { if (Busy) cancel = true; }
         internal static void SetVerificationSpeed(string speed)
         {
@@ -177,6 +192,7 @@ namespace LogSyncMod.AutoTest
             try
             {
                 if (!Busy) return;
+                AutoTestBootstrap.MaintainCombatTimeSpeed();
                 GroupCombatOverlay.Frame();
                 if (cancel && phase != "finishing") Freeze("cancelled", "cancelled", null);
                 var now = Time.realtimeSinceStartup;
@@ -243,8 +259,12 @@ namespace LogSyncMod.AutoTest
             phase = "running"; startTick = Find.TickManager.TicksGame; current.ExecutionStatus = "running";
             battleStartedRealtime = Time.realtimeSinceStartup;
             var settingsNode = roundConfig.Element("GroupCombat");
-            Find.TickManager.CurTimeSpeed = ScenarioLoader.A(settingsNode, "timeSpeed", "normal") switch { "fast" => TimeSpeed.Fast, "superfast" => TimeSpeed.Superfast, _ => TimeSpeed.Normal };
-            CombatStartupProbe.SpeedSwitch(ScenarioLoader.A(settingsNode, "timeSpeed", "normal"), pawns.Values);
+            configuredArenaSpeed = ScenarioLoader.A(settingsNode, "timeSpeed", "normal");
+            var initialSpeed = configuredArenaSpeed switch { "fast" => TimeSpeed.Fast, "superfast" => TimeSpeed.Superfast, _ => TimeSpeed.Normal };
+            automaticSpeedPromoted = false;
+            AutoTestBootstrap.SetCombatTimeSpeed(initialSpeed);
+            Find.TickManager.CurTimeSpeed = initialSpeed;
+            CombatStartupProbe.SpeedSwitch(configuredArenaSpeed, pawns.Values);
             Trace("group.start", "configuredSpeed=" + ScenarioLoader.A(settingsNode, "timeSpeed", "normal") + "; actualSpeed=" + Find.TickManager.CurTimeSpeed + "; pauseAllowed=true");
             Log.Message("[LogSyncGroupCombat] START caseId=" + input.CaseId + " map=" + Map.uniqueID + " participants=" + pawns.Count);
             CombatStartupProbe.MeasurementStarted(measurementBegan);
@@ -262,7 +282,7 @@ namespace LogSyncMod.AutoTest
             Find.TickManager.CurTimeSpeed = TimeSpeed.Paused;
             var c = roundConfig = XElement.Parse(input.Xml); var scene = c.Element("Scene"); var settings = c.Element("GroupCombat");
             overlayEnabled = ScenarioLoader.A(settings.Element("Overlay"), "enabled", "true") == "true";
-            overlayTeamInfo = ScenarioLoader.A(settings.Element("Overlay"), "teamInfo", "detailed");
+            overlayTeamInfo = ScenarioLoader.A(settings.Element("Overlay"), "teamInfo", "compact");
             aiPolicy = ScenarioLoader.A(settings, "aiPolicy", "assaultColony");
             durationTicks = (int)Math.Ceiling(ScenarioLoader.D(settings, "durationSeconds", 180) * 60);
             var output = c.Element("Output"); requestedWidth = ScenarioLoader.I(output, "width", 0); requestedHeight = ScenarioLoader.I(output, "height", 0);
@@ -396,6 +416,19 @@ namespace LogSyncMod.AutoTest
                 // knockouts in that tick are evaluated together.
                 Refresh(ticks);
                 arenaMaintenance?.Tick(ticks);
+                if (IsArena && !automaticSpeedPromoted && ArenaPresentation.SpeedEscalationDue(ticks, durationTicks))
+                {
+                    automaticSpeedPromoted = true;
+                    var nextSpeed = ArenaPresentation.SpeedAfterSeventyPercent(configuredArenaSpeed, AutoTestBootstrap.SmartSpeedActiveForCombat);
+                    if (nextSpeed.Length > 0)
+                    {
+                        var speed = nextSpeed switch { "fast" => TimeSpeed.Fast, "superfast" => TimeSpeed.Superfast, "ultrafast" => TimeSpeed.Ultrafast, _ => TimeSpeed.Normal };
+                        AutoTestBootstrap.SetCombatTimeSpeed(speed);
+                        Find.TickManager.CurTimeSpeed = speed;
+                        Trace("arena.speed_escalation", "elapsedTicks=" + ticks + "; durationTicks=" + durationTicks + "; from=" + configuredArenaSpeed + "; to=" + nextSpeed + "; smartSpeed=" + AutoTestBootstrap.SmartSpeedActiveForCombat);
+                        Log.Message("[LogSyncArena] Automatic speed escalation at 70%: " + configuredArenaSpeed + " -> " + nextSpeed + " (" + ticks + "/" + durationTicks + " ticks)");
+                    }
+                }
                 if (EvaluateEnd()) { Freeze("completed", current.EndReason, null); return; }
                 tactics?.Tick(ticks);
                 if (ticks % 120 == 0) GroupCombatAiDiagnostics.Observe();
@@ -441,6 +474,7 @@ namespace LogSyncMod.AutoTest
             Trace("group.final_clock", "pausedRealSeconds=" + pausedRealtime.ToString("F3", CultureInfo.InvariantCulture));
             if (GroupCombatCamera.Active) Trace("group.camera", JsonSerializer.Serialize(GroupCombatCamera.Status));
             phase = "finishing"; settlementStartedRealtime = Time.realtimeSinceStartup; settlementStartTick = Find.TickManager.TicksGame;
+            AutoTestBootstrap.SetCombatTimeSpeed(TimeSpeed.Paused);
             Find.TickManager.CurTimeSpeed = TimeSpeed.Paused; RequestCapture("final"); Write();
         }
 
@@ -548,8 +582,11 @@ namespace LogSyncMod.AutoTest
             Log.Message("[LogSyncGroupCombat] ROUND caseId=" + current.CaseId + " status=" + current.ExecutionStatus + " ticks=" + current.ElapsedTicks + " events=" + current.TotalEvents + " cleanup=" + current.CleanupComplete);
             ledger = null; arena = null; backend = null; input = null; verifyTickFailure = false; pawns.Clear(); rosterIds.Clear(); exited.Clear(); factions.Clear(); teamAi.Clear(); pendingCapture = null; GroupCombatOverlay.Clear(); GroupCombatDamageCapture.Clear(); GroupCombatAiDiagnostics.Reset();
             Find.TickManager.CurTimeSpeed = originalSpeed;
+            AutoTestBootstrap.SetCombatTimeSpeed(null);
+            automaticSpeedPromoted = false; configuredArenaSpeed = null;
             var callback = completed; var result = current;
             if (Screen.width != originalScreenWidth || Screen.height != originalScreenHeight || Screen.fullScreenMode != originalScreenMode) Screen.SetResolution(originalScreenWidth, originalScreenHeight, originalScreenMode);
+            AutoTestBootstrap.EndArenaSpeedControl();
             completed = null; stateChanged = null; arenaEndRule = null; current = null; preexistingFactions = null; preexistingRelations = null; endRule = null; phase = "complete";
             callback(result);
         }

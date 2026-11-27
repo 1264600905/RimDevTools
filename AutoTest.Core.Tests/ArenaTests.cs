@@ -182,6 +182,14 @@ internal static class ArenaTests
         check(ArenaPresentation.CountdownLabel(0, 3) == "3" && ArenaPresentation.CountdownLabel(1, 3) == "2"
             && ArenaPresentation.CountdownLabel(2.99, 3) == "1" && ArenaPresentation.CountdownLabel(3, 3) == "开始",
             "arena countdown runs 3, 2, 1, Start without a hidden hold");
+        check(ArenaPresentation.SpeedAfterSeventyPercent("normal", false) == "fast"
+            && ArenaPresentation.SpeedAfterSeventyPercent("fast", false) == "superfast"
+            && ArenaPresentation.SpeedAfterSeventyPercent("superfast", false) == string.Empty
+            && ArenaPresentation.SpeedAfterSeventyPercent("superfast", true) == "ultrafast",
+            "arena speed escalation advances one tier at 70%, using SmartSpeed ultrafast only when available");
+        check(!ArenaPresentation.SpeedEscalationDue(699, 1000) && ArenaPresentation.SpeedEscalationDue(700, 1000)
+            && ArenaPresentation.SpeedEscalationDue(701, 1000) && !ArenaPresentation.SpeedEscalationDue(1000, 0),
+            "arena speed escalation triggers once its configured battle duration reaches 70 percent");
         check(ArenaPresentation.CapturePreparationElapsed(5, 3) == 2 && ArenaPresentation.CapturePreparationElapsed(5, 0) == 5
             && ArenaPresentation.CapturePreparationElapsed(3, 3) == 0 && ArenaPresentation.CapturePreparationElapsed(1, 3) == 0,
             "arena starts preparation during countdown, supports disabled overlap and clamps long leads to countdown start");

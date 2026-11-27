@@ -11,9 +11,10 @@ namespace LogSyncMod.AutoTest
         internal static readonly Color Challenger = new(.32f, .8f, .86f);
         internal static readonly Color Green = new(.49f, .9f, .65f);
         internal static float Scale => Mathf.Min(UI.screenWidth / 1600f, UI.screenHeight / 900f);
+        internal static float WidthScale => UI.screenWidth / 1600f;
+        internal static float HeightScale => UI.screenHeight / 900f;
         internal static Rect R(float x, float y, float w, float h) => new(
-            (UI.screenWidth - 1600 * Scale) / 2 + x * Scale,
-            (UI.screenHeight - 900 * Scale) / 2 + y * Scale, w * Scale, h * Scale);
+            x * WidthScale, y * HeightScale, w * WidthScale, h * HeightScale);
         internal static void Box(float x, float y, float w, float h, Color c) => Widgets.DrawBoxSolid(R(x, y, w, h), c);
         internal static void Label(float x, float y, float w, float h, string value, float size = 20, Color? color = null, TextAnchor anchor = TextAnchor.MiddleLeft)
         {

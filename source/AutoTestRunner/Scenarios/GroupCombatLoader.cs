@@ -99,9 +99,9 @@ namespace LogSyncMod.AutoTest.Scenarios
             if (!new[] { "true", "false" }.Contains(A(metrics, "requireCompleteAttribution", "false"))) Fail(metrics, path, "requireCompleteAttribution must be true/false");
             var overlay = settings.Element("Overlay");
             if (overlay == null) { overlay = new XElement("Overlay"); settings.Add(overlay); }
-            if (overlay.Attribute("teamInfo") == null) overlay.SetAttributeValue("teamInfo", "detailed");
+            if (overlay.Attribute("teamInfo") == null) overlay.SetAttributeValue("teamInfo", "compact");
             if (!new[] { "true", "false" }.Contains(A(overlay, "enabled", "true"))) Fail(overlay, path, "enabled must be true/false");
-            if (!new[] { "detailed", "compact", "minimal" }.Contains(A(overlay, "teamInfo", "detailed"))) Fail(overlay, path, "teamInfo must be detailed/compact/minimal");
+            if (!new[] { "detailed", "compact", "minimal" }.Contains(A(overlay, "teamInfo", "compact"))) Fail(overlay, path, "teamInfo must be detailed/compact/minimal");
             Fixed(overlay, "layout", "teamsLeftRight"); Fixed(overlay, "topUnitsPerMetric", "10"); Fixed(overlay, "topTypesPerTeam", "5"); Fixed(overlay, "humanPortrait", "renderedPawn"); Fixed(overlay, "refreshRealMilliseconds", "250");
             Fixed(overlay?.Element("Rankings"), "damageDealt", "true"); Fixed(overlay?.Element("Rankings"), "damageTaken", "true");
             Fixed(overlay?.Element("Summary"), "dps", "livingUnitLifetimeMean"); Fixed(overlay?.Element("Summary"), "damageTaken", "totalAndMeanPerLivingUnit");

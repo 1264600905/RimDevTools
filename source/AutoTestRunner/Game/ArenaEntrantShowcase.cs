@@ -259,8 +259,8 @@ namespace LogSyncMod.AutoTest
                 GUI.color = Color.white;
                 var w = UI.screenWidth; var h = UI.screenHeight;
                 var scale = Mathf.Min(w / 1600f, h / 900f);
-                var ox = (w - 1600 * scale) / 2; var oy = (h - 900 * scale) / 2;
-                Rect R(float x, float y, float width, float height) => new(ox + x * scale, oy + y * scale, width * scale, height * scale);
+                var widthScale = w / 1600f; var heightScale = h / 900f;
+                Rect R(float x, float y, float width, float height) => new(x * widthScale, y * heightScale, width * widthScale, height * heightScale);
                 Widgets.DrawBoxSolid(new Rect(0, 0, w, h), new Color(.025f, .035f, .055f));
                 Widgets.DrawBoxSolid(R(0, 0, 1600, 6), Gold);
                 Widgets.DrawBoxSolid(R(72, 66, 30, 3), Gold);

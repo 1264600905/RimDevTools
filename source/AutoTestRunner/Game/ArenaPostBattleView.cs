@@ -54,8 +54,8 @@ namespace LogSyncMod.AutoTest
             {
                 GUI.color = Color.white;
                 var w = UI.screenWidth; var h = UI.screenHeight;
-                Widgets.DrawBoxSolid(new Rect(8, 8, w - 16, h - 16), new Color(.025f, .035f, .05f, .99f));
-                Widgets.DrawBoxSolid(new Rect(8, 8, w - 16, 3), champion ? Gold : Identity(match.Winner));
+                Widgets.DrawBoxSolid(new Rect(0, 0, w, h), new Color(.025f, .035f, .05f, .99f));
+                Widgets.DrawBoxSolid(new Rect(0, 0, w, 3), champion ? Gold : Identity(match.Winner));
                 TextAt(new Rect(26, 19, w - 205, 34), champion ? "冠军诞生 · " + rosters[tournament.Champion].DisplayName : "赛后天梯 · " + MatchKind(match), 27, champion ? Gold : Color.white, TextAnchor.MiddleLeft);
                 Text.Font = GameFont.Small;
                 if (Widgets.ButtonText(new Rect(w - 150, 20, 122, 32), "取消擂台")) ArenaService.Cancel();

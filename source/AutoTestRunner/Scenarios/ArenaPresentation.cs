@@ -14,6 +14,18 @@ namespace LogSyncMod.AutoTest.Scenarios
         public const float PostBattleSeconds = 5.5f;
         public const float PreBattleSeconds = 5;
 
+        public static string SpeedAfterSeventyPercent(string configuredSpeed, bool smartSpeedActive)
+            => configuredSpeed switch
+            {
+                "normal" => "fast",
+                "fast" => "superfast",
+                "superfast" when smartSpeedActive => "ultrafast",
+                _ => string.Empty
+            };
+
+        public static bool SpeedEscalationDue(int elapsedTicks, int durationTicks)
+            => durationTicks > 0 && (long)elapsedTicks * 10 >= (long)durationTicks * 7;
+
         public static string MatchTitle(ArenaMatch match)
             => (match.Kind == "limitChallenge" ? "第 " + match.Round + " 组 · 第 " + (match.Level + 1) + " 档 · " + match.ChallengeValue?.ToString("0.##")
                 : match.Kind == "bossRoundRobin" ? "魔王轮战 · 第 " + match.Round + " 组"

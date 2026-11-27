@@ -24,6 +24,7 @@ namespace LogSyncMod.AutoTest
         private FieldInfo currentSettingField;
         private Type optionType;
         private bool pauseBypassActive;
+        private TimeSpeed managedTimeSpeed = TimeSpeed.Fast;
 
         public bool IsArmed => armed;
 
@@ -52,15 +53,16 @@ namespace LogSyncMod.AutoTest
             previousFastSpeed = Convert.ToSingle(fastSpeedField.GetValue(null));
             previousCurrentSetting = currentSettingField.GetValue(null);
             previousTimeSpeed = tickManager.CurTimeSpeed;
+            managedTimeSpeed = TimeSpeed.Fast;
 
             fastSpeedField.SetValue(null, AutoTestFastSpeedMultiplier);
             currentSettingField.SetValue(null, Enum.Parse(optionType, IgnoreOptionName));
-            tickManager.CurTimeSpeed = TimeSpeed.Fast;
+            tickManager.CurTimeSpeed = managedTimeSpeed;
             armed = true;
             details = "PackageId=" + PackageId +
                 " fastSpeed=" + previousFastSpeed + "->" + AutoTestFastSpeedMultiplier +
                 " currSetting=" + previousCurrentSetting + "->" + IgnoreOptionName +
-                " curTimeSpeed=" + previousTimeSpeed + "->Fast";
+                " curTimeSpeed=" + previousTimeSpeed + "->" + managedTimeSpeed;
             return true;
         }
 
@@ -104,9 +106,9 @@ namespace LogSyncMod.AutoTest
                 adjusted = true;
             }
 
-            if (tickManager.CurTimeSpeed != TimeSpeed.Fast)
+            if (tickManager.CurTimeSpeed != managedTimeSpeed)
             {
-                tickManager.CurTimeSpeed = TimeSpeed.Fast;
+                tickManager.CurTimeSpeed = managedTimeSpeed;
                 adjusted = true;
             }
 
@@ -121,6 +123,11 @@ namespace LogSyncMod.AutoTest
         public void SetPauseBypass(bool active)
         {
             pauseBypassActive = active;
+        }
+
+        public void SetManagedTimeSpeed(TimeSpeed speed)
+        {
+            managedTimeSpeed = speed;
         }
 
         public void Restore(out string details)
@@ -153,6 +160,7 @@ namespace LogSyncMod.AutoTest
                 " curTimeSpeedRestored=" + previousTimeSpeed;
             armed = false;
             pauseBypassActive = false;
+            managedTimeSpeed = TimeSpeed.Fast;
             fastSpeedField = null;
             currentSettingField = null;
             optionType = null;

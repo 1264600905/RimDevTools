@@ -27,6 +27,9 @@ namespace LogSyncMod.AutoTest
         private static TimeSpeed? previousTimeSpeed;
         private static bool runtimeGuardsArmed;
         private static bool runtimeGuardsUsingSmartSpeed;
+        private static bool arenaSpeedControlActive;
+        private static bool arenaOwnsSmartSpeedBridge;
+        private static TimeSpeed? combatTimeSpeedOverride;
         private static TimeSpeed? lastObservedGuardSpeed;
         private static bool? lastObservedPausedState;
         private static bool? lastObservedForcePausedState;
@@ -35,6 +38,57 @@ namespace LogSyncMod.AutoTest
         internal static bool TemporaryPauseBypass => temporaryPauseBypass;
         private static readonly AutoTestSmartSpeedBridge SmartSpeedBridge = new AutoTestSmartSpeedBridge();
         private static AutoTestRunner runner;
+
+        internal static bool SmartSpeedActiveForCombat => runtimeGuardsUsingSmartSpeed || arenaOwnsSmartSpeedBridge;
+
+        internal static void BeginArenaSpeedControl()
+        {
+            arenaSpeedControlActive = true;
+            if (runtimeGuardsUsingSmartSpeed)
+                return;
+            if (SmartSpeedBridge.IsArmed)
+            {
+                arenaOwnsSmartSpeedBridge = true;
+                return;
+            }
+            if (!SmartSpeedBridge.TryArm(out string details))
+            {
+                Log.Message("[LogSyncAutoTest] Arena SmartSpeed integration unavailable: " + details);
+                return;
+            }
+            arenaOwnsSmartSpeedBridge = true;
+            Log.Message("[LogSyncAutoTest] Arena armed SmartSpeed controls. " + details);
+        }
+
+        internal static void EndArenaSpeedControl()
+        {
+            arenaSpeedControlActive = false;
+            combatTimeSpeedOverride = null;
+            if (!arenaOwnsSmartSpeedBridge) return;
+            SmartSpeedBridge.Restore(out string details);
+            arenaOwnsSmartSpeedBridge = false;
+            Log.Message("[LogSyncAutoTest] Arena restored SmartSpeed controls. " + details);
+        }
+
+        internal static void MaintainCombatTimeSpeed()
+        {
+            if (!combatTimeSpeedOverride.HasValue) return;
+            if (runtimeGuardsUsingSmartSpeed || arenaOwnsSmartSpeedBridge)
+            {
+                SmartSpeedBridge.TryMaintain(out _);
+                return;
+            }
+            TickManager tickManager = Find.TickManager;
+            if (tickManager != null && tickManager.CurTimeSpeed != combatTimeSpeedOverride.Value)
+                tickManager.CurTimeSpeed = combatTimeSpeedOverride.Value;
+        }
+
+        internal static void SetCombatTimeSpeed(TimeSpeed? speed)
+        {
+            combatTimeSpeedOverride = speed;
+            if (runtimeGuardsUsingSmartSpeed || arenaOwnsSmartSpeedBridge)
+                SmartSpeedBridge.SetManagedTimeSpeed(speed ?? TimeSpeed.Fast);
+        }
 
         static AutoTestBootstrap()
         {
@@ -291,6 +345,7 @@ namespace LogSyncMod.AutoTest
             }
 
             runtimeGuardsUsingSmartSpeed = false;
+            combatTimeSpeedOverride = null;
             if (SmartSpeedBridge.TryArm(out string smartSpeedDetails))
             {
                 runtimeGuardsArmed = true;
@@ -324,16 +379,33 @@ namespace LogSyncMod.AutoTest
             if (!runtimeGuardsArmed)
             {
                 previousTimeSpeed = null;
+                if (!arenaSpeedControlActive) combatTimeSpeedOverride = null;
                 return;
             }
 
             if (runtimeGuardsUsingSmartSpeed)
             {
+                if (arenaSpeedControlActive && SmartSpeedBridge.IsArmed)
+                {
+                    runtimeGuardsArmed = false;
+                    runtimeGuardsUsingSmartSpeed = false;
+                    arenaOwnsSmartSpeedBridge = true;
+                    previousTimeSpeed = null;
+                    temporaryPauseBypass = false;
+                    SmartSpeedBridge.SetPauseBypass(false);
+                    lastObservedGuardSpeed = null;
+                    lastObservedPausedState = null;
+                    lastObservedForcePausedState = null;
+                    lastObservedSmartSpeedState = null;
+                    Log.Message("[LogSyncAutoTest] Arena retained SmartSpeed controls beyond runtime guard completion.");
+                    return;
+                }
                 SmartSpeedBridge.Restore(out string smartSpeedDetails);
                 Log.Message("[LogSyncAutoTest] Runtime guards restored SmartSpeed state: " + smartSpeedDetails);
                 previousTimeSpeed = null;
                 runtimeGuardsArmed = false;
                 runtimeGuardsUsingSmartSpeed = false;
+                combatTimeSpeedOverride = null;
                 temporaryPauseBypass = false;
                 SmartSpeedBridge.SetPauseBypass(false);
                 lastObservedGuardSpeed = null;
@@ -360,6 +432,7 @@ namespace LogSyncMod.AutoTest
             {
                 previousTimeSpeed = null;
                 runtimeGuardsArmed = false;
+                combatTimeSpeedOverride = null;
                 temporaryPauseBypass = false;
                 lastObservedGuardSpeed = null;
                 lastObservedPausedState = null;
@@ -485,7 +558,7 @@ namespace LogSyncMod.AutoTest
             bool paused = tickManager.Paused;
             bool forcePaused = tickManager.ForcePaused;
             TimeSpeed currentSpeed = tickManager.CurTimeSpeed;
-            TimeSpeed desiredSpeed = settings.autoTestUseFastSpeed ? TimeSpeed.Fast : TimeSpeed.Normal;
+            TimeSpeed desiredSpeed = combatTimeSpeedOverride ?? (settings.autoTestUseFastSpeed ? TimeSpeed.Fast : TimeSpeed.Normal);
 
             if (temporaryPauseBypass)
             {

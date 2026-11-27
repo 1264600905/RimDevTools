@@ -83,4 +83,31 @@
     <Presentation bracketSeconds="5" settlementSeconds="3"/>
     <Output width="1920" height="1080"/>
   </Tournament>
+  <Tournament id="AutoSpeedNormal" name="自动升档：Normal 到 Fast" seed="12345">
+    <testDefName>Arena_AutoSpeed_Normal</testDefName>
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all"><Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/></Scene>
+    <Roster mode="count" count="20"/>
+    <Entrants><Entrant id="wolves" pawnKind="Wolf_Timber"/><Entrant id="bears" pawnKind="Bear_Grizzly" count="8"/></Entrants>
+    <Battle timeSpeed="normal" durationSeconds="40" timeoutRealSeconds="240" confirmationTicks="60"/>
+    <TieBreak maxReplays="0"/>
+    <Output width="1920" height="1080"/>
+  </Tournament>
+  <Tournament id="AutoSpeedFast" name="自动升档：Fast 到 Superfast" seed="12345">
+    <testDefName>Arena_AutoSpeed_Fast</testDefName>
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all"><Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/></Scene>
+    <Roster mode="count" count="20"/>
+    <Entrants><Entrant id="wolves" pawnKind="Wolf_Timber"/><Entrant id="bears" pawnKind="Bear_Grizzly" count="8"/></Entrants>
+    <Battle timeSpeed="fast" durationSeconds="40" timeoutRealSeconds="240" confirmationTicks="60"/>
+    <TieBreak maxReplays="0"/>
+    <Output width="1920" height="1080"/>
+  </Tournament>
+  <Tournament id="AutoSpeedSuperfast" name="自动升档：Superfast 到 Smart Speed Ultrafast" seed="12345">
+    <testDefName>Arena_AutoSpeed_Superfast</testDefName>
+    <Scene type="mainMap" generatorDef="LogSync_AutoTestStudioMap" sizeX="100" sizeZ="100" revealFog="all"><Environment weather="Clear" temperature="21" roof="none" naturalSun="true"/></Scene>
+    <Roster mode="count" count="20"/>
+    <Entrants><Entrant id="wolves" pawnKind="Wolf_Timber"/><Entrant id="bears" pawnKind="Bear_Grizzly" count="8"/></Entrants>
+    <Battle timeSpeed="superfast" durationSeconds="40" timeoutRealSeconds="240" confirmationTicks="60"/>
+    <TieBreak maxReplays="0"/>
+    <Output width="1920" height="1080"/>
+  </Tournament>
 </ArenaSuite>

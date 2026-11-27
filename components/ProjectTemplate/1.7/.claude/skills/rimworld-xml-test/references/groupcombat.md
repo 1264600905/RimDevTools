@@ -129,7 +129,7 @@ Patches 顺序执行 SetAttribute(xpath/name/value)、SetText(xpath/value)、Add
 
 工具返回原始 artifacts，生成 `groupcombat_<runId>_Result.json`、`_Report.md` 和 `_Screenshots`；保留完整冻结输入、轮次/角色快照、队伍与逐单位指标、分布及测量限制，不写入既有回归结果。
 
-默认无边框全屏。Case 的 `<Output width="1280" height="720"/>` 仅设原始截图输出尺寸，不缩小游戏窗口；宽高一起填，分别 800—3840 / 600—2160。GroupCombat 内 `<Overlay enabled="false"/>` 可关榜单，`teamInfo="detailed"`（默认）显示完整信息，`teamInfo="compact"` 显示队名、存活/倒地/死亡、输出/承伤和输出前三，`teamInfo="minimal"` 只显示队名与存活/倒地/死亡。擂台三种面板均在首次战斗活动前隐藏，发生伤害、倒地或死亡后显示。相机跟踪只含本轮从未倒地/死亡且当前在场活单位，起身/复活后也不恢复资格，故镜头没跟随不等于角色没参战。
+默认无边框全屏。Case 的 `<Output width="1280" height="720"/>` 仅设原始截图输出尺寸，不缩小游戏窗口；宽高一起填，分别 800—3840 / 600—2160。GroupCombat 内 `<Overlay enabled="false"/>` 可关榜单，`teamInfo="compact"`（默认）显示队名、存活/倒地/死亡、输出/承伤和输出前三，`teamInfo="detailed"` 显示完整信息，`teamInfo="minimal"` 只显示队名与存活/倒地/死亡。擂台三种面板均在首次战斗活动前隐藏，发生伤害、倒地或死亡后显示。相机跟踪只含本轮从未倒地/死亡且当前在场活单位，起身/复活后也不恢复资格，故镜头没跟随不等于角色没参战。
 
 在聊天中分别说明执行完成与清理状态、胜负/轮数/种子/换边、指标口径、测量质量、实际日志及原始路径；不要把一轮胜负当作普适平衡结论或回归通过率。
 

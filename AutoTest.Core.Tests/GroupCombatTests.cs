@@ -35,7 +35,7 @@ internal static class GroupCombatTests
         var compiledGroupCombat = XElement.Parse(plan.Cases.Single().Xml).Element("GroupCombat");
         assert((string)compiledGroupCombat.Attribute("aiPolicy") == "assaultColony",
             "group combat defaults explicitly to the native immediate-assault policy");
-        assert((string)compiledGroupCombat.Element("Overlay").Attribute("teamInfo") == "detailed", "group combat defaults the team information panel to detailed");
+        assert((string)compiledGroupCombat.Element("Overlay").Attribute("teamInfo") == "compact", "group combat defaults the team information panel to compact");
         foreach (var mode in new[] { "detailed", "compact", "minimal" })
             assert((string)XElement.Parse(Compile(Xml.Replace("<GroupCombat>", "<GroupCombat><Overlay teamInfo='" + mode + "'/>")).Cases.Single().Xml)
                 .Element("GroupCombat").Element("Overlay").Attribute("teamInfo") == mode, "group combat accepts teamInfo=" + mode);
