@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="470" viewBox="0 0 1200 470" role="img" aria-labelledby="title desc">
+  <title id="title">Group combat comparison dimensions</title>
+  <desc id="desc">Two teams fight on a configured battlefield. The run records outcomes, damage, unit states and AI observations across controlled variations.</desc>
+  <defs>
+    <style>
+      .bg{fill:#f4f7fa}.title{font:700 25px 'Segoe UI',Arial,sans-serif;fill:#182636}.sub{font:15px 'Segoe UI',Arial,sans-serif;fill:#526273}
+      .panel{fill:#fff;stroke:#cbd5df;stroke-width:2}.h{font:700 17px 'Segoe UI',Arial,sans-serif;fill:#17283a}.b{font:14px 'Segoe UI',Arial,sans-serif;fill:#536477}.tiny{font:600 12px 'Segoe UI',Arial,sans-serif;fill:#fff}
+      .a{fill:#277da1}.bteam{fill:#d08c36}.field{fill:#e6ece4;stroke:#a9b8a4;stroke-width:2}.wall{fill:#8f9d8f}.cover{fill:#4d908e}.unitA{fill:#277da1}.unitB{fill:#d08c36}.road{stroke:#fff;stroke-width:14;stroke-dasharray:8 8}
+    </style>
+    <marker id="arrow2" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#536477"/></marker>
+  </defs>
+  <rect class="bg" width="1200" height="470" rx="12"/>
+  <text class="title" x="40" y="48">Group combat: controlled comparison</text>
+  <text class="sub" x="40" y="76">Configure the battle, observe native combat, then compare measured results.</text>
+  <rect class="panel" x="35" y="105" width="1130" height="325" rx="8"/>
+  <rect class="field" x="55" y="125" width="460" height="285" rx="5"/>
+  <path class="road" d="M270 135V400"/>
+  <rect class="wall" x="198" y="180" width="30" height="55" rx="3"/><rect class="wall" x="318" y="285" width="30" height="55" rx="3"/>
+  <rect class="cover" x="235" y="245" width="42" height="10" rx="3"/><rect class="cover" x="310" y="215" width="42" height="10" rx="3"/>
+  <circle class="unitA" cx="115" cy="190" r="10"/><circle class="unitA" cx="150" cy="225" r="10"/><circle class="unitA" cx="112" cy="280" r="10"/><circle class="unitA" cx="155" cy="325" r="10"/><circle class="unitA" cx="190" cy="365" r="10"/>
+  <circle class="unitB" cx="445" cy="190" r="10"/><circle class="unitB" cx="410" cy="225" r="10"/><circle class="unitB" cx="448" cy="280" r="10"/><circle class="unitB" cx="405" cy="325" r="10"/><circle class="unitB" cx="370" cy="365" r="10"/>
+  <rect x="75" y="145" width="92" height="25" rx="4" class="a"/><text class="tiny" x="88" y="162">Team A</text>
+  <rect x="405" y="145" width="92" height="25" rx="4" class="bteam"/><text class="tiny" x="418" y="162">Team B</text>
+  <text class="b" x="70" y="394">Roster / AI / map / formation / seed</text>
+  <path d="M535 267H585" stroke="#536477" stroke-width="2.5" marker-end="url(#arrow2)"/>
+  <g transform="translate(610 132)">
+    <text class="h" x="0" y="20">Observed battle data</text>
+    <rect class="panel" x="0" y="38" width="510" height="73" rx="6"/><circle cx="27" cy="74" r="13" fill="#c45b50"/><text class="h" x="54" y="68">Outcome and unit state</text><text class="b" x="54" y="91">Winner / draw, standing, downed, dead, escaped</text>
+    <rect class="panel" x="0" y="122" width="510" height="73" rx="6"/><circle cx="27" cy="158" r="13" fill="#d08c36"/><text class="h" x="54" y="152">Damage and output</text><text class="b" x="54" y="175">Settled damage, team DPS, unit lifetime DPS, taken damage</text>
+    <rect class="panel" x="0" y="206" width="510" height="73" rx="6"/><circle cx="27" cy="242" r="13" fill="#4d908e"/><text class="h" x="54" y="236">AI and engagement traces</text><text class="b" x="54" y="259">Observed duties/jobs and projectile launches with distance</text>
+  </g>
+  <text class="sub" x="55" y="451">A launched projectile is not a hit. Read attribution quality and compare side swaps or multiple seeds before drawing conclusions.</text>
+</svg>

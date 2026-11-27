@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="430" viewBox="0 0 1200 430" role="img" aria-labelledby="title desc">
+  <title id="title">External XML scenario workflow</title>
+  <desc id="desc">Define a scene and actors, prepare a baseline, perform a real game action, observe its effects, then inspect the result.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#536477"/></marker>
+    <style>
+      .bg{fill:#f4f7fa}.title{font:700 25px 'Segoe UI',Arial,sans-serif;fill:#182636}.sub{font:15px 'Segoe UI',Arial,sans-serif;fill:#526273}
+      .card{fill:#fff;stroke:#cbd5df;stroke-width:2}.num{font:700 14px 'Segoe UI',Arial,sans-serif;fill:#fff}.head{font:700 17px 'Segoe UI',Arial,sans-serif;fill:#17283a}.body{font:14px 'Segoe UI',Arial,sans-serif;fill:#536477}
+      .line{stroke:#536477;stroke-width:2.5;fill:none;marker-end:url(#arrow)}.tag{font:600 12px 'Segoe UI',Arial,sans-serif;fill:#fff}
+    </style>
+  </defs>
+  <rect class="bg" width="1200" height="430" rx="12"/>
+  <text class="title" x="40" y="48">External XML regression</text>
+  <text class="sub" x="40" y="76">A case connects controlled setup to an observed in-game outcome.</text>
+  <g transform="translate(35 125)">
+    <rect class="card" width="205" height="220" rx="8"/>
+    <circle cx="28" cy="30" r="15" fill="#277da1"/><text class="num" x="24" y="35">1</text>
+    <text class="head" x="20" y="72">Scene and actors</text>
+    <text class="body" x="20" y="103"><tspan x="20">Map, weather, faction</tspan><tspan x="20" dy="22">Pawn templates, gear,</tspan><tspan x="20" dy="22">buildings and targets</tspan></text>
+    <rect x="20" y="176" width="91" height="24" rx="4" fill="#277da1"/><text class="tag" x="30" y="193">TestSuite</text>
+  </g>
+  <path class="line" d="M245 235H273"/>
+  <g transform="translate(280 125)">
+    <rect class="card" width="205" height="220" rx="8"/>
+    <circle cx="28" cy="30" r="15" fill="#4d908e"/><text class="num" x="24" y="35">2</text>
+    <text class="head" x="20" y="72">Prepare and baseline</text>
+    <text class="body" x="20" y="103"><tspan x="20">Check prerequisites</tspan><tspan x="20" dy="22">Capture initial state</tspan><tspan x="20" dy="22">Checkpoint before action</tspan></text>
+    <rect x="20" y="176" width="104" height="24" rx="4" fill="#4d908e"/><text class="tag" x="30" y="193">Require / Wait</text>
+  </g>
+  <path class="line" d="M490 235H518"/>
+  <g transform="translate(525 125)">
+    <rect class="card" width="205" height="220" rx="8"/>
+    <circle cx="28" cy="30" r="15" fill="#d08c36"/><text class="num" x="24" y="35">3</text>
+    <text class="head" x="20" y="72">Real game action</text>
+    <text class="body" x="20" y="103"><tspan x="20">Cast, attack, craft,</tspan><tspan x="20" dy="22">equip, damage, transfer</tspan><tspan x="20" dy="22">or change a condition</tspan></text>
+    <rect x="20" y="176" width="105" height="24" rx="4" fill="#d08c36"/><text class="tag" x="30" y="193">Native action</text>
+  </g>
+  <path class="line" d="M735 235H763"/>
+  <g transform="translate(770 125)">
+    <rect class="card" width="205" height="220" rx="8"/>
+    <circle cx="28" cy="30" r="15" fill="#7a6ea8"/><text class="num" x="24" y="35">4</text>
+    <text class="head" x="20" y="72">Observe and assert</text>
+    <text class="body" x="20" y="103"><tspan x="20">State transition, target</tspan><tspan x="20" dy="22">health, inventory, recipe</tspan><tspan x="20" dy="22">output or timed effect</tspan></text>
+    <rect x="20" y="176" width="133" height="24" rx="4" fill="#7a6ea8"/><text class="tag" x="30" y="193">Wait / Success</text>
+  </g>
+  <path class="line" d="M980 235H1008"/>
+  <g transform="translate(1015 125)">
+    <rect class="card" width="150" height="220" rx="8"/>
+    <circle cx="28" cy="30" r="15" fill="#c45b50"/><text class="num" x="24" y="35">5</text>
+    <text class="head" x="20" y="72">Review</text>
+    <text class="body" x="20" y="103"><tspan x="20">JSON, trace,</tspan><tspan x="20" dy="22">screenshot and</tspan><tspan x="20" dy="22">actual coverage</tspan></text>
+    <rect x="20" y="176" width="86" height="24" rx="4" fill="#c45b50"/><text class="tag" x="30" y="193">Artifacts</text>
+  </g>
+  <text class="sub" x="40" y="390">A completed step is not proof of an effect. Assert the state change the test is intended to verify.</text>
+</svg>

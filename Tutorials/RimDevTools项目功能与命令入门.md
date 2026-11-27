@@ -2,7 +2,7 @@
 
 **简体中文** | [English](RimDevTools项目功能与命令入门.en.md)
 
-本文对应 **RimDevTools 1.5.3.0**。当前正式包支持 RimWorld 1.6、1.7；外部 XML 场景回归、群战与擂台后端目前仅支持 **1.7**。下载入口见 [1.5.3.0 发布页](https://github.com/1264600905/RimDevTools/releases/tag/v1.5.3.0)。
+本文对应 **RimDevTools 1.5.10.0**。当前正式包支持 RimWorld 1.6、1.7；外部 XML 场景回归、群战与擂台后端目前仅支持 **1.7**。下载入口见 [1.5.10.0 发布页](https://github.com/1264600905/RimDevTools/releases/tag/v1.5.10.0)。
 
 本文按实际开发顺序组织：先认识工具和准备项目，再查参考、部署、收集日志与测试；需要 AI 协作时阅读 Skills 和 MCP，准备发布时再进入创意工坊流程。首次阅读可以顺着章节推进，遇到具体问题时也可以按下面的导航直接查阅。
 
@@ -59,13 +59,13 @@ RimDevTools 就是为这些日常工作准备的一套 Windows 开发工具。�
 
 ### 2.1 放置项目并修改配置
 
-1.5.3 发布页提供三个成品 ZIP，按用途选择一个即可：
+1.5.10.0 发布页提供三个成品 ZIP，按用途选择一个即可：
 
 | 下载包 | 适用情况 |
 | --- | --- |
-| `RimDevTools-1.5.3.0-Template-RimWorld-1.6.zip` | 新建 RimWorld 1.6 模组项目 |
-| `RimDevTools-1.5.3.0-Template-RimWorld-1.7.zip` | 新建 RimWorld 1.7 模组项目 |
-| `RimDevTools-1.5.3.0-Tools.zip` | 已有项目接入工具，不需要示例模组工程 |
+| `RimDevTools-1.5.10.0-Template-RimWorld-1.6.zip` | 新建 RimWorld 1.6 模组项目 |
+| `RimDevTools-1.5.10.0-Template-RimWorld-1.7.zip` | 新建 RimWorld 1.7 模组项目 |
+| `RimDevTools-1.5.10.0-Tools.zip` | 已有项目接入工具，不需要示例模组工程 |
 
 三个包都包含正式工具和 Codex、Claude 两套各 7 个完整 Skill。Tools 包还包含两版工具 Mod、ILSpy、许可证和配置参考，但不包含示例模组、项目 README、`.gitignore` 或 MCP 客户端配置。发布页另外两项 `Source code` 是 GitHub 自动生成的源码下载，日常使用无需下载。当前不再提供 `Tools-Full`、旧版兼容包或独立 `.sha256` 附件。
 
@@ -114,7 +114,7 @@ RimDevTools 的命令执行结果通常会输出为一个 JSON 对象，也就�
 
 `--check` 查询官方最新正式版；`--dry-run` 会下载并校验 Tools 包，预览文件变化和冲突，但不提交替换。正式 `update` 交给独立助手完成文件更新，返回 `scheduled` 仅表示已接收任务；应继续查询 `update status`，看到 `succeeded` 后再运行 `--version` 核对版本。
 
-**1.5.2 及更早版本不能直接自动更新到 1.5.3，需要手动安装一次。** 1.5.3 已支持完整 Tools 包的更新校验，后续可继续使用新版更新器。源码仓库或没有可信发行清单的旧安装也不属于自动更新对象。
+**1.5.2 及更早版本不能直接自动更新到 1.5.3，需要手动安装一次。** 1.5.3 起支持完整 Tools 包的更新校验，后续版本可继续使用新版更新器。源码仓库或没有可信发行清单的旧安装也不属于自动更新对象。
 
 更新器核对 GitHub 附件的 SHA-256、大小、平台、Runtime 和游戏版本，更新 EXE、私有工具载荷及两份核心 `rimdevtools` Skill。项目源码、资源、配置值、工坊身份、原模板身份及其他 Skill 保留；受管理文件被本地修改或删除时，会以 `UPDATE_CONFLICT` 停止整次更新。配置迁移保留注释和未知字段，只按已支持规则补齐缺失项。其他 Skill 随完整包分发，不会由自动更新新增或替换。
 
@@ -453,7 +453,7 @@ quick 和 auto 可以通过 `--isolated-desktop` 选择单独的 Windows 桌面�
 
 内置测试适合快速检查受支持内容；需要验证“施放后目标获得某个状态”“这一套配装能完成某个动作”等具体机制时，可以编写外部 XML。当前后端只支持 1.7，测试输入不需要注册为游戏 Def，也不要放进 `Defs`、`Patches` 或模组发布内容中。
 
-普通回归使用 `<TestSuite>`，由 Case 描述场景、角色、准备动作、等待和断言。支持角色模板、精确配装、地图环境、显式参数矩阵及截图；测试自身的稳定名称使用 `<testDefName>`。可从 `.agents/skills/rimworld-xml-test/assets` 或 `.claude/skills/rimworld-xml-test/assets` 的示例开始，将修改后的输入保存在项目的 `Tests/Scenarios` 等测试源码目录。
+普通回归使用 `<TestSuite>`，由 Case 描述场景、角色、准备动作、等待、观测与断言。支持角色模板、精确配装、地图环境、显式参数矩阵、截图以及对普通内置用例的明确覆盖替代。测试自身的稳定名称使用 `<testDefName>`。可从 `.agents/skills/rimworld-xml-test/assets` 或 `.claude/skills/rimworld-xml-test/assets` 的示例开始，将修改后的输入保存在项目的 `Tests/Scenarios` 等测试源码目录。
 
 先用随包原版示例理解入口。以下命令直接读取已有文件，第一条仅静态校验，第二条才启动游戏：
 
@@ -462,15 +462,33 @@ quick 和 auto 可以通过 `--isolated-desktop` 选择单独的 Windows 桌面�
 .\.tools\RimDevTools.exe test run --mode auto --scenario-only --scenario-path ".agents/skills/rimworld-xml-test/assets/basic.autotest.xml" --test-name Example_PawnAlive --batch-size 1 --timeout-seconds 360
 ```
 
-`--validate-only` 检查 XML 结构、字段、引用、矩阵和已有约束，不启动游戏、不部署、不创建运行产物；不要同时附加 `--deploy`、批量或超时等执行参数。成功读取 `result.validation`，失败读取 `error.details.validation`，其中的诊断尽可能指出文件、行列、节点和修改建议。静态通过不能证明 Def 已加载、反射接口可用或游戏机制正确，实际运行仍会自动先做同一项预校验。
+`--validate-only` 检查 XML 结构、字段、引用、矩阵、观测契约及覆盖声明，不启动游戏、不部署、不创建运行产物；不要同时附加 `--deploy`、批量或超时等执行参数。成功读取 `result.validation`，失败读取 `error.details.validation`，其中的诊断尽可能指出文件、行列、节点和修改建议。验证器在发现第一个错误时停止编译，修正后重新校验。静态通过不能证明 Def 已加载、反射接口可用或游戏机制正确，实际运行仍会自动先做同一项预校验。
 
 `--scenario-only` 只运行外部回归；省略它时，可与普通 `--scope`、`--defname` 测试混合。`--test-name` 选择外部规则，`--defname` 选择普通定义，两者用途不同。`--scenario-path` 可指向单文件或目录；目录只读取当前层的 `*.autotest.xml`，不递归。一条规则可能展开成多个矩阵实例，仍需核对批量选择和实际执行数，不能按 XML 文件数量判断覆盖。
 
-可用动作、断言和覆盖替代规则按同包 `rimworld-xml-test` 的参考编写，当前没有 `--mode xml`。测试目标属于自己的模组时，使用真实 PackageId 和定义；需要验证刚修改的源码时，另外加入 `--deploy`。示例只证明示例条件，不代表自己的机制已被覆盖。
+可用动作、观测、断言和覆盖替代规则按同包 `rimworld-xml-test` 的参考编写，当前没有 `--mode xml`。观测和断言必须对应 XML 中声明的检查目标，不能只靠步骤执行成功就推断效果成立。测试目标属于自己的模组时，使用真实 PackageId 和定义；需要验证刚修改的源码时，另外加入 `--deploy`。示例只证明示例条件，不代表自己的机制已被覆盖。
+
+#### 外部 XML 回归能测试哪些内容
+
+![外部 XML 回归从场景准备到效果观察的流程](image/xml-scenario-workflow.svg)
+
+XML 用例由作者组合场景、角色与动作，不是只能运行预设清单。当前后端可准备 Pawn、建筑、物品、尸体、阵营和地形区域，并通过角色模板设置年龄、外观、异种、基因、技能、特性、能力、健康状态、服装和装备。场景可声明天气、温度、屋顶、日照、迷雾和地图尺寸；要求模组或 DLC 已加载时可写明依赖。
+
+| 测试方向 | 可覆盖的实际内容 |
+| --- | --- |
+| Def 与基础状态 | Pawn/物品/建筑/地形存在与生成、存活/死亡/倒地/站立、数量、位置、健康百分比、需求和资源水平、装备/穿戴、技能/特性/能力、Hediff、控制者与组件状态 |
+| 技能与战斗动作 | 原生 Ability 施放及目标/位置、原生近战或远程攻击、炮塔操作者与索敌、受击伤害结算、状态添加/移除与持续效果观察 |
+| 生产与物品生命周期 | 指定配方的真实材料消耗和产物、物品创建/转移/入背包/掉落/腐烂、Pawn 死亡后尸体及复活生命周期、机械绑定 |
+| 静态画面与外观 | 人形/动物/机械/异族、服装、武器、建筑、植物生长阶段、地形、生命阶段、发型/头部/体型、基因与异种的视图和三方向截图；整套装备组合也可生成 LoadoutView |
+| 组合回归 | Require、Wait、Checkpoint、连续条件和效果转变观察，明确参数矩阵，以及对内置普通测试的补充或替代覆盖 |
+
+目前识别的专用 `caseType` 包括 `TurretPocketMap`、`RangedWeaponPocketMap`、`MeleeWeaponPocketMap`、`ApparelCombat`、`AnimalCombat`、`MechanoidCombat`、`AlienCombat`、`SkillPocketMap`、`RecipeExecution`、`HediffEffect`、`CorpseLifecycle`、`ThingBehavior`、`LoadoutView`，以及 `HumanoidThreeView`、`AnimalThreeView`、`MechanoidThreeView`、`AlienThreeView`、`ApparelThreeView`、`WeaponThreeView`、`PlantGrowthView`、`BuildingView`、`TerrainPatchView`、`PawnLifeStageThreeView`、`HairThreeView`、`HeadTypeThreeView`、`BodyTypeThreeView`、`GeneThreeView` 和 `XenotypeThreeView`。普通用例省略时使用 `ExternalScenario`。类型名只声明预期测试类别，仍须提供匹配的角色、准备动作和判据；例如“装备武器”不等于武器造成伤害，“技能被接受”也不等于效果已经出现。`GroupCombat` 只能通过独立群战模式运行，普通 auto 不会执行它。
+
+可编排的常用动作包括 `CastAbility`、`Attack`、`ManTurret`、`ApplyDamage`、`Equip`、`DropEquipment`、`AddHediff`、`RemoveHediff`、`ExecuteRecipe`、`CreateThing`、`TransferThing`、`DropInventory`、`SetRot`、`Resurrect`、`Kill`、`Destroy`、`BindMech` 和受约束的 `DebugAction`。观察条件可组合 `All`、`Any`、`Not`，检查 Hediff、对象身份变化、角色状态、技能/能力、健康、需求、资源、位置、环境、物品数量、组件燃料/电量/供电和机械控制关系。截图用于人工核对外观，不能单独证明功能逻辑正确。
 
 ### 7.16 群战：比较两队实际交战表现
 
-groupcombat 使用 `TestSuite` 中的 `kind="groupCombat"` Case，定义 A/B 两队、地图、阵型和战斗参数。可以固定人数，也可以通过 `combatPowerBudget` 按战力配兵；混编队伍通过 `SquadTemplates` 定义。当前每队初始最多 200 人，只支持双方评测。
+groupcombat 使用 `TestSuite` 中的 `kind="groupCombat"` Case，定义 A/B 两队、地图、阵型和战斗参数。可以固定人数，也可以通过 `combatPowerBudget` 按战力配兵；混编队伍通过 `SquadTemplates` 定义，支持原版编队和显式成员权重/固定名单等模板。每队总人数上限为 200，双方同场最多 400 人。除原生 `assaultColony` 外，还可为双方分别配置固守或勾引等战术 AI；战场可选开阔地、掩体、山脊、山谷、冰川和废墟街区，并配置尺寸、障碍密度与出生区净空。群战按固定种子复现队伍和战场，换边比较时沿用相同队伍名单。
 
 ```powershell
 .\.tools\RimDevTools.exe test run --mode groupcombat --scenario-path ".agents/skills/rimworld-xml-test/assets/groupcombat.autotest.xml" --test-name Example_WolvesVsBears --validate-only
@@ -481,11 +499,24 @@ groupcombat 使用 `TestSuite` 中的 `kind="groupCombat"` Case，定义 A/B 两
 
 所有游戏测试应串行运行，等本轮结束并完成配置恢复后再开始下一轮。CLI 的 `--timeout-seconds` 限制整轮进程，包含多轮生成、交战和清理；示例预算应按实际 XML 的轮次和时限调整。
 
-默认使用原生即时进攻控制器 `assaultColony`，保留原生索敌、攻击和模组行为。每轮独立生成并清理地图、角色和临时阵营，可配置换边和多个种子进行比较。读取结果时分别核对胜负、执行与清理状态、伤害归属和测量质量；某方获胜不等于全部伤害都能完整归因，更不等于所有技能都已验证。
+默认使用原生即时进攻控制器 `assaultColony`，保留原生索敌、攻击和模组行为，也可以按队伍选择 `defendPoint` 或 `lure`。每轮独立生成并清理地图、角色和临时阵营，可配置换边和多个种子进行比较。读取结果时分别核对胜负、执行与清理状态、伤害归属和测量质量；某方获胜不等于全部伤害都能完整归因，更不等于所有技能都已验证。
+
+#### 群战可以比较哪些效果
+
+![群战对比中的战场变量和可观察结果](image/group-combat-comparison.svg)
+
+群战回答的是“这些队伍在指定地图、人数/战力、阵型、AI 与时限下，实际交战过程和结果如何”。它适合比较：
+
+- **胜负与持续战斗能力**：每轮胜方/败方/平局、结束原因、站立/倒地/死亡/逃离/移除人数，以及倒地、死亡、复活、新加入单位对结算的影响。
+- **输出和承伤**：引擎结算的对敌伤害、团队 DPS、个人生命周期 DPS、累计输出、承伤均值、排名和分布；友伤、自伤、环境伤害、护盾吸收及未知来源会分开记录或标注测量限制。
+- **交战方式**：原生 AI 的 duty/job、成功发射的武器与发射距离，结合伤害记录判断是否发生有效交战。`defendPoint` 可比较守点范围和接敌，`lure` 可观察诱饵与远程支援队形，`assaultColony` 则保留原版即时进攻及模组 ThinkTree 行为。
+- **队伍与战场变量**：固定人数或按 combatPower 配兵，原生派系编队/混编名单、异种和配装、手写阵型、换边和多种子，以及开阔地、掩体、山脊、峡谷、冰川和街区地图之间的表现差异。
+
+群战不会自动验证某个 Def 的全部功能效果，也不执行普通 Case 的 `Success`、Coverage 或任意 XML 断言。AI job/ duty 和成功发射仅说明对应行为被观察到，不能单独证明命中、技能效果、平衡性或因果关系；应结合逐单位伤害、状态变化和多种子/换边结果分析。测量质量为 partial 时，应按结果字段标明归因限制；只有明确要求完整归因且实际达到时才可作完整归因结论。
 
 ### 7.17 擂台：多队淘汰赛与展示
 
-arena 使用独立的 `<ArenaSuite>`，每个 Tournament 配置参赛者、地图、统一人数或战力预算，以及战斗和展示规则。支持 2—64 队，参赛项可以是单一 PawnKind，也可以引用混编模板。擂台只接受稳定的 `testDefName` 选择，不用群战 caseId、普通 Case 或 `--scenario-only`。
+arena 使用独立的 `<ArenaSuite>`，每个 Tournament 配置参赛者、地图、统一人数或战力预算，以及战斗和展示规则。支持 2—64 队，参赛项可以是单一 PawnKind，也可以引用混编模板。擂台提供单败淘汰 `knockout`、魔王轮战 `bossRoundRobin` 和极限挑战 `limitChallenge` 三种赛制。后两种分别围绕多个挑战者挑战魔王、逐档增加人数或战力预算直到首次获胜来组织赛程。可配置原生进攻、固守或勾引战术 AI，也可配置队伍各自的 AI；地图类型与群战一致。擂台只接受稳定的 `testDefName` 选择，不用群战 caseId、普通 Case 或 `--scenario-only`。
 
 ```powershell
 .\.tools\RimDevTools.exe test run --mode arena --scenario-path ".agents/skills/rimworld-xml-test/assets/arena.autotest.xml" --test-name Example_AnimalArena --validate-only
@@ -494,7 +525,7 @@ arena 使用独立的 `<ArenaSuite>`，每个 Tournament 配置参赛者、地�
 
 整个赛事可能包含多场战斗、重赛和展示。省略 `--timeout-seconds` 时工具会估算默认总预算；若显式指定，应覆盖完整赛程，而非只按单场战斗时长填写。胜利质量按保全、压制、交换和速度评分，用于展示与后续奇数轮次的低分加赛；平局按配置重赛，耗尽后保留未决结果，不随机指定冠军。
 
-当前擂台的常用 XML 配置如下，节点放在 `Tournament` 下；这是配置片段，不是完整赛事文件：
+淘汰赛可在 `Tournament` 下配置配对与清理；以下片段不是完整赛事文件：
 
 ```xml
 <!-- 默认按人数接近配对；改为 random 按赛事种子随机配对 -->
@@ -502,6 +533,16 @@ arena 使用独立的 `<ArenaSuite>`，每个 Tournament 配置参赛者、地�
 <!-- 两个清理开关独立，省略时均为 false -->
 <Cleanup corpses="true" droppedItems="true"/>
 ```
+
+赛事格式通过 `Tournament` 的 `format` 属性选择。下面是极限挑战的最小结构示意，实际需要补齐 `ArenaSuite`、场景、Roster 和 Entrants 等必需配置：
+
+```xml
+<Tournament id="challenge" format="limitChallenge" seed="-1">
+  <Challenges initialCount="10" growthMode="multiply" multiplier="2" maxValue="200"/>
+</Tournament>
+```
+
+`limitChallenge` 也可以增长 CP 预算，或把增长方式设为固定加法；每项挑战可设置自己的 PawnKind、初始值和上限。`bossRoundRobin` 的参赛配置通过角色 `role="boss"` 与 `role="challenger"` 区分。详见同包 XML Skill 的 ArenaSuite 字段参考。工作台生成的完整 XML 更适合作为这些配置的起点。
 
 随机模式可通过赛事 `seed` 复现抽签；初始奇数队的资格赛也采用所选匹配方式，之后的奇数晋级轮次仍遵循低分加赛规则。开启清理后，每 300 ticks 检查战斗地图：尸体死亡、地面物品被首次发现后至少等待 300 ticks 才清理，正在使用的目标和已识别的待复活尸体暂缓处理。角色穿戴、背包和建筑不受此开关清理；预放在地面的物资也会被清理，依赖尸体或地面补给的测试应按目标关闭对应项。
 
@@ -513,6 +554,12 @@ arena 使用独立的 `<ArenaSuite>`，每个 Tournament 配置参赛者、地�
 - **混编展示轮播**：开场卡片有多种可切换构成时，每 1 个现实秒循环切换；手动箭头会重置轮播计时，单构成固定展示。
 
 原主地图清理只作用于本轮测试环境；日历调整可能影响依赖绝对时间的模组机制。赛前卡片与最终前五展示用于观察外观和参赛构成，最终判断仍应读取原始 `arena_<runId>_Result.json`、报告与截图，核对每场尝试、实际名单、测量质量、冠军及清理完成状态。群战和擂台结果不并入普通回归通过率。
+
+### 7.18 游戏内擂台工作台：编辑并导出赛事
+
+不想从空白 XML 开始时，可在 1.7 游戏内打开 LogSyncMod 的擂台工作台。工作台可浏览已加载的 PawnKind、按派系或条件筛选参赛对象，编辑队伍、战力或人数、赛事规则、地图、阵型、展示和战斗选项，并保存本地预设。它也支持从已有 ArenaSuite 导入、调整后导出 XML；导出的文件仍需通过 `--validate-only`，再用 `test run --mode arena` 执行。
+
+擂台工作台属于游戏内配置编辑入口，不会代替 CLI 的 XML 预校验、事务化测试和结果校验。需要重复实验时，给赛事设置固定种子；需要每次随机抽签时使用 `seed="-1"`，CLI 会在本轮计划中冻结实际种子供赛程复用。工作台提供的预设和导出位置以界面显示路径为准。
 
 ## 八、DebugAction：在游戏内准备与验证
 
@@ -762,7 +809,7 @@ RimSage 在此工作流中承担只读研究角色，资料范围主要是官方
 
 ## 十一、创意工坊：查询、订阅与发布
 
-当功能验证完成、准备发布时，可以使用 `steamworkshops` 这一组命令连接创意工坊。它包含 `search`、`subscribe`、`status`、`upload` 和 `edit` 五个入口。它们利用本机 Steam 和游戏相关库工作，需要相应环境可用；不需要为了查询或上传专门启动 RimWorld。
+当功能验证完成、准备发布时，可以使用 `steamworkshops` 这一组命令连接创意工坊。它包含 `search`、`subscribe`、`status`、`upload`、`edit` 和 `changelog` 六个入口。它们利用本机 Steam 和游戏相关库工作，需要相应环境可用；不需要为了查询或上传专门启动 RimWorld。1.7 当前使用的 Steamworks 原生接口有新旧版本差异，1.5.10.0 更新了接口适配并保留旧接口兼容；若 Steamworks 初始化或工坊查询失败，结合 `doctor` 与命令诊断检查 Steam 客户端、游戏库和对应游戏版本。
 
 ### 11.1 搜索条目、订阅与查看状态
 
@@ -778,7 +825,12 @@ RimSage 在此工作流中承担只读研究角色，资料范围主要是官方
 .\.tools\RimDevTools.exe steamworkshops upload --dry-run
 ```
 
-确认计划后，去掉 `--dry-run` 执行上传；也可以使用 `deploy --upload`，在一条命令中先部署再上传。首次发布会新建私有条目，便于先检查；更新已有条目时保留远端页面元数据。需要填写本次更新说明时，可以提供 `--change-note` 或 UTF-8 说明文件。
+确认计划后，提供本次变更说明并去掉 `--dry-run` 执行上传；也可以使用 `deploy --upload`，在一条命令中先部署再上传。上传内容时必须明确传入 `--change-note` 或 UTF-8 的 `--change-note-file`。如果本次确实不发布改动日志，使用 `--change-note ""` 明确表示留空。首次发布会新建私有条目，便于先检查；更新已有条目时保留远端页面元数据。预演会检查部署收据、上传目标和变更说明，但不提交内容。
+
+```powershell
+.\.tools\RimDevTools.exe steamworkshops upload --dry-run --change-note "修复兼容问题并更新测试说明"
+.\.tools\RimDevTools.exe steamworkshops upload --change-note-file "Tests/ReleaseNotes.txt"
+```
 
 ### 11.3 编辑页面资料
 
@@ -789,6 +841,18 @@ RimSage 在此工作流中承担只读研究角色，资料范围主要是官方
 工坊页面数字 ID 通常保存在 `About/PublishedFileId.txt` 中，工具用它识别已有条目。写入时还会核验所有者权限。遇到发布超时，应先查询远端状态：超时表示本次等待没有拿到确定结果，远端可能已经完成提交。
 
 如果要单独排查 Steamworks 初始化和查询连接，还可以使用只读诊断入口 `workshop probe`。日常发布使用前面的 `steamworkshops upload`。
+
+### 11.5 查看并验证工坊变更历史
+
+`steamworkshops changelog` 通过工坊网页读取变更历史，不会上传内容，也不能编辑历史记录。默认按项目的 `PublishedFileId.txt` 查询最新一页；可以传 ID 或链接、切换页面语言和页码。上传时工具会保存本次说明及提交基线，之后可用 `--verify` 比对远端显示的最新变更记录：
+
+```powershell
+.\.tools\RimDevTools.exe steamworkshops changelog
+.\.tools\RimDevTools.exe steamworkshops changelog --verify --wait --timeout-seconds 120
+.\.tools\RimDevTools.exe steamworkshops changelog 1234567890 --language schinese --page 2
+```
+
+也可以用 `--change-note` 或 `--change-note-file` 提供期望文本，并用 `--record` 限定返回记录 ID。`--wait` 会在设定时限内有限重试读取。页面尚未更新、读取失败或 Steam 返回的记录与预期不符时，应按 JSON 中的状态判断；校验命令是只读操作，不会重新提交或修改工坊内容。
 
 ## 十二、命令速查与常见使用路线
 
@@ -826,6 +890,7 @@ RimSage 在此工作流中承担只读研究角色，资料范围主要是官方
 | 查看工坊条目、权限与下载状态 | `steamworkshops status` |
 | 上传已完整部署的内容 | `steamworkshops upload` |
 | 修改工坊标题、简介、图片和可见性 | `steamworkshops edit` |
+| 查询并核对工坊变更历史 | `steamworkshops changelog` |
 | 连续执行普通部署和上传 | `deploy --upload` |
 | 单独诊断 Steamworks 初始化和查询 | `workshop probe` |
 

@@ -2,7 +2,7 @@
 
 [简体中文](RimDevTools项目功能与命令入门.md) | **English**
 
-This guide covers **RimDevTools 1.5.3.0**. The current release packages support RimWorld **1.6 and 1.7**. External XML regression scenarios, group combat and arena tournaments currently require **1.7**. Download the packages from the [1.5.3.0 release page](https://github.com/1264600905/RimDevTools/releases/tag/v1.5.3.0).
+This guide covers **RimDevTools 1.5.10.0**. The current release packages support RimWorld **1.6 and 1.7**. External XML regression scenarios, group combat and arena tournaments currently require **1.7**. Download the packages from the [1.5.10.0 release page](https://github.com/1264600905/RimDevTools/releases/tag/v1.5.10.0).
 
 The chapters follow a typical development workflow: prepare a project, research references, deploy changes, collect logs and test. The later chapters explain AI skills, RimSage MCP and Workshop publishing. Commands and limitations reflect the current implementation; an older executable may expose fewer features. Run `--version` before following examples from a newer release.
 
@@ -51,13 +51,13 @@ The CLI is a program operated through text commands. The complete examples below
 
 ### 2.1 Choose a package and configure the project
 
-The 1.5.3.0 release provides three ZIP packages:
+The 1.5.10.0 release provides three ZIP packages:
 
 | Package | Intended use |
 | --- | --- |
-| `RimDevTools-1.5.3.0-Template-RimWorld-1.6.zip` | Start a RimWorld 1.6 mod project |
-| `RimDevTools-1.5.3.0-Template-RimWorld-1.7.zip` | Start a RimWorld 1.7 mod project |
-| `RimDevTools-1.5.3.0-Tools.zip` | Add the tools to an existing project without the example mod |
+| `RimDevTools-1.5.10.0-Template-RimWorld-1.6.zip` | Start a RimWorld 1.6 mod project |
+| `RimDevTools-1.5.10.0-Template-RimWorld-1.7.zip` | Start a RimWorld 1.7 mod project |
+| `RimDevTools-1.5.10.0-Tools.zip` | Add the tools to an existing project without the example mod |
 
 All three include the tools and complete sets of seven skills for both Codex and Claude. The Tools Package also includes both versions of the tool Mod, ILSpy, licenses and a configuration reference. It omits the example project, project README, `.gitignore` and MCP client configuration files. GitHub's separate source downloads are for source-code use. The release no longer supplies a `Tools-Full` package, compatibility packages or separate `.sha256` attachments.
 
@@ -125,7 +125,7 @@ For a supported release installation, run these commands in sequence:
 
 `--check` queries the latest official stable release. `--dry-run` downloads and verifies the Tools ZIP and previews changes and conflicts without committing replacements. A real update hands work to a separate helper. **`scheduled` means accepted, not installed.** Continue checking `update status` until it reaches a terminal state; after `succeeded`, check `--version`.
 
-**Updaters from 1.5.2 and earlier cannot directly update to 1.5.3: install manually once.** Source checkouts and installations without a trusted release manifest also require manual installation. The 1.5.3 updater understands verification of the complete Tools Package.
+**Updaters from 1.5.2 and earlier cannot directly update to 1.5.3: install manually once.** Starting with 1.5.3, the updater supports verification of the complete Tools Package. Source checkouts and installations without a trusted release manifest also require manual installation.
 
 The updater verifies the GitHub asset SHA-256 digest, size, platform, runtime and game compatibility. It manages the executable, private tool payload and the core `rimdevtools` skill for both clients. Project source, resources, configuration values, Workshop identity, original template identity and other skills are preserved. Local changes or deletions of managed files stop the entire update with `UPDATE_CONFLICT`. Supported configuration migration preserves comments and unknown fields while adding missing supported entries.
 
@@ -447,7 +447,7 @@ Use the actual returned paths. Read logs, results, screenshots and test saves on
 
 External XML is useful for specific expectations such as “casting this ability applies the requested condition” or “this loadout can complete the action.” The current backend requires 1.7. These files are test inputs, not game Defs: keep them outside `Defs`, `Patches` and published mod content.
 
-An ordinary `<TestSuite>` contains Cases describing scenes, actors, preparation, waits and assertions. It supports pawn templates, exact loadouts, map conditions, explicit parameter matrices and screenshots. `<testDefName>` provides a stable test identifier. Start from the examples under `.agents/skills/rimworld-xml-test/assets` or `.claude/skills/rimworld-xml-test/assets`; modified test sources can live under a project directory such as `Tests/Scenarios`.
+An ordinary `<TestSuite>` contains Cases describing scenes, actors, preparation, waits, observations and assertions. It supports pawn templates, exact loadouts, map conditions, explicit parameter matrices, screenshots and explicit replacement coverage for ordinary built-in cases. `<testDefName>` provides a stable test identifier. Start from the examples under `.agents/skills/rimworld-xml-test/assets` or `.claude/skills/rimworld-xml-test/assets`; modified test sources can live under a project directory such as `Tests/Scenarios`.
 
 These commands use an existing packaged example. The first only validates it; the second launches the game:
 
@@ -456,13 +456,31 @@ These commands use an existing packaged example. The first only validates it; th
 .\.tools\RimDevTools.exe test run --mode auto --scenario-only --scenario-path ".agents/skills/rimworld-xml-test/assets/basic.autotest.xml" --test-name Example_PawnAlive --batch-size 1 --timeout-seconds 360
 ```
 
-`--validate-only` checks structure, fields, references, matrices and supported constraints without deployment, a game launch or run-artifact allocation. It requires a version-2 configuration targeting 1.7 but does not need a configured game or installed test host. Do not combine it with execution flags such as `--deploy`, batch size or timeout.
+`--validate-only` checks structure, fields, references, matrices, observation contracts and coverage declarations without deployment, a game launch or run-artifact allocation. The compiler stops at the first error, so correct it and validate again. It requires a version-2 configuration targeting 1.7 but does not need a configured game or installed test host. Do not combine it with execution flags such as `--deploy`, batch size or timeout.
 
 Read `result.validation`, or `error.details.validation` on validation failure. Diagnostics include source locations and correction suggestions where available. The compiler stops at the first error; correct it and validate again. Static success does not prove that Defs are loaded, reflected APIs exist or gameplay behaves correctly. Real runs perform the same preflight automatically.
 
 `--scenario-only` selects only external regression cases; omit it to mix with ordinary scope/DefName tests. `--test-name` selects external rules, whereas `--defname` selects ordinary definitions. A scenario path can be a file or a directory; directories load only top-level `*.autotest.xml` files without recursion. Matrices can expand one rule into several cases, so check actual selection and execution counts.
 
-Use the packaged `rimworld-xml-test` references for supported actions, assertions and coverage replacement rules. There is no `--mode xml`. Use your real PackageId and definitions for your own scenarios, and add `--deploy` when verifying source changes. A bundled example establishes only its own example conditions.
+Use the packaged `rimworld-xml-test` references for supported actions, observations, assertions and coverage replacement rules. Observation conditions must match the declared check, and successful step execution alone does not prove the expected effect. There is no `--mode xml`. Use your real PackageId and definitions for your own scenarios, and add `--deploy` when verifying source changes. A bundled example establishes only its own example conditions.
+
+#### What external XML regression scenarios can test
+
+![External XML regression from scenario setup to effect observation](image/xml-scenario-workflow.svg)
+
+XML cases let authors combine scenes, actors and actions rather than only select a preset list. The current backend can prepare pawns, buildings, items, corpses, factions and terrain areas. Pawn templates can configure age, appearance, xenotype, genes, skills, traits, abilities, health conditions, apparel and equipment. Scenes can specify weather, temperature, roofs, sunlight, fog and map size, and can declare required mods or DLC.
+
+| Test area | Supported examples |
+| --- | --- |
+| Definitions and state | Pawn/item/building/terrain existence and spawning, alive/dead/downed/standing state, counts, positions, health percentage, needs and resources, equipment/apparel, skills/traits/abilities, Hediffs, controllers and component state |
+| Abilities and combat actions | Native ability casts on targets or cells, native melee/ranged attacks, turret operators and targeting, settled damage, adding/removing conditions and observing timed effects |
+| Production and item lifecycle | Real recipe ingredient consumption and products, item creation/transfer/inventory/drop/rot, pawn death and corpse/resurrection lifecycle, mech binding |
+| Static views and appearance | Humanlike/animal/mechanoid/alien pawns, apparel, weapons, buildings, plant growth stages, terrain, life stages, hair/head/body types, genes and xenotypes; three-direction images and complete loadout views |
+| Composed regression | Require, Wait, Checkpoint, continuous conditions and effect transitions, explicit parameter matrices, and supplemental or replacement coverage for built-in ordinary tests |
+
+The current specialized `caseType` values are `TurretPocketMap`, `RangedWeaponPocketMap`, `MeleeWeaponPocketMap`, `ApparelCombat`, `AnimalCombat`, `MechanoidCombat`, `AlienCombat`, `SkillPocketMap`, `RecipeExecution`, `HediffEffect`, `CorpseLifecycle`, `ThingBehavior`, `LoadoutView`, `HumanoidThreeView`, `AnimalThreeView`, `MechanoidThreeView`, `AlienThreeView`, `ApparelThreeView`, `WeaponThreeView`, `PlantGrowthView`, `BuildingView`, `TerrainPatchView`, `PawnLifeStageThreeView`, `HairThreeView`, `HeadTypeThreeView`, `BodyTypeThreeView`, `GeneThreeView` and `XenotypeThreeView`. Ordinary cases default to `ExternalScenario`. A type name declares the intended test category, but still requires matching actors, setup actions and assertions. Equipping a weapon does not prove it dealt damage, and an accepted ability cast does not prove its effect occurred. `GroupCombat` runs only through the separate group-combat mode and is not executed by ordinary auto discovery.
+
+Common actions include `CastAbility`, `Attack`, `ManTurret`, `ApplyDamage`, `Equip`, `DropEquipment`, `AddHediff`, `RemoveHediff`, `ExecuteRecipe`, `CreateThing`, `TransferThing`, `DropInventory`, `SetRot`, `Resurrect`, `Kill`, `Destroy`, `BindMech` and constrained `DebugAction`. Conditions can combine `All`, `Any` and `Not`, and inspect Hediffs, object identity transitions, actor state, skills/abilities, health, needs, resources, position, environment, item quantities, component fuel/power and mech control. Screenshots support visual inspection and do not prove functional behavior on their own.
 
 ### 7.16 Group combat: compare two teams
 
@@ -475,13 +493,26 @@ Group combat uses `kind="groupCombat"` Cases in a `<TestSuite>` to configure tea
 
 An explicit `--test-name` is required and can select a stable testDefName, full caseId or unique display name; repeat it for multiple selections. Do not use `--scenario-only`. Ordinary auto discovery never executes group-combat rules. Keep regression, group-combat and arena inputs separate to avoid mixing incompatible directory inputs.
 
-The default native `assaultColony` controller retains normal target selection, attacks and mod behavior. Each round creates and cleans up its map, pawns and temporary factions. Multiple seeds and side swaps support comparisons.
+The default native `assaultColony` controller retains normal target selection, attacks and mod behavior. Teams can also choose `defendPoint` or `lure`. Battlefields include open ground, cover, ridges, valleys, glaciers and urban ruins, with configurable size, feature density and spawn clearance. Each round creates and cleans up its map, pawns and temporary factions. Multiple seeds and side swaps reuse the same frozen roster for comparisons.
 
 Run sessions sequentially and allow configuration restoration between them. `--timeout-seconds` covers the whole run, including all rounds, generation and cleanup; adjust the example budget to your actual scenario. Read victory, execution, cleanup, damage attribution and measurement-quality results separately. A winner does not establish complete damage attribution or complete ability coverage.
 
+#### What group combat can compare
+
+![Battlefield variables and observable group-combat results](image/group-combat-comparison.svg)
+
+Group combat answers how configured teams perform under a selected map, roster size or combat-power budget, formation, AI and time limit. It is useful for comparing:
+
+- **Victory and combat persistence:** winner, loser or draw, end reason, standing/downed/dead/escaped/removed counts, and how downing, death, resurrection or joining units affect settlement.
+- **Output and damage taken:** engine-settled damage to enemies, team DPS, per-unit lifetime DPS, total output, mean damage taken, rankings and distributions. Friendly fire, self-inflicted, environmental, shield-absorbed and unknown-source damage are recorded separately or marked as measurement limits.
+- **Engagement behavior:** native AI duties/jobs and successful projectile launches with weapon and distance, interpreted alongside damage records. `defendPoint` can compare area defense and contact, `lure` can expose bait/support formations, and `assaultColony` retains vanilla immediate-assault and mod ThinkTree behavior.
+- **Roster and battlefield variables:** fixed counts or combat-power budgets, native faction groups or mixed rosters, xenotypes and loadouts, manual formations, side swaps and multiple seeds, plus comparisons across open, covered, ridge, valley, glacier and urban battlefields.
+
+Group combat does not automatically test every feature of a Def and does not execute ordinary Case `Success`, Coverage or arbitrary XML assertions. AI jobs/duties and a successful launch show observed behavior, not a hit, ability effect, balance result or causal relationship. Interpret them with per-unit damage, state changes, side swaps and multiple seeds. When measurement quality is `partial`, report the attribution limits in the result; complete attribution should be claimed only when it was explicitly required and achieved.
+
 ### 7.17 Arena tournaments and presentation
 
-Arena uses a separate `<ArenaSuite>`. Each Tournament defines entrants, a map, uniform count or combat-power budget, and combat and presentation rules. It supports 2–64 teams, using single PawnKinds or mixed-roster templates. Selection accepts stable `testDefName` values; group-combat case IDs, ordinary Cases and `--scenario-only` do not apply.
+Arena uses a separate `<ArenaSuite>`. Each Tournament defines entrants, a map, uniform count or combat-power budget, and combat and presentation rules. It supports 2–64 teams, using single PawnKinds or mixed-roster templates. Formats include single-elimination `knockout`, boss round robin `bossRoundRobin`, and limit challenge `limitChallenge`. The latter formats organize multiple challengers against bosses or increase pawn counts/CP budgets by steps until a first win. Arena can use native assault, defense or lure tactics, including per-entrant policies, and the same battlefield styles as group combat. Selection accepts stable `testDefName` values; group-combat case IDs, ordinary Cases and `--scenario-only` do not apply.
 
 ```powershell
 .\.tools\RimDevTools.exe test run --mode arena --scenario-path ".agents/skills/rimworld-xml-test/assets/arena.autotest.xml" --test-name Example_AnimalArena --validate-only
@@ -490,7 +521,7 @@ Arena uses a separate `<ArenaSuite>`. Each Tournament defines entrants, a map, u
 
 A tournament can include many fights, retries and presentation stages. Without an explicit timeout, the CLI estimates a bounded total budget. A manually specified budget must cover the full tournament. Victory quality scores preservation, suppression, exchange and speed for presentation and low-score extra matches in later odd-numbered rounds. Draws follow the configured retry policy; exhausted retries leave an unresolved outcome rather than randomly assigning a champion.
 
-Common XML settings under `Tournament` are shown below. This is a fragment, not a complete tournament file:
+Knockout tournaments can configure matching and cleanup under `Tournament`. This is a fragment, not a complete tournament file:
 
 ```xml
 <!-- Default: pair teams with similar counts; use random for seeded random pairings. -->
@@ -498,6 +529,16 @@ Common XML settings under `Tournament` are shown below. This is a fragment, not 
 <!-- Independent switches; both default to false when omitted. -->
 <Cleanup corpses="true" droppedItems="true"/>
 ```
+
+Select the format with the `Tournament` `format` attribute. This shows the core shape of a limit challenge. A complete input also needs its `ArenaSuite`, scene, roster and entrants:
+
+```xml
+<Tournament id="challenge" format="limitChallenge" seed="-1">
+  <Challenges initialCount="10" growthMode="multiply" multiplier="2" maxValue="200"/>
+</Tournament>
+```
+
+`limitChallenge` can also grow a CP budget or use fixed additive growth, with a PawnKind, starting value and limit per challenge. `bossRoundRobin` distinguishes entrants with `role="boss"` and `role="challenger"`. Use the packaged XML skill's ArenaSuite reference for the full field contract. Workbench-exported XML is a practical starting point.
 
 Random matchmaking uses the tournament seed for reproducibility. Initial qualifying matches for an odd entrant count use the chosen matching mode; later odd advancement rounds retain the low-score extra-match rule.
 
@@ -511,6 +552,12 @@ The following behaviors apply automatically:
 - **Rotating mixed-roster previews:** opening cards cycle through multiple available compositions every real-time second. Manual arrows restart the timer; a single composition stays fixed.
 
 Main-map cleanup affects the current disposable test environment. Calendar adjustments can affect mods that depend on absolute time. Opening cards and the final top-five showcase help inspect appearance and composition; use the original `arena_<runId>_Result.json`, generated report and screenshots to assess attempts, actual rosters, measurement quality, champion and completed cleanup. Group-combat and arena results are separate from ordinary regression pass rates.
+
+### 7.18 In-game arena workbench: edit and export tournaments
+
+When you do not want to start with blank XML, open the LogSyncMod arena workbench in RimWorld 1.7. It can browse loaded PawnKinds, filter entrants by faction or other criteria, edit teams, counts or combat-power budgets, tournament rules, maps, formations, presentation and combat settings, and save local presets. It can import an ArenaSuite, edit it and export XML. Validate exported files with `--validate-only` before running them with `test run --mode arena`.
+
+The workbench is an in-game configuration editor. It does not replace CLI preflight, transactional test execution or result validation. Use a fixed seed to repeat an experiment. Use `seed="-1"` for a fresh draw; the CLI freezes the resolved seed in the run plan for reuse through the schedule. The workbench displays its preset and export locations in the UI.
 
 ## 8. Debug actions: preparing and checking content in game
 
@@ -726,7 +773,7 @@ Check whether the client loaded the service, whether configuration parses and wh
 
 ## 11. Steam Workshop: search, subscriptions and publishing
 
-The `steamworkshops` family contains `search`, `subscribe`, `status`, `upload` and `edit`. It uses local Steam and the installed game's libraries. These operations require the appropriate Steam environment, but do not require starting RimWorld or supplying an API key.
+The `steamworkshops` family contains `search`, `subscribe`, `status`, `upload`, `edit` and `changelog`. It uses local Steam and the installed game's libraries. These operations require the appropriate Steam environment, but do not require starting RimWorld or supplying an API key. Version 1.5.10.0 updates the Steamworks native interface adapter for current RimWorld 1.7 while retaining compatibility with older interfaces. If initialization or Workshop queries fail, inspect the Steam client, game library and selected game version with the command diagnostics.
 
 ### 11.1 Search, subscribe and inspect status
 
@@ -751,7 +798,12 @@ Subscriptions do not enable mods or arrange load order. Workshop dependency quer
 
 After reviewing the plan, omit `--dry-run` to submit. Alternatively, `deploy --upload` deploys and uploads under the same lock. It cannot be combined with `--xml-hot`.
 
-A first publication creates a private item for review. Uploading content to an existing item preserves its remote page metadata. For a change note, use `--change-note <text>` or `--change-note-file <UTF-8 file>`; the options are mutually exclusive. Missing or empty notes do not send a fixed default note.
+A first publication creates a private item for review. Uploading content to an existing item preserves its remote page metadata. Content uploads require an explicit `--change-note <text>` or `--change-note-file <UTF-8 file>`. Use `--change-note ""` to explicitly publish no note. The options are mutually exclusive. A dry run checks the deployment receipt, upload target and note without submitting content.
+
+```powershell
+.\.tools\RimDevTools.exe steamworkshops upload --dry-run --change-note "Fix compatibility and update test guidance"
+.\.tools\RimDevTools.exe steamworkshops upload --change-note-file "Tests/ReleaseNotes.txt"
+```
 
 ### 11.3 Edit page metadata
 
@@ -772,6 +824,18 @@ Use `--preview-file` for the main image. Additional images use repeatable `--add
 The numeric item ID is normally stored in `About/PublishedFileId.txt`. The tool uses it to identify an existing item and verifies ownership before writes. After a submission timeout, query remote state before retrying: the wait may have expired even though Steam completed the submission.
 
 Use the read-only `workshop probe` command to diagnose standalone Steamworks initialization and optional item queries. Normal publishing uses `steamworkshops upload`; the old `workshop upload` prototype is disabled.
+
+### 11.5 Read and verify Workshop change history
+
+`steamworkshops changelog` reads change history from the Workshop page. It does not upload content and cannot edit historical records. By default it uses the project's `PublishedFileId.txt` and reads the latest page. You can pass an ID or link and choose the page language and page number. Uploads save the submitted note and a comparison baseline, which `--verify` can compare with the latest remote entry:
+
+```powershell
+.\.tools\RimDevTools.exe steamworkshops changelog
+.\.tools\RimDevTools.exe steamworkshops changelog --verify --wait --timeout-seconds 120
+.\.tools\RimDevTools.exe steamworkshops changelog 1234567890 --language schinese --page 2
+```
+
+Provide expected text with `--change-note` or `--change-note-file`, and optionally restrict matching with `--record`. `--wait` retries read-only page checks with bounded backoff. If the page has not updated or the returned note differs, interpret the status in the JSON result. Verification never resubmits or edits Workshop content.
 
 ## 12. Command reference and common workflows
 
@@ -819,6 +883,7 @@ Prefix the entries below with `.\.tools\RimDevTools.exe`. Angle-bracket values a
 | Read item, permission and download state | `steamworkshops status` |
 | Upload the last full deployment | `steamworkshops upload` |
 | Edit Workshop page metadata | `steamworkshops edit` |
+| Read and verify Workshop change history | `steamworkshops changelog` |
 | Deploy and upload in sequence | `deploy --upload` |
 | Diagnose Steamworks without publishing | `workshop probe` |
 
