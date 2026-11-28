@@ -750,9 +750,7 @@ public static class ModListParser
     internal static readonly string[] RequiredStartupMods =
     [
         "brrainz.harmony",
-        "sarg.smartspeed",
         "brrainz.cameraplus",
-        "erdelf.humanoidalienraces",
         "trigger.logsyncmod"
     ];
 

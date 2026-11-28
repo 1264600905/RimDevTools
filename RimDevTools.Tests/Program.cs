@@ -733,19 +733,26 @@ internal sealed partial class TestSuite
         CreateMod(environment.Game, "LogSync", "trigger.logsyncmod");
         CreateMod(environment.Game, "Helper", "demo.helper", "demo.parent");
         CreateMod(environment.Game, "Parent", "demo.parent");
-        File.WriteAllText(environment.ConfigPath, Config(environment, minMods: "[\"brrainz.harmony\",\"sarg.smartspeed\",\"brrainz.cameraplus\",\"erdelf.humanoidalienraces\",\"trigger.logsyncmod\",\"demo.helper\"]"));
+        File.WriteAllText(environment.ConfigPath, Config(environment, minMods: "[\"brrainz.harmony\",\"trigger.logsyncmod\",\"demo.helper\"]"));
         var modsFile = Path.Combine(environment.Root, "mods.xml");
-        File.WriteAllText(modsFile, "<ModsConfigData><ignored><li>not.allowed</li></ignored><activeMods><li>brrainz.harmony</li><li>sarg.smartspeed</li><li>brrainz.cameraplus</li><li>erdelf.humanoidalienraces</li><li>trigger.logsyncmod</li><li>demo.helper</li><li>DEMO.HELPER</li></activeMods></ModsConfigData>");
+        File.WriteAllText(modsFile, "<ModsConfigData><ignored><li>not.allowed</li></ignored><activeMods><li>brrainz.harmony</li><li>trigger.logsyncmod</li><li>demo.helper</li><li>DEMO.HELPER</li></activeMods></ModsConfigData>");
         var context = ProjectDiscovery.Find(environment.Root, out _)!;
         var resolution = ModListParser.Resolve(context, modsFile, out var error);
-        Assert(error is null && resolution!.Mods.SequenceEqual(["brrainz.harmony", "ludeon.rimworld", "sarg.smartspeed", "brrainz.cameraplus", "erdelf.humanoidalienraces", "demo.current", "trigger.logsyncmod", "demo.helper"], StringComparer.OrdinalIgnoreCase), "ModList reads direct activeMods entries, enforces required mods, and deduplicates");
-        Assert(resolution!.Additions.SequenceEqual([new ModListAddition("ludeon.rimworld", 1, "rimworld_core"), new ModListAddition("demo.current", 5, "current_project")]), "ModList reports automatic additions and positions");
+        Assert(resolution is null && error?.Code == "REQUIRED_MODS_DISABLED"
+            && JsonSerializer.Serialize(error.Details).Contains("brrainz.cameraplus", StringComparison.OrdinalIgnoreCase)
+            && !JsonSerializer.Serialize(error.Details).Contains("sarg.smartspeed", StringComparison.OrdinalIgnoreCase)
+            && !JsonSerializer.Serialize(error.Details).Contains("erdelf.humanoidalienraces", StringComparison.OrdinalIgnoreCase), "ModList keeps Camera+ required without requiring SmartSpeed or HAR");
+
+        File.WriteAllText(modsFile, "<ModsConfigData><ignored><li>not.allowed</li></ignored><activeMods><li>brrainz.harmony</li><li>brrainz.cameraplus</li><li>trigger.logsyncmod</li><li>demo.helper</li><li>DEMO.HELPER</li></activeMods></ModsConfigData>");
+        resolution = ModListParser.Resolve(context, modsFile, out error);
+        Assert(error is null && resolution!.Mods.SequenceEqual(["brrainz.harmony", "ludeon.rimworld", "brrainz.cameraplus", "demo.current", "trigger.logsyncmod", "demo.helper"], StringComparer.OrdinalIgnoreCase), "ModList accepts optional SmartSpeed and HAR being disabled and deduplicates");
+        Assert(resolution!.Additions.SequenceEqual([new ModListAddition("ludeon.rimworld", 1, "rimworld_core"), new ModListAddition("demo.current", 3, "current_project")]), "ModList reports automatic additions and positions");
         Assert(resolution.DependencyWarnings.Count == 1
             && resolution.DependencyWarnings[0].ModPackageId == "demo.helper"
             && resolution.DependencyWarnings[0].MissingDependencyPackageId == "demo.parent"
             && resolution.DependencyWarnings[0].DependencyInstalled, "ModList warns without blocking when an enabled mod's installed hard dependency is disabled");
 
-        File.WriteAllText(modsFile, "<ModsConfigData><activeMods><li>brrainz.harmony</li><li>sarg.smartspeed</li><li>brrainz.cameraplus</li><li>erdelf.humanoidalienraces</li><li>trigger.logsyncmod</li><li>demo.helper</li><li>demo.parent</li></activeMods></ModsConfigData>");
+        File.WriteAllText(modsFile, "<ModsConfigData><activeMods><li>brrainz.harmony</li><li>brrainz.cameraplus</li><li>trigger.logsyncmod</li><li>demo.helper</li><li>demo.parent</li></activeMods></ModsConfigData>");
         var completeDependencies = ModListParser.Resolve(context, modsFile, out var completeError);
         Assert(completeError is null && completeDependencies!.DependencyWarnings.Count == 0, "ModList dependency warning clears when the required parent mod is enabled");
 
