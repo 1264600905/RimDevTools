@@ -4,7 +4,7 @@
 
 RimDevTools 是面向 RimWorld 模组开发的 Windows 工具链，将环境检查、构建部署、依赖定位、日志采集、游戏测试与工坊发布组织为可重复的 CLI 操作。随包模板和工具 Mod 提供 RimWorld **1.6、1.7** 对应内容；CLI 也识别 1.7+ 现代布局，实际工具组件及更新支持范围以发行清单为准。
 
-当前版本为 **1.5.11.0**，提供 [RimWorld 1.6、1.7 模板包及 Tools 简化包](https://github.com/1264600905/RimDevTools/releases/tag/v1.5.11.0)。本版为擂台队伍信息面板增加 XML 显示密度配置，支持详细、紧凑和最简模式。此前版本修复 RimWorld 1.7 Steamworks 原生接口兼容，支持新初始化、User/UGC/Apps/Friends 接口及匹配的 UGC 结构布局，同时保留旧版兼容。工坊 status、只读 probe、内容上传预检和元数据编辑现可通过 Steamworks 初始化及在线核验。擂台工作台和 XML 支持每支队伍单独设置 AI，或继承赛制默认策略，并补齐固定地图、群战手写阵型和擂台自动阵型的模板说明及校验。自定义场景后端仍仅支持 RimWorld 1.7。
+当前版本为 **1.5.12.0**，提供 [RimWorld 1.6、1.7 模板包及 Tools 简化包](https://github.com/1264600905/RimDevTools/releases/tag/v1.5.12.0)。本版改进擂台与群战的战斗流程、界面切换和速度控制，并放宽可选模组缺失时的自动测试启动要求。队伍信息面板支持 XML 配置显示密度；此前版本还加入 RimWorld 1.7 Steamworks 新旧原生接口兼容、工坊在线核验，以及各赛制独立设置 AI 的能力。自定义场景后端仍仅支持 RimWorld 1.7。
 
 面向新用户的功能说明、命令示例与教程插图见[中文教程](Tutorials/RimDevTools项目功能与命令入门.md)，[English tutorial](Tutorials/RimDevTools项目功能与命令入门.en.md)。
 
@@ -211,9 +211,9 @@ powershell -ExecutionPolicy Bypass -File .tools\publish-rimdevtools.ps1 -CreateZ
 输出为：
 
 ```text
-artifacts/RimDevTools-1.5.11.0-Template-RimWorld-1.6/
-artifacts/RimDevTools-1.5.11.0-Template-RimWorld-1.7/
-artifacts/RimDevTools-1.5.11.0-Tools/
+artifacts/RimDevTools-1.5.12.0-Template-RimWorld-1.6/
+artifacts/RimDevTools-1.5.12.0-Template-RimWorld-1.7/
+artifacts/RimDevTools-1.5.12.0-Tools/
 ```
 
 每个目录对应一个 `.zip`；发布时只上传这三个 ZIP。验证三种发布布局，再执行隔离的 Windows 更新集成测试：
@@ -221,11 +221,11 @@ artifacts/RimDevTools-1.5.11.0-Tools/
 ```powershell
 dotnet build RimDevTools.ReleaseTests\RimDevTools.ReleaseTests.csproj
 dotnet RimDevTools.ReleaseTests\bin\Debug\net10.0\RimDevTools.ReleaseTests.dll `
-  artifacts\RimDevTools-1.5.11.0-Template-RimWorld-1.6
+  artifacts\RimDevTools-1.5.12.0-Template-RimWorld-1.6
 dotnet RimDevTools.ReleaseTests\bin\Debug\net10.0\RimDevTools.ReleaseTests.dll `
-  artifacts\RimDevTools-1.5.11.0-Template-RimWorld-1.7
+  artifacts\RimDevTools-1.5.12.0-Template-RimWorld-1.7
 dotnet RimDevTools.ReleaseTests\bin\Debug\net10.0\RimDevTools.ReleaseTests.dll `
-  artifacts\RimDevTools-1.5.11.0-Tools
+  artifacts\RimDevTools-1.5.12.0-Tools
 dotnet RimDevTools.Tests\bin\Debug\net10.0\RimDevTools.Tests.dll --tool-update
 dotnet RimDevTools.Tests\bin\Debug\net10.0\RimDevTools.Tests.dll --tool-update-live
 ```

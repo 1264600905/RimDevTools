@@ -87,7 +87,7 @@
 | `NeedLevel` | `actor`、`def`、`min`、`max`、`quantifier`、`equals` | — |
 | `Not` | — | `All`、`Any`、`Not`、`HasHediff`、`ThingExists`、`ActorState`、`CorpseState`、`ActorCount`、`Equipped`、`Wearing`、`HasTrait`、`SkillLevel`、`HasAbility`、`StepSucceeded`、`HealthPercent`、`NeedLevel`、`ResourceLevel`、`ComponentState`、`EnvironmentState`、`ActorPosition`、`ModResourceLevel`、`ThingHeld`、`ThingQuantity`、`HasController`、`PawnAppearance`、`HasGene`、`HasXenotype`、`PlantGrowth`、`TerrainState`、`ThingStyle` |
 | `Output` | `purpose`、`showAllParticipants`、`width`、`height` | — |
-| `Overlay` | `enabled`、`layout`、`teamInfo`（`detailed`/`compact`/`minimal`，默认 `detailed`）、`topUnitsPerMetric`、`topTypesPerTeam`、`humanPortrait`、`refreshRealMilliseconds` | `Rankings`、`Summary` |
+| `Overlay` | `enabled`、`layout`、`teamInfo`（`detailed`/`compact`/`minimal`，默认 `compact`）、`topUnitsPerMetric`、`topTypesPerTeam`、`humanPortrait`、`refreshRealMilliseconds` | `Rankings`、`Summary` |
 | `Param` | `name`、`value` | — |
 | `Parameter` | `name`、`type`、`min`、`max` | — |
 | `Parameters` | — | `Parameter` |

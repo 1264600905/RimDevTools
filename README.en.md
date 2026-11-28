@@ -4,7 +4,7 @@
 
 RimDevTools is a Windows toolchain for RimWorld mod development. It provides repeatable CLI operations for environment checks, builds, deployment, dependency discovery, log collection, game testing and Workshop publishing. The bundled templates and tool Mod contain files for RimWorld **1.6 and 1.7**. The CLI also recognizes the 1.7+ modern layout; the release manifest defines which game versions its components and updates actually support.
 
-The current version is **1.5.11.0**, with [RimWorld 1.6 and 1.7 templates and a Tools Package](https://github.com/1264600905/RimDevTools/releases/tag/v1.5.11.0). This release adds XML-configurable detailed, compact and minimal team information panels to arena battles. Earlier updates fixed RimWorld 1.7 Steamworks native compatibility by supporting its current initializer, User/UGC/Apps/Friends interfaces and matching UGC layouts while retaining older interface compatibility. Workshop status, read-only probes, upload preflight and metadata edits now pass Steamworks initialization and online verification. The arena workbench and XML scenarios let each team override its AI or inherit the format default, with consistent AI controls across all three formats. The custom scenario backend still supports RimWorld 1.7 only.
+The current version is **1.5.12.0**, with [RimWorld 1.6 and 1.7 templates and a Tools Package](https://github.com/1264600905/RimDevTools/releases/tag/v1.5.12.0). This release improves arena and group-combat flow, presentation transitions and speed control, and allows automated tests to start when optional mods are absent. Team information panels support XML-configurable display density. Earlier updates added compatibility with current and legacy RimWorld 1.7 Steamworks interfaces, online Workshop verification and per-team AI settings across the supported formats. The custom scenario backend still supports RimWorld 1.7 only.
 
 For feature explanations, command examples and tutorial illustrations, see the [Chinese tutorial](Tutorials/RimDevTools项目功能与命令入门.md) or [English tutorial](Tutorials/RimDevTools项目功能与命令入门.en.md).
 
@@ -211,9 +211,9 @@ powershell -ExecutionPolicy Bypass -File .tools\publish-rimdevtools.ps1 -CreateZ
 Output:
 
 ```text
-artifacts/RimDevTools-1.5.11.0-Template-RimWorld-1.6/
-artifacts/RimDevTools-1.5.11.0-Template-RimWorld-1.7/
-artifacts/RimDevTools-1.5.11.0-Tools/
+artifacts/RimDevTools-1.5.12.0-Template-RimWorld-1.6/
+artifacts/RimDevTools-1.5.12.0-Template-RimWorld-1.7/
+artifacts/RimDevTools-1.5.12.0-Tools/
 ```
 
 Each directory has one `.zip`; upload only these three ZIPs. Verify all three release layouts, then run the isolated Windows update integration tests:
@@ -221,11 +221,11 @@ Each directory has one `.zip`; upload only these three ZIPs. Verify all three re
 ```powershell
 dotnet build RimDevTools.ReleaseTests\RimDevTools.ReleaseTests.csproj
 dotnet RimDevTools.ReleaseTests\bin\Debug\net10.0\RimDevTools.ReleaseTests.dll `
-  artifacts\RimDevTools-1.5.11.0-Template-RimWorld-1.6
+  artifacts\RimDevTools-1.5.12.0-Template-RimWorld-1.6
 dotnet RimDevTools.ReleaseTests\bin\Debug\net10.0\RimDevTools.ReleaseTests.dll `
-  artifacts\RimDevTools-1.5.11.0-Template-RimWorld-1.7
+  artifacts\RimDevTools-1.5.12.0-Template-RimWorld-1.7
 dotnet RimDevTools.ReleaseTests\bin\Debug\net10.0\RimDevTools.ReleaseTests.dll `
-  artifacts\RimDevTools-1.5.11.0-Tools
+  artifacts\RimDevTools-1.5.12.0-Tools
 dotnet RimDevTools.Tests\bin\Debug\net10.0\RimDevTools.Tests.dll --tool-update
 dotnet RimDevTools.Tests\bin\Debug\net10.0\RimDevTools.Tests.dll --tool-update-live
 ```

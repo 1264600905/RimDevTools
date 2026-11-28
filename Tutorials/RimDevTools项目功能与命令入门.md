@@ -2,7 +2,7 @@
 
 **简体中文** | [English](RimDevTools项目功能与命令入门.en.md)
 
-本文对应 **RimDevTools 1.5.10.0**。当前正式包支持 RimWorld 1.6、1.7；外部 XML 场景回归、群战与擂台后端目前仅支持 **1.7**。下载入口见 [1.5.10.0 发布页](https://github.com/1264600905/RimDevTools/releases/tag/v1.5.10.0)。
+本文对应 **RimDevTools 1.5.12.0**。当前正式包支持 RimWorld 1.6、1.7；外部 XML 场景回归、群战与擂台后端目前仅支持 **1.7**。下载入口见 [1.5.12.0 发布页](https://github.com/1264600905/RimDevTools/releases/tag/v1.5.12.0)。
 
 本文按实际开发顺序组织：先认识工具和准备项目，再查参考、部署、收集日志与测试；需要 AI 协作时阅读 Skills 和 MCP，准备发布时再进入创意工坊流程。首次阅读可以顺着章节推进，遇到具体问题时也可以按下面的导航直接查阅。
 
@@ -59,13 +59,13 @@ RimDevTools 就是为这些日常工作准备的一套 Windows 开发工具。�
 
 ### 2.1 放置项目并修改配置
 
-1.5.10.0 发布页提供三个成品 ZIP，按用途选择一个即可：
+1.5.12.0 发布页提供三个成品 ZIP，按用途选择一个即可：
 
 | 下载包 | 适用情况 |
 | --- | --- |
-| `RimDevTools-1.5.10.0-Template-RimWorld-1.6.zip` | 新建 RimWorld 1.6 模组项目 |
-| `RimDevTools-1.5.10.0-Template-RimWorld-1.7.zip` | 新建 RimWorld 1.7 模组项目 |
-| `RimDevTools-1.5.10.0-Tools.zip` | 已有项目接入工具，不需要示例模组工程 |
+| `RimDevTools-1.5.12.0-Template-RimWorld-1.6.zip` | 新建 RimWorld 1.6 模组项目 |
+| `RimDevTools-1.5.12.0-Template-RimWorld-1.7.zip` | 新建 RimWorld 1.7 模组项目 |
+| `RimDevTools-1.5.12.0-Tools.zip` | 已有项目接入工具，不需要示例模组工程 |
 
 三个包都包含正式工具和 Codex、Claude 两套各 7 个完整 Skill。Tools 包还包含两版工具 Mod、ILSpy、许可证和配置参考，但不包含示例模组、项目 README、`.gitignore` 或 MCP 客户端配置。发布页另外两项 `Source code` 是 GitHub 自动生成的源码下载，日常使用无需下载。当前不再提供 `Tools-Full`、旧版兼容包或独立 `.sha256` 附件。
 

@@ -2,7 +2,7 @@
 
 [简体中文](RimDevTools项目功能与命令入门.md) | **English**
 
-This guide covers **RimDevTools 1.5.10.0**. The current release packages support RimWorld **1.6 and 1.7**. External XML regression scenarios, group combat and arena tournaments currently require **1.7**. Download the packages from the [1.5.10.0 release page](https://github.com/1264600905/RimDevTools/releases/tag/v1.5.10.0).
+This guide covers **RimDevTools 1.5.12.0**. The current release packages support RimWorld **1.6 and 1.7**. External XML regression scenarios, group combat and arena tournaments currently require **1.7**. Download the packages from the [1.5.12.0 release page](https://github.com/1264600905/RimDevTools/releases/tag/v1.5.12.0).
 
 The chapters follow a typical development workflow: prepare a project, research references, deploy changes, collect logs and test. The later chapters explain AI skills, RimSage MCP and Workshop publishing. Commands and limitations reflect the current implementation; an older executable may expose fewer features. Run `--version` before following examples from a newer release.
 
@@ -51,13 +51,13 @@ The CLI is a program operated through text commands. The complete examples below
 
 ### 2.1 Choose a package and configure the project
 
-The 1.5.10.0 release provides three ZIP packages:
+The 1.5.12.0 release provides three ZIP packages:
 
 | Package | Intended use |
 | --- | --- |
-| `RimDevTools-1.5.10.0-Template-RimWorld-1.6.zip` | Start a RimWorld 1.6 mod project |
-| `RimDevTools-1.5.10.0-Template-RimWorld-1.7.zip` | Start a RimWorld 1.7 mod project |
-| `RimDevTools-1.5.10.0-Tools.zip` | Add the tools to an existing project without the example mod |
+| `RimDevTools-1.5.12.0-Template-RimWorld-1.6.zip` | Start a RimWorld 1.6 mod project |
+| `RimDevTools-1.5.12.0-Template-RimWorld-1.7.zip` | Start a RimWorld 1.7 mod project |
+| `RimDevTools-1.5.12.0-Tools.zip` | Add the tools to an existing project without the example mod |
 
 All three include the tools and complete sets of seven skills for both Codex and Claude. The Tools Package also includes both versions of the tool Mod, ILSpy, licenses and a configuration reference. It omits the example project, project README, `.gitignore` and MCP client configuration files. GitHub's separate source downloads are for source-code use. The release no longer supplies a `Tools-Full` package, compatibility packages or separate `.sha256` attachments.
 
